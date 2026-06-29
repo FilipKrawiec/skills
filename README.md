@@ -3,9 +3,9 @@ Skills for Software engineering
 
 ## Layout
 
-- `.agents/skills/engineering/grill-with-docs` for source-backed review and critique work
-- `.agents/skills/productivity/writing-great-skill` for skill authoring and refinement
-- `.agents/skills/engineering/domain-modeling` for shaping terms, boundaries, and aggregates
+- `skills/grill-with-docs` for source-backed review and critique work
+- `skills/writing-great-skill` for skill authoring and refinement
+- `skills/domain-modeling` for shaping terms, boundaries, and aggregates
 - `docs/` for ADRs and durable project records
 
 ## Claude Code
@@ -22,4 +22,16 @@ For local development:
 ```bash
 claude plugin marketplace add /Users/filip/Developer/projects/github.com/FilipKrawiec/skills
 claude plugin install filip-skills@filip-skills
+```
+
+## Codex
+
+Codex plugin metadata lives in `.codex-plugin/plugin.json` and uses the same root `skills/` directory.
+
+## Validation
+
+Check Codex and Claude plugin definitions with:
+
+```bash
+python3 scripts/validate-plugin-definitions.py
 ```

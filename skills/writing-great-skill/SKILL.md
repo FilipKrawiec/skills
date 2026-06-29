@@ -1,7 +1,6 @@
 ---
 name: writing-great-skill
 description: Reference for writing and editing skills well.
-disable-model-invocation: true
 ---
 
 # Writing Great Skill
@@ -11,7 +10,7 @@ A skill should make agent behavior more predictable. Bold terms are defined in `
 ## Invocation
 
 - Use **model invocation** only when the agent must discover the skill by itself or another skill must reach it.
-- Use **user invocation** when the human should choose the skill explicitly; set `disable-model-invocation: true`.
+- Use **user invocation** when the human should choose the skill explicitly; keep the description as a terse human-facing label unless the target agent supports explicit invocation controls.
 - If user-invoked skills become hard to remember, add one **router skill** instead of making every skill model-invoked.
 
 ## Description Craft

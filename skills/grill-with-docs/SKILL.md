@@ -1,7 +1,6 @@
 ---
 name: grill-with-docs
 description: Relentless doc-backed grilling for sharpening a plan, design, PRD, or ADR.
-disable-model-invocation: true
 ---
 
 # Grill With Docs

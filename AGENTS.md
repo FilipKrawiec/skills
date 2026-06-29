@@ -2,7 +2,7 @@
 
 ## Mandatory Skill Editing Workflow
 
-Before creating or revising anything under `.agents/skills/`, read `.agents/skills/productivity/writing-great-skill/SKILL.md` first. Treat it as the local source of truth for invocation, description craft, information hierarchy, and pruning.
+Before creating or revising anything under `skills/`, read `skills/writing-great-skill/SKILL.md` first. Treat it as the local source of truth for invocation, description craft, information hierarchy, and pruning.
 
 Apply the agentskills.io guardrails by default: concise activation text, compact `SKILL.md`, clear context pointers for references, no generic best-practice prose, and one source of truth per meaning.
 
@@ -12,8 +12,7 @@ Keep this repository as a compact, agent-agnostic skill library.
 
 ## Layout
 
-- `.agents/skills/engineering/` for technical and architecture-oriented skills
-- `.agents/skills/productivity/` for meta-skills and workflow helpers
+- `skills/` for canonical skill implementations
 - `docs/` for ADRs and durable project records
 
 ## Skill Rules
@@ -41,4 +40,5 @@ Keep this repository as a compact, agent-agnostic skill library.
 
 - Update the relevant skill and its references together.
 - Move content rather than duplicating it when a concept belongs in `references/`.
+- Run `python3 scripts/validate-plugin-definitions.py` after changing skills or plugin manifests.
 - Preserve existing user changes outside the requested scope.

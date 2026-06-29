@@ -1,6 +1,6 @@
 # Skill Editing Guardrails
 
-Before creating or revising a skill, read `productivity/writing-great-skill/SKILL.md`.
+Before creating or revising a skill, read `writing-great-skill/SKILL.md`.
 
 Default to the agentskills.io model:
 
