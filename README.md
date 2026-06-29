@@ -28,10 +28,27 @@ claude plugin install filip-skills@filip-skills
 
 Codex plugin metadata lives in `.codex-plugin/plugin.json` and uses the same root `skills/` directory.
 
+## Antigravity (`agy`)
+
+Antigravity plugin metadata lives in `plugin.json` at the root of the repository, using the `skills/` directory natively.
+
+Install from GitHub remote:
+
+```bash
+agy plugin install https://github.com/FilipKrawiec/skills.git
+```
+
+For local development:
+
+```bash
+agy plugin install /Users/filip/Developer/projects/github.com/FilipKrawiec/skills
+```
+
 ## Validation
 
-Check Codex and Claude plugin definitions with:
+Check Codex, Claude, and Antigravity plugin definitions with:
 
 ```bash
 python3 scripts/validate-plugin-definitions.py
 ```
+

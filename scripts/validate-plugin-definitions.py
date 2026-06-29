@@ -48,11 +48,11 @@ def validate_skill_tree() -> None:
         fail(f"skills mismatch: expected {sorted(EXPECTED_SKILLS)}, found {sorted(found)}")
 
 
-def validate_manifest(path: Path) -> None:
+def validate_manifest(path: Path, check_skills: bool = True) -> None:
     manifest = load_json(path)
     if manifest.get("name") != PLUGIN_NAME:
         fail(f"{path.relative_to(ROOT)} must use plugin name {PLUGIN_NAME}")
-    if manifest.get("skills") != "./skills/":
+    if check_skills and manifest.get("skills") != "./skills/":
         fail(f"{path.relative_to(ROOT)} must set skills to ./skills/")
 
 
@@ -80,11 +80,14 @@ def main() -> None:
     validate_manifest(ROOT / ".codex-plugin" / "plugin.json")
     validate_manifest(ROOT / ".claude-plugin" / "plugin.json")
     validate_claude_marketplace(ROOT / ".claude-plugin" / "marketplace.json")
+    validate_manifest(ROOT / "plugin.json", check_skills=False)
 
     run(["python3", "/Users/filip/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py", "."])
     run(["claude", "plugin", "validate", "--strict", ".claude-plugin/plugin.json"])
     run(["claude", "plugin", "validate", "--strict", ".claude-plugin/marketplace.json"])
+    run(["agy", "plugin", "validate", "."])
 
 
 if __name__ == "__main__":
     main()
+

@@ -1,0 +1,5 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "filip-skills",
+  "description": "Agentic software engineering skills for grilling plans, domain modeling, and writing effective reusable skills."
+}
