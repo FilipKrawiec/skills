@@ -1,0 +1,21 @@
+{
+  "name": "filip-skills",
+  "version": "0.1.0",
+  "description": "Agentic software engineering skills for grilling plans, domain modeling, and writing effective reusable skills.",
+  "author": {
+    "name": "Filip Krawiec"
+  },
+  "repository": "https://github.com/FilipKrawiec/skills",
+  "license": "UNLICENSED",
+  "keywords": [
+    "skills",
+    "software-engineering",
+    "domain-modeling",
+    "adr",
+    "agentic-workflow"
+  ],
+  "skills": [
+    "./.agents/skills/engineering",
+    "./.agents/skills/productivity"
+  ]
+}
