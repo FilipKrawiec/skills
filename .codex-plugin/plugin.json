@@ -1,7 +1,7 @@
 {
   "name": "filip-skills",
-  "version": "0.2.0",
-  "description": "Agentic software engineering skills for grilling plans, domain modeling, and writing effective reusable skills.",
+  "version": "0.3.0",
+  "description": "Agentic software engineering skills for grilling plans, domain-driven design, and writing effective reusable skills.",
   "author": {
     "name": "Filip Krawiec"
   },
@@ -10,7 +10,7 @@
   "keywords": [
     "skills",
     "software-engineering",
-    "domain-modeling",
+    "domain-driven-design",
     "adr",
     "agentic-workflow"
   ],
@@ -18,7 +18,7 @@
   "interface": {
     "displayName": "Filip Skills",
     "shortDescription": "Agentic software engineering workflow skills.",
-    "longDescription": "A compact skill library for grilling plans, shaping domain language and ADRs, and writing effective reusable skills.",
+    "longDescription": "A compact skill library for grilling plans, domain-driven design, and writing effective reusable skills.",
     "developerName": "Filip Krawiec",
     "category": "Productivity",
     "capabilities": [
@@ -26,7 +26,7 @@
     ],
     "defaultPrompt": [
       "Use grill-with-docs to sharpen this plan.",
-      "Use domain-modeling to clarify terms and ADRs.",
+      "Use domain-driven-design to clarify terms, ADRs, and layered structure.",
       "Use writing-great-skill to improve this skill."
     ]
   }

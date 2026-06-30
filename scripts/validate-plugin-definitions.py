@@ -10,7 +10,14 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SKILLS = {"domain-modeling", "grill-with-docs", "writing-great-skill"}
+EXPECTED_SKILLS = {
+    "agentic-delivery-cycle",
+    "domain-driven-design",
+    "hexagonal-architecture",
+    "grill-with-docs",
+    "writing-great-skill",
+    "tdd",
+}
 PLUGIN_NAME = "filip-skills"
 
 

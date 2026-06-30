@@ -12,3 +12,5 @@ Operational agent guidance belongs in `AGENTS.md`. Skill authoring guidance belo
 ## Current ADRs
 
 - `adr/0001-store-skills-under-root-skills.md`
+- `adr/0002-domain-driven-design-and-hexagonal-architecture.md`
+- `adr/0003-test-driven-development.md`

@@ -5,7 +5,7 @@ description: Relentless doc-backed grilling for sharpening a plan, design, PRD, 
 
 # Grill With Docs
 
-Run a grilling session against the supplied docs. If the session settles domain language or an architectural decision, use `domain-modeling` to update `CONTEXT.md` or ADRs.
+Run a grilling session against the supplied docs. If the session settles domain language or an architectural decision, use `domain-driven-design` to update `CONTEXT.md` or ADRs.
 
 ## Loop
 

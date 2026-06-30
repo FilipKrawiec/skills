@@ -5,7 +5,10 @@ Skills for Software engineering
 
 - `skills/grill-with-docs` for source-backed review and critique work
 - `skills/writing-great-skill` for skill authoring and refinement
-- `skills/domain-modeling` for shaping terms, boundaries, and aggregates
+- `skills/domain-driven-design` for Ubiquitous Language, naming, and strategic design
+- `skills/hexagonal-architecture` for dependency inversion, encapsulation, and the 4 layered architecture (API, Application, Domain, Infrastructure)
+- `skills/tdd` for Red-Green-Refactor loop using Chicago strategy and Testcontainers
+- `skills/agentic-delivery-cycle` for the 7-phase playbook of the Agentic Delivery Cycle and 4D principles
 - `docs/` for ADRs and durable project records
 
 ## Claude Code
