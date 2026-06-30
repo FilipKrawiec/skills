@@ -19,7 +19,7 @@ EXPECTED_SKILLS = {
     "tdd",
     "vcs",
 }
-PLUGIN_NAME = "filip-skills"
+PLUGIN_NAME = "filipkrawiec"
 
 
 def fail(message: str) -> None:
@@ -79,8 +79,8 @@ def validate_claude_marketplace(path: Path) -> None:
     plugin = find_marketplace_plugin(path)
     source = plugin.get("source")
     expected = {"source": "url", "url": "https://github.com/FilipKrawiec/skills.git"}
-    if source != expected:
-        fail(f"{path.relative_to(ROOT)} must point {PLUGIN_NAME} at the GitHub repository")
+    if source != expected and source != "./":
+        fail(f"{path.relative_to(ROOT)} must point {PLUGIN_NAME} at the GitHub repository or './'")
 
 
 def main() -> None:

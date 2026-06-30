@@ -1,10 +1,13 @@
 {
-  "name": "filip-skills",
-  "version": "0.4.1",
+  "name": "filipkrawiec",
+  "version": "0.4.2",
   "description": "Agentic software engineering skills for grilling plans, domain-driven design, and writing effective reusable skills.",
   "author": {
-    "name": "Filip Krawiec"
+    "name": "Filip Krawiec",
+    "email": "contact@filipkrawiec.com",
+    "url": "https://github.com/FilipKrawiec"
   },
+  "homepage": "https://github.com/FilipKrawiec/skills",
   "repository": "https://github.com/FilipKrawiec/skills",
   "license": "UNLICENSED",
   "keywords": [

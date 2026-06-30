@@ -1,19 +1,18 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "filip-skills",
+  "name": "filipkrawiec",
   "description": "Personal marketplace for Filip Krawiec's agentic software engineering skills.",
   "owner": {
-    "name": "Filip Krawiec"
+    "name": "Filip Krawiec",
+    "email": "contact@filipkrawiec.com",
+    "url": "https://github.com/FilipKrawiec"
   },
   "plugins": [
     {
-      "name": "filip-skills",
-      "description": "Agentic software engineering skills for grilling plans, domain modeling, and writing effective reusable skills.",
+      "name": "filipkrawiec",
+      "description": "Agentic software engineering skills for grilling plans, domain-driven design, and writing effective reusable skills.",
       "category": "development",
-      "source": {
-        "source": "url",
-        "url": "https://github.com/FilipKrawiec/skills.git"
-      },
+      "source": "./",
       "homepage": "https://github.com/FilipKrawiec/skills"
     }
   ]
