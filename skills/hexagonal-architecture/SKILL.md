@@ -5,31 +5,24 @@ description: Use when designing, implementing, or refactoring codebase layers ac
 
 # Hexagonal Architecture (Ports & Adapters)
 
-Follow these steps to implement code layers with clean boundaries, strict encapsulation, and dependency inversion.
+Follow these steps to design and implement codebase layers with clean boundaries, strict encapsulation, and high test confidence.
 
-## Role of the Layers
+## Steps
 
-1. **API Layer (Inbound/Ingress):**
-   - Entry points to the application (e.g., HTTP controllers, Kafka event consumers).
-   - Handles transport tasks (payload parsing, validation, serialization).
-   - Maps requests directly to Application commands/queries, keeping them free of business logic.
-2. **Application Layer:**
-   - Coordinates transactions, security, and usecase orchestration.
-   - Wires API inputs to Domain actions. Contains no business rules.
-3. **Domain Layer (Core):**
-   - Written in pure programming language with zero framework or infrastructure dependencies.
-   - Encapsulates domain invariants, aggregates, and value objects.
-   - Defines outbound port interfaces (e.g., `UserRepository`) using DDD terms (no "Port" suffix).
-4. **Infrastructure Layer (Outbound/Egress):**
-   - Implements outbound adapters (concrete persistence repositories, external API clients).
-   - Maps database persistence models (tables) to/from domain entities; never leak persistence models into the Domain or Application layers.
-
-## Key Principles
-
-- **Dependency Inversion:** Dependencies must always point inward (API/Infrastructure $\rightarrow$ Application $\rightarrow$ Domain). The Domain/Application layers define the interface contracts, and Infrastructure implements them.
-- **Encapsulation:** The core domain must not instantiate or reference any infrastructure/API classes. Persistence schemas and external transfer details must be hidden within their respective adapters.
-- **Access Modifiers:** If supported by the language (e.g., `internal`, package-private, `private`), use access modifiers to hide adapter implementation details. Outbound adapter implementations and persistence models should not be public; only the port interfaces they implement should be exposed to other layers.
+1. **Define/Refactor Domain Logic (Inside-Out):**
+   - Write unit tests to drive the creation of pure domain models (aggregates, entities, and value objects) encapsulating business invariants. Do not mock collaborating domain objects (Chicago Strategy).
+   - Ensure the Domain layer has zero framework or infrastructure dependencies.
+2. **Define Outbound Ports:**
+   - Declare interfaces for external resources (e.g., database repositories, external clients) inside the Domain or Application layer.
+   - Use Ubiquitous Language terms for names (e.g., `UserRepository`, not `UserRepositoryPort`).
+3. **Orchestrate Usecases (Application Layer):**
+   - Wire API/ingress inputs to Domain actions. Usecases must coordinate transactions, security, and orchestrate actions without containing business rules.
+   - Write component tests using real domain objects (ideally without mocks) to verify usecase flows, aiming for 100% test branch coverage for confidence.
+4. **Implement Adapters (Infrastructure & API Layers):**
+   - **Outbound Adapters (Infrastructure):** Implement outbound ports (repositories, external clients). Map persistence structures to domain models; never leak persistence structures. Use access modifiers (e.g., package-private/internal) to keep adapter implementations non-public.
+   - **Inbound Adapters (API):** Implement entry points (controllers, consumers). Map payloads directly to Application commands or queries, keeping them free of business logic.
 
 ## Context Pointers
 
-- Read `docs/adr/0002-domain-driven-design-and-hexagonal-architecture.md` for architectural context.
+- Read [0002-domain-driven-design-and-hexagonal-architecture.md](file:///Users/filip/Developer/projects/github.com/FilipKrawiec/skills/docs/adr/0002-domain-driven-design-and-hexagonal-architecture.md) for detailed layer definitions and architectural rules.
+- Read [0003-test-driven-development.md](file:///Users/filip/Developer/projects/github.com/FilipKrawiec/skills/docs/adr/0003-test-driven-development.md) for guidelines on TDD and the Chicago Strategy.

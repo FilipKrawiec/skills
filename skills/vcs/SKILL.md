@@ -5,25 +5,15 @@ description: Use when committing changes, performing Git operations (such as mov
 
 # Version Control System (VCS) Workflow
 
-Follow these rules and steps for all version control and git operations.
+Follow these steps for all version control and git operations to maintain a clean, readable, and linear history.
 
-## Trunk-Based Development & Branching
+## Steps
 
-- Work on **short-lived feature branches** that target the main/trunk branch.
-- Integrate feature branches frequently to keep them short-lived.
-- On feature branches, the agent is authorized to force-push (`git push --force-with-lease`) to update remote branches.
+1. **Branch Off Trunk:** Create a short-lived feature branch targeting the main/trunk branch.
+2. **Execute File Operations:** If moving or renaming files, use `git mv` instead of standard `mv` to preserve Git revision history.
+3. **Commit Logically:** Write atomic commits using the Conventional Commits format. Prefix the commit message with the task/issue ID if connected to an issue tracker (otherwise skip).
+4. **Integrate and Sync:** Squash commits into logical units and rebase the feature branch on top of main/trunk. When updating the remote branch during a rebase, use `git push --force-with-lease`.
 
-## Commit Messages
+## Context Pointers
 
-- Use **Conventional Commits** format.
-- If the work is connected to an issue tracker, every commit message **must start with the issue/task ID number** (e.g., `123: feat(auth): add login form` or `#45: fix: resolve null pointer exception`).
-- If the work is not connected to an issue tracker, the task ID number **must be skipped** (e.g., `feat(auth): add login form`).
-
-## File Operations
-
-- Always use `git mv` instead of standard filesystem moves or renames (`mv`) to ensure file history is preserved.
-
-## Merging & Squashing
-
-- Squash commits to present clean, logical units of work.
-- Always perform merges/integrations via **rebase** (squash and rebase via remote MR/PR) to maintain a clean, flat, and linear history.
+- Read [0004-version-control-system-workflow.md](file:///Users/filip/Developer/projects/github.com/FilipKrawiec/skills/docs/adr/0004-version-control-system-workflow.md) for detailed Git workflow guidelines, commit prefix formats, and merging policies.

@@ -1,6 +1,6 @@
 ---
 name: grill-with-docs
-description: Relentless doc-backed grilling for sharpening a plan, design, PRD, or ADR.
+description: Use when running a grilling session to stress-test a plan, design, PRD, or ADR against source documentation, challenging assumptions and resolving open questions.
 ---
 
 # Grill With Docs
