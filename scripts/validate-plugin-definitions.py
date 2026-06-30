@@ -17,6 +17,7 @@ EXPECTED_SKILLS = {
     "grill-with-docs",
     "writing-great-skill",
     "tdd",
+    "vcs",
 }
 PLUGIN_NAME = "filip-skills"
 
