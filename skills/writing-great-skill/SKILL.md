@@ -1,6 +1,6 @@
 ---
 name: writing-great-skill
-description: Reference for writing and editing skills well.
+description: Use when creating, modifying, editing, or validating skills, agent rules (AGENTS.md), or plugin manifests in this repository.
 ---
 
 # Writing Great Skill
@@ -29,6 +29,9 @@ For user-invoked skills, keep the description as a one-line human summary.
 - Put required **steps** in `SKILL.md`.
 - Put only always-needed **reference** in `SKILL.md`.
 - Move branch-specific reference behind a clear **context pointer**: "Read X when Y."
+  - **Rule**: `X` must be a relative link targeting a file inside the skill's own local `references/` subdirectory.
+  - **Rule**: Never use absolute local file URLs (e.g., `file:///Users/...`) or reference arbitrary repository files outside the skill directory.
+  - **Rule**: Avoid creating a local reference file if it would only be a one-liner redirecting to another skill's reference. Instead, link directly to that other skill's reference file (e.g., `../other-skill/references/file.md`).
 - Keep each meaning in one source of truth.
 
 ## Pruning
