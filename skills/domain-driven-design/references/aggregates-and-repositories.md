@@ -39,6 +39,8 @@ class SqlOrderRepository {
 }
 ```
 
+- **Lightweight Query Methods (Count, Existence, and Summaries):** Avoid loading full entities or collections just to perform existence checks, counts, or basic calculations. Expose explicit query methods directly on the Repository interface (e.g., `exists(id): boolean` or `countUnresolved(parentId): number`). The concrete repository implementation must execute lightweight database queries (e.g., `EXISTS` or `SELECT COUNT(*)`) rather than rehydrating domain objects into memory.
+
 ## 3. Large/Endless Collections (The Local Entity Growth Problem)
 
 Even if a child entity has no conceptual meaning outside its parent context (e.g., a `Thread` inside a `MergeRequest`), **it must be promoted to a standalone Aggregate Root referencing the parent by ID if the collection can grow indefinitely.** This prevents performance issues (memory bloat) and optimistic locking concurrency conflicts.
