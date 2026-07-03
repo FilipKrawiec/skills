@@ -1,0 +1,39 @@
+ticket: "123"
+title: "Enforce Skill Validation Status"
+mode: "hil"
+current_phase: "DEFINE"
+lifecycle_stage: "INITIALIZATION"
+iteration: "00"
+
+phases:
+  DEFINE:
+    status: "PENDING"
+    brief:
+      summary: "Add ValidationStatus to the Skill aggregate root and prevent unvalidated skills from being published."
+      context: "Currently skills can be published to the catalog without any safety checks. We need a validation process."
+      constraints:
+        - "No framework dependencies inside the domain layer."
+        - "Do not leak persistence models outside the infrastructure adapter."
+      acceptance_criteria:
+        - "Skills cannot be published unless validation_status is APPROVED."
+      non_goals:
+        - "Implementing the automatic validator agent itself (out of scope)."
+    improvements: []
+  SPEC:
+    status: "PENDING"
+    improvements: []
+  PLAN:
+    status: "PENDING"
+    improvements: []
+  EXECUTE:
+    status: "PENDING"
+    improvements: []
+  REVIEW:
+    status: "PENDING"
+    improvements: []
+  SHIP:
+    status: "PENDING"
+    improvements: []
+  IMPROVE:
+    status: "PENDING"
+    improvements: []
