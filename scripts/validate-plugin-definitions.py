@@ -90,7 +90,8 @@ def main() -> None:
     validate_claude_marketplace(ROOT / ".claude-plugin" / "marketplace.json")
     validate_manifest(ROOT / "plugin.json", check_skills=False)
 
-    run(["python3", "/Users/filip/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py", "."])
+    validate_script = Path.home() / ".codex" / "skills" / ".system" / "plugin-creator" / "scripts" / "validate_plugin.py"
+    run(["python3", str(validate_script), "."])
     run(["claude", "plugin", "validate", "--strict", ".claude-plugin/plugin.json"])
     run(["claude", "plugin", "validate", "--strict", ".claude-plugin/marketplace.json"])
     run(["agy", "plugin", "validate", "."])

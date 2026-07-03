@@ -30,8 +30,8 @@ For user-invoked skills, keep the description as a one-line human summary.
 - Put only always-needed **reference** in `SKILL.md`.
 - Move branch-specific reference behind a clear **context pointer**: "Read X when Y."
   - **Rule**: `X` must be a relative link targeting a file inside the skill's own local `references/` subdirectory.
-  - **Rule**: Never use absolute local file URLs (e.g., `file:///Users/...`) or reference arbitrary repository files outside the skill directory.
-  - **Rule**: Avoid creating a local reference file if it would only be a one-liner redirecting to another skill's reference. Instead, link directly to that other skill's reference file (e.g., `../other-skill/references/file.md`).
+  - **Rule**: Never use absolute local file URLs (e.g., `file:///Users/...`) or reference files outside the skill directory (including other skills). Context pointers must stay strictly internal to the local `references/` subdirectory.
+  - **Rule**: Do not use markdown links (relative or absolute) to files or skills outside the skill's own directory anywhere in `SKILL.md` (e.g., inside steps or descriptions). Reference other skills textually using backticks (e.g., `` `other-skill` ``).
 - Keep each meaning in one source of truth.
 
 ## Pruning

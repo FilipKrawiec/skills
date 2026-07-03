@@ -59,3 +59,7 @@ Follow this playbook to execute tasks using the 7 phases of the delivery cycle, 
 ### 07 IMPROVE
 - **Inputs:** Accumulated phase improvements.
 - **Steps:** Consolidate lessons learned. Suggest overall workflow updates in the chat if interactive; write them to `docs/records/YYYY-MM-DD-improvement.md` if autonomous.
+
+## Context Pointers
+
+- Read [ADR-FORMAT.md](references/ADR-FORMAT.md) when recording architectural decisions during the definition, specification, or planning phases.

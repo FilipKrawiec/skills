@@ -28,6 +28,7 @@ Follow these guidelines to construct clean, atomic, and standardized commit mess
   - `perf`: A code change that improves performance
   - `test`: Adding missing tests or correcting existing tests
   - `chore`: Changes to the build process or auxiliary tools/libraries
+  - `wip`: Work in progress (permitted only for intermediate, local commits during development, to be squashed before review/merge)
 - **`(<scope>)`**: (Optional) A noun describing a section of the codebase (e.g., `feat(auth):`).
 - **`!`**: (Optional) Indicates a breaking change.
 - **`<description>`**: A succinct description of the change in imperative tone (e.g., `add password validation`).
