@@ -10,19 +10,21 @@ Follow these steps to design and implement codebase layers with clean boundaries
 ## Steps
 
 1. **Define/Refactor Domain Logic (Inside-Out):**
-   - Write unit tests to drive the creation of pure domain models (aggregates, entities, and value objects) encapsulating business invariants. Do not mock collaborating domain objects (Chicago Strategy).
+   - Write production code to model the domain's core logic (aggregates, entities, value objects).
    - Ensure the Domain layer has zero framework or infrastructure dependencies.
 2. **Define Outbound Ports:**
-   - Declare interfaces for external resources (e.g., database repositories, external clients) inside the Domain or Application layer.
-   - Use Ubiquitous Language terms for names (e.g., `UserRepository`, not `UserRepositoryPort`).
+   - Declare interfaces for external resources:
+     - **Domain-driven ports** (e.g., repositories, domain event publishers) belong in the Domain Layer.
+     - **Integration/application-specific ports** (e.g., email clients, payment services) belong in the Application Layer.
 3. **Orchestrate Usecases (Application Layer):**
    - Wire API/ingress inputs to Domain actions. Usecases must coordinate transactions, security, and orchestrate actions without containing business rules.
-   - Write component tests using real domain objects (ideally without mocks) to verify usecase flows, aiming for 100% test branch coverage for confidence.
 4. **Implement Adapters (Infrastructure & API Layers):**
-   - **Outbound Adapters (Infrastructure):** Implement outbound ports (repositories, external clients). Map persistence structures to domain models; never leak persistence structures. Use access modifiers (e.g., package-private/internal) to keep adapter implementations non-public.
+   - **Outbound Adapters (Infrastructure):** Implement outbound ports. Map persistence structures to domain models; never leak persistence structures. Use access modifiers (e.g., package-private/internal) to keep adapter implementations non-public.
    - **Inbound Adapters (API):** Implement entry points (controllers, consumers). Map payloads directly to Application commands or queries, keeping them free of business logic.
 
 ## Context Pointers
 
-- Read [0002-domain-driven-design-and-hexagonal-architecture.md](file:///Users/filip/Developer/projects/github.com/FilipKrawiec/skills/docs/adr/0002-domain-driven-design-and-hexagonal-architecture.md) for detailed layer definitions and architectural rules.
-- Read [0003-test-driven-development.md](file:///Users/filip/Developer/projects/github.com/FilipKrawiec/skills/docs/adr/0003-test-driven-development.md) for guidelines on TDD and the Chicago Strategy.
+- Read [domain-layer.md](references/domain-layer.md) when defining core domain entities, value objects, and domain-level outbound ports (like repositories).
+- Read [application-layer.md](references/application-layer.md) when creating application use-cases, commands/queries, or application-level outbound ports (like email/SMS integration clients).
+- Read [api-layer.md](references/api-layer.md) when writing inbound adapters (like HTTP/gRPC controllers, Kafka event consumers).
+- Read [infrastructure-layer.md](references/infrastructure-layer.md) when writing outbound adapters (like database repositories, API clients) and managing encapsulation.
