@@ -25,8 +25,8 @@ An **Application Service** (UseCase in the Application Layer) contains **no busi
 | Service Type | Layer | Purpose | Mutates DB? | Examples |
 | :--- | :--- | :--- | :--- | :--- |
 | **Domain** | Domain | Core business calculations / transformations | No (stateless) | `OrderPricingService`, `DiscountPolicy` |
-| **Application** | Application | Usecase orchestration, tx boundary, security | Yes (calls repos) | `CheckOutUseCase`, `CancelOrderHandler` |
-| **Infrastructure** | Infrastructure| Technical adapters (SMS, Emails, API client) | No (typically) | `SmtpEmailSender`, `BcryptHasher` |
+| **Application** | Application | Usecase orchestration, tx boundary, security | Yes (via repository ports) | `CheckOutUseCase`, `CancelOrderHandler` |
+| **Infrastructure** | Infrastructure| Technical adapters (SMS, Emails, API client) | No (typically) | `SmtpNotificationSender`, `BcryptHasher` |
 
 ---
 
@@ -47,16 +47,16 @@ class OrderPricingService {
 
 // Application Layer: Application Service (Coordinates usecase and tx)
 class CheckOutUseCase {
-  constructor(orderRepository, customerRepository, pricingService, unitOfWork) {
-    this.orderRepository = orderRepository
-    this.customerRepository = customerRepository
+  constructor(orders, customers, pricingService, unitOfWork) {
+    this.orders = orders
+    this.customers = customers
     this.pricingService = pricingService
     this.unitOfWork = unitOfWork
   }
 
   function execute(command) {
     this.unitOfWork.transaction(() -> {
-      customer = this.customerRepository.findById(command.customerId)
+      customer = this.customers.findById(command.customerId)
       if (customer == null) raise Error("Customer not found")
 
       order = new Order(command.orderId, customer.id)
@@ -70,7 +70,7 @@ class CheckOutUseCase {
       // Aggregate mutates itself
       order.checkout(finalPrice)
 
-      this.orderRepository.save(order)
+      this.orders.save(order)
     })
   }
 }

@@ -9,8 +9,10 @@ Guidelines for usecase orchestration and command/query handling in the Applicati
 ## 2. CQRS Pattern (Commands & Queries)
 - Structure use-cases around the CQRS (Command Query Responsibility Segregation) pattern:
   - **Commands:** Mutate state. Handled by Command Handlers which coordinate transactions.
-  - **Queries:** Read state. Return data transfer objects (DTOs) or read-models directly, bypassing the domain model if needed for performance.
+  - **Queries:** Read state:
+    - **Domain-centric queries:** If the read-model represents business-relevant concepts with behaviors, return Domain-owned **Value Objects** (e.g., `OrderSummary`) via a query port defined in the Domain layer.
+    - **Application-centric queries:** If the read-model consists of flat, UI-specific, or integration-specific data with no domain behavior, return data transfer objects (DTOs) via an application-level query port (defined in the Application layer), bypassing the domain model entirely.
 
 ## 3. Application Outbound Ports
-- Define interfaces for integration-specific operations that are not part of the core domain logic (e.g., `EmailSender`, `PaymentProcessor`, `SmsClient`) inside the Application layer.
+- Define interfaces for integration-specific operations that are not part of the core domain logic (e.g., `PaymentProcessor`, `SmsClient`, `StorageClient`) inside the Application layer.
 - This ensures the Domain layer remains completely unaware of these external services.

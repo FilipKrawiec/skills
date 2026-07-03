@@ -4,20 +4,20 @@ Reference constraints for Events, derived from Vaughn Vernon's *Implementing Dom
 
 ## 1. Domain Events (Standard state-persisted aggregates)
 A **Domain Event** is a record of a state transition or significant occurrence in the past.
-- **Naming:** Past-tense verbs matching the Ubiquitous Language (`OrderPlaced`, `AccountOpened`).
+- **Naming:** Past-tense verbs matching the Ubiquitous Language (`ThreadCreated`, `ThreadResolved`).
 - **Registration:** Aggregates register events internally during command execution. The Application Service/Repository dispatches them *after* a successful transaction commit.
 
 ```pseudocode
-class Order {
-  private status: OrderStatus = OrderStatus.DRAFT
+class Thread {
+  private status: ThreadStatus = ThreadStatus.ACTIVE
   private events: List<DomainEvent> = []
 
   // Command method mutates state and registers the event (dumb value list)
-  function ship(shipperId) {
-    if (this.status != OrderStatus.PAID) raise Error("Order not paid")
+  function resolve(resolverId) {
+    if (this.status != ThreadStatus.ACTIVE) raise Error("Thread not active")
     
-    this.status = OrderStatus.SHIPPED
-    this.events.add(new OrderShippedEvent(this.id, shipperId, currentTimestamp()))
+    this.status = ThreadStatus.RESOLVED
+    this.events.add(new ThreadResolvedEvent(this.id, resolverId, currentTimestamp()))
   }
 
   // Encapsulated dispatcher: passes events to the publisher lambda and clears them on success.
@@ -32,14 +32,14 @@ class Order {
 }
 
 // Infrastructure Layer: Repository encapsulates transaction and outbox persistence
-class SqlOrderRepository {
-  function save(order: Order) {
+class JPAThreads implements Threads {
+  function save(thread: Thread) {
     this.unitOfWork.transaction(() -> {
       // 1. Persist the state snapshot
-      database.update("UPDATE orders SET status = ? WHERE id = ?", order.status, order.id)
+      database.update("UPDATE threads SET status = ? WHERE id = ?", thread.status, thread.id)
 
       // 2. Publish uncommitted events to the Outbox table in the same transaction
-      order.publishEvents(event -> {
+      thread.publishEvents(event -> {
         database.insert("INSERT INTO outbox (id, event_type, payload) VALUES (?, ?, ?)", 
           event.id, event.type, serialize(event))
       })
