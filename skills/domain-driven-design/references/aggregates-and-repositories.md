@@ -38,3 +38,48 @@ class SqlOrderRepository {
   }
 }
 ```
+
+## 3. Large/Endless Collections (The Local Entity Growth Problem)
+
+Even if a child entity has no conceptual meaning outside its parent context (e.g., a `Thread` inside a `MergeRequest`), **it must be promoted to a standalone Aggregate Root referencing the parent by ID if the collection can grow indefinitely.** This prevents performance issues (memory bloat) and optimistic locking concurrency conflicts.
+
+### Enforcing Invariants via Query-Based Validation
+
+If the parent Aggregate has invariants that depend on the state of the collection (e.g., *"Cannot merge if there are unresolved threads"*), enforce them by querying the child repository at the Application Layer boundary, rather than loading the collection into the parent aggregate.
+
+```pseudocode
+// Thread is promoted to its own Aggregate Root, referencing MergeRequest by ID
+class Thread {
+  private id: ThreadId
+  private mrId: MergeRequestId
+  private isResolved: boolean = false
+
+  function resolve() {
+    this.isResolved = true
+  }
+}
+
+// Application Layer: Enforces the invariant using a fast repository query
+class MergeMergeRequestUseCase {
+  constructor(mrRepository, threadRepository) {
+    this.mrRepository = mrRepository
+    this.threadRepository = threadRepository
+  }
+
+  function execute(command) {
+    this.unitOfWork.transaction(() -> {
+      mr = this.mrRepository.findById(command.mrId)
+      if (mr == null) raise Error("Merge request not found")
+
+      // Invariant validation: check for unresolved threads via repository query
+      hasUnresolved = this.threadRepository.hasUnresolvedThreads(mr.id)
+      if (hasUnresolved) {
+        raise Error("Cannot merge: there are unresolved threads")
+      }
+
+      mr.merge()
+      this.mrRepository.save(mr)
+    })
+  }
+}
+```
