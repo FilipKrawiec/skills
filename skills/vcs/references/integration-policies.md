@@ -1,0 +1,34 @@
+# Integration Policies
+
+Follow these guidelines to sync, rebase, and merge changes cleanly:
+
+## 1. Rebase-First Workflow
+- Never run `git merge main` on a feature branch.
+- Always keep feature branches up-to-date with the latest main branch by rebasing:
+  ```bash
+  git fetch origin
+  git rebase origin/main
+  ```
+
+## 2. Squashing Commits
+- Squash intermediate commits (e.g., "fix typo", "wip") into logical, cohesive units before requesting a review or merging.
+- Ensure all commits on the main branch remain green, buildable, and pass all tests.
+
+## 3. Safe Force-Pushing
+- When updating a remote branch that has been rebased, always use `--force-with-lease` to prevent overwriting changes pushed by others:
+  ```bash
+  git push origin feature/123-user-auth --force-with-lease
+  ```
+
+## 4. Handling Rebase Conflicts
+If conflicts arise during a rebase:
+1. Locate the conflicted files and resolve the conflicts manually.
+2. Mark conflicts as resolved:
+   ```bash
+   git add <resolved-file>
+   ```
+3. Continue the rebase:
+   ```bash
+   git rebase --continue
+   ```
+4. **Never** run `git commit` to resolve conflicts during a rebase.
