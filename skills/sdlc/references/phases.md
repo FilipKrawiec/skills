@@ -44,6 +44,7 @@ This document outlines the detailed requirements, actions, and validation criter
     - **Parallelism:** Indicate parallelizable threads (exercise caution with non-thread-safe tools like `gradlew`).
     - **Lifecycles:** Map tasks to the subphase lifecycles (Initialization, Configuration, Execution, Verify, Improve). Coordinate tasks to verify at the end of each thread, looping back on failures.
     - **Skills:** Explicitly specify the skills (e.g., `` `tdd` ``, `` `domain-driven-design` ``, `` `hexagonal-architecture` ``) required for each task.
+    - **VCS Task Rule:** Plan integration/sync tasks to target a single cohesive squashed commit outcome on trunk (following the `` `vcs` `` skill integration policies, which may involve local squashing or remote PR/MR squash settings depending on project setup).
 *   **Verify:**
     - *AFK Mode:* Spawn a reviewer subagent to check the plan against the brief and spec. The reviewer must approve with a YAML response `result: APPROVED`. For negotiation, mediator resolution, and auto-approval limits, read [multi-agent-negotiation.md](multi-agent-negotiation.md).
     - *HiL Mode:* Human approves by setting `approved: true` in the YAML record.
@@ -87,6 +88,8 @@ This document outlines the detailed requirements, actions, and validation criter
 
 *   **Initialization:** Verify the workflow has completed (successfully shipped or concluded).
 *   **Configuration:** Gather all improvements accumulated across phases.
-*   **Execution:** Consolidate lessons and write the final retrospective directly to the SDLC record.
+*   **Execution:** 
+    - Consolidate lessons and write the final retrospective directly to the SDLC record.
+    - **Durable Correction Rule:** For any mistake, bug, or re-work that occurred, identify the underlying guidance or skill gap and translate it into a mandatory entry under `actionable_issues` to update the skill library.
 *   **Verify:** Create new issues/tickets for any actionable improvements identified.
 *   **Improve:** Conclude the task and set the ticket state to completed.
