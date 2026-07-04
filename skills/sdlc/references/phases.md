@@ -9,7 +9,7 @@ This document outlines the detailed requirements, actions, and validation criter
 *   **Initialization:** 
     - Retrieve the task requirements from the original issue (e.g., `docs/issues/<ticket_id>.md`).
     - Detect if the `afk` label is present to set the execution `mode`.
-    - Initialize the single SDLC record file at `.sdlc/issues/<ticket-id>-<iteration-index-doubledigit>.yaml` by copying `resources/sdlc-template.yaml` (relative to this skill's directory) and populating the ticket details.
+    - Initialize the single SDLC record file at `.sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml` (if there is no issue ID, determine the next available ID by auto-incrementing based on existing files, starting at `1`) by copying `resources/sdlc-template.yaml` (relative to this skill's directory) and populating the ticket details. Ensure `.sdlc/` is automatically added to `.gitignore`.
 *   **Configuration:** Plan the execution boundaries and scope for this phase.
 *   **Execution:** 
     - Clarify requirements via intent-focused questions.

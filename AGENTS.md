@@ -2,7 +2,7 @@
 
 ## Mandatory Skill Editing Workflow
 
-Before creating or revising anything under `skills/`, read `skills/writing-great-skill/SKILL.md` first. Treat it as the local source of truth for invocation, description craft, information hierarchy, and pruning.
+CRITICAL: You are strictly forbidden from making any edits to the `skills/` directory until you have read `skills/writing-great-skill/SKILL.md`. Furthermore, you MUST execute all edits through the `` `sdlc` `` workflow. Treat `writing-great-skill` as the local source of truth for invocation, description craft, information hierarchy, and pruning.
 
 ## Goal
 
