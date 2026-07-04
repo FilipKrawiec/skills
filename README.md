@@ -3,12 +3,13 @@ Skills for Software engineering
 
 ## Layout
 
-- `skills/grill-with-docs` for source-backed review and critique work
-- `skills/writing-great-skill` for skill authoring and refinement
+- `skills/sdlc` for the 7-phase SDLC playbook with YAML record tracking
 - `skills/domain-driven-design` for Ubiquitous Language, naming, and strategic design
 - `skills/hexagonal-architecture` for dependency inversion, encapsulation, and the 4 layered architecture (API, Application, Domain, Infrastructure)
 - `skills/tdd` for Red-Green-Refactor loop using Chicago strategy and Testcontainers
-- `skills/sdlc` for the 7-phase playbook of the Agentic Delivery Cycle and 4D principles
+- `skills/vcs` for Git workflow with Conventional Commits and linear history
+- `skills/grill-with-docs` for source-backed review and critique work
+- `skills/writing-great-skill` for skill authoring and refinement
 - `docs/` for ADRs and durable project records
 
 ## Claude Code

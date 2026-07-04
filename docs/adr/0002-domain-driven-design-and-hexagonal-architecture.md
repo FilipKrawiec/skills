@@ -4,7 +4,7 @@
 
 We will structure systems using Domain-Driven Design (DDD) and Hexagonal Architecture (Ports and Adapters) principles to ensure highly maintainable, decoupled codebases. 
 
-The detailed architecture guidelines are maintained in the canonical [domain-driven-design-and-hexagonal-architecture.md](../../skills/hexagonal-architecture/references/domain-driven-design-and-hexagonal-architecture.md) reference.
+The detailed architecture guidelines are maintained in the `domain-driven-design` and `hexagonal-architecture` skills.
 
 ## Context
 

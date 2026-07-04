@@ -1,6 +1,7 @@
 ---
 name: vcs
-description: Use when performing ANY Git or version control operation. Trigger for git commands, creating commits, checking out branches, rebasing, pushing, resolving conflicts, moving/renaming/deleting files, or updating gitignore.
+description: Must be used for all Git and version control operations. Enforces Conventional Commits, feature branches off trunk, and linear history via rebase.
+user-invocable: false
 ---
 
 # Version Control System (VCS) Workflow

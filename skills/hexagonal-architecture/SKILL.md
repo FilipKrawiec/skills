@@ -1,6 +1,7 @@
 ---
 name: hexagonal-architecture
-description: Use when designing, implementing, or refactoring codebase layers according to Hexagonal Architecture (Ports and Adapters) principles. Trigger when creating vertical slices, setting up dependency inversion, structuring API, Application, Domain, or Infrastructure layers.
+description: Must be used when designing, implementing, or refactoring codebase layers. Enforces Ports and Adapters with strict API, Application, Domain, and Infrastructure separation.
+user-invocable: false
 ---
 
 # Hexagonal Architecture (Ports & Adapters)

@@ -35,3 +35,16 @@ Each behavior or rule has one authoritative home.
 ## No-Op
 
 An instruction that does not change agent behavior.
+
+## Router Skill
+
+A single user-invoked skill designed to route the user's intent to more specialized skills, preventing menu overload.
+
+## Steps
+
+Actionable, sequential instructions that the agent must execute.
+
+## Reference
+
+Durable vocabulary, guidelines, or long-lived details relevant to the skill execution.
+

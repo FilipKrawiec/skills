@@ -1,6 +1,7 @@
 ---
 name: writing-great-skill
 description: Use when creating, modifying, editing, or validating skills, agent rules (AGENTS.md), or plugin manifests in this repository.
+user-invocable: false
 ---
 
 # Writing Great Skill
@@ -29,9 +30,9 @@ For user-invoked skills, keep the description as a one-line human summary.
 - Put required **steps** in `SKILL.md`.
 - Put only always-needed **reference** in `SKILL.md`.
 - Move branch-specific reference behind a clear **context pointer**: "Read X when Y."
-  - **Rule**: `X` must be a relative link targeting a file inside the skill's own local `references/` subdirectory.
-  - **Rule**: Never use absolute local file URLs (e.g., `file:///Users/...`) or reference files outside the skill directory (including other skills). Context pointers must stay strictly internal to the local `references/` subdirectory.
-  - **Rule**: Do not use markdown links (relative or absolute) to files or skills outside the skill's own directory anywhere in `SKILL.md` (e.g., inside steps or descriptions). Reference other skills textually using backticks (e.g., `` `other-skill` ``).
+  - Rule: `X` must be a relative link targeting a file inside the skill's own local `references/` subdirectory.
+  - Rule: Never use absolute local file URLs (e.g., `file:///Users/...`) or reference files outside the skill directory (including other skills). Context pointers must stay strictly internal to the local `references/` subdirectory.
+  - Rule: Do not use markdown links (relative or absolute) to files or skills outside the skill's own directory anywhere in `SKILL.md` (e.g., inside steps or descriptions). Reference other skills textually using backticks (e.g., `` `other-skill` ``).
 - Keep each meaning in one source of truth.
 
 ## Naming Conventions
@@ -43,3 +44,11 @@ For user-invoked skills, keep the description as a one-line human summary.
 ## Pruning
 
 Delete lines that are generic, duplicated, stale, or do not change behavior. When a skill feels long, first look for reference that can move down the hierarchy, then look for branches that should split.
+
+---
+
+## Context Pointers
+
+- Read [glossary.md](references/glossary.md) when looking up definitions of bold terms.
+- Read [agentskills-guide.md](references/agentskills-guide.md) when designing, optimizing, testing, or specification-validating a skill or custom script.
+

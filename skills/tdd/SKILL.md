@@ -1,6 +1,7 @@
 ---
 name: tdd
-description: Use when performing any programming, coding, refactoring, feature implementation, or bug fixing task in the codebase.
+description: Must be used for all programming, coding, refactoring, feature implementation, and bug fixing. Enforces Red-Green-Refactor with committed green states.
+user-invocable: false
 ---
 
 # Test-Driven Development (TDD)
