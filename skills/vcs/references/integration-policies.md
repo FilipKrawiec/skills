@@ -16,6 +16,7 @@ Follow these guidelines to sync, rebase, and merge changes cleanly:
   - **PR/MR Workflow:** If the repository uses a pull request workflow (e.g., GitHub/GitLab), you can let the remote platform handle the squashing during the merge (ensure "Squash and merge" or "Squash commits" is enabled/configured in the PR/MR settings).
   - **Local/Fast-forward Workflow:** If you are merging directly or using a fast-forward/direct push workflow, you must squash your branch commits locally first (using interactive rebase `git rebase -i HEAD~<n>` or `git merge --squash`).
 - Ensure all commits on the main branch remain green, buildable, and pass all tests.
+- **Amending Commits:** When updating a feature branch with new changes or addressing review feedback, prefer amending the existing commit (`git commit --amend`) instead of creating a new commit. This keeps the branch history clean and ensures a single Conventional Commit tracks the entire change.
 
 ## 3. Safe Force-Pushing
 - When updating a remote branch that has been rebased, always use `--force-with-lease` to prevent overwriting changes pushed by others:

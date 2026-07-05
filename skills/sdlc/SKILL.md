@@ -22,6 +22,7 @@ Execute tasks using the SDLC phases and subphase lifecycles, governed by the sin
 4. **Transition Phase:**
    - Update the YAML record state (mark phase status, improvements, set next phase, increment iteration if needed) and save.
    - If in `hil` mode and the next phase is interactive (e.g. SPEC, PLAN), stop and wait for human trigger.
+   - **Executive Summary for Approvals:** Whenever the workflow stops to ask the user for approval (specifically at the end of the `PLAN` and `REVIEW` phases in `hil` mode), the agent MUST output a concise executive summary detailing exactly what the user is supposed to approve (e.g. key tasks in the plan, or changes made, diff highlights, and verification results) and present a multiple-choice question (using the `ask_question` tool with options like "Approve and proceed" or "Request changes") so the user can easily select their response.
 
 ---
 
