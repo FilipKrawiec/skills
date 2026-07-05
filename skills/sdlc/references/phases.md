@@ -26,6 +26,7 @@ This document outlines the detailed requirements, actions, and validation criter
 *   **Configuration:** Identify architectural boundaries and target components.
 *   **Execution:**
     - **MANDATORY:** Conduct a grilling session using the `` `grill-with-docs` `` skill to stress-test the specification and resolve open assumptions.
+    - **MANDATORY:** Define the observability requirements (dashboards, metrics, alerts, events) inside `observability_requirements` in the SDLC record.
     - Ensure new domain terms or bounded context mappings are updated in `CONTEXT.md` and `CONTEXT-MAP.md` following the `` `domain-driven-design` `` skill.
     - Write the final specification section in the SDLC record (acts as the draft/RFC during the grilling session).
 *   **Verify:** Verify that the specification section in the SDLC record is fully populated and all grilled questions are marked resolved.
@@ -39,6 +40,7 @@ This document outlines the detailed requirements, actions, and validation criter
 *   **Configuration:** Scan the codebase to identify files, classes, and test locations.
 *   **Execution:** 
     - Design the implementation plan inside the SDLC record.
+    - **MANDATORY:** Specify the observability plan (dashboard configurations, alerts to write, telemetry configurations) in `observability_plan`.
     - **Structure:** Break the plan into sequential **execution steps**.
     - **Threads:** Each execution step consists of one or more **threads**.
     - **Parallelism:** Indicate parallelizable threads (exercise caution with non-thread-safe tools like `gradlew`).
@@ -56,7 +58,7 @@ This document outlines the detailed requirements, actions, and validation criter
 
 *   **Initialization:** Verify the plan is approved (`approved: true`).
 *   **Configuration:** Maintain a clean root agent context. Do NOT load extensive code or test locations into the root agent. Subagents must own task scope and execution details.
-*   **Execution:** Implement code and tests in small vertical slices using `` `tdd` ``, `` `hexagonal-architecture` ``, and `` `domain-driven-design` `` skills—ideally spawning subagents to control bias.
+*   **Execution:** Implement code, tests, and observability configurations (dashboards, alert rules, OpenTelemetry instrumentation) in small vertical slices using `` `tdd` ``, `` `hexagonal-architecture` ``, and `` `domain-driven-design` `` skills—ideally spawning subagents to control bias.
 *   **Verify:** Run the deterministic `verify_command` defined for each step in the plan. Compiler errors, lint failures, or test regressions must block completion.
 *   **Improve:** Append lessons learned. Mark status `COMPLETED`, set `current_phase` to `REVIEW`, reset `lifecycle_stage` to `INITIALIZATION`.
 
@@ -66,7 +68,7 @@ This document outlines the detailed requirements, actions, and validation criter
 
 *   **Initialization:** Verify implementation is complete and passes all tests.
 *   **Configuration:** Generate the git diff of the implementation.
-*   **Execution:** Write the review details directly in the SDLC record.
+*   **Execution:** Write the review details directly in the SDLC record. Verify that the implemented observability configs match the design, and the telemetry emission has test coverage.
 *   **Verify:**
     - *AFK Mode:* Spawn a reviewer subagent (`Senior Software Architect & QA Auditor`) to review the implementation diff. The reviewer must reply with `result: APPROVED`. For rollback and iteration protocols on stalemate, read [multi-agent-negotiation.md](multi-agent-negotiation.md).
     - *HiL Mode:* Human reviews the diff. If approved, the human sets `approved: true`. If rejected, transition back to `PLAN` with the human's feedback.

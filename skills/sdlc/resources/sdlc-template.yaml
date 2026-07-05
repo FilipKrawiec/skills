@@ -21,6 +21,7 @@ phases:
       design_boundaries: ""
       affected_components: []
       architectural_decisions: []
+      observability_requirements: []
       grill_results:
         questions: []
     improvements: []
@@ -29,6 +30,7 @@ phases:
     approved: false
     plan:
       test_strategy: ""
+      observability_plan: []
       execution_steps: []
     improvements: []
   EXECUTE:

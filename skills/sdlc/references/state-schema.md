@@ -40,6 +40,9 @@ phases:
         - "src/main/kotlin/com/example/infrastructure/SqlSkillRepository.kt"
       architectural_decisions:
         - "docs/adr/0002-domain-driven-design-and-hexagonal-architecture.md"
+      observability_requirements: 
+        - "We need a cumulative counter metric `skills_published_total`"
+        - "Grafana dashboard panel showing publication rate."
       grill_results:
         questions:
           - question: "Should a rejected validation allow re-validation?"
@@ -51,6 +54,10 @@ phases:
     approved: false
     plan:
       test_strategy: "Implement unit tests for the domain and use cases with minimal mock dependencies. Implement integration database tests for the repository adapter."
+      observability_plan: 
+        - "Implement the `skills_published_total` counter in PublishSkillUseCase."
+        - "Write a component test using a mock OTel collector to assert that the counter increments on success."
+        - "Add the new panel to config/grafana/dashboards/skills.json."
       execution_steps:
         - step_id: 1
           description: "Implement Domain Logic and Outbound Ports (Inside-Out)"
