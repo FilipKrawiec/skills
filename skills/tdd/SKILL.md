@@ -13,6 +13,11 @@ description: Use when programming, coding, refactoring, implementing features, o
 4. **Refactor Stage Checkpoint**: Optimize the design, clean up duplication, improve naming, and enforce clean architectural boundaries. Run the test command to verify that all tests remain green. Record the passing test output in the transcript.
 5. **Commit Refactored State**: Create a Git commit for the clean, refactored state (using type `wip:` or a specific type like `refactor:` if it completes the logical change).
 
+## Coverage Rule
+
+- Aggregate unit and component test branch coverage into one value; both suites together must reach 100% branch coverage.
+- Exclude integration, system, and acceptance tests from coverage calculations. Treat them as verification suites, not coverage sources.
+
 ## Context Pointers
 
 - Read [unit-testing.md](references/unit-testing.md) when writing plain-code unit tests for business behavior and invariants.
