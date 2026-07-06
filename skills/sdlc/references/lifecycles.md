@@ -56,4 +56,4 @@ During the **EXECUTE** phase, if a task's `verify_command` fails, the agent must
   - Append any lessons learned to the phase's `improvements` section in the YAML record.
   - Set the phase's `status` to `COMPLETED` in the record.
   - Advance `current_phase` to the next phase, reset `lifecycle_stage` to `INITIALIZATION`, and write changes to disk.
-  - If in `hil` mode and transitioning to an interactive gate (like SPEC or PLAN), stop and wait for human trigger. When requesting this approval, the agent MUST present a concise executive summary of the details to approve and use the `ask_question` tool so the human can easily select a response.
+  - If in `hil` mode and transitioning to an interactive gate (like SPEC or PLAN), the agent MUST first present a concise executive summary of the details to approve, request approval using the `ask_question` tool (with options like "Approve and proceed" or "Request changes"), and then halt execution to wait for human trigger. Do not halt without presenting the summary and question.

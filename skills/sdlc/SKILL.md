@@ -1,6 +1,6 @@
 ---
 name: sdlc
-description: Must be used for EVERY task that modifies repository files, including documentation, configuration, and skill edits. Steers execution through DEFINE, SPEC, PLAN, EXECUTE, REVIEW, SHIP, IMPROVE phases with YAML record tracking.
+description: "MANDATORY: Execute this skill FIRST for EVERY task that modifies repository files, including code, documentation, and config. You CANNOT bypass this. Steers execution through DEFINE, SPEC, PLAN, EXECUTE, REVIEW, SHIP, IMPROVE phases with YAML record tracking."
 user-invocable: false
 ---
 
@@ -21,8 +21,7 @@ Execute tasks using the SDLC phases and subphase lifecycles, governed by the sin
    - Run the validation script: `python3 scripts/validate-sdlc-record.py .sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml` (from this skill's directory) to validate the record structure.
 4. **Transition Phase:**
    - Update the YAML record state (mark phase status, improvements, set next phase, increment iteration if needed) and save.
-   - If in `hil` mode and the next phase is interactive (e.g. SPEC, PLAN), stop and wait for human trigger.
-   - **Executive Summary for Approvals:** Whenever the workflow stops to ask the user for approval (specifically at the end of the `PLAN` and `REVIEW` phases in `hil` mode), the agent MUST output a concise executive summary detailing exactly what the user is supposed to approve (e.g. key tasks in the plan, or changes made, diff highlights, and verification results) and present a multiple-choice question (using the `ask_question` tool with options like "Approve and proceed" or "Request changes") so the user can easily select their response.
+   - **HIL Interactive Gates:** If in `hil` mode and the next phase is interactive (e.g., `SPEC`, `PLAN`), the agent MUST present a concise executive summary of the current phase outcome and the next phase's goals, and use the `ask_question` tool (with options like "Approve and proceed" or "Request changes") to request approval BEFORE halting execution. Do not halt without presenting the summary and question.
 
 ---
 

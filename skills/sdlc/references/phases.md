@@ -49,7 +49,7 @@ This document outlines the detailed requirements, actions, and validation criter
     - **VCS Task Rule:** Plan integration/sync tasks to target a single cohesive squashed commit outcome on trunk (following the `` `vcs` `` skill integration policies, which may involve local squashing or remote PR/MR squash settings depending on project setup).
 *   **Verify:**
     - *AFK Mode:* Spawn a reviewer subagent to check the plan against the brief and spec. The reviewer must approve with a YAML response `result: APPROVED`. For negotiation, mediator resolution, and auto-approval limits, read [multi-agent-negotiation.md](multi-agent-negotiation.md).
-    - *HiL Mode:* Ask the human to approve by setting `approved: true` in the YAML record. When requesting this approval, the agent MUST present a concise executive summary of the plan (summarizing key tasks, affected files, and verification strategy) and provide clear options (using the `ask_question` tool with options like "Approve and proceed" or "Request changes") so they can select their response directly without typing.
+    - *HiL Mode:* To obtain approval (which the human grants by setting `approved: true` in the YAML record), the agent MUST first present a concise executive summary of the plan (summarizing key tasks, affected files, and verification strategy), call the `ask_question` tool (with options like "Approve and proceed" or "Request changes"), and then halt execution to wait for response. Do not halt without presenting the summary and calling the tool.
 *   **Improve:** Append lessons learned. Mark status `COMPLETED`, set `current_phase` to `EXECUTE`, reset `lifecycle_stage` to `INITIALIZATION`.
 
 ---
@@ -71,7 +71,7 @@ This document outlines the detailed requirements, actions, and validation criter
 *   **Execution:** Write the review details directly in the SDLC record. Verify that the implemented observability configs match the design, and the telemetry emission has test coverage.
 *   **Verify:**
     - *AFK Mode:* Spawn a reviewer subagent (`Senior Software Architect & QA Auditor`) to review the implementation diff. The reviewer must reply with `result: APPROVED`. For rollback and iteration protocols on stalemate, read [multi-agent-negotiation.md](multi-agent-negotiation.md).
-    - *HiL Mode:* Ask the human to review and approve the diff by setting `approved: true` in the YAML record. When requesting this approval, the agent MUST present a concise executive summary of the changes (summarizing changes made, verification/test results, and diff highlights) and provide clear options (using the `ask_question` tool with options like "Approve and proceed" or "Request changes") so they can select their response directly without typing.
+    - *HiL Mode:* To obtain approval of the diff (which the human grants by setting `approved: true` in the YAML record), the agent MUST first present a concise executive summary of the changes (summarizing changes made, verification/test results, and diff highlights), call the `ask_question` tool (with options like "Approve and proceed" or "Request changes"), and then halt execution to wait for response. Do not halt without presenting the summary and calling the tool.
 *   **Improve:** Append lessons learned. Mark status `COMPLETED`, set `current_phase` to `SHIP`, reset `lifecycle_stage` to `INITIALIZATION`.
 
 ---
