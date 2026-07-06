@@ -1,105 +1,45 @@
-# JavaScript / TypeScript Testing Library & Pattern Guidelines
+# JavaScript And TypeScript Test Guidelines
 
-## Core Stack
-- **Executor:** Jest / Vitest
-- **Mocker:** Jest / Vitest (native module and spy mocks)
-- **Acceptance (BDD Tools):** CucumberJS (`@cucumber/cucumber`)
-- **Assertions:** Jest / Vitest (native `expect` assertions)
+## Default Stack
 
-## 1. Unit Testing
-- Structure unit tests natively using BDD structure (nested blocks styled as Given-When-Then):
-  ```typescript
-  import { vi, describe, it, expect } from 'vitest'; // Or Jest equivalent imports
-  import { SubmitThread } from './submit-thread';
+- Runner: Vitest for Vite/modern TS projects; Jest when the project already standardizes on it.
+- Assertions: built-in `expect`; add `@testing-library/jest-dom` for DOM matchers.
+- Mocks: `vi.fn`, `vi.spyOn`, and `vi.mock` for Vitest; Jest equivalents in Jest projects.
+- Acceptance: CucumberJS only when Gherkin is a project contract; otherwise keep acceptance tests in the runner.
 
-  describe('Given an empty thread store', () => {
-    describe('When a user submits a thread', () => {
-      it('Then it is saved to the repository', async () => {
-        // Arrange: Repo is an outbound boundary port interface, permitting mocking under Chicago School rules.
-        const repo = { save: vi.fn().mockResolvedValue(undefined) };
-        const useCase = new SubmitThread(repo);
+## Scenario Shape
 
-        // Act
-        await useCase.execute('JS Title');
+- Use `describe` blocks for `Given` and `When`; use `it` for `Then`.
+- Prefer user-observable assertions over implementation details.
+- Mock outbound ports and network boundaries; use MSW for browser/API request behavior where practical.
+- Keep async tests explicit: return/await the action that triggers the assertion.
 
-        // Assert
-        expect(repo.save).toHaveBeenCalledWith('JS Title');
-      });
+```typescript
+import { describe, expect, it, vi } from "vitest";
+import { SubmitThread } from "./submit-thread";
+
+describe("Given an empty thread store", () => {
+  describe("When a user submits a thread", () => {
+    it("Then it saves the thread", async () => {
+      const threads = { save: vi.fn().mockResolvedValue(undefined) };
+      const useCase = new SubmitThread(threads);
+
+      await useCase.execute("TypeScript Title");
+
+      expect(threads.save).toHaveBeenCalledWith("TypeScript Title");
     });
   });
-  ```
+});
+```
 
-## 2. Component Testing
-- Programmatic port binding and Testcontainers postgres setup:
-  ```typescript
-  import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-  import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
-  import { bootServer, AppServer } from './server';
-  import axios from 'axios';
+## Component, UI, And Acceptance Tests
 
-  describe('Server Component Test', () => {
-    let container: StartedTestContainer;
-    let server: AppServer;
-
-    beforeAll(async () => {
-      container = await new GenericContainer('postgres:16-alpine')
-        .withEnvironment({ POSTGRES_PASSWORD: 'password' })
-        .withExposedPorts(5432)
-        .withWaitStrategy(Wait.forLogMessage(/database system is ready to accept connections/))
-        .start();
-
-      server = await bootServer({
-        port: 0,
-        dbUrl: `postgresql://postgres:password@${container.getHost()}:${container.getMappedPort(5432)}/postgres`
-      });
-    });
-
-    afterAll(async () => {
-      if (server) {
-        await server.close();
-      }
-      if (container) {
-        await container.stop();
-      }
-    });
-
-    it('creates a new thread', async () => {
-      const response = await axios.post(`http://localhost:${server.port}/threads`, { title: 'JS Component' });
-      expect(response.status).toBe(200);
-    });
-  });
-  ```
-
-## 3. UI Component Testing (Widgets & Views)
-- Render UI components in-memory (e.g. `submit-button.test.tsx`) using React Testing Library and verify layouts:
-  ```typescript
-  import { describe, it, expect } from 'vitest';
-  import { render, screen } from '@testing-library/react';
-  import { SubmitButton } from './submit-button';
-
-  // Note: expect(...).toBeInTheDocument() requires importing @testing-library/jest-dom/vitest or setup configuration
-  describe('SubmitButton Component', () => {
-    it('renders with correct text label', () => {
-      // Arrange & Act
-      render(<SubmitButton label="Submit" />);
-
-      // Assert
-      expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument();
-    });
-  });
-  ```
-
-## 4. Acceptance Testing
-- **Tag-Based Grouping:** Group acceptance tests using folder naming (e.g. `*.acceptance.test.ts`) or CucumberJS feature tags (`@acceptance`):
-  - `vitest run` (Runs the developer unit/component tests, ignoring acceptance files if excluded in config)
-  - `vitest run "**/*.acceptance.test.ts"` (Runs vitest-based acceptance tests via positional pattern)
-  - `npx cucumber-js --tags "@acceptance"` (Runs CucumberJS acceptance feature specs)
-- **Step Definition Example:**
-  ```typescript
-  import { When } from '@cucumber/cucumber';
-
-  // Annotate parameter type to satisfy strict TypeScript compiler checks
-  When('a user submits a thread titled {string}', async function (title: string) {
-    // Step definition implementation executing against API, HTTP client or memory context
-  });
-  ```
+- Use runner-level projects or package scripts as the source-set equivalent:
+  - `*.test.ts` or `*.spec.ts` via `test:unit` for fast unit tests.
+  - `*.component.test.ts(x)` via `test:component` for rendered UI or booted in-process components.
+  - `*.integration.test.ts` via `test:integration` for adapters, network boundaries, or real infrastructure.
+  - `*.system.test.ts` via `test:system` for black-box deployed-service checks.
+- Use Testing Library for UI behavior: query by role/name and assert what a user can observe.
+- In Vitest, prefer `projects` or separate config files when suites need different setup, timeouts, browsers, or environment variables.
+- Use Testcontainers only for integration/system boundaries that need real infrastructure.
+- Keep CucumberJS behind a dedicated script such as `test:acceptance` when Gherkin is part of the product contract.

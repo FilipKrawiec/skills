@@ -1,103 +1,82 @@
-# Kotlin Testing Library & Pattern Guidelines
+# Kotlin Test Guidelines
 
-## Core Stack
-- **Executor:** Kotest (running on JUnit 5 platform engine)
-- **Mocker:** MockK (Mokkery or Mockative for Kotlin Multiplatform / KMP)
-- **Acceptance (BDD Tools):** Cucumber JVM (`io.cucumber`)
-- **Assertions:** Kotest Assertions
+## Default Stack
 
-## 1. Unit Testing
-- Structure unit tests natively using Kotest BDD style (`BehaviorSpec`):
-  ```kotlin
-  import io.kotest.core.spec.style.BehaviorSpec
-  import io.mockk.mockk
-  import io.mockk.verify
-  import io.mockk.any
-  import io.mockk.every
+- Unit runner/style: Kotest on the JUnit Platform.
+- Component-or-higher fallback: JUnit Jupiter when a framework extension owns the test lifecycle.
+- Assertions: Kotest matchers.
+- Mocks: MockK on JVM; use Mokkery or Mockative for Kotlin Multiplatform.
+- Acceptance: Cucumber JVM only when shared Gherkin scenarios are useful.
 
-  class ThreadSubmissionSpec : BehaviorSpec({
-      Given("an empty thread store") {
-          // Given: Threads is an outbound boundary port interface, permitting mocking under Chicago School rules.
-          val threads = mockk<Threads>()
-          every { threads.save(any()) } returns Unit
-          val useCase = SubmitThreadUseCase(threads)
+## Scenario Shape
 
-          When("a user submits a thread") {
-              useCase.execute(SubmitThreadCommand("Kotlin Title"))
+- Use Kotest for all domain and unit specs.
+- Prefer `BehaviorSpec` for TDD examples because it exposes `Given / When / Then` directly.
+- Allow JUnit Jupiter only for component, integration, system, or acceptance tests where framework-managed runners do not support Kotest, such as Quarkus tests using `@QuarkusTest`.
+- Keep one behavior per leaf `Then`; do not bury multiple actions in one `When`.
+- Use MockK for outbound ports; prefer fakes for simple in-memory domain collaborators.
+- Keep the same Given/When/Then comments and behavior names when falling back to JUnit.
 
-              Then("it is saved to the store") {
-                  verify { threads.save(any()) }
-              }
-          }
-      }
-  })
-  ```
+```kotlin
+import io.kotest.core.spec.style.BehaviorSpec
+import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 
-## 2. Component Testing
-- Programmatic port binding and Testcontainers lifecycle setup in Kotest:
-  ```kotlin
-  import io.kotest.core.spec.style.FunSpec
-  import io.kotest.matchers.shouldBe
-  import org.testcontainers.containers.PostgreSQLContainer
-  import java.net.http.HttpClient
-  import java.net.http.HttpRequest
-  import java.net.http.HttpResponse
-  import java.net.URI
+class SubmitThreadSpec : BehaviorSpec({
+    Given("an empty thread store") {
+        val threads = mockk<Threads>()
+        every { threads.save(any()) } returns Unit
+        val useCase = SubmitThreadUseCase(threads)
 
-  class ComponentSpec : FunSpec({
-      var server: AppServer? = null
+        When("a user submits a thread") {
+            val result = useCase.execute(SubmitThreadCommand("Kotlin Title"))
 
-      beforeSpec {
-          postgres.start()
-          server = AppServer(
-              port = 0, 
-              dbUrl = postgres.jdbcUrl,
-              dbUsername = postgres.username,
-              dbPassword = postgres.password
-          ).apply { start() }
-      }
+            Then("it saves the thread") {
+                result.success shouldBe true
+                verify { threads.save(any()) }
+            }
+        }
+    }
+})
+```
 
-      afterSpec {
-          if (server != null) {
-              server.stop()
-          }
-          postgres.stop() // Guarantees container is stopped after the spec finishes
-      }
+JUnit component-test fallback example:
 
-      test("should create thread successfully") {
-          val client = HttpClient.newHttpClient()
-          val request = HttpRequest.newBuilder()
-              .uri(URI.create("http://localhost:${server!!.port}/threads"))
-              .header("Content-Type", "application/json")
-              .POST(HttpRequest.BodyPublishers.ofString("{\"title\":\"Kotlin Component\"}"))
-              .build()
-          val response = client.send(request, HttpResponse.BodyHandlers.ofString())
-          response.statusCode() shouldBe 200
-      }
-  }) {
-      companion object {
-          // Initialize lazily to prevent Kotest class-scanning side-effects
-          val postgres by lazy { PostgreSQLContainer<Nothing>("postgres:16-alpine") }
-      }
-  }
-  ```
+```kotlin
+import io.quarkus.test.junit.QuarkusTest
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import kotlin.test.assertTrue
 
-## 3. Acceptance Testing
-- **Grouping & Task Execution:** Filter tests using class naming patterns (e.g. `*AcceptanceTest.kt`), Kotest tags (`NamedTag("acceptance")`), or separate Gradle `sourceSets` in `build.gradle.kts`:
-  - **Alternative A (Single sourceSet, class/tag filtering):**
-    - `./gradlew test` (Runs developer unit & component tests)
-    - `./gradlew test --tests "*AcceptanceTest"` (Runs only acceptance tests matching class name pattern)
-    - `./gradlew test -Dkotest.tags=acceptance` (Kotest-specific tag filtering)
-  - **Alternative B (Dedicated sourceSet, execution task):**
-    - `./gradlew acceptanceTest` (Runs Cucumber regression feature specs via dedicated task)
-- **Step Definition Example:**
-  ```kotlin
-  import io.cucumber.java.en.When
+@QuarkusTest
+class SubmitThreadQuarkusTest {
+    @Nested
+    inner class GivenAnEmptyThreadStore {
+        @Test
+        fun whenSubmittingThread_thenItIsSaved() {
+            // Given
+            val command = SubmitThreadCommand("Kotlin Title")
 
-  class StepDefinitions {
-      @When("a user submits a thread titled {string}")
-      fun userSubmitsThread(title: String) {
-          // Step definition executing against API, HTTP client or memory context
-      }
-  }
-  ```
+            // When
+            val result = submitThread(command)
+
+            // Then
+            assertTrue(result.success)
+        }
+    }
+}
+```
+
+## Component And Acceptance Tests
+
+- Use designated Gradle source sets for suite boundaries:
+  - `src/test/kotlin` via `test` for fast unit specs.
+  - `src/componentTest/kotlin` via `componentTest` for booted in-process components and database mappings.
+  - `src/integrationTest/kotlin` via `integrationTest` for external adapters, messaging, or real infrastructure.
+  - `src/systemTest/kotlin` via `systemTest` for black-box deployed-service checks.
+- Keep `src/test/kotlin` domain/unit specs on Kotest. Prefer JUnit Jupiter in `componentTest`, `integrationTest`, `systemTest`, or acceptance source sets that depend on framework test extensions.
+- Use Testcontainers with explicit `beforeSpec`/`afterSpec` lifecycle cleanup, or project-level listeners when shared containers are intentional.
+- Use Kotest tags inside a source set for focused execution, not as the primary substitute for source-set ownership.
+- Keep Cucumber step definitions as adapters over APIs or application services, not places for business logic.

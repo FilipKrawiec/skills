@@ -1,105 +1,55 @@
-# Java Testing Library & Pattern Guidelines
+# Java Test Guidelines
 
-## Core Stack
-- **Executor:** JUnit 5 (`org.junit.jupiter`)
-- **Mocker:** Mockito (`org.mockito`)
-- **Acceptance (BDD Tools):** Cucumber JVM (`io.cucumber`)
-- **Assertions:** AssertJ (`org.assertj.core.api.Assertions`)
+## Default Stack
 
-## 1. Unit Testing
-- Structure unit tests natively using BDD structure (nested classes and Given-When-Then comments, validating results via AssertJ):
-  ```java
-  import org.junit.jupiter.api.Nested;
-  import org.junit.jupiter.api.Test;
-  import static org.mockito.Mockito.mock;
-  import static org.mockito.Mockito.verify;
-  import static org.mockito.Mockito.any;
-  import static org.assertj.core.api.Assertions.assertThat;
+- Runner: JUnit Jupiter.
+- Assertions: AssertJ.
+- Mocks: Mockito, only for outbound ports or slow/external collaborators.
+- Acceptance: Cucumber JVM when feature files add value; otherwise JUnit acceptance classes.
 
-  class ThreadSubmissionTest {
-      @Nested
-      class GivenAnEmptyThreadStore {
-          @Test
-          void shouldSaveSubmittedThread() {
-              // Given: Threads is an outbound boundary port interface, permitting mocking under Chicago School rules.
-              Threads threads = mock(Threads.class);
-              SubmitThreadUseCase useCase = new SubmitThreadUseCase(threads);
+## Scenario Shape
 
-              // When
-              SubmissionResult result = useCase.execute(new SubmitThreadCommand("Title"));
+- Prefer `Given...` nested classes or `@DisplayName` groups for scenario context.
+- Name test methods as behavior: `whenSubmittingThread_thenItIsSaved`.
+- Keep `Given / When / Then` comments only where they clarify a non-trivial setup, action, or assertion.
+- Assert observable outcomes first; verify interactions only at architectural boundaries.
 
-              // Then
-              verify(threads).save(any(ForumThread.class));
-              assertThat(result.isSuccess()).isTrue(); // Validate outcome using AssertJ
-          }
-      }
-  }
-  ```
+```java
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
-## 2. Component Testing
-- Programmatic port binding and Testcontainers database wiring using JUnit 5 automatic container management:
-  ```java
-  import org.junit.jupiter.api.Test;
-  import org.junit.jupiter.api.AfterAll;
-  import org.junit.jupiter.api.BeforeAll;
-  import org.testcontainers.containers.PostgreSQLContainer;
-  import org.testcontainers.junit.jupiter.Container;
-  import org.testcontainers.junit.jupiter.Testcontainers;
-  import java.net.http.HttpClient;
-  import java.net.http.HttpRequest;
-  import java.net.http.HttpResponse;
-  import java.net.URI;
-  import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
-  @Testcontainers
-  class ComponentTest {
-      @Container
-      static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
-      
-      static AppServer server;
+class SubmitThreadTest {
+    @Nested
+    class GivenAnEmptyThreadStore {
+        @Test
+        void whenSubmittingThread_thenItIsSaved() {
+            // Given
+            Threads threads = mock(Threads.class);
+            SubmitThreadUseCase useCase = new SubmitThreadUseCase(threads);
 
-      @BeforeAll
-      static void setup() {
-          server = new AppServer(0, postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-          server.start();
-      }
+            // When
+            SubmissionResult result = useCase.execute(new SubmitThreadCommand("Java Title"));
 
-      @AfterAll
-      static void teardown() {
-          if (server != null) {
-              server.stop();
-          }
-      }
+            // Then
+            assertThat(result.isSuccess()).isTrue();
+            verify(threads).save(any(ForumThread.class));
+        }
+    }
+}
+```
 
-      @Test
-      void shouldCreateThread() throws Exception {
-          HttpClient client = HttpClient.newHttpClient();
-          HttpRequest request = HttpRequest.newBuilder()
-              .uri(URI.create("http://localhost:" + server.port() + "/threads"))
-              .header("Content-Type", "application/json")
-              .POST(HttpRequest.BodyPublishers.ofString("{\"title\":\"Java Component\"}"))
-              .build();
-          HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-          assertThat(response.statusCode()).isEqualTo(200);
-      }
-  }
-  ```
+## Component And Acceptance Tests
 
-## 3. Acceptance Testing
-- **Grouping & Task Execution:** Filter tests using class naming patterns (e.g. `*AcceptanceTest.java`) or separate Gradle `sourceSets` (e.g. `src/acceptanceTest`) in `build.gradle`:
-  - **Alternative A (Single sourceSet, class filtering):**
-    - `./gradlew test` (Runs developer unit & component tests)
-    - `./gradlew test --tests "*AcceptanceTest"` (Runs only acceptance tests matching class name pattern)
-  - **Alternative B (Dedicated sourceSet, execution task):**
-    - `./gradlew acceptanceTest` (Runs Cucumber regression feature specs via dedicated task)
-- **Step Definition Example:**
-  ```java
-  import io.cucumber.java.en.When;
-
-  public class StepDefinitions {
-      @When("a user submits a thread titled {string}")
-      public void userSubmitsThread(String title) {
-          // Step definition executing against API, HTTP client or memory context
-      }
-  }
-  ```
+- Use designated Gradle source sets for suite boundaries:
+  - `src/test/java` via `test` for fast unit tests.
+  - `src/componentTest/java` via `componentTest` for booted in-process components and database mappings.
+  - `src/integrationTest/java` via `integrationTest` for external adapters, messaging, or real infrastructure.
+  - `src/systemTest/java` via `systemTest` for black-box deployed-service checks.
+- Use Testcontainers through the JUnit Jupiter extension for real infrastructure mappings.
+- Keep acceptance scenarios in the narrowest source set that owns the behavior; add `acceptanceTest` only when product-level Gherkin has a separate lifecycle.
+- Keep Cucumber step definitions thin: translate Gherkin to application/API calls, with assertions near the scenario boundary.
