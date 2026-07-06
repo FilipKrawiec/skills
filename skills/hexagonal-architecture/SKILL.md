@@ -1,7 +1,6 @@
 ---
 name: hexagonal-architecture
-description: Must be used when designing, implementing, or refactoring codebase layers. Enforces Ports and Adapters with strict API, Application, Domain, and Infrastructure separation.
-user-invocable: false
+description: Use when designing, implementing, or refactoring codebase layers with Ports and Adapters, including API, application, domain, infrastructure, and dependency-boundary decisions.
 ---
 
 # Hexagonal Architecture (Ports & Adapters)

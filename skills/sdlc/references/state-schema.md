@@ -4,7 +4,7 @@ This reference document defines the structure and schema of the single-record SD
 
 ## File Location
 Every SDLC run is managed via a single YAML record located at:
-`.sdlc/issues/<ticket-id>-<iteration-index-doubledigit>.yaml` (e.g. `.sdlc/issues/123-00.yaml`).
+`.sdlc/issues/<ticket-id>-<branch-name>-<iteration-index-doubledigit>.yaml` (e.g. `.sdlc/issues/123-main-00.yaml`).
 
 ## YAML Schema & Example
 
@@ -15,6 +15,32 @@ mode: "hil"                  # "afk" or "hil" (auto-detected: "afk" if issue has
 current_phase: "DEFINE"      # DEFINE, SPEC, PLAN, EXECUTE, REVIEW, SHIP, IMPROVE
 lifecycle_stage: "INITIALIZATION"  # Each phase is composed of these subphases (lifecycles)
 iteration: "00"              # Two-digit iteration index
+
+harness:
+  topology: "maintainability" # maintainability, architecture-fitness, behavior, full-sdlc
+  sandbox:
+    strategy: "container"     # container first; devcontainer/nix/kubernetes/microvm later when justified
+    image: ""
+    limits:
+      max_correction_attempts: 3
+  guides:
+    selected:
+      - id: "AGENTS.md"
+        purpose: "Project-specific agent rules"
+  sensors:
+    computational:
+      - id: "tests"
+        command: "./gradlew test"
+        priority: "high"
+    inferential:
+      - id: "ai-code-review"
+        priority: "medium"
+  approval:
+    human_required: true
+  event_log:
+    - type: "TaskRequested"
+      detail: "Initial request captured"
+      at: ""
 
 phases:
   DEFINE:
@@ -43,6 +69,12 @@ phases:
       observability_requirements: 
         - "We need a cumulative counter metric `skills_published_total`"
         - "Grafana dashboard panel showing publication rate."
+      guide_requirements:
+        - "AGENTS.md"
+        - "architecture.md"
+      sensor_requirements:
+        - "./gradlew test"
+        - "formatting/linting"
       grill_results:
         questions:
           - question: "Should a rejected validation allow re-validation?"
@@ -58,6 +90,22 @@ phases:
         - "Implement the `skills_published_total` counter in PublishSkillUseCase."
         - "Write a component test using a mock OTel collector to assert that the counter increments on success."
         - "Add the new panel to config/grafana/dashboards/skills.json."
+      guide_selection:
+        - "AGENTS.md"
+        - "docs/adr/0002-domain-driven-design-and-hexagonal-architecture.md"
+      sensor_selection:
+        - id: "compile"
+          command: "./gradlew compileJava"
+          type: "computational"
+          priority: "high"
+        - id: "test"
+          command: "./gradlew test"
+          type: "computational"
+          priority: "high"
+        - id: "ai-code-review"
+          command: ""
+          type: "inferential"
+          priority: "medium"
       execution_steps:
         - step_id: 1
           description: "Implement Domain Logic and Outbound Ports (Inside-Out)"
@@ -101,7 +149,23 @@ phases:
     improvements: []
   EXECUTE:
     status: "PENDING"
-    outcome: {}
+    outcome:
+      patch_created: false
+      sensor_results:
+        - id: "test"
+          type: "computational"
+          command: "./gradlew test"
+          status: "PENDING"
+          exit_code: null
+          finding: ""
+          attempt: 0
+      retry_history:
+        - attempt: 0
+          reason: ""
+          outcome: ""
+      unresolved_risks:
+        - risk: ""
+          disposition: ""
     improvements: []
   REVIEW:
     status: "PENDING"
@@ -110,6 +174,7 @@ phases:
       summary_of_changes: "Summary of implemented work"
       git_diff_summary: "List of modified files and lines"
       verification_results: "Test execution output"
+      ai_review_findings: []
       reviewer_comments: []
     improvements: []
   SHIP:

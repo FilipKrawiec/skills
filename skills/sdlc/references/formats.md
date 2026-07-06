@@ -1,28 +1,12 @@
 # SDLC Deliverable Formats
 
-This document defines the structures and formatting rules for core SDLC deliverables: the Product Requirement Document (PRD) / Task Brief and the Architectural Decision Record (ADR).
+This document defines writing conventions for SDLC deliverables. Schema fields live in `state-schema.md`; ready-to-use templates live in `assets/`.
 
 ---
 
 ## PRD / Task Brief Format
 
-The PRD is modeled as the `brief` section inside the single-record SDLC YAML file under the `DEFINE` phase. A ready-to-use template is located at `skills/sdlc/resources/prd-template.yaml`.
-
-### Schema
-
-```yaml
-brief:
-  summary: "<A clear, concise 1-2 sentence description of the goal.>"
-  context: "<The business rationale, problem being solved, and background info.>"
-  constraints:
-    - "<Technical constraint (e.g. Kotlin 1.9, no external dependencies)>"
-    - "<Architectural constraint (e.g. domain layer must be framework-free)>"
-  acceptance_criteria:
-    - "<Measurable goal 1 (e.g. 100% branch test coverage)>"
-    - "<Measurable goal 2 (e.g. returns HTTP 400 on negative values)>"
-  non_goals:
-    - "<Out of scope item (explicitly defined to prevent scope creep)>"
-```
+The PRD is modeled as the `brief` section inside the single-record SDLC YAML file under the DEFINE phase. Use `assets/prd-template.yaml` for the minimal brief shape and `state-schema.md` for the complete record schema.
 
 ### Guidelines
 
@@ -33,9 +17,17 @@ brief:
 
 ---
 
+## Harness Controls
+
+Harness controls are modeled in the top-level `harness` section and refined in SPEC and PLAN. Use `state-schema.md` as the source of truth for the YAML shape.
+
+Guides steer the agent before work begins. Sensors inspect outputs after work begins. Prefer computational sensors as the first quality gate, and use inferential sensors for review-risk detection after deterministic checks pass.
+
+---
+
 ## ADR Format
 
-ADRs live in `docs/adr/` and use sequential numbering: `000X-short-slug.md` (e.g. `docs/adr/0002-hexagonal-architecture.md`). A template is available at `skills/sdlc/resources/adr-template.md`.
+ADRs live in `docs/adr/` and use sequential numbering: `000X-short-slug.md` (e.g. `docs/adr/0002-hexagonal-architecture.md`). A template is available at `skills/sdlc/assets/adr-template.md`.
 
 Keep ADRs short. The value is recording that a decision was made, the context behind it, and the consequences.
 

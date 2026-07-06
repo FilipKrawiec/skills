@@ -1,7 +1,6 @@
 ---
 name: teach
-description: Generate an interactive learning guide to explain technical components, review best practices, and compare trade-offs.
-user-invocable: true
+description: Use when generating an interactive learning guide to explain technical components, review best practices, and compare trade-offs.
 ---
 
 # Teach (Interactive Learning Skill)
@@ -30,6 +29,6 @@ This skill is invoked explicitly by the user to explain how specific codebase co
      - **Alignment Prompt**: A final prompt asking the user to confirm the technical approach.
 
 4. **Present and Align:**
-   - Provide a standard markdown clickable file link to the generated page in the chat response: `[Teach Learning Page](file://<absolute-path-to-repo>/.agents/knowledge/teach-learning.html)`.
+   - Provide a standard markdown clickable file link to the generated page in the chat response: `[Teach Learning Page](/absolute/path/to/repo/.agents/knowledge/teach-learning.html)`.
    - Offer a brief, concise summary of the key findings in the chat response.
    - Explicitly wait for the user's feedback or approval on the technical direction.

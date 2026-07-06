@@ -7,68 +7,34 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
+
 VALID_PHASES = {"DEFINE", "SPEC", "PLAN", "EXECUTE", "REVIEW", "SHIP", "IMPROVE"}
 VALID_STAGES = {"INITIALIZATION", "CONFIGURATION", "EXECUTION", "VERIFY", "IMPROVE"}
 VALID_STATUSES = {"PENDING", "IN_PROGRESS", "COMPLETED"}
 
 
-def parse_yaml_lines(lines: list[str]) -> dict:
-    """A lightweight YAML-like dictionary parser for schema validation."""
-    result = {}
-    stack = [(0, result)]
+def require_keys(mapping: dict, keys: set[str], context: str) -> None:
+    """Fail when a mapping is missing required keys."""
+    missing = keys - set(mapping.keys())
+    if missing:
+        print(f"Error: Missing keys in {context}: {sorted(missing)}", file=sys.stderr)
+        sys.exit(1)
 
-    for line_idx, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or stripped.startswith("---"):
-            continue
 
-        indent = len(line) - len(line.lstrip())
+def require_mapping(value: object, context: str) -> dict:
+    """Return value as dict or fail with a useful schema error."""
+    if not isinstance(value, dict):
+        print(f"Error: {context} must be a dictionary block", file=sys.stderr)
+        sys.exit(1)
+    return value
 
-        # Pop stack based on indentation
-        while len(stack) > 1 and indent <= stack[-1][0]:
-            stack.pop()
 
-        current_dict = stack[-1][1]
-
-        # Handle list item
-        if stripped.startswith("-"):
-            # Ensure parent is a list
-            list_key = "_list"
-            if list_key not in current_dict:
-                current_dict[list_key] = []
-            val = stripped[1:].strip()
-            # Strip quotes if string
-            if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
-                val = val[1:-1]
-            current_dict[list_key].append(val)
-            continue
-
-        # Handle key-value pair
-        if ":" in stripped:
-            key, val = stripped.split(":", 1)
-            key = key.strip()
-            val = val.strip()
-
-            # Strip quotes
-            if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
-                val = val[1:-1]
-
-            if not val:  # Nested object
-                new_dict = {}
-                current_dict[key] = new_dict
-                stack.append((indent, new_dict))
-            else:
-                # Convert boolean values
-                if val.lower() == "true":
-                    val = True
-                elif val.lower() == "false":
-                    val = False
-                current_dict[key] = val
-        else:
-            print(f"Error: Invalid syntax on line {line_idx + 1}: '{line}'", file=sys.stderr)
-            sys.exit(1)
-
-    return result
+def require_list(value: object, context: str) -> None:
+    """Fail when a value is not a YAML list."""
+    if not isinstance(value, list):
+        print(f"Error: {context} must be a list", file=sys.stderr)
+        sys.exit(1)
 
 
 def validate_record(file_path: Path) -> None:
@@ -80,14 +46,16 @@ def validate_record(file_path: Path) -> None:
         print(f"Error reading file: {e}", file=sys.stderr)
         sys.exit(1)
 
-    data = parse_yaml_lines(content.splitlines())
+    try:
+        data = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        print(f"Error: Invalid YAML in {file_path.name}: {exc}", file=sys.stderr)
+        sys.exit(1)
+    data = require_mapping(data, "record")
 
     # 1. Top level keys validation
-    required_top_keys = {"ticket", "title", "mode", "current_phase", "lifecycle_stage", "iteration", "phases"}
-    missing_top_keys = required_top_keys - set(data.keys())
-    if missing_top_keys:
-        print(f"Error: Missing top-level keys: {missing_top_keys}", file=sys.stderr)
-        sys.exit(1)
+    required_top_keys = {"ticket", "title", "mode", "current_phase", "lifecycle_stage", "iteration", "harness", "phases"}
+    require_keys(data, required_top_keys, "top-level record")
 
     # 2. Field values validation
     if data["mode"] not in {"hil", "afk"}:
@@ -107,11 +75,26 @@ def validate_record(file_path: Path) -> None:
         print(f"Error: 'iteration' must be a two-digit string (e.g., '00'), got '{data['iteration']}'", file=sys.stderr)
         sys.exit(1)
 
-    # 3. Phases block validation
-    phases = data["phases"]
-    if not isinstance(phases, dict):
-        print("Error: 'phases' must be a dictionary block", file=sys.stderr)
-        sys.exit(1)
+    # 3. Harness block validation
+    harness = require_mapping(data["harness"], "harness")
+    require_keys(harness, {"topology", "sandbox", "guides", "sensors", "approval", "event_log"}, "harness")
+    sandbox = require_mapping(harness["sandbox"], "harness.sandbox")
+    require_keys(sandbox, {"strategy", "image", "limits"}, "harness.sandbox")
+    limits = require_mapping(sandbox["limits"], "harness.sandbox.limits")
+    require_keys(limits, {"max_correction_attempts"}, "harness.sandbox.limits")
+    guides = require_mapping(harness["guides"], "harness.guides")
+    require_keys(guides, {"selected"}, "harness.guides")
+    require_list(guides["selected"], "harness.guides.selected")
+    sensors = require_mapping(harness["sensors"], "harness.sensors")
+    require_keys(sensors, {"computational", "inferential"}, "harness.sensors")
+    require_list(sensors["computational"], "harness.sensors.computational")
+    require_list(sensors["inferential"], "harness.sensors.inferential")
+    approval = require_mapping(harness["approval"], "harness.approval")
+    require_keys(approval, {"human_required"}, "harness.approval")
+    require_list(harness["event_log"], "harness.event_log")
+
+    # 4. Phases block validation
+    phases = require_mapping(data["phases"], "phases")
 
     missing_phases = VALID_PHASES - set(phases.keys())
     if missing_phases:
@@ -142,20 +125,22 @@ def validate_record(file_path: Path) -> None:
                 print("Error: DEFINE phase is active/completed but missing 'brief' dictionary", file=sys.stderr)
                 sys.exit(1)
             required_brief_keys = {"summary", "context", "constraints", "acceptance_criteria", "non_goals"}
-            missing_brief = required_brief_keys - set(phase_data["brief"].keys())
-            if missing_brief:
-                print(f"Error: Missing keys in brief: {missing_brief}", file=sys.stderr)
-                sys.exit(1)
+            require_keys(phase_data["brief"], required_brief_keys, "brief")
 
         elif phase_name == "SPEC" and phase_data["status"] == "COMPLETED":
             if "spec" not in phase_data or not isinstance(phase_data["spec"], dict):
                 print("Error: SPEC phase completed but missing 'spec' dictionary", file=sys.stderr)
                 sys.exit(1)
-            required_spec_keys = {"design_boundaries", "affected_components", "architectural_decisions", "grill_results"}
-            missing_spec = required_spec_keys - set(phase_data["spec"].keys())
-            if missing_spec:
-                print(f"Error: Missing keys in spec: {missing_spec}", file=sys.stderr)
-                sys.exit(1)
+            required_spec_keys = {
+                "design_boundaries",
+                "affected_components",
+                "architectural_decisions",
+                "observability_requirements",
+                "guide_requirements",
+                "sensor_requirements",
+                "grill_results",
+            }
+            require_keys(phase_data["spec"], required_spec_keys, "spec")
 
         elif phase_name == "PLAN" and phase_data["status"] == "COMPLETED":
             if "plan" not in phase_data or not isinstance(phase_data["plan"], dict):
@@ -164,6 +149,8 @@ def validate_record(file_path: Path) -> None:
             if "approved" not in phase_data:
                 print("Error: PLAN phase completed but missing 'approved' key", file=sys.stderr)
                 sys.exit(1)
+            required_plan_keys = {"test_strategy", "observability_plan", "guide_selection", "sensor_selection", "execution_steps"}
+            require_keys(phase_data["plan"], required_plan_keys, "plan")
 
         elif phase_name == "REVIEW" and phase_data["status"] == "COMPLETED":
             if "review" not in phase_data or not isinstance(phase_data["review"], dict):
@@ -172,6 +159,14 @@ def validate_record(file_path: Path) -> None:
             if "approved" not in phase_data:
                 print("Error: REVIEW phase completed but missing 'approved' key", file=sys.stderr)
                 sys.exit(1)
+            required_review_keys = {
+                "summary_of_changes",
+                "git_diff_summary",
+                "verification_results",
+                "ai_review_findings",
+                "reviewer_comments",
+            }
+            require_keys(phase_data["review"], required_review_keys, "review")
 
     print("✔ Validation successful")
 

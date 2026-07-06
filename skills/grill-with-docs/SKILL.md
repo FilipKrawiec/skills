@@ -1,7 +1,6 @@
 ---
 name: grill-with-docs
-description: Stress-test a plan, design, PRD, or ADR against source docs. Must be used during SDLC SPEC phase to challenge assumptions and resolve open questions.
-user-invocable: true
+description: Use when stress-testing a plan, design, PRD, or ADR against source docs to challenge assumptions, contradictions, missing decisions, and unresolved questions.
 ---
 
 # Grill With Docs

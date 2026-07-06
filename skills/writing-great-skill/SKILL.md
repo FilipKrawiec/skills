@@ -1,7 +1,6 @@
 ---
 name: writing-great-skill
 description: Use when creating, modifying, editing, or validating skills, agent rules (AGENTS.md), or plugin manifests in this repository.
-user-invocable: false
 ---
 
 # Writing Great Skill
@@ -40,6 +39,8 @@ For user-invoked skills, keep the description as a one-line human summary.
 - **Skill Directory**: Must use `lowercase-kebab-case` (e.g., `domain-driven-design`).
 - **Main Instruction File**: Must be named exactly `SKILL.md` (all uppercase).
 - **Reference Files**: Must use `lowercase-kebab-case.md` (e.g., `ubiquitous-language.md`), and reside within the local `references/` subdirectory.
+- **Assets**: Store templates and static resources in `assets/`.
+- **Scripts**: Store executable helper code in `scripts/`; scripts must be non-interactive and document usage.
 
 ## Pruning
 
@@ -51,4 +52,3 @@ Delete lines that are generic, duplicated, stale, or do not change behavior. Whe
 
 - Read [glossary.md](references/glossary.md) when looking up definitions of bold terms.
 - Read [agentskills-guide.md](references/agentskills-guide.md) when designing, optimizing, testing, or specification-validating a skill or custom script.
-

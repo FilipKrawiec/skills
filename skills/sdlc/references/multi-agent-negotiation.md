@@ -1,72 +1,75 @@
-# Multi-Agent Negotiation & Rollback Protocol
+# Feedback Review & Escalation Protocol
 
-This document details the multi-agent validation loops used during the PLAN and REVIEW phases in AFK mode, along with the rollback transitions for Human-in-Loop rejections.
+This document details the bounded review loops used during the PLAN and REVIEW phases, along with escalation transitions for human-in-loop rejections and stalled autonomous work.
 
 ---
 
-## 1. AFK Negotiation Loop
+## 1. AFK Review Loop
 
-In `afk` mode, the agent must not proceed without programmatically verifying the quality of the plan or the code implementation. This is achieved by spawning a reviewer subagent.
+In `afk` mode, the agent must not proceed without verifying the quality of the plan or implementation. Use a reviewer subagent when the runtime supports it; otherwise, run a separate review pass with fresh context and record the limitation.
 
 ```mermaid
 graph TD
-    A[Start Validation] --> B[Spawn Reviewer Subagent]
-    B --> C[Subagent Analyzes Plan/Diff]
+    A[Start Review] --> B[Run Reviewer]
+    B --> C[Reviewer Analyzes Plan/Diff]
     C --> D{result: APPROVED?}
     D -- Yes --> E[Set approved: true]
-    D -- No --> F{Attempts > 4?}
-    F -- No --> H[Revise Plan/Code]
+    D -- No --> F{Attempts < limit?}
+    F -- Yes --> H[Revise Plan/Code]
     H --> B
-    F -- Yes --> I{Phase?}
-    I -- PLAN --> J[Attempt 5: Spawn Mediator Subagent <br> Attempt 6: Auto-Approve & transition to EXECUTE]
-    I -- REVIEW --> K[Attempt 5: Autonomous Rollback & Re-plan <br> Reset Code & transition to PLAN]
+    F -- No --> I[Escalate to HIL with unresolved risks]
 ```
 
 ### Protocol Guidelines
-- **Spawning:** The main agent spawns a `self` or a dedicated reviewer subagent.
-- **Input:** The subagent is provided the ticket brief, specification, draft plan (for PLAN phase), or the git diff and review notes (for REVIEW phase).
-- **Output:** The subagent must output a structured YAML payload where `result` is evaluated:
+- **Reviewer Separation:** Use a dedicated reviewer subagent or a separate review pass that does not inherit the implementer's draft rationale.
+- **Input:** Provide the brief, specification, selected guides, selected sensors, draft plan for PLAN review, or git diff and sensor results for REVIEW.
+- **Output:** The reviewer must output a structured payload where `result` is evaluated:
   ```yaml
   result: APPROVED  # or REJECTED
   comments:
     - "Detail of concern 1"
+  unresolved_risks: []
   ```
+- **Attempt Limit:** Use `harness.sandbox.limits.max_correction_attempts` as the default review/correction limit unless the active plan specifies a stricter value.
 
-### Deadlock Resolution (Zero User Interaction)
-To achieve zero human interaction, the agent must never degrade to `hil` or stop during AFK mode when validation loops stall. Instead, apply the following resolution protocols:
+### Stalemate Resolution
 
-#### PLAN Phase Stalemate Resolution (Attempt 5+)
-- **Attempt 5 (Mediator Resolution):** If the reviewer rejects the plan for the 4th time, the main agent spawns a `mediator` subagent. The mediator reviews the brief, spec, draft plans, and all previous reviewer comments to output a single consolidated "compromise plan". The main agent submits this plan for Attempt 5.
-- **Attempt 6 (Bypass & Execute):** If the reviewer still rejects the plan on Attempt 5, the main agent bypasses reviewer rejection: it logs the planning deadlock, sets `approved: true` in the YAML record, and transitions directly to the `EXECUTE` phase. In AFK mode, the code compiler and test suite (`verify_command`) act as the final, deterministic gatekeepers of correctness.
+- **No Auto-Approval:** Do not set `approved: true` only to escape reviewer disagreement.
+- **No Destructive Rollback:** Do not run destructive workspace commands such as hard reset or clean unless the human explicitly requested them.
+- **Escalate with Evidence:** When the attempt limit is exhausted, switch `mode` to `hil`, keep the working tree intact, record unresolved risks, and report the failed sensors/reviewer objections.
 
-#### REVIEW Phase Stalemate Resolution (Attempt 5)
-- If the reviewer rejects the implementation for the 4th time (meaning Attempt 5 is reached), the code implementation is stuck in a stalemate. The main agent breaks the loop autonomously:
-  1. **Workspace Rollback:** Execute `git reset --hard` and `git clean -fd` to completely discard the deadlocked changes and restore the workspace to a clean, known-good state.
-  2. **Phase Transition:** Change the state to `PLAN` phase.
-  3. **Iteration Increment:** Increment the iteration index (e.g. from `00` to `01`) and create the new YAML record at `.sdlc/issues/<ticket-id>-<new-iteration>.yaml`.
-     - *Exception:* If the next iteration index would be `03` or higher (representing 3 failed full cycle attempts), trigger the **Emergency Escalation Guardrail** (see Section 2).
-  4. **Plan Revision:** Append all consolidated reviewer comments from the failed attempts to the plan context as input constraints. Draft a new, simplified, step-by-step implementation strategy that avoids previous design deadlocks.
-  5. **Auto-Execution:** Proceed directly to `EXECUTE` with the new plan and clean codebase.
+#### PLAN Phase Stalemate
+1. Consolidate reviewer comments into plan constraints.
+2. Produce one simplified plan revision if attempts remain.
+3. If attempts are exhausted, set `mode: "hil"`, keep `current_phase: "PLAN"`, and ask for human direction.
+
+#### REVIEW Phase Stalemate
+1. Record reviewer objections and unresolved risks in `phases.REVIEW.review`.
+2. Keep the patch available for inspection.
+3. Transition back to `PLAN` only after human direction or after a non-destructive plan revision is clearly possible.
+4. If a new iteration is needed, create a new record at `.sdlc/issues/<ticket-id>-<branch-name>-<iteration>.yaml` and link the previous record in the event log.
 
 ---
 
-## 2. Emergency Escalation Guardrails (Misclassified AFK Tasks)
+## 2. Emergency Escalation Guardrails
 
-To prevent resource wastage, infinite loops, and unintended side effects when a task is incorrectly marked as `afk` or contains unresolvable issues requiring human attention, the agent must enforce the following guardrails:
+To prevent resource waste, infinite loops, and unintended side effects, enforce these guardrails:
 
 - **Iteration Limit Threshold:** 
-  If the iteration index is about to increment to `03` (i.e. the agent has completely rolled back and re-planned 3 times), the agent must:
+  If the iteration index is about to increment to `03` (three failed full-cycle attempts), the agent must:
   1. Automatically change `mode` from `afk` to `hil` in the YAML record.
   2. Halt all automated execution.
-  3. Report a detailed diagnostic summary listing all failed plans, compilation logs, and reviewer objections.
+  3. Report a diagnostic summary listing failed plans, sensor failures, reviewer objections, and unresolved risks.
 - **System and Environment Blockers:**
-  If the agent encounters non-recoverable system issues (e.g. missing API keys/credentials, missing local compiler/toolchain, sandbox operation limits, or network failures that cannot be resolved autonomously), the agent must immediately degrade the task `mode` to `hil`, save the status, and stop execution to alert the developer.
+  If the agent encounters non-recoverable system issues (e.g. missing API keys/credentials, missing local compiler/toolchain, sandbox operation limits, or network failures that cannot be resolved autonomously), the agent must immediately change the task `mode` to `hil`, save the status, and stop execution to alert the developer.
+- **Approval Boundary:**
+  Human approval remains required before merge, publication, deployment, destructive file operations, or irreversible external effects.
 - **Manual Human Override:**
   At any point during execution, the human can edit the active YAML record's `mode` key from `"afk"` to `"hil"`. The agent checks this file before starting any subphase lifecycle stage and will immediately stop when it detects the shift.
 
 ---
 
-## 3. Human-in-Loop Rejections & Rollbacks
+## 3. Human-in-Loop Rejections
 
 In `hil` mode, the human serves as the gateway for phase transitions.
 

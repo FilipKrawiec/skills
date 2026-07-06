@@ -5,6 +5,22 @@ current_phase: "DEFINE"
 lifecycle_stage: "INITIALIZATION"
 iteration: "00"
 
+harness:
+  topology: "maintainability"
+  sandbox:
+    strategy: "container"
+    image: ""
+    limits:
+      max_correction_attempts: 3
+  guides:
+    selected: []
+  sensors:
+    computational: []
+    inferential: []
+  approval:
+    human_required: true
+  event_log: []
+
 phases:
   DEFINE:
     status: "PENDING"
@@ -22,6 +38,8 @@ phases:
       affected_components: []
       architectural_decisions: []
       observability_requirements: []
+      guide_requirements: []
+      sensor_requirements: []
       grill_results:
         questions: []
     improvements: []
@@ -31,11 +49,17 @@ phases:
     plan:
       test_strategy: ""
       observability_plan: []
+      guide_selection: []
+      sensor_selection: []
       execution_steps: []
     improvements: []
   EXECUTE:
     status: "PENDING"
-    outcome: {}
+    outcome:
+      patch_created: false
+      sensor_results: []
+      retry_history: []
+      unresolved_risks: []
     improvements: []
   REVIEW:
     status: "PENDING"
@@ -44,6 +68,7 @@ phases:
       summary_of_changes: ""
       git_diff_summary: ""
       verification_results: ""
+      ai_review_findings: []
       reviewer_comments: []
     improvements: []
   SHIP:

@@ -1,7 +1,6 @@
 ---
 name: vcs
-description: Must be used for all Git and version control operations. Enforces Conventional Commits, feature branches off trunk, and linear history via rebase.
-user-invocable: false
+description: Use when performing Git or version control operations, including branching, commits, rebases, squashes, force-with-lease pushes, merges, and file moves.
 ---
 
 # Version Control System (VCS) Workflow

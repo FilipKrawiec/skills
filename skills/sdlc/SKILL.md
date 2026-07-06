@@ -1,34 +1,33 @@
 ---
 name: sdlc
-description: "MANDATORY: Execute this skill FIRST for EVERY task that modifies repository files, including code, documentation, and config. You CANNOT bypass this. Steers execution through DEFINE, SPEC, PLAN, EXECUTE, REVIEW, SHIP, IMPROVE phases with YAML record tracking."
-user-invocable: false
+description: "Use when modifying repository files through a bounded agentic development harness: define the task, select guides, run work in a sandbox, execute deterministic sensors, feed failures back for limited correction, run review, request human approval, and record the event trail."
 ---
 
-# SDLC Workflow
+# SDLC Harness
 
-Execute tasks using the SDLC phases and subphase lifecycles, governed by the single YAML record.
+Run repository changes through a bounded harness: guides steer work, sensors inspect output, humans approve irreversible effects, and the YAML record keeps the event trail.
 
-## Playbook Steps
+## Core Loop
 
-1. **Verify State:**
-   - Locate the single SDLC record file at `.sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml` (if there is no issue ID, determine the next available ID by auto-incrementing based on existing files, starting at `1`). If not present, initialize it using the template at `resources/sdlc-template.yaml` (relative to this skill's directory). Ensure `.sdlc/` is automatically added to `.gitignore`.
-   - Read the `current_phase` and `lifecycle_stage` keys to determine the active context.
-2. **Execute Active Phase:**
-   - Execute the internal lifecycle subphases (Initialization, Configuration, Execution, Verify, Improve) for the active phase.
-   - Refer to the detailed phase requirements in [phases.md](references/phases.md).
-3. **Verify Deliverables:**
-   - Run the deterministic verification command or subagent validation loop.
-   - Run the validation script: `python3 scripts/validate-sdlc-record.py .sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml` (from this skill's directory) to validate the record structure.
-4. **Transition Phase:**
-   - Update the YAML record state (mark phase status, improvements, set next phase, increment iteration if needed) and save.
-   - **HIL Interactive Gates:** If in `hil` mode and the next phase is interactive (e.g., `SPEC`, `PLAN`), the agent MUST present a concise executive summary of the current phase outcome and the next phase's goals, and use the `ask_question` tool (with options like "Approve and proceed" or "Request changes") to request approval BEFORE halting execution. Do not halt without presenting the summary and question.
+1. **State:** Locate or create `.sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml` from `assets/sdlc-template.yaml`; read `current_phase` and `lifecycle_stage`.
+2. **Configure:** Select guides, sensors, sandbox policy, approval gates, and context boundaries before acting.
+3. **Execute:** Read only the active phase reference and perform that phase. Patch production happens only in EXECUTE.
+4. **Verify:** Run deterministic sensors before inferential review; record results, retries, risks, and events.
+5. **Improve:** Update phase status, lessons, event log, and next phase. In `hil` mode, stop at approval gates.
+
+From the repository root, validate the active record with `python3 skills/sdlc/scripts/validate-sdlc-record.py .sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml`.
 
 ---
 
 ## Context Pointers
 
-- Read [phases.md](references/phases.md) when executing any of the seven SDLC phases.
+- Read [phase-define.md](references/phase-define.md) when `current_phase` is `DEFINE`.
+- Read [phase-spec.md](references/phase-spec.md) when `current_phase` is `SPEC`.
+- Read [phase-plan.md](references/phase-plan.md) when `current_phase` is `PLAN`.
+- Read [phase-execute.md](references/phase-execute.md) when `current_phase` is `EXECUTE`.
+- Read [phase-review.md](references/phase-review.md) when `current_phase` is `REVIEW`.
+- Read [phase-ship.md](references/phase-ship.md) when `current_phase` is `SHIP`.
+- Read [phase-improve.md](references/phase-improve.md) when `current_phase` is `IMPROVE`.
 - Read [state-schema.md](references/state-schema.md) when initializing, updating, or reading the single SDLC record file.
-- Read [lifecycles.md](references/lifecycles.md) when executing subphase stages or self-debugging tasks.
-- Read [multi-agent-negotiation.md](references/multi-agent-negotiation.md) when executing plan or review validation loops in AFK mode.
+- Read [multi-agent-negotiation.md](references/multi-agent-negotiation.md) when executing separated reviews, handling exhausted correction attempts, resolving HIL rejections, or escalating blocked work.
 - Read [formats.md](references/formats.md) when writing architectural decisions (ADRs) or task briefs (PRDs).

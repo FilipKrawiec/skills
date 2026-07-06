@@ -1,0 +1,97 @@
+ticket: "123"
+title: "Enforce Skill Validation Status"
+mode: "hil"
+current_phase: "DEFINE"
+lifecycle_stage: "INITIALIZATION"
+iteration: "00"
+
+harness:
+  topology: "maintainability"
+  sandbox:
+    strategy: "container"
+    image: ""
+    limits:
+      max_correction_attempts: 3
+  guides:
+    selected:
+      - id: "AGENTS.md"
+        purpose: "Project-specific agent rules"
+  sensors:
+    computational:
+      - id: "test"
+        command: "./gradlew test"
+        priority: "high"
+    inferential:
+      - id: "ai-code-review"
+        priority: "medium"
+  approval:
+    human_required: true
+  event_log:
+    - type: "TaskRequested"
+      detail: "Example task initialized"
+      at: ""
+
+phases:
+  DEFINE:
+    status: "PENDING"
+    brief:
+      summary: "Add ValidationStatus to the Skill aggregate root and prevent unvalidated skills from being published."
+      context: "Currently skills can be published to the catalog without any safety checks. We need a validation process."
+      constraints:
+        - "No framework dependencies inside the domain layer."
+        - "Do not leak persistence models outside the infrastructure adapter."
+      acceptance_criteria:
+        - "Skills cannot be published unless validation_status is APPROVED."
+      non_goals:
+        - "Implementing the automatic validator agent itself (out of scope)."
+    improvements: []
+  SPEC:
+    status: "PENDING"
+    spec:
+      design_boundaries: ""
+      affected_components: []
+      architectural_decisions: []
+      observability_requirements: []
+      guide_requirements: []
+      sensor_requirements: []
+      grill_results:
+        questions: []
+    improvements: []
+  PLAN:
+    status: "PENDING"
+    approved: false
+    plan:
+      test_strategy: ""
+      observability_plan: []
+      guide_selection: []
+      sensor_selection: []
+      execution_steps: []
+    improvements: []
+  EXECUTE:
+    status: "PENDING"
+    outcome:
+      patch_created: false
+      sensor_results: []
+      retry_history: []
+      unresolved_risks: []
+    improvements: []
+  REVIEW:
+    status: "PENDING"
+    approved: false
+    review:
+      summary_of_changes: ""
+      git_diff_summary: ""
+      verification_results: ""
+      ai_review_findings: []
+      reviewer_comments: []
+    improvements: []
+  SHIP:
+    status: "PENDING"
+    outcome: {}
+    improvements: []
+  IMPROVE:
+    status: "PENDING"
+    retrospective:
+      lessons_learned: []
+      actionable_issues: []
+    improvements: []

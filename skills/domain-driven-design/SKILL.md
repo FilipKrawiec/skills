@@ -1,7 +1,6 @@
 ---
 name: domain-driven-design
-description: Must be used when defining domain models, ubiquitous language, bounded contexts, or strategic designs. Trigger when updating CONTEXT.md or designing aggregates.
-user-invocable: false
+description: Use when defining domain models, ubiquitous language, bounded contexts, context maps, aggregates, entities, value objects, repositories, domain events, or strategic design decisions.
 ---
 
 # Domain-Driven Design (DDD)
