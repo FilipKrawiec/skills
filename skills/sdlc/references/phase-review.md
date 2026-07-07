@@ -21,7 +21,7 @@ Review the patch, sensor results, and unresolved risks before human approval.
 ## Verify
 
 - In `afk` mode, run a separated reviewer pass over the diff, brief, spec, guides, sensor results, and risks. Approval requires `result: APPROVED`.
-- In `hil` mode, summarize changes, verification results, observability evidence, diff highlights, retry history, and unresolved risks; request approval and stop.
+- In `hil` mode, follow the main skill's Approval Gates rule before requesting approval and stopping.
 
 ## Improve
 

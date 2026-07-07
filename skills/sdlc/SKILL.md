@@ -13,9 +13,23 @@ Run repository changes through a bounded harness: guides steer work, sensors ins
 2. **Configure:** Select guides, sensors, sandbox policy, approval gates, and context boundaries before acting.
 3. **Execute:** Read only the active phase reference and perform that phase. Patch production happens only in EXECUTE.
 4. **Verify:** Run deterministic sensors before inferential review; record results, retries, risks, and events.
-5. **Improve:** Update phase status, lessons, event log, and next phase. In `hil` mode, stop at approval gates.
+5. **Improve:** Update phase status, lessons, event log, and next phase. In `hil` mode, present the approval gate summary before asking for approval, then stop.
 
 From the repository root, validate the active record with `python3 skills/sdlc/scripts/validate-sdlc-record.py .sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml`.
+
+## Approval Gates
+
+Before every human approval request, show an **Execution Summary** in the visible response. Ask for approval only after the summary.
+
+The summary must include:
+
+- Current phase outcome: what was decided, planned, changed, reviewed, or shipped.
+- Affected files or components.
+- Verification status: sensors run, pass/fail results, and skipped checks.
+- Risks, open questions, retry history, or reviewer findings.
+- Next step that approval permits.
+
+If using a structured approval tool, place the Execution Summary in the message immediately before the tool call and keep the tool prompt self-contained enough to make the decision clear.
 
 ---
 

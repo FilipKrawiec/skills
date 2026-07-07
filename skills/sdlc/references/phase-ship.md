@@ -12,7 +12,7 @@ Integrate the approved change without expanding scope.
 
 ## Execution
 
-- Commit or merge only after human approval.
+- Follow the main skill's Approval Gates rule before requesting approval to commit or merge.
 - Prefer a single cohesive squashed commit on trunk.
 - Deployment is out of scope unless the active record explicitly includes it.
 

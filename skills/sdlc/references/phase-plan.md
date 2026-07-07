@@ -25,7 +25,7 @@ Turn the spec into a bounded implementation and verification plan.
 ## Verify
 
 - In `afk` mode, run a separated reviewer pass against the brief, spec, selected controls, and plan. Approval requires `result: APPROVED`.
-- In `hil` mode, summarize key tasks, affected files, selected guides/sensors, observability plan, and verification strategy; request approval and stop.
+- In `hil` mode, follow the main skill's Approval Gates rule before requesting approval and stopping.
 
 ## Improve
 
