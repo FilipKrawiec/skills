@@ -19,3 +19,7 @@ Keep this repository as a compact, agent-agnostic skill library.
 - Move content rather than duplicating it when a concept belongs in `references/`.
 - Run `python3 scripts/validate-plugin-definitions.py` after changing skills or plugin manifests.
 - Preserve existing user changes outside the requested scope.
+
+## Shipping
+
+- For now, skip feature branches during SHIP: once the SHIP phase is finished and the user approves shipping, commit directly to `main`.

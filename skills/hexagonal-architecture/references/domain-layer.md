@@ -16,9 +16,10 @@ Guidelines for designing and implementing the Domain layer in Hexagonal Architec
   - **Repositories (Collections):** Name as a plural collection representing the domain entity (e.g., `Threads`), keeping it strictly domain-centric and avoiding the technical `Repository` suffix.
   - **Query Ports (CQRS):** Suffix with `Queries` (e.g., `ThreadQueries`) to clearly represent a set of read operations returning Value Objects.
   - **Functional Ports (Publishers, Senders, Validators):** Use descriptive role-based/functional suffixes (e.g., `ThreadEventPublisher`, `NotificationSender`, `MergeRequestValidator`) to avoid confusion with database collections.
-  - **Colocation (Single File):** In languages that support top-level declarations (e.g., Kotlin, Go), the Aggregate Root class (e.g., `Thread`) and its collection port (e.g., `Threads`) should reside in the **same source file** (e.g., `Threads.kt`) to keep the aggregate consistency boundary and its persistence access gateway tightly coupled.
-- **Infrastructure Layer (Explicit/Pattern Naming):** Concrete adapter classes and helper models must prepend the technology name to the port interface name (e.g., `JPAThreads`, `JPAThreadQueries`, `KafkaThreadEventPublisher`, `SmtpNotificationSender`) to make the transport, persistence technology, and pattern explicit.
+  - **Colocation:** In languages that support top-level declarations, small aggregate-local types and the collection port may live beside the Aggregate Root when that makes the aggregate boundary easier to audit.
+- **Infrastructure Layer (Explicit/Pattern Naming):** Concrete adapter classes and helper models must prepend the technology name to the port interface name (e.g., `SqlThreads`, `SqlThreadQueries`, `KafkaThreadEventPublisher`, `SmtpNotificationSender`) to make the transport, persistence technology, and pattern explicit.
 
-## 4. Port Invocation & Double-Dispatch
+## 4. External State and Invariants
 - **No Direct Infrastructure/Adapter Access:** Aggregates and Entities must never reference adapters, database clients, or global service locators.
-- **Double-Dispatch for External State Queries:** If an Aggregate needs to query external state to enforce an invariant during a command, define a Domain Outbound Port interface and pass it directly into the Aggregate's business method as an argument (Double-Dispatch).
+- **Prefer Facts Over IO:** If an invariant depends on external state, the Application layer or a Domain Service should query the needed port and pass the resulting domain fact, policy, or decision into the Aggregate.
+- **Double-Dispatch Exception:** Passing a domain-named port into an Aggregate method is allowed only when the port is pure, explicitly part of enforcing the invariant, and does not make the Aggregate perform infrastructure-shaped work.

@@ -28,3 +28,4 @@ Follow these steps to design and implement codebase layers with clean boundaries
 - Read [application-layer.md](references/application-layer.md) when creating application use-cases, commands/queries, or application-level outbound ports (like email/SMS integration clients).
 - Read [api-layer.md](references/api-layer.md) when writing inbound adapters (like HTTP/gRPC controllers, Kafka event consumers).
 - Read [infrastructure-layer.md](references/infrastructure-layer.md) when writing outbound adapters (like database repositories, API clients) and managing encapsulation.
+- Read [kotlin.md](references/languages/kotlin.md) when applying these boundaries in a Kotlin codebase.
