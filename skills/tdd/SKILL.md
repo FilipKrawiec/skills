@@ -5,13 +5,37 @@ description: Use when programming, coding, refactoring, implementing features, o
 
 # Test-Driven Development (TDD)
 
-## Steps
+## TDD Execution & Delegation Model
 
-1. **Red Stage Checkpoint**: Write the test case(s) describing the behavior. Run the test command to verify the test fails. Do not create or modify any production files before executing the test command and confirming the expected failure. Capture and record this failing test output in the transcript.
-2. **Green Stage Checkpoint**: Write the minimal production code necessary to pass the test. Run the test command to verify it passes. Record the passing test output in the transcript.
-3. **Commit Green State**: Create a Git commit for this green state (using Conventional Commits format, e.g., type `wip:`, following the `vcs` skill commit guidelines) to lock in the working implementation.
-4. **Refactor Stage Checkpoint**: Optimize the design, clean up duplication, improve naming, and enforce clean architectural boundaries. Run the test command to verify that all tests remain green. Record the passing test output in the transcript.
-5. **Commit Refactored State**: Create a Git commit for the clean, refactored state (using type `wip:` or a specific type like `refactor:` if it completes the logical change).
+To prevent log pollution and context bloating at the root level, TDD execution is divided into two distinct roles:
+
+### 1. Root Coordinator Role
+- **Orchestrate**: The root agent coordinates the stages of the task run. It does NOT modify code, write tests, or execute gradle/test commands directly.
+- **Progress Tracking**: Root spawns specialized subagents for each checkpoint (Red, Green, Refactor) and receives only high-level status outputs (files changed, success/failure, brief summary).
+
+### 2. Subagent TDD Steps (Executed inside isolated Subagent sandboxes)
+
+- **Red Stage Checkpoint (Test Subagent)**:
+  1. Write or update test cases describing the expected behavior.
+  2. Run the specific test command inside the sandbox to verify tests compile and fail (Red State).
+  3. Commit and push the Red state.
+  4. Return only the pass/fail outcome to the root agent (preventing raw logs from reaching root).
+
+- **Green Stage Checkpoint (Implementor Subagent)**:
+  1. Write the minimal production code necessary to satisfy the test cases.
+  2. Run the test command in the sandbox to verify the tests now pass (Green State).
+  3. Commit the Green state.
+  4. Return only the success status and file summary to the root agent.
+
+- **Refactor Stage Checkpoint (Refactoring Subagent)**:
+  1. Optimize code design, clean up duplication, and enforce clean architectural boundaries.
+  2. Run the test command in the sandbox to verify tests remain green.
+  3. Commit the Refactored state.
+  4. Return the final success status and patch details to the root agent.
+
+- **Black-Box Harness Verification**:
+  - The Harness runs the completed patch through black-box sensors (compilation, full test suite check).
+  - If a sensor fails, the Harness delegates the fix to a specialized Tester Subagent to troubleshoot and fix it, keeping the root context clean.
 
 ## Coverage Rule
 
