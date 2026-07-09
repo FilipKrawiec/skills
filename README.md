@@ -19,16 +19,18 @@ Install from the GitHub marketplace source:
 
 ```bash
 claude plugin marketplace add https://github.com/FilipKrawiec/skills.git
-claude plugin install filipkrawiec@filipkrawiec
-claude plugin install filipkrawiec@filipkrawiec-workflow
+claude plugin install filipkrawiec-core@filipkrawiec-core
+claude plugin install filipkrawiec-workflow@filipkrawiec-workflow
+claude plugin install filipkrawiec-authoring@filipkrawiec-authoring
 ```
 
 For local development:
 
 ```bash
 claude plugin marketplace add /Users/filip/Developer/projects/github.com/FilipKrawiec/skills
-claude plugin install filipkrawiec@filipkrawiec
-claude plugin install filipkrawiec@filipkrawiec-workflow
+claude plugin install filipkrawiec-core@filipkrawiec-core
+claude plugin install filipkrawiec-workflow@filipkrawiec-workflow
+claude plugin install filipkrawiec-authoring@filipkrawiec-authoring
 ```
 
 ## Codex
@@ -37,18 +39,23 @@ Codex plugin metadata lives in `.codex-plugin/plugin.json` and points at the cor
 
 ## Antigravity (`agy`)
 
-Antigravity plugin metadata lives in `plugin.json` at the root of the repository, using the core plugin package under `plugins/core/skills/`.
+Antigravity plugin metadata now lives in package roots under `plugins/*/`.
+The core package id is `filipkrawiec-core`.
 
-Install from GitHub remote:
+Install the package roots directly from GitHub:
 
 ```bash
-agy plugin install https://github.com/FilipKrawiec/skills.git
+agy plugin install https://github.com/FilipKrawiec/skills.git/plugins/core
+agy plugin install https://github.com/FilipKrawiec/skills.git/plugins/workflow
+agy plugin install https://github.com/FilipKrawiec/skills.git/plugins/authoring
 ```
 
 For local development:
 
 ```bash
-agy plugin install /Users/filip/Developer/projects/github.com/FilipKrawiec/skills
+agy plugin install /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/core
+agy plugin install /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/workflow
+agy plugin install /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/authoring
 ```
 
 ## Validation

@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-workflow",
-  "version": "0.15.0",
+  "version": "0.16.1",
   "description": "Workflow skills for SDLC, TDD, VCS, and review critiques.",
   "author": {
     "name": "Filip Krawiec",

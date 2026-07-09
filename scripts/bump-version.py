@@ -14,7 +14,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATHS = [
-    ROOT / "plugin.json",
     ROOT / ".codex-plugin" / "plugin.json",
     ROOT / ".claude-plugin" / "plugin.json",
     ROOT / "plugins" / "core" / "plugin.json",
@@ -179,7 +178,7 @@ def main() -> None:
             sys.exit(1)
         manifests[path] = json.loads(path.read_text(encoding="utf-8"))
 
-    current_version = manifests[ROOT / "plugin.json"].get("version", "0.1.0")
+    current_version = manifests[ROOT / "plugins" / "core" / "plugin.json"].get("version", "0.1.0")
     try:
         new_version = bump_version(current_version, bump_type)
     except Exception as exc:

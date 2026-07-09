@@ -9,7 +9,7 @@
   },
   "plugins": [
     {
-      "name": "filipkrawiec",
+      "name": "filipkrawiec-core",
       "description": "Core agentic software engineering skills for domain modeling and architecture.",
       "category": "development",
       "source": "./plugins/core",

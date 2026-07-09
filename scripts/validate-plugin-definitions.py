@@ -23,13 +23,12 @@ ALLOWED_FRONTMATTER_KEYS = {
 }
 
 ROOT_MANIFESTS = {
-    ROOT / "plugin.json": ("filipkrawiec", "./plugins/core/skills/"),
-    ROOT / ".codex-plugin" / "plugin.json": ("filipkrawiec", "./plugins/core/skills/"),
-    ROOT / ".claude-plugin" / "plugin.json": ("filipkrawiec", "./plugins/core/skills/"),
+    ROOT / ".codex-plugin" / "plugin.json": ("filipkrawiec-core", "./plugins/core/skills/"),
+    ROOT / ".claude-plugin" / "plugin.json": ("filipkrawiec-core", "./plugins/core/skills/"),
 }
 
 PACKAGE_MANIFESTS = {
-    ROOT / "plugins" / "core" / "plugin.json": ("filipkrawiec", "./skills/"),
+    ROOT / "plugins" / "core" / "plugin.json": ("filipkrawiec-core", "./skills/"),
     ROOT / "plugins" / "workflow" / "plugin.json": ("filipkrawiec-workflow", "./skills/"),
     ROOT / "plugins" / "authoring" / "plugin.json": ("filipkrawiec-authoring", "./skills/"),
 }
@@ -41,7 +40,7 @@ PACKAGE_SKILL_TREES = {
 }
 
 MARKETPLACE_PLUGINS = {
-    "filipkrawiec": "./plugins/core",
+    "filipkrawiec-core": "./plugins/core",
     "filipkrawiec-workflow": "./plugins/workflow",
     "filipkrawiec-authoring": "./plugins/authoring",
 }
