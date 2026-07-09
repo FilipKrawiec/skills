@@ -1,5 +1,5 @@
 ---
-name: domain-driven-design
+name: ddd
 description: Use when defining domain models, ubiquitous language, bounded contexts, context maps, aggregates, entities, value objects, repositories, domain events, or strategic design decisions.
 ---
 

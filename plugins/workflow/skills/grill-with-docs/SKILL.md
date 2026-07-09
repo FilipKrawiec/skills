@@ -5,7 +5,7 @@ description: Use when stress-testing a plan, design, PRD, or ADR against source 
 
 # Grill With Docs
 
-Run a grilling session against the supplied docs. If the session settles domain language or an architectural decision, use `domain-driven-design` to update `CONTEXT.md` or ADRs.
+Run a grilling session against the supplied docs. If the session settles domain language or an architectural decision, use `ddd` to update `CONTEXT.md` or ADRs.
 
 ## Loop
 

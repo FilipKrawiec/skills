@@ -213,7 +213,7 @@ phases:
               tasks:
                 - task_id: "domain_validation_status"
                   description: "Model ValidationStatus (Value Object) and add it to the Skill aggregate root using TDD (failing unit test first, then minimal implementation, then refactor)."
-                  skills: ["domain-driven-design", "tdd"]
+                  skills: ["ddd", "tdd"]
                 - task_id: "domain_repository_port"
                   description: "Update the SkillRepository port interface to support retrieving and persisting the new validation status field."
                   skills: ["hexagonal-architecture"]

@@ -7,8 +7,8 @@
     "email": "contact@filipkrawiec.com",
     "url": "https://github.com/FilipKrawiec"
   },
-  "homepage": "https://github.com/FilipKrawiec/skills",
   "repository": "https://github.com/FilipKrawiec/skills",
+  "homepage": "https://github.com/FilipKrawiec/skills",
   "license": "UNLICENSED",
   "keywords": [
     "skills",
@@ -17,5 +17,5 @@
     "architecture",
     "agentic-workflow"
   ],
-  "skills": "./plugins/core/skills/"
+  "skills": "./skills/"
 }

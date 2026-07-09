@@ -7,11 +7,12 @@ This folder stores durable project records.
 - `adr/` for architectural and repository-structure decisions
 - `records/` for dated notes, research summaries, and follow-up records
 
-Operational agent guidance belongs in `AGENTS.md`. Skill authoring guidance belongs in `skills/writing-great-skill/`.
+Operational agent guidance belongs in `AGENTS.md`. Skill authoring guidance belongs in `plugins/authoring/skills/writing-great-skill/`.
 
 ## Current ADRs
 
 - `adr/0001-store-skills-under-root-skills.md`
 - `adr/0002-domain-driven-design-and-hexagonal-architecture.md`
+- `adr/0006-modular-skill-packaging.md`
 - `adr/0003-test-driven-development.md`
 - `adr/0004-version-control-system-workflow.md`

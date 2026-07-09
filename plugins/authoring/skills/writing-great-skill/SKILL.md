@@ -36,7 +36,7 @@ For user-invoked skills, keep the description as a one-line human summary.
 
 ## Naming Conventions
 
-- **Skill Directory**: Must use `lowercase-kebab-case` (e.g., `domain-driven-design`).
+- **Skill Directory**: Must use `lowercase-kebab-case` (e.g., `ddd`).
 - **Main Instruction File**: Must be named exactly `SKILL.md` (all uppercase).
 - **Reference Files**: Must use `lowercase-kebab-case.md` (e.g., `ubiquitous-language.md`), and reside within the local `references/` subdirectory.
 - **Assets**: Store templates and static resources in `assets/`.

@@ -27,7 +27,7 @@ Guides steer the agent before work begins. Sensors inspect outputs after work be
 
 ## ADR Format
 
-ADRs live in `docs/adr/` and use sequential numbering: `000X-short-slug.md` (e.g. `docs/adr/0002-hexagonal-architecture.md`). A template is available at `skills/sdlc/assets/adr-template.md`.
+ADRs live in `docs/adr/` and use sequential numbering: `000X-short-slug.md` (e.g. `docs/adr/0002-hexagonal-architecture.md`). A template is available at `plugins/workflow/skills/sdlc/assets/adr-template.md`.
 
 Keep ADRs short. The value is recording that a decision was made, the context behind it, and the consequences.
 

@@ -4,7 +4,7 @@
 
 We will adopt a standardized Git workflow across all repositories to maintain a clean, readable, and linear history.
 
-The detailed process guidelines are maintained in the canonical [vcs](../../skills/vcs/SKILL.md) skill and its reference files: [branch-management.md](../../skills/vcs/references/branch-management.md), [commit-guidelines.md](../../skills/vcs/references/commit-guidelines.md), [integration-policies.md](../../skills/vcs/references/integration-policies.md), and [file-operations.md](../../skills/vcs/references/file-operations.md).
+The detailed process guidelines are maintained in the canonical [vcs](../../plugins/workflow/skills/vcs/SKILL.md) skill and its reference files: [branch-management.md](../../plugins/workflow/skills/vcs/references/branch-management.md), [commit-guidelines.md](../../plugins/workflow/skills/vcs/references/commit-guidelines.md), [integration-policies.md](../../plugins/workflow/skills/vcs/references/integration-policies.md), and [file-operations.md](../../plugins/workflow/skills/vcs/references/file-operations.md).
 
 ## Context
 

@@ -21,7 +21,7 @@ Every phase block in the SDLC record owns this lifecycle checklist. Each lifecyc
 4. **Verification:** Run deterministic sensors before inferential review; record results, skipped checks, retries, risks, and events.
 5. **Improvement:** Update phase status, lessons, event log, and next phase. In `hil` mode, present the approval gate summary before asking for approval, then stop.
 
-From the repository root, validate the active record with `python3 skills/sdlc/scripts/validate-sdlc-record.py .sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml`.
+From the repository root, validate the active record with `python3 plugins/workflow/skills/sdlc/scripts/validate-sdlc-record.py .sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml`.
 
 ## Approval Gates
 

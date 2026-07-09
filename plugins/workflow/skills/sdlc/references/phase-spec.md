@@ -9,7 +9,7 @@ Define the harness controls before implementation begins.
 ## Configuration
 
 - Identify architectural boundaries, target components, affected files, and relevant existing decisions.
-- Decide whether the task needs `domain-driven-design`, `hexagonal-architecture`, `tdd`, `vcs`, or `grill-with-docs`.
+- Decide whether the task needs `ddd`, `hexagonal-architecture`, `tdd`, `vcs`, or `grill-with-docs`.
 
 ## Execution
 

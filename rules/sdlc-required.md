@@ -3,7 +3,7 @@
 Follow this protocol to ensure that all changes made to the repository files are properly tracked and executed through the Software Development Life Cycle (SDLC) workflow.
 
 ## Context
-To keep the codebase stable and well-documented, all file modifications (code, configuration, and documentation) in the `skills` repository must go through the structured SDLC phases.
+To keep the codebase stable and well-documented, all file modifications (code, configuration, and documentation) in the repository must go through the structured SDLC phases.
 
 ## Protocol for Agents
 When executing any task that modifies files in this repository:

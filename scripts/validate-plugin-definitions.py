@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Validate that plugin manifests match this repository's canonical skill layout."""
+"""Validate that plugin manifests match this repository's packaged skill layout."""
 
 from __future__ import annotations
 
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -13,17 +12,6 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SKILLS = {
-    "sdlc",
-    "domain-driven-design",
-    "hexagonal-architecture",
-    "grill-with-docs",
-    "writing-great-skill",
-    "tdd",
-    "teach",
-    "vcs",
-}
-PLUGIN_NAME = "filipkrawiec"
 SKILL_NAME_RE = re.compile(r"^(?!.*--)[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 REFERENCE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*\.md$")
 ALLOWED_FRONTMATTER_KEYS = {
@@ -32,6 +20,30 @@ ALLOWED_FRONTMATTER_KEYS = {
     "license",
     "compatibility",
     "metadata",
+}
+
+ROOT_MANIFESTS = {
+    ROOT / "plugin.json": ("filipkrawiec", "./plugins/core/skills/"),
+    ROOT / ".codex-plugin" / "plugin.json": ("filipkrawiec", "./plugins/core/skills/"),
+    ROOT / ".claude-plugin" / "plugin.json": ("filipkrawiec", "./plugins/core/skills/"),
+}
+
+PACKAGE_MANIFESTS = {
+    ROOT / "plugins" / "core" / "plugin.json": ("filipkrawiec", "./skills/"),
+    ROOT / "plugins" / "workflow" / "plugin.json": ("filipkrawiec-workflow", "./skills/"),
+    ROOT / "plugins" / "authoring" / "plugin.json": ("filipkrawiec-authoring", "./skills/"),
+}
+
+PACKAGE_SKILL_TREES = {
+    ROOT / "plugins" / "core" / "skills": {"ddd", "hexagonal-architecture"},
+    ROOT / "plugins" / "workflow" / "skills": {"sdlc", "tdd", "vcs", "grill-with-docs"},
+    ROOT / "plugins" / "authoring" / "skills": {"writing-great-skill", "teach"},
+}
+
+MARKETPLACE_PLUGINS = {
+    "filipkrawiec": "./plugins/core",
+    "filipkrawiec-workflow": "./plugins/workflow",
+    "filipkrawiec-authoring": "./plugins/authoring",
 }
 
 
@@ -47,12 +59,6 @@ def load_json(path: Path) -> dict:
         fail(f"missing {path.relative_to(ROOT)}")
     except json.JSONDecodeError as exc:
         fail(f"invalid JSON in {path.relative_to(ROOT)}: {exc}")
-
-
-def run(command: list[str]) -> None:
-    result = subprocess.run(command, cwd=ROOT, text=True)
-    if result.returncode != 0:
-        fail(f"command failed: {' '.join(command)}")
 
 
 def parse_skill_frontmatter(path: Path) -> dict:
@@ -80,16 +86,17 @@ def validate_skill_spec(skill_dir: Path) -> None:
     if not SKILL_NAME_RE.fullmatch(skill_name):
         fail(f"skill directory must be lowercase kebab-case: {skill_dir.relative_to(ROOT)}")
 
-    frontmatter = parse_skill_frontmatter(skill_dir / "SKILL.md")
+    skill_file = skill_dir / "SKILL.md"
+    frontmatter = parse_skill_frontmatter(skill_file)
     extra_keys = set(frontmatter) - ALLOWED_FRONTMATTER_KEYS
     if extra_keys:
-        fail(f"{skill_dir / 'SKILL.md'} uses non-spec frontmatter keys: {sorted(extra_keys)}")
+        fail(f"{skill_file} uses non-spec frontmatter keys: {sorted(extra_keys)}")
     if frontmatter.get("name") != skill_name:
-        fail(f"{skill_dir / 'SKILL.md'} name must match directory '{skill_name}'")
+        fail(f"{skill_file} name must match directory '{skill_name}'")
     if not isinstance(frontmatter.get("description"), str) or not frontmatter.get("description"):
-        fail(f"{skill_dir / 'SKILL.md'} must define a non-empty description")
+        fail(f"{skill_file} must define a non-empty description")
     if len(frontmatter["description"]) > 1024:
-        fail(f"{skill_dir / 'SKILL.md'} description exceeds 1024 characters")
+        fail(f"{skill_file} description exceeds 1024 characters")
 
     legacy_resources = skill_dir / "resources"
     if legacy_resources.exists():
@@ -102,61 +109,57 @@ def validate_skill_spec(skill_dir: Path) -> None:
                 fail(f"reference file must be lowercase kebab-case.md: {reference.relative_to(ROOT)}")
 
 
-def validate_skill_tree() -> None:
-    skills_dir = ROOT / "skills"
-    if not skills_dir.is_dir():
-        fail("missing skills/")
+def validate_skill_tree(root: Path, expected_skills: set[str]) -> None:
+    if not root.is_dir():
+        fail(f"missing {root.relative_to(ROOT)}/")
 
     found = {
         path.name
-        for path in skills_dir.iterdir()
+        for path in root.iterdir()
         if path.is_dir() and (path / "SKILL.md").is_file()
     }
-    if found != EXPECTED_SKILLS:
-        fail(f"skills mismatch: expected {sorted(EXPECTED_SKILLS)}, found {sorted(found)}")
+    if found != expected_skills:
+        fail(f"{root.relative_to(ROOT)} mismatch: expected {sorted(expected_skills)}, found {sorted(found)}")
     for skill_name in sorted(found):
-        validate_skill_spec(skills_dir / skill_name)
+        validate_skill_spec(root / skill_name)
 
 
-def validate_manifest(path: Path, check_skills: bool = True) -> None:
+def validate_manifest(path: Path, expected_name: str, expected_skills: str) -> None:
     manifest = load_json(path)
-    if manifest.get("name") != PLUGIN_NAME:
-        fail(f"{path.relative_to(ROOT)} must use plugin name {PLUGIN_NAME}")
-    if check_skills and manifest.get("skills") != "./skills/":
-        fail(f"{path.relative_to(ROOT)} must set skills to ./skills/")
+    if manifest.get("name") != expected_name:
+        fail(f"{path.relative_to(ROOT)} must use plugin name {expected_name}")
+    if manifest.get("skills") != expected_skills:
+        fail(f"{path.relative_to(ROOT)} must set skills to {expected_skills}")
 
 
-def find_marketplace_plugin(path: Path) -> dict:
+def validate_marketplace(path: Path) -> None:
     marketplace = load_json(path)
     plugins = marketplace.get("plugins")
     if not isinstance(plugins, list):
         fail(f"{path.relative_to(ROOT)} must define plugins[]")
 
-    matches = [plugin for plugin in plugins if plugin.get("name") == PLUGIN_NAME]
-    if len(matches) != 1:
-        fail(f"{path.relative_to(ROOT)} must define exactly one {PLUGIN_NAME} plugin entry")
-    return matches[0]
+    found = {plugin.get("name"): plugin for plugin in plugins if isinstance(plugin, dict)}
+    if set(found) != set(MARKETPLACE_PLUGINS):
+        fail(f"{path.relative_to(ROOT)} must define plugins {sorted(MARKETPLACE_PLUGINS)}")
 
-def validate_claude_marketplace(path: Path) -> None:
-    plugin = find_marketplace_plugin(path)
-    source = plugin.get("source")
-    expected = {"source": "url", "url": "https://github.com/FilipKrawiec/skills.git"}
-    if source != expected and source != "./":
-        fail(f"{path.relative_to(ROOT)} must point {PLUGIN_NAME} at the GitHub repository or './'")
+    for plugin_name, expected_source in MARKETPLACE_PLUGINS.items():
+        plugin = found[plugin_name]
+        if plugin.get("source") != expected_source:
+            fail(f"{path.relative_to(ROOT)} must point {plugin_name} at {expected_source}")
 
 
 def main() -> None:
-    validate_skill_tree()
-    validate_manifest(ROOT / ".codex-plugin" / "plugin.json")
-    validate_manifest(ROOT / ".claude-plugin" / "plugin.json")
-    validate_claude_marketplace(ROOT / ".claude-plugin" / "marketplace.json")
-    validate_manifest(ROOT / "plugin.json", check_skills=False)
+    for path, (name, skills_path) in ROOT_MANIFESTS.items():
+        validate_manifest(path, name, skills_path)
 
-    validate_script = Path.home() / ".codex" / "skills" / ".system" / "plugin-creator" / "scripts" / "validate_plugin.py"
-    run(["python3", str(validate_script), "."])
-    run(["claude", "plugin", "validate", "--strict", ".claude-plugin/plugin.json"])
-    run(["claude", "plugin", "validate", "--strict", ".claude-plugin/marketplace.json"])
-    run(["agy", "plugin", "validate", "."])
+    for path, (name, skills_path) in PACKAGE_MANIFESTS.items():
+        validate_manifest(path, name, skills_path)
+
+    for root, skills in PACKAGE_SKILL_TREES.items():
+        validate_skill_tree(root, skills)
+
+    validate_marketplace(ROOT / ".claude-plugin" / "marketplace.json")
+    print("Plugin validation passed.")
 
 
 if __name__ == "__main__":

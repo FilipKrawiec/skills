@@ -1,8 +1,9 @@
 {
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "filipkrawiec",
-  "version": "0.11.0",
-  "description": "Agentic software engineering skills for grilling plans, domain-driven design, and writing effective reusable skills.",
+  "version": "0.15.0",
+  "description": "Core agentic software engineering skills for domain modeling and architecture.",
   "author": "Filip Krawiec",
-  "repository": "https://github.com/FilipKrawiec/skills"
+  "repository": "https://github.com/FilipKrawiec/skills",
+  "skills": "./plugins/core/skills/"
 }

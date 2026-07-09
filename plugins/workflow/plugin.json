@@ -1,0 +1,22 @@
+{
+  "name": "filipkrawiec-workflow",
+  "version": "0.15.0",
+  "description": "Workflow skills for SDLC, TDD, VCS, and review critiques.",
+  "author": {
+    "name": "Filip Krawiec",
+    "email": "contact@filipkrawiec.com",
+    "url": "https://github.com/FilipKrawiec"
+  },
+  "repository": "https://github.com/FilipKrawiec/skills",
+  "homepage": "https://github.com/FilipKrawiec/skills",
+  "license": "UNLICENSED",
+  "keywords": [
+    "skills",
+    "workflow",
+    "sdlc",
+    "tdd",
+    "vcs",
+    "review"
+  ],
+  "skills": "./skills/"
+}
