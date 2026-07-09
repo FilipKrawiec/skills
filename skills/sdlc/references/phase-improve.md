@@ -15,6 +15,8 @@ Convert run feedback into durable skill or process improvements.
 - Write the final retrospective under `phases.IMPROVE.retrospective`.
 - For each mistake, bug, or repeated rework pattern, identify the underlying guide, sensor, template, or skill gap.
 - Add concrete follow-up items under `actionable_issues`.
+- For each actionable issue, separate the observation, recommendation, affected skill or workflow file, proposed instruction change, and risk of overfitting.
+- Create or update an improvement issue instead of silently changing workflow rules outside the active approved scope.
 
 ## Verify
 

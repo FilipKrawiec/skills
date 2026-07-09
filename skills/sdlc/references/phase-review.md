@@ -9,12 +9,14 @@ Review the patch, sensor results, and unresolved risks before human approval.
 
 ## Configuration
 
-- Generate the git diff and collect sensor results, retry history, guide selections, and event log entries.
+- Generate the git diff and collect acceptance criteria, sensor results, skipped checks, retry history, guide selections, and event log entries.
 
 ## Execution
 
 - Write review details under `phases.REVIEW.review`.
+- Check acceptance criteria coverage, deterministic sensor evidence, skipped checks and risk, correction history, and unresolved risks.
 - Run AI code review or architecture review as inferential sensors when selected.
+- Treat persona or AI review as secondary to deterministic evidence, not a substitute for it.
 - Resolve, accept with rationale, or record each AI review finding as an unresolved risk.
 - Verify ADR-0005 observability deliverables against the spec when applicable: telemetry emission, dashboard config, alerting logic, and test coverage.
 
@@ -27,4 +29,4 @@ Review the patch, sensor results, and unresolved risks before human approval.
 
 - Append REVIEW lessons to `phases.REVIEW.improvements`.
 - After approval, set `phases.REVIEW.approved: true`.
-- Mark REVIEW `COMPLETED`, set `current_phase: "SHIP"`, and reset `lifecycle_stage: "INITIALIZATION"`.
+- Mark REVIEW `COMPLETED`, set `current_phase: "SHIP"`, and reset `lifecycle_stage: "Assessment"`.

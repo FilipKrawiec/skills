@@ -23,17 +23,18 @@ Produce a patch through the bounded feedback loop.
   2. Green Stage: Spawn subagent to implement code and verify tests pass.
   3. Refactor Stage: Spawn subagent to optimize code and verify tests remain green.
 - Ensure all compilation and test logs are run and isolated within the subagent's sandbox. The subagent must return only the high-level progression status (success, error details, and updated files) to keep the root context clean.
+- Give each subagent a narrow packet: target files, expected output, selected guides, selected sensors, verification commands, no-exploration boundaries, and instructions to preserve unrelated user changes.
 - Implement ADR-0005 observability tasks from the plan when applicable.
 - Record meaningful events such as `AgentInvocationStarted` (per subagent spawn), `PatchCreated`, `SensorRunStarted`, `SensorFindingDetected`, `CorrectionRequested`, and `PatchUpdated`.
 
 ## Verify
 
 - Run deterministic sensors (such as full build and test suites) as black-box checks.
-- If sensors fail, delegate the correction task to a specialized tester subagent, ensuring the root context is not polluted with raw logs.
+- If sensors fail, record the finding, delegate a targeted correction task to a specialized tester subagent, update the patch, and rerun the relevant sensor before broad verification.
 - Retry only within `harness.sandbox.limits.max_correction_attempts`.
 - If attempts are exhausted, mark the task failed, preserve the working tree, record unresolved risks, and follow `multi-agent-negotiation`.
 
 ## Improve
 
 - Append EXECUTE lessons to `phases.EXECUTE.improvements`.
-- Mark EXECUTE `COMPLETED`, set `current_phase: "REVIEW"`, and reset `lifecycle_stage: "INITIALIZATION"`.
+- Mark EXECUTE `COMPLETED`, set `current_phase: "REVIEW"`, and reset `lifecycle_stage: "Assessment"`.

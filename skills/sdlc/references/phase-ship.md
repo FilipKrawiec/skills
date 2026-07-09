@@ -24,4 +24,4 @@ Integrate the approved change without expanding scope.
 ## Improve
 
 - Append SHIP lessons to `phases.SHIP.improvements`.
-- Mark SHIP `COMPLETED`, set `current_phase: "IMPROVE"`, and reset `lifecycle_stage: "INITIALIZATION"`.
+- Mark SHIP `COMPLETED`, set `current_phase: "IMPROVE"`, and reset `lifecycle_stage: "Assessment"`.

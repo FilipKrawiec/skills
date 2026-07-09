@@ -28,5 +28,5 @@ Define the harness controls before implementation begins.
 ## Improve
 
 - Append SPEC lessons to `phases.SPEC.improvements`.
-- Mark SPEC `COMPLETED`, set `current_phase: "PLAN"`, and reset `lifecycle_stage: "INITIALIZATION"`.
+- Mark SPEC `COMPLETED`, set `current_phase: "PLAN"`, and reset `lifecycle_stage: "Assessment"`.
 - In `hil` mode, follow the main skill's Approval Gates rule before stopping for human approval.

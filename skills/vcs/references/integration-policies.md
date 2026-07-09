@@ -9,6 +9,7 @@ Follow these guidelines to sync, rebase, and merge changes cleanly:
   git fetch origin
   git rebase origin/main
   ```
+- Before rebasing, merging, creating a pull request, or cleaning up a branch, check branch and worktree state with `git status --short --branch` and preserve unrelated user changes.
 
 ## 2. Squashing Commits
 - Squash intermediate commits (e.g., "fix typo", "wip") into logical, cohesive units before requesting a review or merging.

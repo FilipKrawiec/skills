@@ -1,6 +1,6 @@
 # SDLC State Schema Reference
 
-This reference document defines the structure and schema of the single-record SDLC file used to track all deliverables, state transitions, and subphase lifecycles.
+This reference document defines the structure and schema of the single-record SDLC file used to track all deliverables, phase transitions, and lifecycle stages.
 
 ## File Location
 Every SDLC run is managed via a single YAML record located at:
@@ -13,7 +13,7 @@ ticket: "123"
 title: "Enforce Skill Validation Status"
 mode: "hil"                  # "afk" or "hil" (auto-detected: "afk" if issue has "afk" label, else "hil")
 current_phase: "DEFINE"      # DEFINE, SPEC, PLAN, EXECUTE, REVIEW, SHIP, IMPROVE
-lifecycle_stage: "INITIALIZATION"  # Each phase is composed of these subphases (lifecycles)
+lifecycle_stage: "Request"   # Active cursor for the current phase: Request, Assessment, Configuration, Execution, Verification, Improvement, Completion, Failure
 iteration: "00"              # Two-digit iteration index
 
 harness:
@@ -45,6 +45,39 @@ harness:
 phases:
   DEFINE:
     status: "PENDING"        # PENDING, IN_PROGRESS, COMPLETED
+    lifecycle:
+      Request:
+        status: "PENDING"
+        instructions:
+          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
+      Assessment:
+        status: "PENDING"
+        instructions:
+          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
+      Configuration:
+        status: "PENDING"
+        instructions:
+          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
+      Execution:
+        status: "PENDING"
+        instructions:
+          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
+      Verification:
+        status: "PENDING"
+        instructions:
+          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
+      Improvement:
+        status: "PENDING"
+        instructions:
+          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
+      Completion:
+        status: "PENDING"
+        instructions:
+          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
+      Failure:
+        status: "PENDING"
+        instructions:
+          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
     brief:
       summary: "Add ValidationStatus to the Skill aggregate root and prevent unvalidated skills from being published."
       context: "Currently skills can be published to the catalog without any safety checks. We need a validation process."
@@ -58,6 +91,39 @@ phases:
     improvements: []
   SPEC:
     status: "PENDING"
+    lifecycle:
+      Request:
+        status: "PENDING"
+        instructions:
+          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
+      Assessment:
+        status: "PENDING"
+        instructions:
+          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
+      Configuration:
+        status: "PENDING"
+        instructions:
+          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
+      Execution:
+        status: "PENDING"
+        instructions:
+          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
+      Verification:
+        status: "PENDING"
+        instructions:
+          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
+      Improvement:
+        status: "PENDING"
+        instructions:
+          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
+      Completion:
+        status: "PENDING"
+        instructions:
+          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
+      Failure:
+        status: "PENDING"
+        instructions:
+          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
     spec:
       design_boundaries: "The Domain Layer owns the Skill aggregate root, ValidationStatus value object, and SkillRepository port. The Application Layer owns the PublishSkillUseCase interactor. The Infrastructure/API layers contain the DB and controller adapters."
       affected_components:
@@ -83,6 +149,39 @@ phases:
     improvements: []
   PLAN:
     status: "PENDING"
+    lifecycle:
+      Request:
+        status: "PENDING"
+        instructions:
+          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
+      Assessment:
+        status: "PENDING"
+        instructions:
+          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
+      Configuration:
+        status: "PENDING"
+        instructions:
+          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
+      Execution:
+        status: "PENDING"
+        instructions:
+          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
+      Verification:
+        status: "PENDING"
+        instructions:
+          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
+      Improvement:
+        status: "PENDING"
+        instructions:
+          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
+      Completion:
+        status: "PENDING"
+        instructions:
+          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
+      Failure:
+        status: "PENDING"
+        instructions:
+          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
     approved: false
     plan:
       test_strategy: "Implement unit tests for the domain and use cases with minimal mock dependencies. Implement integration database tests for the repository adapter."
@@ -149,6 +248,39 @@ phases:
     improvements: []
   EXECUTE:
     status: "PENDING"
+    lifecycle:
+      Request:
+        status: "PENDING"
+        instructions:
+          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
+      Assessment:
+        status: "PENDING"
+        instructions:
+          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
+      Configuration:
+        status: "PENDING"
+        instructions:
+          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
+      Execution:
+        status: "PENDING"
+        instructions:
+          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
+      Verification:
+        status: "PENDING"
+        instructions:
+          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
+      Improvement:
+        status: "PENDING"
+        instructions:
+          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
+      Completion:
+        status: "PENDING"
+        instructions:
+          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
+      Failure:
+        status: "PENDING"
+        instructions:
+          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
     outcome:
       patch_created: false
       sensor_results:
@@ -169,6 +301,39 @@ phases:
     improvements: []
   REVIEW:
     status: "PENDING"
+    lifecycle:
+      Request:
+        status: "PENDING"
+        instructions:
+          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
+      Assessment:
+        status: "PENDING"
+        instructions:
+          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
+      Configuration:
+        status: "PENDING"
+        instructions:
+          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
+      Execution:
+        status: "PENDING"
+        instructions:
+          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
+      Verification:
+        status: "PENDING"
+        instructions:
+          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
+      Improvement:
+        status: "PENDING"
+        instructions:
+          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
+      Completion:
+        status: "PENDING"
+        instructions:
+          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
+      Failure:
+        status: "PENDING"
+        instructions:
+          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
     approved: false
     review:
       summary_of_changes: "Summary of implemented work"
@@ -179,10 +344,76 @@ phases:
     improvements: []
   SHIP:
     status: "PENDING"
+    lifecycle:
+      Request:
+        status: "PENDING"
+        instructions:
+          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
+      Assessment:
+        status: "PENDING"
+        instructions:
+          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
+      Configuration:
+        status: "PENDING"
+        instructions:
+          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
+      Execution:
+        status: "PENDING"
+        instructions:
+          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
+      Verification:
+        status: "PENDING"
+        instructions:
+          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
+      Improvement:
+        status: "PENDING"
+        instructions:
+          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
+      Completion:
+        status: "PENDING"
+        instructions:
+          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
+      Failure:
+        status: "PENDING"
+        instructions:
+          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
     outcome: {}
     improvements: []
   IMPROVE:
     status: "PENDING"
+    lifecycle:
+      Request:
+        status: "PENDING"
+        instructions:
+          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
+      Assessment:
+        status: "PENDING"
+        instructions:
+          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
+      Configuration:
+        status: "PENDING"
+        instructions:
+          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
+      Execution:
+        status: "PENDING"
+        instructions:
+          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
+      Verification:
+        status: "PENDING"
+        instructions:
+          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
+      Improvement:
+        status: "PENDING"
+        instructions:
+          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
+      Completion:
+        status: "PENDING"
+        instructions:
+          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
+      Failure:
+        status: "PENDING"
+        instructions:
+          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
     retrospective:
       lessons_learned: []
       actionable_issues: []

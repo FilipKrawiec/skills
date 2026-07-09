@@ -28,5 +28,5 @@ Capture the task as a small, verifiable harness run.
 ## Improve
 
 - Append DEFINE lessons to `phases.DEFINE.improvements`.
-- Mark DEFINE `COMPLETED`, set `current_phase: "SPEC"`, and reset `lifecycle_stage: "INITIALIZATION"`.
+- Mark DEFINE `COMPLETED`, set `current_phase: "SPEC"`, and reset `lifecycle_stage: "Assessment"`.
 - In `hil` mode, follow the main skill's Approval Gates rule before stopping for human approval.

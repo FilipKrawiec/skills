@@ -10,7 +10,8 @@ from pathlib import Path
 import yaml
 
 VALID_PHASES = {"DEFINE", "SPEC", "PLAN", "EXECUTE", "REVIEW", "SHIP", "IMPROVE"}
-VALID_STAGES = {"INITIALIZATION", "CONFIGURATION", "EXECUTION", "VERIFY", "IMPROVE"}
+VALID_STAGE_ORDER = ["Request", "Assessment", "Configuration", "Execution", "Verification", "Improvement", "Completion", "Failure"]
+VALID_STAGES = set(VALID_STAGE_ORDER)
 VALID_STATUSES = {"PENDING", "IN_PROGRESS", "COMPLETED"}
 
 
@@ -35,6 +36,33 @@ def require_list(value: object, context: str) -> None:
     if not isinstance(value, list):
         print(f"Error: {context} must be a list", file=sys.stderr)
         sys.exit(1)
+
+
+def validate_lifecycle(value: object, context: str) -> None:
+    """Fail when a phase lifecycle checklist is missing stages, statuses, or instructions."""
+    lifecycle = require_mapping(value, context)
+    missing = VALID_STAGES - set(lifecycle.keys())
+    extra = set(lifecycle.keys()) - VALID_STAGES
+    if missing:
+        print(f"Error: Missing lifecycle stages in {context}: {sorted(missing)}", file=sys.stderr)
+        sys.exit(1)
+    if extra:
+        print(f"Error: Unknown lifecycle stages in {context}: {sorted(extra)}", file=sys.stderr)
+        sys.exit(1)
+    for stage_name in VALID_STAGE_ORDER:
+        stage = require_mapping(lifecycle[stage_name], f"{context}.{stage_name}")
+        require_keys(stage, {"status", "instructions"}, f"{context}.{stage_name}")
+        stage_status = stage["status"]
+        if stage_status not in VALID_STATUSES:
+            print(
+                f"Error: Invalid lifecycle status '{stage_status}' for {context}.{stage_name}.status. Must be one of {VALID_STATUSES}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        require_list(stage["instructions"], f"{context}.{stage_name}.instructions")
+        if not stage["instructions"] or not all(isinstance(item, str) and item.strip() for item in stage["instructions"]):
+            print(f"Error: {context}.{stage_name}.instructions must contain at least one non-empty string", file=sys.stderr)
+            sys.exit(1)
 
 
 def validate_record(file_path: Path) -> None:
@@ -113,6 +141,11 @@ def validate_record(file_path: Path) -> None:
         if phase_data["status"] not in VALID_STATUSES:
             print(f"Error: Invalid status '{phase_data['status']}' in phase '{phase_name}'. Must be one of {VALID_STATUSES}", file=sys.stderr)
             sys.exit(1)
+
+        if "lifecycle" not in phase_data:
+            print(f"Error: Missing 'lifecycle' in phase '{phase_name}'", file=sys.stderr)
+            sys.exit(1)
+        validate_lifecycle(phase_data["lifecycle"], f"phases.{phase_name}.lifecycle")
 
         # Improvements list validation
         if "improvements" not in phase_data:

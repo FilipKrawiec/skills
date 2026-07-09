@@ -9,11 +9,17 @@ Run repository changes through a bounded harness: guides steer work, sensors ins
 
 ## Core Loop
 
-1. **State:** Locate or create `.sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml` from `assets/sdlc-template.yaml`; read `current_phase` and `lifecycle_stage`.
-2. **Configure:** Select guides, sensors, sandbox policy, approval gates, and context boundaries before acting.
-3. **Execute:** Read only the active phase reference and perform that phase. Patch production happens only in EXECUTE.
-4. **Verify:** Run deterministic sensors before inferential review; record results, retries, risks, and events.
-5. **Improve:** Update phase status, lessons, event log, and next phase. In `hil` mode, present the approval gate summary before asking for approval, then stop.
+Lifecycle: `Request -> Assessment -> Configuration -> Execution -> Verification -> Improvement -> Completion/Failure`.
+
+Request captures the task intake, Assessment reads the record and relevant context, Configuration selects controls, Execution performs the active phase, Verification runs sensors, Improvement records lessons and next state, and Completion/Failure closes the run. The seven SDLC phases stay as the detailed operating references inside this lifecycle.
+
+Every phase block in the SDLC record owns this lifecycle checklist. Each lifecycle stage stores `status` plus `instructions`, so the record remains a code-mappable task contract. Keep the top-level `lifecycle_stage` cursor and the active `phases.<PHASE>.lifecycle` statuses in sync as work moves through a phase.
+
+1. **Assessment:** Locate or create `.sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml` from `assets/sdlc-template.yaml`; read `current_phase` and `lifecycle_stage`.
+2. **Configuration:** Select guides, sensors, sandbox policy, approval gates, and context boundaries before acting.
+3. **Execution:** Read only the active phase reference and perform that phase. Patch production happens only in EXECUTE.
+4. **Verification:** Run deterministic sensors before inferential review; record results, skipped checks, retries, risks, and events.
+5. **Improvement:** Update phase status, lessons, event log, and next phase. In `hil` mode, present the approval gate summary before asking for approval, then stop.
 
 From the repository root, validate the active record with `python3 skills/sdlc/scripts/validate-sdlc-record.py .sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml`.
 
