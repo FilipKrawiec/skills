@@ -1,32 +1,5 @@
-# SPEC Phase
+# SPEC Task Stage
 
-Define the harness controls before implementation begins.
+Collaborate with the human to create the Specification: deliverable, completion condition, acceptance criteria, constraints, non-goals, repository boundary, risks, controls, Resource Budget, collaboration mode, and recovery-window size `1..3`.
 
-## Initialization
-
-- Verify DEFINE is `COMPLETED` and the brief exists.
-
-## Configuration
-
-- Identify architectural boundaries, target components, affected files, and relevant existing decisions.
-- Decide whether the task needs `ddd`, `hexagonal-architecture`, `tdd`, `vcs`, or `grill-with-docs`.
-
-## Execution
-
-- Use `grill-with-docs` to stress-test assumptions when the task involves a plan, PRD, ADR, or architecture choice.
-- Define guide requirements: project rules, ADRs, architecture notes, testing conventions, coding style, templates, or issue/story formats.
-- Define sensor requirements: compile, tests, formatting, linting, static analysis, architecture tests, dependency checks, and AI review.
-- Define sandbox policy, approval policy, and event-recording requirements.
-- For feature implementation work, apply ADR-0005 by defining observability requirements for metrics, logs, traces, dashboard panels, alerts, and telemetry verification. If observability is not relevant, record why it is out of scope.
-- Write the final specification under `phases.SPEC.spec`.
-
-## Verify
-
-- Confirm `design_boundaries`, `affected_components`, `guide_requirements`, `sensor_requirements`, and `grill_results` are complete enough to plan execution.
-- Confirm unresolved assumptions are either resolved or explicitly recorded as risks.
-
-## Improve
-
-- Append SPEC lessons to `phases.SPEC.improvements`.
-- Mark SPEC `COMPLETED`, set `current_phase: "PLAN"`, and reset `lifecycle_stage: "Assessment"`.
-- In `hil` mode, follow the main skill's Approval Gates rule before stopping for human approval.
+Human approval freezes Specification, reserves the distinct TaskExecutionId, changes Task to `IN_DEVELOPMENT`, and emits `TaskExecutionRequested` in HARNESS or performs the equivalent native handoff in LIGHTWEIGHT. Specification never reopens.

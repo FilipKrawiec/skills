@@ -1,28 +1,5 @@
-# IMPROVE Phase
+# IMPROVE Task Stage
 
-Convert run feedback into durable skill or process improvements.
+Create the mandatory Retrospective for every closing path. Aggregate outcome/rejection reason, strengths, frictions, usage/cost, recovery windows, Human Interventions, accepted risks, proposals, derived Task IDs, and evidence.
 
-## Initialization
-
-- Verify the workflow has shipped, concluded, or been explicitly stopped.
-
-## Configuration
-
-- Gather phase improvements, failed sensors, repeated correction patterns, reviewer objections, and human feedback.
-
-## Execution
-
-- Write the final retrospective under `phases.IMPROVE.retrospective`.
-- For each mistake, bug, or repeated rework pattern, identify the underlying guide, sensor, template, or skill gap.
-- Add concrete follow-up items under `actionable_issues`.
-- For each actionable issue, separate the observation, recommendation, affected skill or workflow file, proposed instruction change, and risk of overfitting.
-- Create or update an improvement issue instead of silently changing workflow rules outside the active approved scope.
-
-## Verify
-
-- Confirm actionable issues are specific enough to become future tasks.
-- Confirm no unresolved risk is hidden outside the final report.
-
-## Improve
-
-- Mark IMPROVE `COMPLETED` and leave the final record ready for audit.
+Improvement creates evidence and draft Tasks only. Derived Tasks are independent aggregates linked through `DERIVATION`, wait for HIL SPEC, and never auto-execute. A `NO_LONGER_NEEDED` rejection may produce no replacement Task but must record wasted cost and why intake or prioritization failed. Close Task only after Retrospective and all derived Tasks/links are persisted.

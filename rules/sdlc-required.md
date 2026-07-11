@@ -1,19 +1,14 @@
-# Custom Rule: Mandatory SDLC Workflow for Edits
+# SDLC Workflow Rule
 
-Follow this protocol to ensure that all changes made to the repository files are properly tracked and executed through the Software Development Life Cycle (SDLC) workflow.
+Classify repository work before acting:
 
-## Context
-To keep the codebase stable and well-documented, all file modifications (code, configuration, and documentation) in the repository must go through the structured SDLC phases.
+- `analysis-only`: read/report; no documents or write workflow.
+- `plan-only`: create only the requested plan artifact.
+- `bounded-change` / `full-delivery`: use the SDLC aggregate protocol.
+- `workflow-maintenance`: explicit human-authorized repair of workflow controls without recursive invocation.
 
-## Protocol for Agents
-When executing any task that modifies files in this repository:
+For delivery, Task follows DEFINE, SPEC, IN_DEVELOPMENT, IMPROVE, CLOSED. Definition and Specification freeze on transition. Task owns at most one dependent Task Execution. PLAN, EXECUTE, REVIEW, and SHIP are append-only Phase Runs with bounded recovery and deterministic sensors.
 
-1. **You MUST use the `sdlc` workflow skill:**
-   - Execute the task strictly through the `sdlc` workflow skill. You are NOT allowed to bypass it.
-   
-2. **Follow the SDLC Phases:**
-   - Steer your execution sequentially through the **DEFINE**, **SPEC**, **PLAN**, **EXECUTE**, **REVIEW**, **SHIP**, and **IMPROVE** phases.
-   - Maintain the single YAML tracking record at `.sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml` and update it at each phase transition.
+`LIGHTWEIGHT` coordinates through native agent/tool messaging and persists aggregate YAML documents; it does not emulate Level 0 or an outbox. `HARNESS` supplies explicit Level 0 and event-driven coordination. Both use the same schema v1 and domain invariants.
 
-3. **Observe Feature Branch Workflow:**
-   - Ensure all work is committed to a short-lived feature branch off the main trunk before squashing and fast-forward merging.
+Only the root coordinator writes aggregate documents. Children receive compact packets and return structured evidence. Preserve unrelated user changes. Shipping requires the Candidate Result Acceptance Decision. Improvement is mandatory on every closing path.

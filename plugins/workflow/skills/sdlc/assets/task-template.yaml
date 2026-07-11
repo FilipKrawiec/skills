@@ -1,0 +1,16 @@
+schema_version: '1'
+document_type: task
+task_id: replace-with-ulid
+revision: 0
+stage: DEFINE
+outcome: null
+definition:
+  title: Replace with task title
+  requested_outcome: Replace with requested outcome
+  context: ''
+  initial_scope: []
+  external_references: []
+specification: null
+execution_slot: null
+retrospective: null
+audit: []

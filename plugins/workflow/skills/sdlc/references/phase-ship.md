@@ -1,27 +1,5 @@
-# SHIP Phase
+# SHIP Phase Run
 
-Integrate the approved change without expanding scope.
+Use one SHIP run to prepare the Candidate Result, suspend in `AWAITING_ACCEPTANCE`, and finalize delivery after approval. Acceptance Decision binds to candidate artifact ID and digest.
 
-## Initialization
-
-- Verify REVIEW is `COMPLETED`, `approved: true`, and required CI or local verification is green.
-
-## Configuration
-
-- Identify target branch, commit style, merge strategy, and any repository-specific release constraints.
-
-## Execution
-
-- Follow the main skill's Approval Gates rule before requesting approval to commit or merge.
-- Prefer a single cohesive squashed commit on trunk.
-- Deployment is out of scope unless the active record explicitly includes it.
-
-## Verify
-
-- Run post-merge or post-deployment verification when applicable.
-- If verification fails, preserve evidence and return to REVIEW with a corrective plan.
-
-## Improve
-
-- Append SHIP lessons to `phases.SHIP.improvements`.
-- Mark SHIP `COMPLETED`, set `current_phase: "IMPROVE"`, and reset `lifecycle_stage: "Assessment"`.
+Recover delivery/infrastructure friction locally without discarding reviewed implementation. After the bounded Recovery Window, enter `WAITING_FOR_HUMAN`. Human Intervention starts a fresh window; these HIL-gated cycles may repeat. Approval remains valid only while the candidate digest is unchanged. Rejection cancels SHIP, rejects Task Execution, and moves Task to IMPROVE.

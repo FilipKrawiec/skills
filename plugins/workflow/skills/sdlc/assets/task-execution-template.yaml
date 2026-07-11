@@ -1,0 +1,25 @@
+schema_version: '1'
+document_type: task_execution
+task_execution_id: replace-with-ulid
+task_id: replace-with-task-ulid
+revision: 0
+state: ACTIVE
+recovery_window:
+  recovery_window_id: replace-with-ulid
+  max_tries: 3
+  tries_used: 0
+phase_runs: []
+budget_extensions: []
+deadline_extensions: []
+human_interventions: []
+acceptance_decision: null
+execution_outcome: null
+usage:
+  tokens: 0
+  elapsed_seconds: 0
+  model_cycles: 0
+  tool_calls: 0
+  autonomous_corrections: 0
+  concurrency: 0
+costs: []
+audit: []

@@ -1,53 +1,53 @@
 ---
 name: sdlc
-description: "Use when modifying repository files through a bounded agentic development harness: define the task, select guides, run work in a sandbox, execute deterministic sensors, feed failures back for limited correction, run review, request human approval, and record the event trail."
+description: "Use when modifying repository files through a bounded agentic development harness: define and specify the task, execute a reviewed delivery, gate shipping, and preserve structured improvement evidence."
 ---
 
-# SDLC Harness
+# SDLC
 
-Run repository changes through a bounded harness: guides steer work, sensors inspect output, humans approve irreversible effects, and the YAML record keeps the event trail.
+Run delivery as behavior over Task, Task Execution, and Task Link aggregates. `LIGHTWEIGHT` uses native agent/tool messaging and YAML snapshots; `HARNESS` supplies explicit Level 0 orchestration. Both preserve the same domain invariants.
 
-## Core Loop
+Classify the request first. `analysis-only` reads and reports without documents. `plan-only` creates only the requested plan artifact. `bounded-change` and `full-delivery` use the aggregate protocol. `workflow-maintenance` is an explicitly authorized bootstrap mode for repairing these controls without recursively invoking them.
 
-Lifecycle: `Request -> Assessment -> Configuration -> Execution -> Verification -> Improvement -> Completion/Failure`.
+## Task Stages
 
-Request captures the task intake, Assessment reads the record and relevant context, Configuration selects controls, Execution performs the active phase, Verification runs sensors, Improvement records lessons and next state, and Completion/Failure closes the run. The seven SDLC phases stay as the detailed operating references inside this lifecycle.
+Task follows `DEFINE -> SPEC -> IN_DEVELOPMENT -> IMPROVE -> CLOSED`.
 
-Every phase block in the SDLC record owns this lifecycle checklist. Each lifecycle stage stores `status` plus `instructions`, so the record remains a code-mappable task contract. Keep the top-level `lifecycle_stage` cursor and the active `phases.<PHASE>.lifecycle` statuses in sync as work moves through a phase.
+1. DEFINE creates the Definition once. Read [phase-define.md](references/phase-define.md).
+2. SPEC collaborates with the human, freezes the Specification on approval, and authorizes the one Task Execution. Read [phase-spec.md](references/phase-spec.md).
+3. IN_DEVELOPMENT runs PLAN, EXECUTE, REVIEW, and SHIP as append-only Phase Runs. Read [phase-plan.md](references/phase-plan.md) for PLAN, [phase-execute.md](references/phase-execute.md) for EXECUTE, [phase-review.md](references/phase-review.md) for REVIEW, and [phase-ship.md](references/phase-ship.md) for SHIP.
+4. IMPROVE creates the mandatory Retrospective, including strengths, frictions, usage/cost, recovery history, risks, proposals, and any derived Tasks. Read [phase-improve.md](references/phase-improve.md).
+5. CLOSED records `ACCEPTED`, `REJECTED`, `CANCELLED`, or `FAILED` only after Retrospective and derived Tasks are persisted.
 
-1. **Assessment:** Locate or create `.sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml` from `assets/sdlc-template.yaml`; read `current_phase` and `lifecycle_stage`.
-2. **Configuration:** Select guides, sensors, sandbox policy, approval gates, and context boundaries before acting.
-3. **Execution:** Read only the active phase reference and perform that phase. Patch production happens only in EXECUTE.
-4. **Verification:** Run deterministic sensors before inferential review; record results, skipped checks, retries, risks, and events.
-5. **Improvement:** Update phase status, lessons, event log, and next phase. In `hil` mode, present the approval gate summary before asking for approval, then stop.
+Definition, Specification, and Retrospective are one-shot Task-owned values. Never reopen a frozen value. If work cannot finish under its Specification, close with learning and derive a linked Task for HIL SPEC.
 
-From the repository root, validate the active record with `python3 plugins/workflow/skills/sdlc/scripts/validate-sdlc-record.py .sdlc/issues/<issue-id>-<branch-name>-<attempt-doubledigit>.yaml`.
+## Task Execution
 
-## Approval Gates
+Task owns zero or one dependent Task Execution by identity. The root coordinator reserves its ID with `TaskExecutionRequested`; duplicate handling must not create another execution.
 
-Before every human approval request, show an **Execution Summary** in the visible response. Ask for approval only after the summary.
+Task Execution owns Phase Runs for PLAN, EXECUTE, REVIEW, and SHIP. Each Phase Run receives a compact Phase Request, uses only required Artifact References, and returns one validated Phase Result. Children never mutate aggregate documents or inherit the parent transcript.
 
-The summary must include:
+Use Resource Budgets selected by task need. `-1` means unlimited, `0` no capacity, and positive values finite limits; concurrency must be positive and finite. A Recovery Window permits one to three autonomous tries.
 
-- Current phase outcome: what was decided, planned, changed, reviewed, or shipped.
-- Affected files or components.
-- Verification status: sensors run, pass/fail results, and skipped checks.
-- Risks, open questions, retry history, or reviewer findings.
-- Next step that approval permits.
+Read [multi-agent-negotiation.md](references/multi-agent-negotiation.md) for review correction, recovery exhaustion, and HIL intervention.
 
-If using a structured approval tool, place the Execution Summary in the message immediately before the tool call and keep the tool prompt self-contained enough to make the decision clear.
+## Acceptance and Improvement
 
----
+REVIEW 1 is the only broad review. Later reviews verify prior findings and delta-introduced regressions. SHIP may start only from the latest successful review.
 
-## Context Pointers
+One SHIP Phase Run prepares the Candidate Result, waits at the single Acceptance Gate, and finalizes shipping after approval. Approval binds to the candidate digest. Rejection moves Task to IMPROVE.
 
-- Read [phase-define.md](references/phase-define.md) when `current_phase` is `DEFINE`.
-- Read [phase-spec.md](references/phase-spec.md) when `current_phase` is `SPEC`.
-- Read [phase-plan.md](references/phase-plan.md) when `current_phase` is `PLAN`.
-- Read [phase-execute.md](references/phase-execute.md) when `current_phase` is `EXECUTE`.
-- Read [phase-review.md](references/phase-review.md) when `current_phase` is `REVIEW`.
-- Read [phase-ship.md](references/phase-ship.md) when `current_phase` is `SHIP`.
-- Read [phase-improve.md](references/phase-improve.md) when `current_phase` is `IMPROVE`.
-- Read [state-schema.md](references/state-schema.md) when initializing, updating, or reading the single SDLC record file.
-- Read [multi-agent-negotiation.md](references/multi-agent-negotiation.md) when executing separated reviews, handling exhausted correction attempts, resolving HIL rejections, or escalating blocked work.
-- Read [formats.md](references/formats.md) when writing architectural decisions (ADRs) or task briefs (PRDs).
+Every Phase Run emits strengths, frictions, proposals, and evidence. Improvement never silently edits workflow assets; it derives independent Tasks linked through Task Link aggregates.
+
+## Persistence
+
+Read [state-schema.md](references/state-schema.md) before creating or updating aggregate documents. In `LIGHTWEIGHT`, only the root agent writes `.sdlc/` snapshots. Resolve the directory containing this loaded `SKILL.md` as `<skill-dir>`; use its bundled `assets/` and `scripts/` rather than assuming the target repository contains plugin source files.
+
+Persist every aggregate mutation before continuing, including Task stage changes, Execution Slot changes, Phase Run lifecycle/result changes, recovery or usage updates, acceptance, Retrospective, and Task Link changes:
+
+1. For a new aggregate, build a candidate from the bundled template, validate it, then place it at the canonical `.sdlc/` path.
+2. For an existing aggregate, preserve the current snapshot as a temporary previous file, write the next revision to a temporary candidate, and validate the candidate with `--previous`.
+3. Replace the canonical snapshot only after validation succeeds, then validate the complete `.sdlc/` graph. On failure, keep the canonical snapshot unchanged and repair the candidate.
+4. Do not start the next lifecycle step, dispatch work, or request approval until the corresponding snapshot is persisted. Large artifacts remain external and digest-verified.
+
+Before any human approval request, show the current outcome, affected components, verification status, risks/recovery history, exact Candidate Result, and the effect approval permits.

@@ -1,421 +1,122 @@
-# SDLC State Schema Reference
+# SDLC Aggregate Schema v1
 
-This reference document defines the structure and schema of the single-record SDLC file used to track all deliverables, phase transitions, and lifecycle stages.
+The SDLC protocol persists aggregate snapshots, not one workflow record. All documents and request/result envelopes use `schema_version: "1"`.
 
-## File Location
-Every SDLC run is managed via a single YAML record located at:
-`.sdlc/issues/<ticket-id>-<branch-name>-<iteration-index-doubledigit>.yaml` (e.g. `.sdlc/issues/123-main-00.yaml`).
+## Layout
 
-## YAML Schema & Example
+```text
+.sdlc/
+  tasks/<task-id>/task.yaml
+  tasks/<task-id>/execution.yaml
+  task-links/<task-link-id>.yaml
+  artifacts/
+```
+
+Every aggregate snapshot has a provider-neutral opaque ID, optimistic-lock `revision`, and append-only `audit` summary. Lightweight hosts generate ULIDs. Tracker IDs are external references.
+
+Resolve `<skill-dir>` to the directory containing the loaded `sdlc/SKILL.md`. Initialize snapshots from `<skill-dir>/assets/task-template.yaml`, `<skill-dir>/assets/task-execution-template.yaml`, and `<skill-dir>/assets/task-link-template.yaml`. Replace every placeholder before validation; the templates are starting points, not additional sources of schema truth. This runtime form is portable across installed plugin hosts and does not assume the target repository contains `plugins/workflow/`.
+
+## Task
+
+Task is the behavior-rich aggregate for requested work.
 
 ```yaml
-ticket: "123"
-title: "Enforce Skill Validation Status"
-mode: "hil"                  # "afk" or "hil" (auto-detected: "afk" if issue has "afk" label, else "hil")
-current_phase: "DEFINE"      # DEFINE, SPEC, PLAN, EXECUTE, REVIEW, SHIP, IMPROVE
-lifecycle_stage: "Request"   # Active cursor for the current phase: Request, Assessment, Configuration, Execution, Verification, Improvement, Completion, Failure
-iteration: "00"              # Two-digit iteration index
-
-harness:
-  topology: "maintainability" # maintainability, architecture-fitness, behavior, full-sdlc
-  sandbox:
-    strategy: "container"     # container first; devcontainer/nix/kubernetes/microvm later when justified
-    image: ""
-    limits:
-      max_correction_attempts: 3
-  guides:
-    selected:
-      - id: "AGENTS.md"
-        purpose: "Project-specific agent rules"
-  sensors:
-    computational:
-      - id: "tests"
-        command: "./gradlew test"
-        priority: "high"
-    inferential:
-      - id: "ai-code-review"
-        priority: "medium"
-  approval:
-    human_required: true
-  event_log:
-    - type: "TaskRequested"
-      detail: "Initial request captured"
-      at: ""
-
-phases:
-  DEFINE:
-    status: "PENDING"        # PENDING, IN_PROGRESS, COMPLETED
-    lifecycle:
-      Request:
-        status: "PENDING"
-        instructions:
-          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
-      Assessment:
-        status: "PENDING"
-        instructions:
-          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
-      Configuration:
-        status: "PENDING"
-        instructions:
-          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
-      Execution:
-        status: "PENDING"
-        instructions:
-          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
-      Verification:
-        status: "PENDING"
-        instructions:
-          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
-      Improvement:
-        status: "PENDING"
-        instructions:
-          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
-      Completion:
-        status: "PENDING"
-        instructions:
-          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
-      Failure:
-        status: "PENDING"
-        instructions:
-          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
-    brief:
-      summary: "Add ValidationStatus to the Skill aggregate root and prevent unvalidated skills from being published."
-      context: "Currently skills can be published to the catalog without any safety checks. We need a validation process."
-      constraints:
-        - "No framework dependencies inside the domain layer."
-        - "Do not leak persistence models outside the infrastructure adapter."
-      acceptance_criteria:
-        - "Skills cannot be published unless validation_status is APPROVED."
-      non_goals:
-        - "Implementing the automatic validator agent itself (out of scope)."
-    improvements: []
-  SPEC:
-    status: "PENDING"
-    lifecycle:
-      Request:
-        status: "PENDING"
-        instructions:
-          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
-      Assessment:
-        status: "PENDING"
-        instructions:
-          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
-      Configuration:
-        status: "PENDING"
-        instructions:
-          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
-      Execution:
-        status: "PENDING"
-        instructions:
-          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
-      Verification:
-        status: "PENDING"
-        instructions:
-          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
-      Improvement:
-        status: "PENDING"
-        instructions:
-          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
-      Completion:
-        status: "PENDING"
-        instructions:
-          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
-      Failure:
-        status: "PENDING"
-        instructions:
-          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
-    spec:
-      design_boundaries: "The Domain Layer owns the Skill aggregate root, ValidationStatus value object, and SkillRepository port. The Application Layer owns the PublishSkillUseCase interactor. The Infrastructure/API layers contain the DB and controller adapters."
-      affected_components:
-        - "src/main/kotlin/com/example/domain/Skill.kt"
-        - "src/main/kotlin/com/example/application/PublishSkillUseCase.kt"
-        - "src/main/kotlin/com/example/infrastructure/SqlSkillRepository.kt"
-      architectural_decisions:
-        - "docs/adr/0002-domain-driven-design-and-hexagonal-architecture.md"
-      observability_requirements: 
-        - "We need a cumulative counter metric `skills_published_total`"
-        - "Grafana dashboard panel showing publication rate."
-      guide_requirements:
-        - "AGENTS.md"
-        - "architecture.md"
-      sensor_requirements:
-        - "./gradlew test"
-        - "formatting/linting"
-      grill_results:
-        questions:
-          - question: "Should a rejected validation allow re-validation?"
-            answer: "Yes, transitioning from REJECTED back to PENDING."
-            resolved: true
-    improvements: []
-  PLAN:
-    status: "PENDING"
-    lifecycle:
-      Request:
-        status: "PENDING"
-        instructions:
-          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
-      Assessment:
-        status: "PENDING"
-        instructions:
-          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
-      Configuration:
-        status: "PENDING"
-        instructions:
-          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
-      Execution:
-        status: "PENDING"
-        instructions:
-          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
-      Verification:
-        status: "PENDING"
-        instructions:
-          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
-      Improvement:
-        status: "PENDING"
-        instructions:
-          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
-      Completion:
-        status: "PENDING"
-        instructions:
-          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
-      Failure:
-        status: "PENDING"
-        instructions:
-          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
-    approved: false
-    plan:
-      test_strategy: "Implement unit tests for the domain and use cases with minimal mock dependencies. Implement integration database tests for the repository adapter."
-      observability_plan: 
-        - "Implement the `skills_published_total` counter in PublishSkillUseCase."
-        - "Write a component test using a mock OTel collector to assert that the counter increments on success."
-        - "Add the new panel to config/grafana/dashboards/skills.json."
-      guide_selection:
-        - "AGENTS.md"
-        - "docs/adr/0002-domain-driven-design-and-hexagonal-architecture.md"
-      sensor_selection:
-        - id: "compile"
-          command: "./gradlew compileJava"
-          type: "computational"
-          priority: "high"
-        - id: "test"
-          command: "./gradlew test"
-          type: "computational"
-          priority: "high"
-        - id: "ai-code-review"
-          command: ""
-          type: "inferential"
-          priority: "medium"
-      execution_steps:
-        - step_id: 1
-          description: "Implement Domain Logic and Outbound Ports (Inside-Out)"
-          threads:
-            - thread_id: "domain_core"
-              tasks:
-                - task_id: "domain_validation_status"
-                  description: "Model ValidationStatus (Value Object) and add it to the Skill aggregate root using TDD (failing unit test first, then minimal implementation, then refactor)."
-                  skills: ["ddd", "tdd"]
-                - task_id: "domain_repository_port"
-                  description: "Update the SkillRepository port interface to support retrieving and persisting the new validation status field."
-                  skills: ["hexagonal-architecture"]
-              verify_command: "./gradlew test --tests *DomainSkillTest*"
-        - step_id: 2
-          description: "Orchestrate Application Use Cases"
-          threads:
-            - thread_id: "application_use_cases"
-              tasks:
-                - task_id: "publish_skill_usecase"
-                  description: "Implement PublishSkillUseCase application service, verifying that publish fails if the validation status is not APPROVED (using mocks for the SkillRepository port)."
-                  skills: ["hexagonal-architecture", "tdd"]
-              verify_command: "./gradlew test --tests *PublishSkillUseCaseTest*"
-        - step_id: 3
-          description: "Implement Infrastructure Adapters (Outbound & Inbound)"
-          threads:
-            - thread_id: "database_adapter"
-              tasks:
-                - task_id: "database_migration"
-                  description: "Create DB schema migration to add validation_status column."
-                  skills: ["tdd"]
-                - task_id: "repository_adapter"
-                  description: "Implement the DB adapter mapping in SqlSkillRepository, verifying persistence boundaries do not leak."
-                  skills: ["hexagonal-architecture", "tdd"]
-              verify_command: "./gradlew test --tests *SqlSkillRepositoryIntegrationTest*"
-            - thread_id: "api_adapter"
-              tasks:
-                - task_id: "controller_adapter"
-                  description: "Implement the Inbound REST Controller mapping POST requests to PublishSkillUseCase."
-                  skills: ["hexagonal-architecture", "tdd"]
-              verify_command: "./gradlew test --tests *SkillControllerTest*"
-    improvements: []
-  EXECUTE:
-    status: "PENDING"
-    lifecycle:
-      Request:
-        status: "PENDING"
-        instructions:
-          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
-      Assessment:
-        status: "PENDING"
-        instructions:
-          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
-      Configuration:
-        status: "PENDING"
-        instructions:
-          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
-      Execution:
-        status: "PENDING"
-        instructions:
-          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
-      Verification:
-        status: "PENDING"
-        instructions:
-          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
-      Improvement:
-        status: "PENDING"
-        instructions:
-          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
-      Completion:
-        status: "PENDING"
-        instructions:
-          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
-      Failure:
-        status: "PENDING"
-        instructions:
-          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
-    outcome:
-      patch_created: false
-      sensor_results:
-        - id: "test"
-          type: "computational"
-          command: "./gradlew test"
-          status: "PENDING"
-          exit_code: null
-          finding: ""
-          attempt: 0
-      retry_history:
-        - attempt: 0
-          reason: ""
-          outcome: ""
-      unresolved_risks:
-        - risk: ""
-          disposition: ""
-    improvements: []
-  REVIEW:
-    status: "PENDING"
-    lifecycle:
-      Request:
-        status: "PENDING"
-        instructions:
-          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
-      Assessment:
-        status: "PENDING"
-        instructions:
-          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
-      Configuration:
-        status: "PENDING"
-        instructions:
-          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
-      Execution:
-        status: "PENDING"
-        instructions:
-          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
-      Verification:
-        status: "PENDING"
-        instructions:
-          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
-      Improvement:
-        status: "PENDING"
-        instructions:
-          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
-      Completion:
-        status: "PENDING"
-        instructions:
-          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
-      Failure:
-        status: "PENDING"
-        instructions:
-          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
-    approved: false
-    review:
-      summary_of_changes: "Summary of implemented work"
-      git_diff_summary: "List of modified files and lines"
-      verification_results: "Test execution output"
-      ai_review_findings: []
-      reviewer_comments: []
-    improvements: []
-  SHIP:
-    status: "PENDING"
-    lifecycle:
-      Request:
-        status: "PENDING"
-        instructions:
-          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
-      Assessment:
-        status: "PENDING"
-        instructions:
-          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
-      Configuration:
-        status: "PENDING"
-        instructions:
-          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
-      Execution:
-        status: "PENDING"
-        instructions:
-          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
-      Verification:
-        status: "PENDING"
-        instructions:
-          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
-      Improvement:
-        status: "PENDING"
-        instructions:
-          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
-      Completion:
-        status: "PENDING"
-        instructions:
-          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
-      Failure:
-        status: "PENDING"
-        instructions:
-          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
-    outcome: {}
-    improvements: []
-  IMPROVE:
-    status: "PENDING"
-    lifecycle:
-      Request:
-        status: "PENDING"
-        instructions:
-          - "Capture the phase entry trigger, actor, expected phase outcome, and approval mode before doing work."
-      Assessment:
-        status: "PENDING"
-        instructions:
-          - "Read the current record, active phase reference, selected guides, constraints, previous events, and relevant sensor results."
-      Configuration:
-        status: "PENDING"
-        instructions:
-          - "Select or confirm guides, sensors, sandbox policy, approval gates, target files, boundaries, and retry limits for this phase."
-      Execution:
-        status: "PENDING"
-        instructions:
-          - "Perform only the approved work for this phase and append material decisions, changes, and agent activity to the event trail."
-      Verification:
-        status: "PENDING"
-        instructions:
-          - "Run selected deterministic sensors first, record pass/fail/skipped results, then run inferential review only when selected."
-      Improvement:
-        status: "PENDING"
-        instructions:
-          - "Record lessons, correction history, unresolved risks, and concrete follow-up issues that improve future predictability."
-      Completion:
-        status: "PENDING"
-        instructions:
-          - "Complete the phase only after required outputs, approvals, sensor evidence, lifecycle statuses, and next-phase transition fields are updated."
-      Failure:
-        status: "PENDING"
-        instructions:
-          - "When work is blocked or unsafe, preserve state, record evidence and risk, stop expansion, and escalate or transition with a corrective plan."
-    retrospective:
-      lessons_learned: []
-      actionable_issues: []
-    improvements: []
+schema_version: '1'
+document_type: task
+task_id: 01TASK
+revision: 2
+stage: IN_DEVELOPMENT # DEFINE, SPEC, IN_DEVELOPMENT, IMPROVE, CLOSED
+outcome: null         # ACCEPTED, REJECTED, CANCELLED, FAILED only when CLOSED
+definition:
+  title: Example
+  requested_outcome: Deliver the example.
+  context: Why it matters.
+  initial_scope: []
+  external_references: []
+specification:
+  deliverable: Working example
+  completion_condition: Selected sensors pass and shipping finalizes.
+  acceptance_criteria: []
+  constraints: []
+  non_goals: []
+  target_repository: owner/repository
+  allowed_paths: []
+  risks: []
+  controls: {}
+  budget: {tokens: -1, elapsed_seconds: -1, model_cycles: 12, tool_calls: 24, autonomous_corrections: 3, concurrency: 2}
+  collaboration_mode: afk
+  max_recovery_tries: 3
+execution_slot: {task_execution_id: 01EXEC, status: ACTIVE}
+retrospective: null
+audit: []
 ```
+
+Definition changes only in DEFINE, Specification only in SPEC, Execution Slot only in IN_DEVELOPMENT, and Retrospective only in IMPROVE. Leaving a stage freezes its value. Task owns zero or one Task Execution by identity. Within one `.sdlc/` graph, every `task_id` is unique. A non-null Execution Slot must resolve to the Task Execution owned by that Task, and its `task_execution_id` must match exactly.
+
+## Task Execution
+
+Task Execution is a one-to-one dependent aggregate with a distinct identity. It cannot exist without its Task, be reassigned, or be recreated.
+
+States: `ACTIVE`, `WAITING_FOR_HUMAN`, `AWAITING_ACCEPTANCE`, `SUCCEEDED`, `REJECTED`, `FAILED`, `CANCELLED`.
+
+It owns append-only Phase Runs for PLAN, EXECUTE, REVIEW, and SHIP. A transition may append runs but cannot edit, reorder, or remove prior runs. The owning `task_id` is immutable, cumulative usage never decreases, and a terminal Task Execution snapshot is immutable. Run state is operationally `ACTIVE`, `SUCCEEDED`, `FAILED`, or `CANCELLED`; semantic outcomes live in `result`.
+
+Each run identifies the Recovery Window in which it occurred and follows `DEFINE -> EXECUTE -> VERIFY -> IMPROVE -> COMPLETE`:
+
+```yaml
+phase_run_id: 01RUN
+kind: REVIEW
+sequence: 1
+state: SUCCEEDED
+lifecycle_stage: COMPLETE
+cause: broad-review
+recovery_window_id: 01WIN
+result: {}
+improvement:
+  strengths: []
+  frictions: []
+  proposals: []
+  evidence_refs: []
+artifacts: []
+```
+
+Review numbering and limits are scoped to `recovery_window_id`: REVIEW 1 is broad; REVIEW 2 and REVIEW 3 verify prior findings, run deterministic regression sensors, and inspect only the delta since the prior review. A Recovery Window permits at most three REVIEW runs. Human Intervention may create a fresh Recovery Window, whose review count starts again without erasing earlier Phase Runs. Only unresolved HIGH or CRITICAL findings block after REVIEW 3 in a window. Any corrective PLAN or EXECUTE run requires a fresh REVIEW before SHIP.
+
+SHIP uses one Phase Run across candidate preparation, the Acceptance Gate, and finalization. Approval binds to the Candidate Result digest. An unchanged candidate may retain approval through delivery recovery; a changed candidate requires fresh REVIEW and acceptance.
+
+Recovery Windows permit one to three autonomous tries. Review exhaustion rejects execution. SHIP exhaustion, deadline expiry, or resource exhaustion enters `WAITING_FOR_HUMAN`. Human Intervention creates a fresh bounded window without erasing history, Phase Runs, or cumulative usage.
+
+## Task Link
+
+Task Link is an independent aggregate. Its source endpoint, target endpoint, and relationship kind are immutable; its description may change with history. Explicit deletion removes the document and emits audit evidence. Both endpoints must resolve to Tasks in the same `.sdlc/` graph, self-links are invalid, and the graph may contain only one link for a given source, target, and relationship kind.
+
+Kinds: `DERIVATION`, `BLOCKING`, `DEPENDENCY`, `DUPLICATION`, `RELATION`, `IMPLEMENTATION`.
+
+Directional labels are projections of one kind, for example `IMPLEMENTATION` renders `IMPLEMENTS` / `IMPLEMENTED_BY`.
+
+## Shared Envelopes
+
+Phase Request and Phase Result contain `task_id`, `execution_id`, `phase_run_id`, `recovery_window_id`, phase kind/sequence, idempotency key, budget, routing, deadline/cancellation data, and verified Artifact References.
+
+Artifact References contain `artifact_id`, `type`, `revision`, `uri`, and `sha256`. Validate existence, revision, and digest before dispatch.
+
+Work Request/Result exchanges are transient. Persist only reduced findings, usage, audit summaries, and artifact references in the owning Phase Run.
+
+## Profiles
+
+- `LIGHTWEIGHT`: the root agent coordinates through native agent/tool messaging and alone writes aggregate YAML snapshots. It does not emulate an event bus or outbox.
+- `HARNESS`: Level 0 coordinates aggregates through at-least-once domain events, a transactional outbox, per-aggregate ordering, and idempotent consumers.
+
+Validate a new snapshot with the bundled script:
+
+```bash
+python3 <skill-dir>/scripts/validate-sdlc-document.py <candidate-or-.sdlc-directory>
+```
+
+For a mutation, leave the canonical snapshot untouched while creating temporary `<previous>` and `<candidate>` files. Increment `revision`, append the audit entry, then run:
+
+```bash
+python3 <skill-dir>/scripts/validate-sdlc-document.py <candidate> --previous <previous>
+```
+
+After that succeeds, replace the canonical snapshot with the candidate and validate the `.sdlc/` directory. Delete temporary files only after both checks pass. Never advance workflow state solely in conversation or memory; the persisted canonical snapshot is the resume point.

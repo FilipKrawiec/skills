@@ -1,0 +1,10 @@
+schema_version: '1'
+document_type: task_link
+task_link_id: replace-with-ulid
+revision: 0
+source_task_id: replace-with-source-task-ulid
+target_task_id: replace-with-target-task-ulid
+relationship_kind: RELATION
+description: Replace with relationship reasoning
+description_history: []
+audit: []
