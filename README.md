@@ -69,3 +69,12 @@ Check Codex, Claude, and Antigravity plugin definitions with:
 ```bash
 python3 scripts/validate-plugin-definitions.py
 ```
+
+## Update
+
+To update all installed plugins (both Claude and Antigravity) with the latest versions from the repository, run:
+
+```bash
+./scripts/update-plugins.sh
+```
+
