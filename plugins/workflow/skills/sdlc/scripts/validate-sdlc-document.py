@@ -237,8 +237,14 @@ def validate_transition(previous: dict[str, Any], current: dict[str, Any]) -> No
             raise Invalid("Definition is immutable after DEFINE")
         if old_stage != "SPEC" and previous["specification"] != current["specification"]:
             raise Invalid("Specification is immutable after SPEC")
-        if old_stage != "IN_DEVELOPMENT" and previous["execution_slot"] != current["execution_slot"]:
-            raise Invalid("Execution Slot changes only in IN_DEVELOPMENT")
+        slot_changed = previous["execution_slot"] != current["execution_slot"]
+        slot_reserved_with_spec_approval = (
+            old_stage == "SPEC"
+            and new_stage == "IN_DEVELOPMENT"
+            and current["execution_slot"] is not None
+        )
+        if slot_changed and old_stage != "IN_DEVELOPMENT" and not slot_reserved_with_spec_approval:
+            raise Invalid("Execution Slot changes only during SPEC-to-IN_DEVELOPMENT approval or IN_DEVELOPMENT")
         if old_stage != "IMPROVE" and previous["retrospective"] != current["retrospective"]:
             raise Invalid("Retrospective changes only in IMPROVE")
     if previous["document_type"] == "task_execution":
@@ -246,8 +252,18 @@ def validate_transition(previous: dict[str, Any], current: dict[str, Any]) -> No
             raise Invalid("terminal Task Execution is immutable")
         if previous["task_id"] != current["task_id"]:
             raise Invalid("Task Execution task_id is immutable")
-        if previous["phase_runs"] != current["phase_runs"][: len(previous["phase_runs"])]:
-            raise Invalid("Task Execution phase runs are not append-only")
+        previous_runs, current_runs = previous["phase_runs"], current["phase_runs"]
+        if previous_runs != current_runs[: len(previous_runs)]:
+            active_tail_can_finalize = (
+                len(previous_runs) == len(current_runs)
+                and bool(previous_runs)
+                and previous_runs[:-1] == current_runs[:-1]
+                and previous_runs[-1]["state"] == "ACTIVE"
+                and current_runs[-1]["state"] in TERMINAL_EXECUTION_STATES | {"SUCCEEDED"}
+                and all(previous_runs[-1][key] == current_runs[-1][key] for key in ("phase_run_id", "kind", "sequence", "cause", "recovery_window_id"))
+            )
+            if not active_tail_can_finalize:
+                raise Invalid("Task Execution phase runs are not append-only")
         for key in BUDGET_KEYS:
             if current["usage"][key] < previous["usage"][key]:
                 raise Invalid(f"Task Execution cumulative usage cannot decrease: {key}")

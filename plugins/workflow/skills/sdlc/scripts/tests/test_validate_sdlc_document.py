@@ -146,6 +146,38 @@ class ValidatorTest(unittest.TestCase):
         current["audit"].append({"sequence": 2, "event": "Improve", "actor": "tester", "occurred_at": "2026-07-11T01:00:00Z"})
         validator.validate_transition(previous, current)
 
+    def test_specification_approval_reserves_execution_atomically(self) -> None:
+        previous = task("SPEC")
+        previous["specification"] = None
+        previous["execution_slot"] = None
+        current = advance(previous)
+        current["stage"] = "IN_DEVELOPMENT"
+        current["specification"] = task()["specification"]
+        current["execution_slot"] = {"task_execution_id": "01EXEC", "status": "REQUESTED"}
+
+        validator.validate_transition(previous, current)
+
+    def test_spec_stage_cannot_reserve_execution_without_approval_transition(self) -> None:
+        previous = task("SPEC")
+        previous["specification"] = None
+        previous["execution_slot"] = None
+        current = advance(previous)
+        current["execution_slot"] = {"task_execution_id": "01EXEC", "status": "REQUESTED"}
+
+        with self.assertRaises(validator.Invalid):
+            validator.validate_transition(previous, current)
+
+    def test_active_tail_phase_run_can_finalize(self) -> None:
+        previous = execution()
+        previous["phase_runs"] = [phase_run("ship", 1, kind="SHIP")]
+        current = advance(previous)
+        current["phase_runs"][0].update({
+            "state": "SUCCEEDED", "lifecycle_stage": "COMPLETE", "result": {"accepted": True},
+            "improvement": {"strengths": [], "frictions": [], "proposals": [], "evidence_refs": []},
+        })
+
+        validator.validate_transition(previous, current)
+
     def test_transition_requires_next_revision_and_append_only_audit(self) -> None:
         previous = task()
         current = copy.deepcopy(previous)

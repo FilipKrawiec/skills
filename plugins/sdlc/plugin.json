@@ -1,0 +1,11 @@
+{
+  "name": "filipkrawiec-sdlc",
+  "version": "3.0.0",
+  "description": "Portable SDLC orchestration and phase skills for direct CLI and harnessed delivery.",
+  "author": {"name": "Filip Krawiec", "email": "contact@filipkrawiec.com", "url": "https://github.com/FilipKrawiec"},
+  "repository": "https://github.com/FilipKrawiec/skills",
+  "homepage": "https://github.com/FilipKrawiec/skills",
+  "license": "UNLICENSED",
+  "keywords": ["skills", "sdlc", "orchestration", "workflow"],
+  "skills": "./skills/"
+}

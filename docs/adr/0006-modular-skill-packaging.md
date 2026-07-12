@@ -4,7 +4,7 @@
 
 Split the repository into plugin packages so core domain-modeling skills can be installed without the SDLC, workflow, or authoring packs.
 
-The core package `filipkrawiec-core` contains `ddd` and `hexagonal-architecture`. Workflow skills such as `sdlc`, `tdd`, `vcs`, and `grill-with-docs` move into an optional workflow package. Authoring helpers such as `writing-great-skill` and `teach` move into an optional authoring package.
+The core package `filipkrawiec-core` contains `ddd` and `hexagonal-architecture`. The standalone `filipkrawiec-sdlc` package contains SDLC orchestration and phase skills. Workflow skills such as `tdd`, `vcs`, and `grill-with-docs` remain in the optional workflow package. Authoring helpers such as `writing-great-skill` and `teach` move into an optional authoring package.
 
 ## Context
 

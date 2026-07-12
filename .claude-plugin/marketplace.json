@@ -17,9 +17,16 @@
     },
     {
       "name": "filipkrawiec-workflow",
-      "description": "Workflow skills for SDLC, TDD, VCS, and review critiques.",
+      "description": "Workflow skills for TDD, VCS, and review critiques.",
       "category": "development",
       "source": "./plugins/workflow",
+      "homepage": "https://github.com/FilipKrawiec/skills"
+    },
+    {
+      "name": "filipkrawiec-sdlc",
+      "description": "Portable SDLC orchestration and phase skills for direct CLI and harnessed delivery.",
+      "category": "development",
+      "source": "./plugins/sdlc",
       "homepage": "https://github.com/FilipKrawiec/skills"
     },
     {

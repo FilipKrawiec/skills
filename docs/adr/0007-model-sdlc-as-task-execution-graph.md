@@ -1,5 +1,7 @@
 # ADR-0007: Model SDLC with Task Aggregates
 
+> Superseded by ADR-0008 for the default portable SDLC contract. Its aggregate serialization remains historical guidance for adapters that choose to retain it.
+
 ## Decision
 
 Model SDLC as behavior over Task, Task Execution, and Task Link aggregates rather than as a Workflow entity or linear phase cursor.

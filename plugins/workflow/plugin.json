@@ -1,7 +1,7 @@
 {
   "name": "filipkrawiec-workflow",
   "version": "2.0.0",
-  "description": "Workflow skills for SDLC, TDD, VCS, and review critiques.",
+  "description": "Workflow skills for TDD, VCS, and review critiques.",
   "author": {
     "name": "Filip Krawiec",
     "email": "contact@filipkrawiec.com",
@@ -13,7 +13,6 @@
   "keywords": [
     "skills",
     "workflow",
-    "sdlc",
     "tdd",
     "vcs",
     "review"

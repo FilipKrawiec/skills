@@ -51,7 +51,7 @@ retrospective: null
 audit: []
 ```
 
-Definition changes only in DEFINE, Specification only in SPEC, Execution Slot only in IN_DEVELOPMENT, and Retrospective only in IMPROVE. Leaving a stage freezes its value. Task owns zero or one Task Execution by identity. Within one `.sdlc/` graph, every `task_id` is unique. A non-null Execution Slot must resolve to the Task Execution owned by that Task, and its `task_execution_id` must match exactly.
+Definition changes only in DEFINE, Specification only in SPEC, and Retrospective only in IMPROVE. Specification approval may atomically reserve the Execution Slot while transitioning from SPEC to IN_DEVELOPMENT; later Execution Slot updates occur in IN_DEVELOPMENT. Leaving a stage freezes its value. Task owns zero or one Task Execution by identity. Within one `.sdlc/` graph, every `task_id` is unique. A non-null Execution Slot must resolve to the Task Execution owned by that Task, and its `task_execution_id` must match exactly.
 
 ## Task Execution
 

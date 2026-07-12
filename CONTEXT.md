@@ -53,3 +53,23 @@ An aggregate relating two Tasks through a closed relationship kind and required 
 ### Flow Friction
 
 Any failure, retry, recovery, or avoidable delay captured as improvement evidence even when delivery succeeds.
+
+### SDLC Skill Contract
+
+The portable lifecycle and phase behavior defined by the SDLC skills. It is independent of the mechanism that invokes, persists, or coordinates it.
+
+### SDLC Orchestrator
+
+The model-discoverable `sdlc` skill that enforces constraints, authorizes phase transitions, coordinates recovery and review loops, and selects applicable SDLC Phase Skills.
+
+### SDLC Phase Skill
+
+An independently invocable skill for exactly one SDLC phase. It defines that phase's behavior and input/output contract without prescribing a harness implementation.
+
+### SDLC Phase Envelope
+
+The portable input/output contract for a phase invocation. It carries the required orchestration context and returns a proposed result or structured refusal; it cannot authorize a lifecycle transition.
+
+### Harness
+
+An optional implementation that coordinates, persists, or automates the SDLC Skill Contract. It is not required for direct CLI use.

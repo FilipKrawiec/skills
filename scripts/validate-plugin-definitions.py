@@ -30,18 +30,21 @@ ROOT_MANIFESTS = {
 PACKAGE_MANIFESTS = {
     ROOT / "plugins" / "core" / "plugin.json": ("filipkrawiec-core", "./skills/"),
     ROOT / "plugins" / "workflow" / "plugin.json": ("filipkrawiec-workflow", "./skills/"),
+    ROOT / "plugins" / "sdlc" / "plugin.json": ("filipkrawiec-sdlc", "./skills/"),
     ROOT / "plugins" / "authoring" / "plugin.json": ("filipkrawiec-authoring", "./skills/"),
 }
 
 PACKAGE_SKILL_TREES = {
     ROOT / "plugins" / "core" / "skills": {"ddd", "hexagonal-architecture"},
-    ROOT / "plugins" / "workflow" / "skills": {"sdlc", "tdd", "vcs", "grill-with-docs"},
+    ROOT / "plugins" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
+    ROOT / "plugins" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-spec", "sdlc-plan", "sdlc-execute", "sdlc-review", "sdlc-ship", "sdlc-improve"},
     ROOT / "plugins" / "authoring" / "skills": {"writing-great-skill", "teach"},
 }
 
 MARKETPLACE_PLUGINS = {
     "filipkrawiec-core": "./plugins/core",
     "filipkrawiec-workflow": "./plugins/workflow",
+    "filipkrawiec-sdlc": "./plugins/sdlc",
     "filipkrawiec-authoring": "./plugins/authoring",
 }
 
