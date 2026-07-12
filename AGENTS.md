@@ -1,5 +1,9 @@
 # Agent Guidance
 
+## SDLC Required for Changes
+
+Before making any repository code or configuration change, invoke the `sdlc` workflow. This includes changes to agent instructions, skills, plugin manifests, scripts, and tests. Read-only analysis and explicitly requested plan-only work are exempt.
+
 ## Mandatory Skill Editing Workflow
 
 CRITICAL: You are strictly forbidden from making any edits to the packaged skill directories until you have read `plugins/authoring/skills/writing-great-skill/SKILL.md`. Furthermore, you MUST execute all edits through the `` `sdlc` `` workflow. Treat `writing-great-skill` as the local source of truth for invocation, description craft, information hierarchy, and pruning.

@@ -1,6 +1,6 @@
 ---
 name: sdlc
-description: "Use when modifying repository files through a bounded agentic development harness: define and specify the task, execute a reviewed delivery, gate shipping, and preserve structured improvement evidence."
+description: "Use when a request requires repository code, configuration, or other file changes: define and specify the task, execute a reviewed delivery, gate shipping, and preserve structured improvement evidence."
 ---
 
 # SDLC
