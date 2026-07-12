@@ -11,13 +11,14 @@ Follow these guidelines to sync, rebase, and merge changes cleanly:
   ```
 - Before rebasing, merging, creating a pull request, or cleaning up a branch, check branch and worktree state with `git status --short --branch` and preserve unrelated user changes.
 
-For an authorized direct-trunk delivery:
+For any task, rebase and verify the task branch first. Then select the repository's authorized integration mechanism:
 
 1. Commit only task files in the task worktree.
 2. Fetch and rebase the task branch onto current `origin/main`.
 3. Resolve conflicts in the task worktree, rerun required checks, and keep unrelated changes out of the commit.
-4. In the primary main worktree, squash-integrate the task branch into one cohesive commit.
-5. Push `main` and verify `main...origin/main` has no ahead or behind count. Do not report shipping before this verification.
+4. Integrate either by squashing in the primary main worktree or by a squash merge request on the hosting platform.
+5. Confirm main/trunk contains exactly one cohesive outcome commit for the task, including a rejected task when its outcome must be recorded.
+6. Push or verify the hosting-platform merge, then confirm `main...origin/main` has no ahead or behind count. Do not report shipping before this verification.
 
 ## 2. Squashing Commits
 - Squash intermediate commits (e.g., "fix typo", "wip") into logical, cohesive units before requesting a review or merging.

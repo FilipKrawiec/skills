@@ -19,5 +19,5 @@ Follow these guidelines to structure and manage git branches:
 
 ## 3. Trunk Integration
 
-- Follow repository shipping policy. When direct trunk shipping is authorized, squash-integrate the rebased task branch in the primary worktree and push main/trunk.
-- Otherwise, push the task branch and use the repository's pull-request workflow.
+- Follow repository shipping policy. Direct trunk shipping and merge-request delivery are both valid integration mechanisms.
+- Whichever mechanism is used, every finished task—accepted or rejected—must produce exactly one cohesive outcome commit on main/trunk. Use a squash merge locally or in the hosting platform to achieve it.

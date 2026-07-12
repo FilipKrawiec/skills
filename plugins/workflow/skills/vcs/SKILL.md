@@ -14,7 +14,7 @@ Follow these steps for all version control and git operations to maintain a clea
 3. **Execute File Operations:** If moving or renaming files, use `git mv` instead of standard `mv` to preserve Git revision history.
 4. **Stage Intentionally:** Stage only files that belong to the current task; inspect staged changes before committing.
 5. **Commit Logically:** Write atomic commits using the Conventional Commits format, prefixed with `#<task-id>` if linked to an issue tracker.
-6. **Integrate and Sync:** Rebase the task branch onto current main/trunk, squash it into one cohesive trunk commit in the primary worktree, then push and verify the remote ref.
+6. **Integrate and Sync:** Rebase the task branch onto current main/trunk. Use either local squash integration or the repository's merge-request flow, but finish with exactly one cohesive outcome commit on main/trunk and verify the remote ref.
 
 ## Context Pointers
 
