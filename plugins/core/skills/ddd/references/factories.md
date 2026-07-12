@@ -40,9 +40,6 @@ class User {
     return user
   }
 
-  static function reconstitute(id, email, status): User {
-    return new User(id, email, status) // No events, no rules
-  }
 }
 ```
 
@@ -64,7 +61,3 @@ class OrderFactory {
   }
 }
 ```
-
-## 3. Creation vs. Reconstitution
-- **Creation Factory:** Generates a new ID, validates invariants, and registers a creation **Domain Event**.
-- **Reconstitution Factory:** Instantiates an existing Aggregate to restore state from database records, which must bypass validation and event registration (see [aggregates-and-repositories.md](aggregates-and-repositories.md)).

@@ -22,22 +22,7 @@ Reference constraints derived from Vaughn Vernon's *Implementing Domain-Driven D
 
 - **Root-Only Access:** Provide Repositories only for Aggregate Roots. Local Entities have no Repository (e.g., query `Comment` through the `Threads` collection).
 - **Save/Load Whole:** Repositories must save and load the Aggregate in its entirety to ensure the Aggregate Root can validate invariants.
-- **Creation vs. Reconstitution:**
-  - **Creation:** A new Aggregate is instantiated via a constructor or factory, generating a new ID and registering creation events (e.g., `ThreadCreated`).
-  - **Reconstitution:** Loading an existing Aggregate from the DB. **Must bypass constructor validation, rule checks, and event registration** to avoid publishing duplicate events or failing to load historical data if rules change.
-
-```pseudocode
-// Reconstitution mapping in repository adapter (bypasses validations/events)
-class JPAThreads implements Threads {
-  function findById(threadId): Thread {
-    row = database.query("SELECT * FROM threads WHERE id = ?", threadId)
-    if (row == null) return null
-
-    // Directly maps persisted fields, bypassing business validations
-    return Thread.reconstitute(row.id, row.mergeRequestId, row.status)
-  }
-}
-```
+- **Persistence Hydration Stays in the Adapter:** The repository port expresses loading and saving domain objects; it does not prescribe how persistence data becomes an Aggregate. Keep ORM, serialization, and state-hydration mechanisms inside the infrastructure adapter. Do not add a public `reconstitute` method, persistence constructor, or generic hydration factory to every Aggregate. If a technology requires a narrow hydration mechanism, keep it non-public and specific to that adapter; it is not part of the domain model or Ubiquitous Language.
 
 - **Lightweight Query Methods (Count, Existence, and Summaries):** Avoid loading full entities or collections just to perform existence checks, counts, or basic calculations. Expose explicit query methods directly on the collection port interface (e.g., `exists(id): boolean` or `countUnresolved(parentId): number`). The concrete implementation (e.g., `JPAThreads`) must execute lightweight database queries (e.g., `EXISTS` or `SELECT COUNT(*)`) rather than rehydrating domain objects into memory.
 
