@@ -9,4 +9,14 @@ Own lifecycle authorization. Classify the request, select the active phase, enfo
 
 For direct CLI work, keep a compact in-session context and run only the selected phase; do not create SDLC state files or claim cross-session resume. A harness may persist or coordinate the same contract.
 
-Use `sdlc-define`, `sdlc-spec`, `sdlc-plan`, `sdlc-execute`, `sdlc-review`, `sdlc-ship`, and `sdlc-improve` as the phase interfaces. Read [orchestration-contract.md](references/orchestration-contract.md) before authorizing a phase or transition.
+| Request state | Action |
+| --- | --- |
+| Read-only analysis | Report directly; do not start SDLC. |
+| Outcome or scope is missing | Invoke `sdlc-define`. |
+| Specification is absent or unapproved | Invoke `sdlc-spec`. |
+| Approved work lacks a plan | Invoke `sdlc-plan`. |
+| Planned work needs delivery or correction | Invoke `sdlc-execute`, then `sdlc-review`. |
+| Review passed | Invoke `sdlc-ship`. |
+| Delivery has an outcome | Invoke `sdlc-improve`. |
+
+Read [orchestration-contract.md](references/orchestration-contract.md) before authorizing a phase or transition. It validates and supplies the phase envelope. Phase skills are explicit CLI or harness interfaces, not model-discovered entry points.
