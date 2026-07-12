@@ -2,7 +2,7 @@
 
 Follow these guidelines to sync, rebase, and merge changes cleanly:
 
-## 1. Rebase-First Workflow
+## 1. Rebase-First Worktree Workflow
 - Never run `git merge main` on a feature branch.
 - Always keep feature branches up-to-date with the latest main branch by rebasing:
   ```bash
@@ -10,6 +10,14 @@ Follow these guidelines to sync, rebase, and merge changes cleanly:
   git rebase origin/main
   ```
 - Before rebasing, merging, creating a pull request, or cleaning up a branch, check branch and worktree state with `git status --short --branch` and preserve unrelated user changes.
+
+For an authorized direct-trunk delivery:
+
+1. Commit only task files in the task worktree.
+2. Fetch and rebase the task branch onto current `origin/main`.
+3. Resolve conflicts in the task worktree, rerun required checks, and keep unrelated changes out of the commit.
+4. In the primary main worktree, squash-integrate the task branch into one cohesive commit.
+5. Push `main` and verify `main...origin/main` has no ahead or behind count. Do not report shipping before this verification.
 
 ## 2. Squashing Commits
 - Squash intermediate commits (e.g., "fix typo", "wip") into logical, cohesive units before requesting a review or merging.
