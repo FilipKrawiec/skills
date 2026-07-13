@@ -2,7 +2,13 @@
 
 ## Objective
 
-Replace the unreleased linear record with aggregate schema v1. Task owns Definition, Specification, Execution Slot, Retrospective, stage, and outcome. Task owns zero or one dependent Task Execution by identity. Task Link is an independent aggregate.
+Use aggregate schema v1 to record SDLC work in the same structure agents use to navigate it:
+
+```text
+Task → Stage[] → Phase[] → Lifecycle[]
+```
+
+Definition and Specification are results of completed DEFINE and REFINE phase lifecycles. They are not top-level Task values or a separate execution record.
 
 ## Authorized Maintenance Mode
 
@@ -10,26 +16,24 @@ Implement this repair directly without recursively invoking SDLC, TDD, personas,
 
 ## Required Behavior
 
-- Task stages are `DEFINE`, `SPEC`, `IN_DEVELOPMENT`, `IMPROVE`, `CLOSED`.
-- Definition, Specification, and Retrospective are one-shot values mutable only in their matching stage.
-- Task Execution is one-to-one, dependent, separately identified, separately persisted, and never recreated.
-- PLAN, EXECUTE, REVIEW, and SHIP are append-only Phase Runs inside Task Execution.
-- Each Phase Run follows `DEFINE -> EXECUTE -> VERIFY -> IMPROVE -> COMPLETE` and records strengths, frictions, proposals, and evidence.
-- REVIEW 1 is broad. REVIEW 2/3 verify prior findings and delta-introduced defects. HIGH/CRITICAL findings block after REVIEW 3; REVIEW 4 is forbidden.
-- One SHIP run spans candidate preparation, acceptance, and finalization. Approval binds to the candidate digest.
-- Recovery Windows allow `1..3` autonomous tries. Review exhaustion rejects. SHIP/deadline/resource exhaustion waits for human. Human Intervention creates a fresh bounded window without erasing history.
-- Retrospective is mandatory for every outcome and may derive independent Tasks linked through Task Link. Derived Tasks wait for HIL SPEC.
+- Task Stages append as `DEFINE`, `REFINE`, `EXECUTE`, and `IMPROVE`; `CLOSED` is a terminal Task state.
+- Each Stage maps to its stage skill and owns its ordered Phases. Root `sdlc` owns the shared lifecycle for every Phase: `DEFINE -> EXECUTE -> VERIFY -> IMPROVE -> COMPLETE`.
+- Definition is the completed DEFINE Lifecycle result. Specification is the approved completed REFINE Lifecycle result. Retrospective is the completed IMPROVE Lifecycle result.
+- EXECUTE starts with PLAN, EXECUTE, and REVIEW. REVIEW appends PLAN or EXECUTE for correction, followed by a new REVIEW, or appends SHIP when ready. Earlier evidence is never rewritten.
+- SHIP records candidate preparation, digest-bound acceptance, and finalization. A candidate change requires correction work and fresh REVIEW before renewed acceptance.
+- Every Lifecycle records its outcome, improvement evidence, and Artifact References. Completed history is immutable.
+- Follow-up work is an independent Task connected by Task Link; it does not execute automatically.
 
 ## Profiles and Persistence
 
-- `LIGHTWEIGHT` uses native agent/tool messaging. Only the root agent writes aggregate snapshots; no Level 0 event bus or outbox is emulated.
-- `HARNESS` uses explicit Level 0, at-least-once events, transactional outbox, per-aggregate ordering, and idempotent consumers.
-- Store Task, Task Execution, and Task Link under `.sdlc/` as separate schema-v1 YAML snapshots with revision and audit summaries.
+- `LIGHTWEIGHT` uses native agent/tool messaging. The root agent writes one Task snapshot; no Level 0 event bus or outbox is emulated.
+- `HARNESS` may use ordered, idempotent events and a transactional outbox while preserving the same nested Task hierarchy.
+- Store Task and Task Link under `.sdlc/` as schema-version-1 YAML snapshots with revision and audit summaries.
 - Store large outputs as verified Artifact References with ID, type, revision, URI, and SHA-256.
-- Use the same Phase/Work request-result contract in both profiles; Work exchanges remain transient.
+- Stage request-result exchanges are transient. Persist compact results, improvement evidence, audit summaries, and Artifact References in the producing Lifecycle.
 
 ## Verification
 
 - Validate individual snapshots, previous/current transitions, and complete `.sdlc` graphs.
-- Test stage gating, immutable values, one-to-one execution, review limits, recovery bounds, budget rules, terminal immutability, link integrity, revision/audit ordering, and artifact references.
+- Test stage ordering, stage-to-phase mapping, lifecycle ordering, correction loops, result provenance, terminal immutability, link integrity, revision/audit ordering, and artifact references.
 - Run validator tests, plugin validation, `git diff --check`, stale-language searches, and one final diff review.

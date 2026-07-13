@@ -5,18 +5,41 @@ description: Use when a repository change needs lifecycle coordination, constrai
 
 # SDLC Orchestrator
 
-Own lifecycle authorization. Classify the request, select the active phase, enforce its preconditions and constraints, and authorize a transition only after the phase returns valid evidence.
+Own lifecycle authorization. Classify the request, locate its active stage, enforce preconditions and constraints, and authorize a stage transition only after its stage skill returns valid evidence.
 
-For direct CLI work, keep a compact in-session context and run only the selected phase; do not create SDLC state files or claim cross-session resume. A harness may persist or coordinate the same contract.
+## Shared Phase Lifecycle
 
-| Request state | Action |
+Every stage skill manages its own stage details through this root-owned lifecycle. Do not duplicate it in stage skills.
+
+```text
+DEFINE -> EXECUTE -> VERIFY -> IMPROVE -> COMPLETE
+```
+
+## Stages
+
+Capitalized labels are stages; each maps to one stage skill. `CLOSED` is a terminal state, not a stage or skill.
+
+```text
+DEFINE
+  sdlc-define
+REFINE
+  sdlc-refine
+EXECUTE
+  sdlc-execute
+    PLAN -> EXECUTE -> REVIEW -> SHIP
+IMPROVE
+  sdlc-improve
+CLOSED (terminal state)
+```
+
+For direct CLI work, keep a compact in-session context and run the selected active stage and phase; do not create SDLC state files or claim cross-session resume. A harness may persist or coordinate the same contract.
+
+| Request state | Stage skill |
 | --- | --- |
 | Read-only analysis | Report directly; do not start SDLC. |
-| Outcome or scope is missing | Invoke `sdlc-define`. |
-| Specification is absent or unapproved | Invoke `sdlc-spec`. |
-| Approved work lacks a plan | Invoke `sdlc-plan`. |
-| Planned work needs delivery or correction | Invoke `sdlc-execute`, then `sdlc-review`. |
-| Review passed | Invoke `sdlc-ship`. |
-| Delivery has an outcome | Invoke `sdlc-improve`. |
+| Outcome or scope is missing | `DEFINE` / `sdlc-define` |
+| Definition needs an approved delivery contract | `REFINE` / `sdlc-refine` |
+| Approved work needs planning, delivery, review, or shipping | `EXECUTE` / `sdlc-execute` |
+| Delivery has an outcome | `IMPROVE` / `sdlc-improve`, then terminal `CLOSED` |
 
-Read [orchestration-contract.md](references/orchestration-contract.md) before authorizing a phase or transition. It validates and supplies the phase envelope. Phase skills are explicit CLI or harness interfaces, not model-discovered entry points.
+Read [orchestration-contract.md](references/orchestration-contract.md) before authorizing a stage or transition. It validates and supplies the stage envelope. Stage skills are explicit CLI or harness interfaces, not model-discovered entry points.

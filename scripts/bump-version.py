@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate plugin definitions and bump versions in all plugin manifests."""
+"""Validate plugin definitions and bump one release package's manifests."""
 
 from __future__ import annotations
 
@@ -13,13 +13,16 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_PATHS = [
-    ROOT / ".codex-plugin" / "plugin.json",
-    ROOT / ".claude-plugin" / "plugin.json",
-    ROOT / "plugins" / "core" / "plugin.json",
-    ROOT / "plugins" / "workflow" / "plugin.json",
-    ROOT / "plugins" / "authoring" / "plugin.json",
-]
+PACKAGE_MANIFEST_PATHS = {
+    "core": [
+        ROOT / ".codex-plugin" / "plugin.json",
+        ROOT / ".claude-plugin" / "plugin.json",
+        ROOT / "plugins" / "core" / "plugin.json",
+    ],
+    "workflow": [ROOT / "plugins" / "workflow" / "plugin.json"],
+    "sdlc": [ROOT / "plugins" / "sdlc" / "plugin.json"],
+    "authoring": [ROOT / "plugins" / "authoring" / "plugin.json"],
+}
 
 
 def run_cmd(command: list[str]) -> str:
@@ -115,6 +118,12 @@ def run_validation() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bump version in manifest files.")
+    parser.add_argument(
+        "--plugin",
+        choices=PACKAGE_MANIFEST_PATHS,
+        required=True,
+        help="Release package whose manifests should be bumped.",
+    )
     parser.add_argument("--type", choices=["major", "minor", "patch"], help="Explicitly specify version bump type.")
     parser.add_argument("--message", help="Commit message to parse for determining bump type.")
     parser.add_argument("--compare-branch", default="origin/main", help="Branch to compare with for history analysis.")
@@ -171,14 +180,15 @@ def main() -> None:
         bump_type = "patch"
         print("Defaulting to bump type: patch")
 
+    manifest_paths = PACKAGE_MANIFEST_PATHS[args.plugin]
     manifests = {}
-    for path in MANIFEST_PATHS:
+    for path in manifest_paths:
         if not path.exists():
             print(f"error: Manifest file not found: {path.relative_to(ROOT)}", file=sys.stderr)
             sys.exit(1)
         manifests[path] = json.loads(path.read_text(encoding="utf-8"))
 
-    current_version = manifests[ROOT / "plugins" / "core" / "plugin.json"].get("version", "0.1.0")
+    current_version = manifests[manifest_paths[0]].get("version", "0.1.0")
     try:
         new_version = bump_version(current_version, bump_type)
     except Exception as exc:
@@ -189,8 +199,11 @@ def main() -> None:
         manifest["version"] = new_version
         path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
-    run_cmd(["git", "add", *[str(path.relative_to(ROOT)) for path in MANIFEST_PATHS]])
-    print(f"Bumped version from {current_version} to {new_version} ({bump_type} bump) and staged manifest changes.")
+    run_cmd(["git", "add", *[str(path.relative_to(ROOT)) for path in manifest_paths]])
+    print(
+        f"Bumped {args.plugin} package from {current_version} to {new_version} "
+        f"({bump_type} bump) and staged manifest changes."
+    )
 
 
 if __name__ == "__main__":

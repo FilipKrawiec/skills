@@ -37,7 +37,7 @@ PACKAGE_MANIFESTS = {
 PACKAGE_SKILL_TREES = {
     ROOT / "plugins" / "core" / "skills": {"ddd", "hexagonal-architecture"},
     ROOT / "plugins" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
-    ROOT / "plugins" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-spec", "sdlc-plan", "sdlc-execute", "sdlc-review", "sdlc-ship", "sdlc-improve"},
+    ROOT / "plugins" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-refine", "sdlc-execute", "sdlc-improve"},
     ROOT / "plugins" / "authoring" / "skills": {"writing-great-skill", "teach"},
 }
 

@@ -1,9 +1,9 @@
 # Review and Recovery
 
-Each Recovery Window permits `1..3` autonomous tries. Never repeat an unchanged failed invocation. Persist cumulative usage and Flow Friction.
+Record every correction in the owning Phase Lifecycle; never rewrite completed evidence. A failed or cancelled lifecycle records its result, improvement evidence, and artifacts before the orchestrator chooses the next action.
 
-- REVIEW exhaustion with HIGH/CRITICAL findings rejects Task Execution and moves Task to IMPROVE.
-- SHIP, deadline, or resource exhaustion enters `WAITING_FOR_HUMAN` without failing Task.
-- Human Intervention is immutable input and starts a fresh bounded window. Budget and deadline changes are additive extension values; Specification remains frozen.
-- Cooperative cancellation stops new dispatch, cancels children, preserves evidence at a safe boundary, marks Task Execution `CANCELLED`, and moves Task to IMPROVE.
-- Follow-up reviews verify prior findings and delta-introduced regressions only; subjective polish cannot reopen scope.
+- A REVIEW finding that changes the plan appends a new `PLAN` Phase; an implementation-only finding appends a new `EXECUTE` Phase. Each correction returns through REVIEW before SHIP.
+- SHIP waits for human acceptance when required. A changed candidate requires a new REVIEW and acceptance; delivery friction alone may remain in SHIP if the candidate is unchanged.
+- Human input is immutable evidence attached to the active Lifecycle. A resumption adds new Lifecycle or Phase history; it never erases prior work.
+- Cooperative cancellation preserves the Task hierarchy at a safe boundary. Its failed or cancelled Lifecycle records the result and improvement evidence, then the orchestrator closes the Task with the matching terminal outcome.
+- Follow-up reviews verify prior findings and delta-introduced regressions; subjective polish does not reopen completed scope.

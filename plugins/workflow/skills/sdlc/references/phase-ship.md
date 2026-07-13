@@ -1,5 +1,5 @@
-# SHIP Phase Run
+# SHIP Phase
 
-Use one SHIP run to prepare the Candidate Result, suspend in `AWAITING_ACCEPTANCE`, and finalize delivery after approval. Acceptance Decision binds to candidate artifact ID and digest.
+`sdlc-execute` owns this Phase inside the EXECUTE Stage. Prepare the Candidate Result, suspend for human acceptance when required, and record the acceptance decision in the completed Lifecycle result. Approval binds to the candidate artifact ID and digest.
 
-Recover delivery/infrastructure friction locally without discarding reviewed implementation. After the bounded Recovery Window, enter `WAITING_FOR_HUMAN`. Human Intervention starts a fresh window; these HIL-gated cycles may repeat. Approval remains valid only while the candidate digest is unchanged. Rejection cancels SHIP, rejects Task Execution, and moves Task to IMPROVE.
+Recover delivery or infrastructure friction without discarding a reviewed, unchanged candidate. If the candidate changes, append correction work and a fresh REVIEW before requesting acceptance again. Rejection ends delivery and requests IMPROVE; it does not rewrite the SHIP Phase.

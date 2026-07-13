@@ -1,7 +1,7 @@
 {
   "name": "filipkrawiec-sdlc",
-  "version": "3.0.0",
-  "description": "Portable SDLC orchestration and phase skills for direct CLI and harnessed delivery.",
+  "version": "5.0.0",
+  "description": "Portable SDLC lifecycle orchestration with DEFINE, REFINE, EXECUTE, and IMPROVE stages.",
   "author": {"name": "Filip Krawiec", "email": "contact@filipkrawiec.com", "url": "https://github.com/FilipKrawiec"},
   "repository": "https://github.com/FilipKrawiec/skills",
   "homepage": "https://github.com/FilipKrawiec/skills",
