@@ -5,37 +5,16 @@ description: Use when programming, coding, refactoring, implementing features, o
 
 # Test-Driven Development (TDD)
 
-## TDD Execution & Delegation Model
+## One-Agent Loop
 
-To prevent log pollution and context bloating at the root level, TDD execution is divided into two distinct roles:
+One agent owns the complete Red-Green-Refactor loop in the active SDLC EXECUTE Phase. Do not delegate checkpoints, create intermediate commits, or push from TDD.
 
-### 1. Root Coordinator Role
-- **Orchestrate**: The root agent coordinates the stages of the task run. It does NOT modify code, write tests, or execute gradle/test commands directly.
-- **Progress Tracking**: Root spawns specialized subagents for each checkpoint (Red, Green, Refactor) and receives only high-level status outputs (files changed, success/failure, brief summary).
+1. **RED**: Write or update the smallest behavior test and run its focused command. Record the failing command and observed failure as Lifecycle evidence.
+2. **GREEN**: Make the smallest production change that passes the focused test. Record the passing command and affected files.
+3. **REFACTOR**: Improve structure without expanding behavior, then rerun the focused test. Preserve the green result.
+4. **VERIFY**: Run the selected deterministic sensors for the changed scope. Failed or skipped checks remain explicit evidence and risk.
 
-### 2. Subagent TDD Steps (Executed inside isolated Subagent sandboxes)
-
-- **Red Stage Checkpoint (Test Subagent)**:
-  1. Write or update test cases describing the expected behavior.
-  2. Run the specific test command inside the sandbox to verify tests compile and fail (Red State).
-  3. Commit and push the Red state.
-  4. Return only the pass/fail outcome to the root agent (preventing raw logs from reaching root).
-
-- **Green Stage Checkpoint (Implementor Subagent)**:
-  1. Write the minimal production code necessary to satisfy the test cases.
-  2. Run the test command in the sandbox to verify the tests now pass (Green State).
-  3. Commit the Green state.
-  4. Return only the success status and file summary to the root agent.
-
-- **Refactor Stage Checkpoint (Refactoring Subagent)**:
-  1. Optimize code design, clean up duplication, and enforce clean architectural boundaries.
-  2. Run the test command in the sandbox to verify tests remain green.
-  3. Commit the Refactored state.
-  4. Return the final success status and patch details to the root agent.
-
-- **Black-Box Harness Verification**:
-  - The Harness runs the completed patch through black-box sensors (compilation, full test suite check).
-  - If a sensor fails, the Harness delegates the fix to a specialized Tester Subagent to troubleshoot and fix it, keeping the root context clean.
+VCS commits belong to SHIP, not to an intermediate TDD checkpoint. Attach RED, GREEN, REFACTOR, and verification evidence to the active Lifecycle through the authoritative State Store.
 
 ## Coverage Rule
 

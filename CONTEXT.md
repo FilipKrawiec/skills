@@ -90,6 +90,18 @@ An explicitly invocable skill for one Stage: `sdlc-define`, `sdlc-refine`, `sdlc
 
 The portable input/output contract for a Stage invocation. It carries Task, Stage, active Phase and Lifecycle context, constraints, evidence, and required approval material. It returns a proposed result or structured refusal; it cannot authorize a transition.
 
+### State Authority
+
+The one durable system of record for an SDLC Task. A repository-changing Task must have exactly one State Authority: the local file-backed `.sdlc/` store for direct CLI work, or a revisioned control-plane store for harnessed work. A mirror or cache is never a second authority.
+
+### State Store
+
+The port through which root `sdlc` loads, validates, and atomically transitions a Task at its State Authority. It supplies an active snapshot and accepts a revision-checked proposed transition. Root refuses repository changes when this port is unavailable, stale, or rejects the transition.
+
+### State Projection
+
+A non-authoritative materialized view of control-plane state, such as a local `.sdlc/` cache. It aids inspection and tooling but cannot authorize work or accept transitions.
+
 ### Harness
 
-An optional implementation that coordinates, persists, or automates the SDLC Skill Contract. It is not required for direct CLI use.
+An implementation that coordinates or automates the SDLC Skill Contract through a control-plane State Authority. It may use ordered idempotent events and an outbox, but preserves the portable Task hierarchy and revision-checked transitions.

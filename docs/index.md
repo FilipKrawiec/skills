@@ -22,3 +22,4 @@ Operational agent guidance belongs in `AGENTS.md`. Skill authoring guidance belo
 - `adr/0009-adopt-deterministic-sdlc-health-score.md`
 - `adr/0010-record-evidence-bounded-agentic-diagnosis.md`
 - `adr/0011-adopt-immutable-scorecard-policies.md`
+- `adr/0012-require-state-authority-for-sdlc-work.md`

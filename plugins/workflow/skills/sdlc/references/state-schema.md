@@ -176,12 +176,15 @@ A Stage Request and Stage Result identify `task_id`, `stage_id`, active `phase_i
 
 Artifact References contain `artifact_id`, `type`, `revision`, `uri`, and `sha256`. Validate existence, revision, and digest before relying on an Artifact Reference. Large documents, patches, logs, and reports remain Artifact References; lifecycle results retain only the compact semantic value and evidence references.
 
-## Persistence Profiles
+## State Authorities and Persistence Profiles
 
-- `LIGHTWEIGHT`: the root agent coordinates through native agent/tool messaging and writes Task snapshots. It does not emulate an event bus or outbox.
-- `HARNESS`: a host may coordinate snapshots through ordered, idempotent events and an outbox.
+Every repository-changing Task has exactly one durable State Authority. The portable hierarchy and validation rules do not change with the authority:
 
-Both profiles preserve the same Task → Stage → Phase → Lifecycle hierarchy. A direct CLI may keep the envelope in session and report that persistent resume is unavailable rather than pretending to write a record.
+- `FILE`: direct CLI persists the canonical Task graph under `.sdlc/`. Root validates each previous/candidate transition before replacing the snapshot. This is mandatory for direct CLI repository changes.
+- `CONTROL_PLANE`: a harness persists the canonical Task through a revisioned API or database. Its transition accepts an expected revision and returns the committed snapshot or a structured refusal. It may use ordered idempotent events and an outbox internally.
+- `HYBRID`: the control plane remains authoritative; any local `.sdlc/` mirror is a State Projection for inspection only and cannot authorize or accept a transition.
+
+Root refuses a repository mutation when it cannot load the current authoritative Task or commit its previous/candidate transition. Conversation memory and an unversioned local cache are never resume points.
 
 Validate a new snapshot with the bundled script:
 

@@ -32,7 +32,7 @@ IMPROVE
 CLOSED (terminal state)
 ```
 
-For direct CLI work, keep a compact in-session context and run the selected active stage and phase; do not create SDLC state files or claim cross-session resume. A harness may persist or coordinate the same contract.
+For every repository-changing request, select its State Authority before DEFINE and use its State Store for every transition. Direct CLI uses the local `.sdlc/` store; a control plane may be authoritative through its revisioned Task API. Never fall back to conversation-only state, and never treat a local mirror as authoritative when a control plane owns the Task. Read [state-store.md](references/state-store.md) before authorizing a repository mutation.
 
 | Request state | Stage skill |
 | --- | --- |
