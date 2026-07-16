@@ -23,7 +23,7 @@ All documents use `schema_version: '1'`. This is the only supported persisted co
   artifacts/
 ```
 
-Resolve `<skill-dir>` to the directory containing the loaded `sdlc/SKILL.md`. Initialize a Task from `<skill-dir>/assets/task-template.yaml`, a scorecard policy from `<skill-dir>/assets/scorecard-policy-template.yaml`, and a Task Link from `<skill-dir>/assets/task-link-template.yaml`. Replace every placeholder before validation. Templates are starting points, not additional schema sources. This runtime form is portable across installed plugin hosts and does not assume the target repository contains `plugins/workflow/`.
+Resolve `<skill-dir>` to the directory containing the loaded `sdlc/SKILL.md`. Initialize a Task from `<skill-dir>/assets/task-template.yaml`, a scorecard policy from `<skill-dir>/assets/scorecard-policy-template.yaml`, and a Task Link from `<skill-dir>/assets/task-link-template.yaml`. Replace every placeholder before validation. Templates are starting points, not additional schema sources. This runtime form is self-contained and portable across installed plugin hosts.
 
 ## Task
 

@@ -1,4 +1,4 @@
-"""Regression checks for mandatory SDLC persistence and one-agent TDD."""
+"""Regression checks for the standalone SDLC package."""
 
 from __future__ import annotations
 
@@ -25,20 +25,21 @@ class SdlcPersistenceContractTests(unittest.TestCase):
         self.assertIn("State Projection", state_store)
 
     def test_schema_makes_direct_cli_persistence_mandatory(self) -> None:
-        schema = self.read("plugins/workflow/skills/sdlc/references/state-schema.md")
+        schema = self.read("plugins/sdlc/skills/sdlc/references/state-schema.md")
 
         self.assertIn("mandatory for direct CLI repository changes", schema)
         self.assertIn("HYBRID", schema)
         self.assertNotIn("may keep the envelope in session", schema)
+        self.assertFalse((ROOT / "plugins/workflow/skills/sdlc").exists())
 
-    def test_tdd_uses_one_agent_and_defers_vcs_to_ship(self) -> None:
-        tdd = self.read("plugins/workflow/skills/tdd/SKILL.md")
+    def test_sdlc_has_no_workflow_plugin_dependency(self) -> None:
+        package = ROOT / "plugins/sdlc"
+        for path in package.rglob("*"):
+            if path.is_file() and path.suffix in {".md", ".json", ".py", ".yaml"}:
+                self.assertNotIn("plugins/workflow", path.read_text(encoding="utf-8"), path)
 
-        self.assertIn("One agent owns", tdd)
-        self.assertIn("VCS commits belong to SHIP", tdd)
-        self.assertNotIn("spawns specialized subagents", tdd)
-        self.assertNotIn("Commit and push", tdd)
-        self.assertNotIn("isolated Subagent", tdd)
+        execute = self.read("plugins/sdlc/skills/sdlc-execute/SKILL.md")
+        self.assertNotIn("`tdd`", execute)
 
 
 if __name__ == "__main__":

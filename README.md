@@ -5,7 +5,7 @@ Skills for Software engineering
 
 - `plugins/core/skills/ddd` for Ubiquitous Language, naming, and strategic design
 - `plugins/core/skills/hexagonal-architecture` for dependency inversion, encapsulation, and the 4 layered architecture (API, Application, Domain, Infrastructure)
-- `plugins/sdlc/skills/sdlc` for portable SDLC orchestration and independently invocable phase skills
+- `plugins/sdlc/skills/sdlc` for self-contained SDLC orchestration, state records, templates, validation, and measurement tools
 - `plugins/workflow/skills/tdd` for Red-Green-Refactor loop using Chicago strategy and Testcontainers
 - `plugins/workflow/skills/vcs` for Git workflow with Conventional Commits and linear history
 - `plugins/workflow/skills/grill-with-docs` for source-backed review and critique work
@@ -91,4 +91,3 @@ To update all installed plugins (both Claude and Antigravity) with the latest ve
 ```bash
 ./scripts/update-plugins.sh
 ```
-
