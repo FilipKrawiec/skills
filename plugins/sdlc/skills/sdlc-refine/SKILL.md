@@ -1,10 +1,8 @@
 ---
 name: sdlc-refine
-description: Turn a definition into an approved, story-pointed delivery contract.
+description: Execute the REFINE Phase of an Autonomous SDLC Delivery Task.
 ---
 
-# REFINE
+# REFINE Phase Executor
 
-Lifecycle position: `REFINE` stage skill.
-
-Require an `sdlc`-validated stage envelope; otherwise return `{status: REFUSED, code: INVALID_ENVELOPE, required_stage: sdlc}`. Manage this stage through the shared phase lifecycle defined by root `sdlc`. Turn the definition into an executable specification: deliverable, completion condition, acceptance criteria, constraints, risks, allowed paths, and verification. Before approval, select exactly one Story Points value—`1`, `2`, `3`, `5`, or `8`—with the human. Require human approval before requesting the `EXECUTE` stage. In that approved transition, root `sdlc` binds `{story_points}`; if an immutable policy has an entry, root resolves and copies the scorecard envelope, otherwise it leaves `scorecard: null` for calibration. A Task agent never supplies a duration estimate. Read [scorecard-policy.md](references/scorecard-policy.md) before selecting Story Points. Do not authorize execution.
+Read [the packaged Autonomous SDLC Specification](../sdlc/references/autonomous-sdlc-specification.md). Execute only the active REFINE Phase according to that specification and return either its proposed typed `PhaseOutcome`, including its Next Action, or a `BlockerReport`. Do not enact that action, select its Actor, decide approval, record events, or alter the Delivery Task.

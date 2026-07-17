@@ -1,0 +1,132 @@
+"""Regression checks for the Autonomous SDLC specification boundary."""
+
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+SPECIFICATION = ROOT / "spec" / "autonomous-sdlc" / "SPECIFICATION.md"
+CONFORMANCE = ROOT / "spec" / "autonomous-sdlc" / "conformance.md"
+SDLC_SKILL = ROOT / "plugins" / "sdlc" / "skills" / "sdlc" / "SKILL.md"
+SDLC_SKILL_DIRECTORY = SDLC_SKILL.parent
+PACKAGED_SPECIFICATION = SDLC_SKILL_DIRECTORY / "references" / "autonomous-sdlc-specification.md"
+PACKAGED_CONFORMANCE = SDLC_SKILL_DIRECTORY / "references" / "conformance.md"
+
+
+class AutonomousSdlcSpecificationTests(unittest.TestCase):
+    def test_specification_defines_the_required_domain_contract(self) -> None:
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+
+        self.assertIn("## Typed phase contracts", specification)
+        for phase_contract in (
+            "RequestedOutcome",
+            "Definition",
+            "DeliveryContract",
+            "ImplementationPlan",
+            "ExecutionResult",
+            "ReviewDecision",
+            "ShipmentCandidate",
+            "AcceptanceDecision",
+            "ImprovementOutcome",
+        ):
+            with self.subTest(phase_contract=phase_contract):
+                self.assertIn(phase_contract, specification)
+
+    def test_phase_outcome_has_one_typed_next_action_or_is_terminal(self) -> None:
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+        conformance = CONFORMANCE.read_text(encoding="utf-8")
+
+        self.assertIn("`Succeeded { work_product, contributors, evidence, next_action }`", specification)
+        self.assertIn("`Terminated { status: FAILED | BLOCKED | CANCELLED, reason, evidence? }`", specification)
+        for next_action in ("`StartPhase", "`RequestApproval", "`CloseTask"):
+            with self.subTest(next_action=next_action):
+                self.assertIn(next_action, specification)
+        self.assertNotIn("executor_requirement", specification)
+        self.assertNotIn("executor_requirement", conformance)
+
+    def test_specification_defines_approval_wait_states_and_actor_four_eyes(self) -> None:
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+
+        self.assertIn("AWAITING_APPROVAL", specification)
+        self.assertIn("SpecificationApprovalRequested", specification)
+        self.assertIn("ShipmentApprovalRequested", specification)
+        self.assertIn("Segregation is by Actor identity, never role", specification)
+        self.assertIn("MUST NOT be a Contributor", specification)
+
+    def test_specification_bounds_rework_and_unblocking(self) -> None:
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+
+        self.assertIn("maximum_active_delivery_time <= PT5H", specification)
+        self.assertIn("maximum_rework_cycles <= 2", specification)
+        self.assertIn("InvestigationRequired", specification)
+        self.assertIn("AWAITING_UNBLOCK", specification)
+        self.assertIn("`ResolveInvestigation` can only split or cancel", specification)
+        self.assertIn("resumes exactly the same Phase Run", specification)
+        self.assertIn("at most one `BLOCKER` suspension", specification)
+        self.assertIn("only permitted second suspension", specification)
+
+    def test_specification_defines_command_authority_and_retries(self) -> None:
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+
+        self.assertIn("CommandEnvelope { task_id, command_id, expected_revision, issued_by, payload }", specification)
+        self.assertIn("A host MUST apply a command only at its expected revision", specification)
+        self.assertIn("Task-assigned `SDLC_ORCHESTRATOR`", specification)
+        self.assertIn("initial_role_assignments, define_executor", specification)
+        self.assertIn("TaskTerminalOutcome", specification)
+
+    def test_conformance_covers_waiting_four_eyes_and_delivery_guards(self) -> None:
+        conformance = CONFORMANCE.read_text(encoding="utf-8")
+
+        for scenario in (
+            "approval rework",
+            "eligible non-contributor",
+            "delivery-guard breach",
+            "unblock, resume, and delivery-guard breach",
+            "command retry and split",
+        ):
+            with self.subTest(scenario=scenario):
+                self.assertIn(scenario, conformance)
+
+    def test_sdlc_skill_uses_the_specification_as_its_authority(self) -> None:
+        skill = SDLC_SKILL.read_text(encoding="utf-8")
+
+        self.assertIn("references/autonomous-sdlc-specification.md", skill)
+        self.assertIn("the authority", skill)
+
+    def test_plugin_ships_the_canonical_specification_without_drift(self) -> None:
+        self.assertEqual(PACKAGED_SPECIFICATION.read_text(encoding="utf-8").rstrip(), SPECIFICATION.read_text(encoding="utf-8").rstrip())
+        packaged_conformance = PACKAGED_CONFORMANCE.read_text(encoding="utf-8").replace(
+            "(autonomous-sdlc-specification.md)", "(SPECIFICATION.md)"
+        )
+        self.assertEqual(packaged_conformance.rstrip(), CONFORMANCE.read_text(encoding="utf-8").rstrip())
+
+    def test_stage_skills_do_not_duplicate_phase_contracts(self) -> None:
+        stage_skills = (
+            ROOT / "plugins" / "sdlc" / "skills" / "sdlc-define" / "SKILL.md",
+            ROOT / "plugins" / "sdlc" / "skills" / "sdlc-refine" / "SKILL.md",
+            ROOT / "plugins" / "sdlc" / "skills" / "sdlc-execute" / "SKILL.md",
+            ROOT / "plugins" / "sdlc" / "skills" / "sdlc-improve" / "SKILL.md",
+        )
+
+        for path in stage_skills:
+            with self.subTest(path=path):
+                content = path.read_text(encoding="utf-8")
+                authority = path.parent / "../sdlc/references/autonomous-sdlc-specification.md"
+                self.assertIn("../sdlc/references/autonomous-sdlc-specification.md", content)
+                self.assertTrue(authority.resolve().is_file())
+                self.assertFalse((path.parent / "references" / "autonomous-sdlc-specification.md").exists())
+                self.assertIn("`PhaseOutcome`", content)
+                self.assertIn("`BlockerReport`", content)
+                self.assertIn("Do not enact that action", content)
+                self.assertNotIn("Input:", content)
+                self.assertNotIn("Result:", content)
+
+    def test_sdlc_skill_does_not_ship_a_cli_contract_or_python_runtime(self) -> None:
+        self.assertFalse((SDLC_SKILL_DIRECTORY / "references" / "phase-contract.md").exists())
+        self.assertEqual(list(SDLC_SKILL_DIRECTORY.rglob("*.py")), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

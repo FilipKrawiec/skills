@@ -30,15 +30,16 @@ For user-invoked skills, keep the description as a one-line human summary.
 - Put only always-needed **reference** in `SKILL.md`.
 - Move branch-specific reference behind a clear **context pointer**: "Read X when Y."
   - Rule: `X` must be a relative link targeting a file inside the skill's own local `references/` subdirectory.
-  - Rule: Never use absolute local file URLs (e.g., `file:///Users/...`) or reference files outside the skill directory (including other skills). Context pointers must stay strictly internal to the local `references/` subdirectory.
-  - Rule: Do not use markdown links (relative or absolute) to files or skills outside the skill's own directory anywhere in `SKILL.md` (e.g., inside steps or descriptions). Reference other skills textually using backticks (e.g., `` `other-skill` ``).
+  - Exception — shared package authority: skills shipped together in one plugin MAY use a relative link to one package-local authority outside their own directory. Verify that link from the installed package; do not copy the authority per skill.
+  - Rule: Never use absolute local file URLs (e.g., `file:///Users/...`) or reference files outside the installed plugin. Reference other skills textually using backticks (e.g., `` `other-skill` ``) unless using the shared-authority exception.
 - Keep each meaning in one source of truth.
+- Evaluate instruction cost, shared-contract dependency cost, and observed run cost separately; static contract size alone is not a skill-quality failure.
 
 ## Naming Conventions
 
 - **Skill Directory**: Must use `lowercase-kebab-case` (e.g., `ddd`).
 - **Main Instruction File**: Must be named exactly `SKILL.md` (all uppercase).
-- **Reference Files**: Must use `lowercase-kebab-case.md` (e.g., `ubiquitous-language.md`), and reside within the local `references/` subdirectory.
+- **Reference Files**: Must use `lowercase-kebab-case.md` (e.g., `ubiquitous-language.md`), and reside within a local `references/` subdirectory or the verified shared package authority.
 - **Assets**: Store templates and static resources in `assets/`.
 - **Scripts**: Store executable helper code in `scripts/`; scripts must be non-interactive and document usage.
 

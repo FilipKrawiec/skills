@@ -1,5 +1,7 @@
 # ADR-0012: Require a State Authority for SDLC Work
 
+> Superseded by ADR-0013.
+
 ## Decision
 
 Every repository-changing SDLC Task has exactly one durable **State Authority** accessed through a **State Store** port. Root `sdlc` loads and validates the current Task, authorizes a revision-checked transition, and refuses repository mutation when the store is missing, stale, unavailable, or rejects that transition.

@@ -1,5 +1,7 @@
 # ADR-0009: Adopt a Deterministic SDLC Health Score
 
+> Superseded by ADR-0013.
+
 ## Decision
 
 Adopt a portable, deterministic SDLC Health Score for schema-version-1 Task snapshots. The score is derived on demand from validated append-only Task evidence; it is never persisted as a mutable Task field.

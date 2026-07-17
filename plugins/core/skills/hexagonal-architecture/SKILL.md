@@ -5,22 +5,14 @@ description: Use when designing, implementing, or refactoring codebase layers wi
 
 # Hexagonal Architecture (Ports & Adapters)
 
-Follow these steps to design and implement codebase layers with clean boundaries, strict encapsulation, and high test confidence.
+Use these steps to preserve dependency direction and encapsulation.
 
 ## Steps
 
-1. **Define/Refactor Domain Logic (Inside-Out):**
-   - Write production code to model the domain's core logic (aggregates, entities, value objects).
-   - Ensure the Domain layer has zero framework or infrastructure dependencies.
-2. **Define Outbound Ports:**
-   - Declare interfaces for external resources:
-     - **Domain-driven ports** (e.g., repositories, domain event publishers) belong in the Domain Layer.
-     - **Integration/application-specific ports** (e.g., email clients, payment services) belong in the Application Layer.
-3. **Orchestrate Usecases (Application Layer):**
-   - Wire API/ingress inputs to Domain actions. Usecases must coordinate transactions, security, and orchestrate actions without containing business rules.
-4. **Implement Adapters (Infrastructure & API Layers):**
-   - **Outbound Adapters (Infrastructure):** Implement outbound ports. Map persistence structures to domain models; never leak persistence structures. Use access modifiers (e.g., package-private/internal) to keep adapter implementations non-public.
-   - **Inbound Adapters (API):** Implement entry points (controllers, consumers). Map payloads directly to Application commands or queries, keeping them free of business logic.
+1. Keep the Domain layer free of framework and infrastructure dependencies.
+2. Declare outbound ports at the layer that owns the policy: domain-driven ports in Domain; integration-specific ports in Application.
+3. Let Application use cases coordinate transactions, security, and Domain actions without business rules.
+4. Keep adapters at the edge: inbound adapters map requests to commands/queries; outbound adapters map ports to external systems without leaking their data models.
 
 ## Context Pointers
 

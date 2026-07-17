@@ -1,26 +1,17 @@
 ---
 name: ddd
-description: Use when defining domain models, ubiquitous language, bounded contexts, context maps, aggregates, entities, value objects, repositories, domain events, or strategic design decisions.
+description: Use when defining a business domain's language, contexts and maps, aggregates, entities, value objects, repositories, domain events, or strategic design.
 ---
 
 # Domain-Driven Design (DDD)
 
-Follow these steps to establish strategic alignment, define ubiquitous language, partition domain models, and implement tactical DDD patterns.
+Establish language, boundaries, and invariants before implementation.
 
 ## Steps
 
-1. **Establish Ubiquitous Language:**
-   - Define business terms collaboratively with domain experts. Avoid technical jargon (e.g., use `SubmitOrder`, not `InsertOrderRow`).
-   - Maintain a single, versioned glossary in `CONTEXT.md` following the [ubiquitous-language.md](references/ubiquitous-language.md) template.
-   - Enforce ubiquitous language across all conversations, specs, tests, and code (class names, database schemas, APIs).
-2. **Define Bounded Contexts:**
-   - Partition large domains into distinct Bounded Contexts. Each context must have an independent model and its own Ubiquitous Language.
-   - Map context relationships (`CONTEXT-MAP.md`) and choose explicit integration patterns to prevent model leakage (e.g., Shared Kernel, Anti-Corruption Layer, Customer-Supplier).
-3. **Apply Tactical Modeling:**
-   - Model the domain's business invariants using Aggregates (where the Aggregate Root is a specialized Entity; see [entities.md](references/entities.md)).
-   - Represent quantities, measurements, or descriptions that have no identity using immutable Value Objects.
-   - Separate transient lifecycle rules (Factories) and cross-entity logic (Services) from Entity and Value Object behavior.
-   - Capture side-effects and historical states using Domain Events.
+1. Define business terms with domain experts; record the single versioned language in `CONTEXT.md` using [ubiquitous-language.md](references/ubiquitous-language.md). Use it consistently in specs, tests, and code.
+2. Partition the domain into bounded contexts with independent models; record integrations in `CONTEXT-MAP.md` and choose explicit relationships.
+3. Put business invariants in Aggregates, identity-free concepts in immutable Value Objects, construction policy in Factories, cross-entity policy in Services, and observable facts in Domain Events.
 
 ## Context Pointers
 

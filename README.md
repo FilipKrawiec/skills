@@ -5,7 +5,7 @@ Skills for Software engineering
 
 - `plugins/core/skills/ddd` for Ubiquitous Language, naming, and strategic design
 - `plugins/core/skills/hexagonal-architecture` for dependency inversion, encapsulation, and the 4 layered architecture (API, Application, Domain, Infrastructure)
-- `plugins/sdlc/skills/sdlc` for self-contained SDLC orchestration, state records, templates, validation, and measurement tools
+- `spec/autonomous-sdlc` for the internal Autonomous SDLC domain specification; `plugins/sdlc/skills/sdlc` for agent guidance that applies it
 - `plugins/workflow/skills/tdd` for Red-Green-Refactor loop using Chicago strategy and Testcontainers
 - `plugins/workflow/skills/vcs` for Git workflow with Conventional Commits and linear history
 - `plugins/workflow/skills/grill-with-docs` for source-backed review and critique work

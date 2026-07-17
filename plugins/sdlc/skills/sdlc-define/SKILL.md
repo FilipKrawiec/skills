@@ -1,10 +1,8 @@
 ---
 name: sdlc-define
-description: Define a requested outcome, scope, and initial constraints.
+description: Execute the DEFINE Phase of an Autonomous SDLC Delivery Task.
 ---
 
-# DEFINE
+# DEFINE Phase Executor
 
-Lifecycle position: `DEFINE` stage skill.
-
-Require an `sdlc`-validated stage envelope; otherwise return `{status: REFUSED, code: INVALID_ENVELOPE, required_stage: sdlc}`. Manage this stage through the shared phase lifecycle defined by root `sdlc`. Return a compact definition: outcome, context, initial scope, and references. Request transition to `REFINE`; do not authorize it.
+Read [the packaged Autonomous SDLC Specification](../sdlc/references/autonomous-sdlc-specification.md). Execute only the active DEFINE Phase according to that specification and return either its proposed typed `PhaseOutcome`, including its Next Action, or a `BlockerReport`. Do not enact that action, select its Actor, record events, or alter the Delivery Task.

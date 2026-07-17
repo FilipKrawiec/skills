@@ -1,5 +1,7 @@
 # ADR-0011: Adopt Immutable Scorecard Policies
 
+> Superseded by ADR-0013.
+
 ## Decision
 
 Replace task-supplied pace targets with immutable, versioned `scorecard_policy` documents. A policy maintainer derives each policy from a closed comparable cohort, groups Tasks by Story Points (`1`, `2`, `3`, `5`, or `8`), and records the observed elapsed-time P75 only for groups meeting a declared minimum sample size.

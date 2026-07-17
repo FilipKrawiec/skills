@@ -5,16 +5,14 @@ description: Use when programming, coding, refactoring, implementing features, o
 
 # Test-Driven Development (TDD)
 
-## One-Agent Loop
+## Loop
 
-One agent owns the complete Red-Green-Refactor loop in the active SDLC EXECUTE Phase. Do not delegate checkpoints, create intermediate commits, or push from TDD.
+1. **RED**: Write the smallest behavior test and run its focused command; preserve the observed failure.
+2. **GREEN**: Make the smallest change that passes it; preserve the passing command and affected files.
+3. **REFACTOR**: Improve structure without expanding behavior, then rerun the focused test.
+4. **VERIFY**: Run deterministic checks for the changed scope; make failed or skipped checks explicit.
 
-1. **RED**: Write or update the smallest behavior test and run its focused command. Record the failing command and observed failure as Lifecycle evidence.
-2. **GREEN**: Make the smallest production change that passes the focused test. Record the passing command and affected files.
-3. **REFACTOR**: Improve structure without expanding behavior, then rerun the focused test. Preserve the green result.
-4. **VERIFY**: Run the selected deterministic sensors for the changed scope. Failed or skipped checks remain explicit evidence and risk.
-
-VCS commits belong to SHIP, not to an intermediate TDD checkpoint. Attach RED, GREEN, REFACTOR, and verification evidence to the active Lifecycle through the authoritative State Store.
+TDD does not prescribe delegation, persistence, commits, or shipping workflow.
 
 ## Coverage Rule
 

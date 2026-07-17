@@ -1,5 +1,7 @@
 # ADR-0008: Model SDLC as a Portable Skill Contract
 
+> Superseded by ADR-0013.
+
 ## Decision
 
 Extract SDLC from the general workflow plugin into a standalone plugin. It has four stages: `DEFINE`, `REFINE`, `EXECUTE`, and `IMPROVE`, followed by terminal state `CLOSED`. Each stage maps to one independently invocable stage skill: `sdlc-define`, `sdlc-refine`, `sdlc-execute`, or `sdlc-improve`.

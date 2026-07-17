@@ -1,6 +1,6 @@
 # ADR-0007: Model SDLC as a Task Hierarchy
 
-> Superseded by ADR-0008 for the default portable SDLC contract. Its serialization guidance remains useful to adapters that persist the contract.
+> Superseded by ADR-0013. Retained as historical serialization guidance only.
 
 ## Decision
 

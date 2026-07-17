@@ -1,12 +1,8 @@
 ---
 name: sdlc-improve
-description: Record outcome evidence, retrospective insights, and follow-up improvements.
+description: Execute the IMPROVE Phase of an Autonomous SDLC Delivery Task.
 ---
 
-# IMPROVE
+# IMPROVE Phase Executor
 
-Lifecycle position: `IMPROVE` stage skill, before terminal `CLOSED`.
-
-Require an `sdlc`-validated stage envelope; otherwise return `{status: REFUSED, code: INVALID_ENVELOPE, required_stage: sdlc}`. Manage this stage through the shared phase lifecycle defined by root `sdlc`.
-
-Before completing IMPROVE, use the current validated Task snapshot, its Lifecycle history and results, referenced artifacts, and the deterministic measurement report to produce the required Agentic Diagnosis. State evidence separately from hypotheses; do not expose raw reasoning or present an inference as a fact. Request the terminal `CLOSED` state or a linked follow-up; do not authorize either. Read [agentic-diagnosis.md](references/agentic-diagnosis.md) before producing the diagnosis.
+Read [the packaged Autonomous SDLC Specification](../sdlc/references/autonomous-sdlc-specification.md). Execute only the active IMPROVE Phase according to that specification and return either its proposed typed `PhaseOutcome`, including its Next Action, or a `BlockerReport`. Do not enact that action, close the Delivery Task, record events, or alter the Delivery Task.

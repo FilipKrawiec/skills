@@ -24,7 +24,7 @@
     },
     {
       "name": "filipkrawiec-sdlc",
-      "description": "Portable SDLC orchestration and phase skills for direct CLI and harnessed delivery.",
+      "description": "Agent guidance for the internal Autonomous SDLC Specification.",
       "category": "development",
       "source": "./plugins/sdlc",
       "homepage": "https://github.com/FilipKrawiec/skills"

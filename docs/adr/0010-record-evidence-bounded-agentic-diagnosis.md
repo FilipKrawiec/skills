@@ -1,5 +1,7 @@
 # ADR-0010: Record Evidence-Bounded Agentic Diagnosis
 
+> Superseded by ADR-0013.
+
 ## Decision
 
 Require the completed IMPROVE Phase to record one structured Agentic Diagnosis. It uses the current validated Task snapshot, Lifecycle history/results, Artifact References, and deterministic measurement report. The record contains non-empty facts, optional falsifiable hypotheses with confidence and a disconfirming check, and one measurable recommendation with an action, expected signal, and success criterion.

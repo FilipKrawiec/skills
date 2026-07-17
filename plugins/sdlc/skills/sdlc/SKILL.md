@@ -1,42 +1,20 @@
 ---
 name: sdlc
-description: Use when a repository change needs lifecycle coordination, constraints, phase gating, review, or shipping approval.
+description: Use when an agent must coordinate a repository change according to the Autonomous SDLC Specification.
 ---
 
-# SDLC Orchestrator
+# Autonomous SDLC Orchestrator
 
-Own lifecycle authorization. Classify the request, locate its active stage, enforce preconditions and constraints, and authorize a stage transition only after its stage skill returns valid evidence.
+Read [the packaged Autonomous SDLC Specification](references/autonomous-sdlc-specification.md) before acting. It is the distributable copy of the canonical specification and the authority for domain language, typed Phase contracts, workflow, and conformance while this plugin is installed.
 
-## Lifecycle model
+Act as the orchestrator for one Delivery Task. Dispatch from its current state:
 
-The persisted hierarchy has three distinct levels. A Stage never uses the shared Lifecycle names as aliases.
+- `ACTIVE`: assemble the active Phase input; delegate it; validate its proposed Phase Outcome or Blocker Report; apply only the legal command and events.
+- `AWAITING_APPROVAL`: obtain the decision from the selected eligible non-contributor; validate and apply `DecideApproval`.
+- `AWAITING_UNBLOCK`: obtain resolution Evidence from the selected unblocking Actor; validate and apply `ResolveUnblock`.
+- `AWAITING_INVESTIGATION`: apply only authorized `SPLIT` or `CANCEL` through `ResolveInvestigation`.
+- `CLOSED`: take no action.
 
-```text
-Task
-├── Stage: DEFINE -> REFINE -> EXECUTE -> IMPROVE
-│   └── Phase: stage-owned work; EXECUTE uses PLAN -> EXECUTE -> REVIEW -> SHIP
-│       └── Lifecycle: DEFINE -> EXECUTE -> VERIFY -> IMPROVE -> COMPLETE
-└── CLOSED: terminal Task state
-```
+Enforce the Delivery Guard at its active-time deadline and before any new non-terminal Phase starts.
 
-Each capitalized Stage maps to its stage skill: `sdlc-define`, `sdlc-refine`, `sdlc-execute`, or `sdlc-improve`. `sdlc` owns lifecycle authorization; a stage skill proposes evidence but never authorizes a transition.
-
-For every repository-changing request, select its State Authority before DEFINE and use its State Store for every transition. Direct CLI uses the local `.sdlc/` store; a control plane may be authoritative through its revisioned Task API. Never fall back to conversation-only state, and never treat a local mirror as authoritative when a control plane owns the Task.
-
-| Request state | Stage skill |
-| --- | --- |
-| Read-only analysis | Report directly; do not start SDLC. |
-| Outcome or scope is missing | `DEFINE` / `sdlc-define` |
-| Definition needs an approved delivery contract | `REFINE` / `sdlc-refine` |
-| Approved work needs planning, delivery, review, or shipping | `EXECUTE` / `sdlc-execute` |
-| Delivery has an outcome | `IMPROVE` / `sdlc-improve`, then terminal `CLOSED` |
-
-Stage skills are explicit CLI or harness interfaces, not model-discovered entry points.
-
-## Context pointers
-
-- Read [orchestration-contract.md](references/orchestration-contract.md) before authorizing a stage or transition.
-- Read [state-store.md](references/state-store.md) before selecting an authority or authorizing a repository mutation.
-- Read [state-schema.md](references/state-schema.md) when initializing, transitioning, or validating file-backed Task records.
-- Read [formats.md](references/formats.md) when recording phase results or artifact references.
-- Read [performance-measurement.md](references/performance-measurement.md) when resolving a scorecard policy or measuring a Task or cohort.
+Do not invent lifecycle steps, persistence formats, command-line behavior, or vendor-specific executor requirements.
