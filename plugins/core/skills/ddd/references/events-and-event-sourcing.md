@@ -2,6 +2,12 @@
 
 Reference constraints for Events, derived from Vaughn Vernon's *Implementing Domain-Driven Design*.
 
+## Contents
+
+- [Domain Events](#1-domain-events-standard-state-persisted-aggregates)
+- [Event-Sourced Aggregates](#2-event-sourced-aggregates)
+- [Core Architecture Rules](#3-core-architecture-rules)
+
 ## 1. Domain Events (Standard state-persisted aggregates)
 A **Domain Event** is a record of a state transition or significant occurrence in the past.
 - **Naming:** Past-tense verbs matching the Ubiquitous Language (`ThreadCreated`, `ThreadResolved`).

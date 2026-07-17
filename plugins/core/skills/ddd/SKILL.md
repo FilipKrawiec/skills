@@ -10,7 +10,7 @@ Establish language, boundaries, and invariants before implementation.
 ## Steps
 
 1. Define business terms with domain experts; record the single versioned language in `CONTEXT.md` using [ubiquitous-language.md](references/ubiquitous-language.md). Use it consistently in specs, tests, and code.
-2. Partition the domain into bounded contexts with independent models; record integrations in `CONTEXT-MAP.md` and choose explicit relationships.
+2. Partition the domain into bounded contexts with independent models; record integrations in `CONTEXT-MAP.md`, choose explicit relationships, and classify proposed sharing as Shared Kernel, Published Language/ACL, layer-specific technical reuse, or local duplication.
 3. Put business invariants in Aggregates, identity-free concepts in immutable Value Objects, construction policy in Factories, cross-entity policy in Services, and observable facts in Domain Events.
 
 ## Context Pointers

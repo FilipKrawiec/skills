@@ -13,6 +13,7 @@ Use these steps to preserve dependency direction and encapsulation.
 2. Declare outbound ports at the layer that owns the policy: domain-driven ports in Domain; integration-specific ports in Application.
 3. Let Application use cases coordinate transactions, security, and Domain actions without business rules.
 4. Keep adapters at the edge: inbound adapters map requests to commands/queries; outbound adapters map ports to external systems without leaking their data models.
+5. Keep technical reuse layer-scoped. A DDD Shared Kernel is domain-only and jointly owned by its named Bounded Contexts; it is never a cross-layer component library.
 
 ## Context Pointers
 

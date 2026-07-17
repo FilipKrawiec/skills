@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hexagonal Architecture"
+  short_description: "Design clean ports and adapter boundaries"
+  default_prompt: "Use $hexagonal-architecture to design ports and adapter boundaries."

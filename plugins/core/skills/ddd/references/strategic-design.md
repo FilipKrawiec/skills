@@ -22,4 +22,16 @@ External DTOs and contracts from other contexts must never bleed into the Applic
 - **Open Host Service (OHS) / Published Language (PL):** 
   - The **upstream context** defines a stable interface (OHS) and a standardized format (PL) using its own Ubiquitous Language. Exposed via inbound API adapters.
   - The **downstream context** integrates using an outbound adapter/client that translates the Published Language into its own internal models/commands.
-- **Shared Kernel:** A shared subset of model/code. Use sparingly to avoid tight coupling. Any change requires agreement across all consuming contexts.
+### Shared Kernel
+
+A Shared Kernel is a deliberately small, domain-only subset of model shared by specifically named Bounded Contexts. Use it only when the contexts have the same business meaning and jointly govern changes, releases, and compatibility.
+
+- It may contain domain concepts and rules only. It must not contain application workflows or application ports, API DTOs, adapters, persistence models, framework types, or generic cross-layer utilities.
+- Every change requires agreement from all consuming contexts. If that agreement or synchronized release process is absent, do not use a Shared Kernel.
+
+### Choosing a Shared Artifact
+
+1. Use a **Shared Kernel** for jointly owned business language with identical meaning.
+2. Use a **Published Language** plus an **ACL** for an interchange schema between independent contexts; translate it in adapters, not in either domain model.
+3. Put context-neutral technical reuse in a layer-specific platform/foundation module, such as `platform-domain` or `platform-infrastructure`. It is not a Shared Kernel and must preserve Hexagonal dependency direction.
+4. Duplicate code locally when the concepts are merely similar or expected to evolve independently.

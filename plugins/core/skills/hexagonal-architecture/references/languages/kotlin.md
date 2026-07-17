@@ -2,10 +2,22 @@
 
 Use this as a Kotlin-specific delta on top of the generic Domain, Application, API, and Infrastructure references.
 
+## Contents
+
+- [Package and Module Boundaries](#1-package-and-module-boundaries)
+- [Aggregate Boundary Files](#2-aggregate-boundary-files)
+- [Domain Modeling Idioms](#3-domain-modeling-idioms)
+- [Creation, Time, and Randomness](#4-creation-time-and-randomness)
+- [Application Layer](#5-application-layer)
+- [Query Ports and Read Models](#6-query-ports-and-read-models)
+- [API and Infrastructure Models](#7-api-and-infrastructure-models)
+- [Adapters, DAOs, and Framework Wiring](#8-adapters-daos-and-framework-wiring)
+- [Testing Rules](#9-testing-rules)
+
 ## 1. Package and Module Boundaries
 
 - Use feature-first packages with layer suffixes: `users.domain`, `users.app`, `users.api`, `users.infra`.
-- Keep shared domain primitives in sibling kernel packages such as `kernel.domain`.
+- Separate reuse by intent. A `shared-domain` module is a DDD Shared Kernel only when named contexts jointly own its business language. A context-neutral `platform-domain` module may contain pure technical primitives, but must not import or expose Application, API, Infrastructure, or framework types; do not call it a Shared Kernel.
 - Domain packages must not depend on `app`, `api`, `infra`, web frameworks, JPA, serialization, or database libraries.
 - Kotlin `internal` is module-wide, not package-private. In a single Gradle module, enforce boundaries with architecture tests such as Konsist, ArchUnit, or project-specific import rules.
 - If the project has multiple Gradle modules, Domain must not depend on Application, API, Infrastructure, or framework modules.
@@ -23,8 +35,8 @@ Example:
 // users/domain/Users.kt
 package users.domain
 
-import kernel.domain.BaseEntity
-import kernel.domain.DomainEvent
+import platform.domain.BaseEntity
+import platform.domain.DomainEvent
 
 class User(
     override val id: UserId,
@@ -81,7 +93,7 @@ value class EmailAddress(val value: String)
 
 ## 3. Domain Modeling Idioms
 
-- Aggregate Roots and Entities should extend `kernel.domain.BaseEntity<ID>`, a domain-owned kernel type that implements identity-based equality.
+- Entities own their identity semantics. An optional pure `platform.domain.BaseEntity<ID>` is acceptable when it does not impose business policy; never make it the universal base class.
 - Do not use Kotlin `data class` for mutable Entities or Aggregate Roots; generated `copy`, structural equality, and destructuring can bypass invariants.
 - Use Kotlin value classes for small identity and value types when they preserve domain meaning.
 - Model expected business failures as sealed domain errors or sealed domain outcomes, not framework exceptions.
@@ -130,9 +142,9 @@ Example:
 // users/app/ChangeUserEmail.kt
 package users.app
 
-import kernel.domain.DomainEvents
 import users.domain.ChangeUserEmailOutcome
 import users.domain.EmailAddress
+import users.domain.UserEmailChanged
 import users.domain.UserId
 import users.domain.Users
 
@@ -147,9 +159,13 @@ sealed interface ChangeUserEmailResult {
     data object Changed : ChangeUserEmailResult
 }
 
+interface UserEventPublisher {
+    fun publish(event: UserEmailChanged)
+}
+
 class ChangeUserEmail(
     private val users: Users,
-    private val events: DomainEvents,
+    private val events: UserEventPublisher,
 ) {
     fun handle(command: ChangeUserEmailCommand): ChangeUserEmailResult {
         val user = users.get(UserId(command.userId))
