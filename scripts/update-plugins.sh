@@ -18,11 +18,31 @@ python3 scripts/validate-plugin-definitions.py
 # 1. Antigravity (agy) plugins update
 if command -v agy >/dev/null 2>&1; then
   echo "=== Updating Antigravity (agy) plugins ==="
-  agy plugin install ./plugins/core
-  agy plugin install ./plugins/workflow
-  agy plugin install ./plugins/sdlc
-  agy plugin install ./plugins/authoring
-  echo "Antigravity plugins updated successfully."
+  PLUGINS_DIR="${HOME}/.gemini/config/plugins"
+  mkdir -p "${PLUGINS_DIR}"
+
+  for plugin_dir in core workflow sdlc authoring; do
+    plugin_name="filipkrawiec-${plugin_dir}"
+    target_link="${PLUGINS_DIR}/${plugin_name}"
+
+    # If the plugin is not registered, run the installation to register it.
+    if ! agy plugin list | grep -q "\"name\": \"${plugin_name}\""; then
+      echo "Registering ${plugin_name} in manifest..."
+      agy plugin install "${REPO_ROOT}/plugins/${plugin_dir}"
+    fi
+
+    # Replace directory copy with a symbolic link to point to this repository
+    if [ -d "${target_link}" ] && [ ! -L "${target_link}" ]; then
+      echo "Removing duplicate directory copy for ${plugin_name}..."
+      rm -rf "${target_link}"
+    fi
+
+    if [ ! -L "${target_link}" ]; then
+      echo "Creating symbolic link for ${plugin_name}..."
+      ln -s "${REPO_ROOT}/plugins/${plugin_dir}" "${target_link}"
+    fi
+  done
+  echo "Antigravity plugins updated and deduplicated successfully."
 else
   echo "--- Antigravity (agy) CLI not found, skipping ---"
 fi
