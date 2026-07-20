@@ -13,6 +13,6 @@ Based on the active phase, immediately read the corresponding instruction below:
 - Read [ship-phase.md](references/ship-phase.md) when the active phase is SHIP.
 
 If the active phase is EXECUTE:
-Perform the code implementation as planned. Return either its proposed typed `PhaseOutcome` (kind `Succeeded` with an `ExecutionResult`, `contributors`, `evidence`, and `next_action: StartPhase(REVIEW)`), or a `BlockerReport` if blocked.
+Perform the code implementation as planned. Produce the `ExecutionResult` as a Markdown file with YAML frontmatter. Save it to `.sdlc/tasks/<task-id>/execution.md` (and copy/symlink it as a host-scoped artifact if requested by the host). Return either its proposed typed `PhaseOutcome` (kind `Succeeded` with an `ExecutionResult` represented by `execution.md`, `contributors`, `evidence`, and `next_action: StartPhase(REVIEW)`), or a `BlockerReport` if blocked.
 
 Do not enact that action, select its Actor, decide approval, record events, or alter the Delivery Task.
