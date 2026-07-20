@@ -31,16 +31,16 @@ if command -v agy >/dev/null 2>&1; then
       agy plugin install "${REPO_ROOT}/plugins/${plugin_dir}"
     fi
 
-    # Replace directory copy with a symbolic link to point to this repository
-    if [ -d "${target_link}" ] && [ ! -L "${target_link}" ]; then
-      echo "Removing duplicate directory copy for ${plugin_name}..."
-      rm -rf "${target_link}"
+    # If the target exists as a symbolic link, remove it to restore a clean copy
+    if [ -L "${target_link}" ]; then
+      echo "Removing symbolic link for ${plugin_name}..."
+      rm -f "${target_link}"
     fi
 
-    if [ ! -L "${target_link}" ]; then
-      echo "Creating symbolic link for ${plugin_name}..."
-      ln -s "${REPO_ROOT}/plugins/${plugin_dir}" "${target_link}"
-    fi
+    # Sync directory contents to the standard installation path (instead of symlinking)
+    echo "Syncing files for ${plugin_name} to standard path..."
+    rm -rf "${target_link}"
+    cp -R "${REPO_ROOT}/plugins/${plugin_dir}" "${target_link}"
   done
   echo "Antigravity plugins updated and deduplicated successfully."
 else
