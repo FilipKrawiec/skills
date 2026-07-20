@@ -26,3 +26,4 @@ A precise definition written in domain language.
 ## 3. Behavioral Guidelines for the Agent
 - If you encounter a new domain term during execution, ensure it matches a term in `CONTEXT.md`.
 - If you are asked to introduce a new business concept, first update `CONTEXT.md` before changing code.
+- Treat reading `CONTEXT.md` to reuse established vocabulary as passive consumption. Treat resolving an ambiguous term, finding a contradiction with the code, or introducing a business concept as active domain modeling; update the glossary as soon as that term is resolved.

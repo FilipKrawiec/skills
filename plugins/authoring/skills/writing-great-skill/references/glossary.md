@@ -36,6 +36,10 @@ Each behavior or rule has one authoritative home.
 
 An instruction that does not change agent behavior.
 
+## Negation
+
+A failure mode in which a prohibition makes the unwanted behavior more prominent in the agent's context. Prefer a positive description of the target behavior. Retain a prohibition only for a hard safety or compliance guardrail, paired with the desired behavior.
+
 ## Router Skill
 
 A single user-invoked skill designed to route the user's intent to more specialized skills, preventing menu overload.
@@ -47,4 +51,3 @@ Actionable, sequential instructions that the agent must execute.
 ## Reference
 
 Durable vocabulary, guidelines, or long-lived details relevant to the skill execution.
-

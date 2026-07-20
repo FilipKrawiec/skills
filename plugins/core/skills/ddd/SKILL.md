@@ -5,11 +5,11 @@ description: Use when defining a business domain's language, contexts and maps, 
 
 # Domain-Driven Design (DDD)
 
-Establish language, boundaries, and invariants before implementation.
+Use DDD for active domain modeling: establish and sharpen language, boundaries, and invariants before implementation. Reading an existing `CONTEXT.md` only to reuse its vocabulary is passive consumption; invoke this skill when the model itself needs to change.
 
 ## Steps
 
-1. Define business terms with domain experts; record the single versioned language in `CONTEXT.md` using [ubiquitous-language.md](references/ubiquitous-language.md). Use it consistently in specs, tests, and code.
+1. Challenge ambiguous business terms with domain experts and cross-check them against the code. Record each resolved term in the single versioned language in `CONTEXT.md` using [ubiquitous-language.md](references/ubiquitous-language.md), then use it consistently in specs, tests, and code.
 2. Partition the domain into bounded contexts with independent models; record integrations in `CONTEXT-MAP.md`, choose explicit relationships, and classify proposed sharing as Shared Kernel, Published Language/ACL, layer-specific technical reuse, or local duplication.
 3. Put business invariants in Aggregates, identity-free concepts in immutable Value Objects, construction policy in Factories, cross-entity policy in Services, and observable facts in Domain Events.
 

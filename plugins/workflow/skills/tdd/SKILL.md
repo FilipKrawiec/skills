@@ -14,6 +14,11 @@ description: Use when programming, coding, refactoring, implementing features, o
 
 TDD does not prescribe delegation, persistence, commits, or shipping workflow.
 
+## Test Design
+
+- Test behavior through a public interface or other externally observable seam; keep tests independent of private implementation structure.
+- Derive expected values from an independent source of truth such as an acceptance criterion, a worked example, or a known-good literal. A test that recomputes the expected result with the production algorithm is tautological and passes by construction.
+
 ## Coverage Rule
 
 - Aggregate unit and component test branch coverage into one value; both suites together must reach 100% branch coverage.

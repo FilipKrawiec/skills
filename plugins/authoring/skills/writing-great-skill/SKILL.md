@@ -24,6 +24,10 @@ A model-invoked **description** is always in startup context. It must earn that 
 
 For user-invoked skills, keep the description as a one-line human summary.
 
+## Instruction Wording
+
+Describe the target behavior positively. Keep a prohibition only for a hard safety or compliance guardrail that cannot be expressed positively, and pair it with the desired behavior.
+
 ## Information Hierarchy
 
 - Put required **steps** in `SKILL.md`.
