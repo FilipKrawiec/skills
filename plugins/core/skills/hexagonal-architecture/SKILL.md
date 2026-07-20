@@ -22,3 +22,5 @@ Use these steps to preserve dependency direction and encapsulation.
 - Read [api-layer.md](references/api-layer.md) when writing inbound adapters (like HTTP/gRPC controllers, Kafka event consumers).
 - Read [infrastructure-layer.md](references/infrastructure-layer.md) when writing outbound adapters (like database repositories, API clients) and managing encapsulation.
 - Read [kotlin.md](references/languages/kotlin.md) when applying these boundaries in a Kotlin codebase.
+- Read [typescript.md](references/languages/typescript.md) when applying these boundaries in a TypeScript codebase.
+
