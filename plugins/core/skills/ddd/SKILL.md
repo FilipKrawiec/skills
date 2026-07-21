@@ -7,11 +7,13 @@ description: Use when defining a business domain's language, contexts and maps, 
 
 Use DDD for active domain modeling: establish and sharpen language, boundaries, and invariants before implementation. Reading an existing `CONTEXT.md` only to reuse its vocabulary is passive consumption; invoke this skill when the model itself needs to change.
 
-## Steps
+## Mandatory Steps
 
-1. Challenge ambiguous business terms with domain experts and cross-check them against the code. Record each resolved term in the single versioned language in `CONTEXT.md` using [ubiquitous-language.md](references/ubiquitous-language.md), then use it consistently in specs, tests, and code.
-2. Partition the domain into bounded contexts with independent models; record integrations in `CONTEXT-MAP.md`, choose explicit relationships, and classify proposed sharing as Shared Kernel, Published Language/ACL, layer-specific technical reuse, or local duplication.
-3. Put business invariants in Aggregates, identity-free concepts in immutable Value Objects, construction policy in Factories, cross-entity policy in Services, and observable facts in Domain Events.
+1. **Read Strategic References First**: You MUST read [strategic-design.md](references/strategic-design.md) and [ubiquitous-language.md](references/ubiquitous-language.md) BEFORE defining Bounded Contexts, package layouts, or updating `CONTEXT.md`.
+2. **Domain & Language First**: Always define Bounded Context boundaries, the Ubiquitous Language, and the core domain model *before* planning integration details, frameworks, or database schemas. Never invent artificial business contexts for infrastructure/connectivity logic.
+3. **Glossary Cleanliness (`CONTEXT.md`)**: Challenge ambiguous business terms with domain experts and cross-check them against the code. Record each resolved term in `CONTEXT.md`. Never put code file paths, database tables, or framework classes in `CONTEXT.md`.
+4. **Context Mapping (`CONTEXT-MAP.md`)**: Partition the domain into bounded contexts with independent models; record integrations in `CONTEXT-MAP.md`, choose explicit relationships, and classify proposed sharing as Shared Kernel, Published Language/ACL, layer-specific technical reuse, or local duplication.
+5. **Tactical Domain Modeling**: Put business invariants in Aggregates, identity-free concepts in immutable Value Objects, construction policy in Factories, cross-entity policy in Services, and observable facts in Domain Events.
 
 ## Context Pointers
 
