@@ -11,7 +11,7 @@ Follow these steps for all version control and git operations to maintain a clea
 
 1. **Preflight State:** Check branch, upstream, and worktree status before edits, staging, commits, pull requests, merges, and cleanup. Preserve unrelated user changes.
 2. **Worktree Per Task:** Create a dedicated worktree and short-lived branch for the task. Keep the primary worktree on main/trunk.
-3. **Execute File Operations:** If moving or renaming files, use `git mv` instead of standard `mv` to preserve Git revision history.
+3. **Execute File Operations:** MANDATORY: Always use `git mv` (never standard shell `mv` or creating/deleting copies) for all file moves and renames to preserve Git revision history and blame tracking.
 4. **Stage Intentionally:** Stage only files that belong to the current task; inspect staged changes before committing.
 5. **Commit Logically:** Write atomic commits using the Conventional Commits format, prefixed with `#<task-id>` if linked to an issue tracker.
 6. **Integrate and Sync:** Rebase the task branch onto current main/trunk. Use either local squash integration or the repository's merge-request flow, but finish with exactly one cohesive outcome commit on main/trunk and verify the remote ref.
