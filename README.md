@@ -60,6 +60,16 @@ agy plugin install plugins/agy/sdlc
 
 AGY accepts those local directories. Reload its host after an edit; if a host build caches imported skills, re-run the same local command rather than installing from Git.
 
+### Headless smoke test
+
+After installing the common SDLC package, run a disposable README task with:
+
+```bash
+./scripts/agy-smoke-test.sh
+```
+
+The runner creates and removes an isolated temporary Git repository. It uses `--prompt=...` (not the `-p` print-only switch) and enables headless command approval only for that disposable task. Set `AGY_SMOKE_MODEL` to choose another configured model. `./scripts/agy-smoke-test.sh --dry-run` verifies the generated invocation without calling Antigravity.
+
 ## Package versions
 
 Versions are independent by package. Bump only the package being released:
