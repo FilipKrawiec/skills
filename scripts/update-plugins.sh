@@ -14,18 +14,9 @@ git pull origin main
 echo "=== Validating plugin definitions ==="
 python3 scripts/validate-plugin-definitions.py
 
-# 1. Antigravity (agy) plugins update
-if command -v agy >/dev/null 2>&1; then
-  echo "=== Updating Antigravity (agy) plugins ==="
-  for plugin_dir in core workflow sdlc authoring; do
-    agy plugin install "${REPO_ROOT}/plugins/common/${plugin_dir}"
-  done
-  agy plugin install "${REPO_ROOT}/plugins/agy/core"
-  agy plugin install "${REPO_ROOT}/plugins/agy/sdlc"
-  echo "Antigravity plugins updated successfully."
-else
-  echo "--- Antigravity (agy) CLI not found, skipping ---"
-fi
+# 1. Antigravity IDE native plugins
+echo "=== Linking Antigravity IDE plugins ==="
+scripts/link-agy-ide-plugins.sh --replace
 
 # 2. Claude Code bundle availability
 if command -v claude >/dev/null 2>&1; then

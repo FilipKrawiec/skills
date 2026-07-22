@@ -47,18 +47,13 @@ Codex marks these packages as `local` and resolves them from the checkout. Resta
 
 Antigravity installs a common package plus optional native overlays. The core package id is `filipkrawiec-core`.
 
-Install package roots from the canonical local checkout:
+Link the canonical checkout into Antigravity IDE's native global plugin discovery directory:
 
 ```bash
-agy plugin install plugins/common/core
-agy plugin install plugins/common/workflow
-agy plugin install plugins/common/sdlc
-agy plugin install plugins/common/authoring
-agy plugin install plugins/agy/core
-agy plugin install plugins/agy/sdlc
+./scripts/link-agy-ide-plugins.sh --replace
 ```
 
-AGY accepts those local directories. Reload its host after an edit; if a host build caches imported skills, re-run the same local command rather than installing from Git.
+This replaces any old copied snapshots with symlinks for the four common packages and two Antigravity-native overlays. The IDE therefore reads the repository files directly; restart Antigravity after the first link or after changing a plugin. Use `--dry-run` to inspect the links first. To install into a workspace rather than globally, set `AGY_IDE_PLUGIN_DIR=/path/to/workspace/.agents/plugins`.
 
 ### Headless smoke test
 
@@ -89,7 +84,7 @@ python3 scripts/validate-plugin-definitions.py
 
 ## Update
 
-To update all installed plugins (both Claude and Antigravity) with the latest versions from the repository, run:
+To update Antigravity IDE links and check the repository, run:
 
 ```bash
 ./scripts/update-plugins.sh
