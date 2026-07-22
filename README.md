@@ -55,6 +55,10 @@ Link the canonical checkout into Antigravity IDE's native global plugin discover
 
 This replaces any old copied snapshots with symlinks for the four common packages and two Antigravity-native overlays. The IDE therefore reads the repository files directly; restart Antigravity after the first link or after changing a plugin. Use `--dry-run` to inspect the links first. To install into a workspace rather than globally, set `AGY_IDE_PLUGIN_DIR=/path/to/workspace/.agents/plugins`.
 
+### SDLC artifact review
+
+For SDLC changes, start an Antigravity **Planning Mode** conversation and set **Settings → Agent → Artifact Review Policy** to **Request Review**. The native overlay then requires an Antigravity Implementation Plan artifact before workspace changes; the IDE provides its built-in **Proceed** button for that artifact. Fast Mode and the **Always Proceed** policy intentionally bypass the review pause and cannot show that button.
+
 ### Headless smoke test
 
 After installing the common SDLC package, run a disposable README task with:

@@ -33,8 +33,13 @@ class CommonPluginLayoutTests(unittest.TestCase):
         overlay = ROOT / "plugins" / "agy" / "sdlc"
         manifest = json.loads((overlay / "plugin.json").read_text(encoding="utf-8"))
         rule = overlay / "rules" / "sdlc-artifacts.md"
+        content = rule.read_text(encoding="utf-8")
         self.assertEqual(manifest["name"], "filipkrawiec-agy-sdlc")
-        self.assertIn("Antigravity", rule.read_text(encoding="utf-8"))
+        self.assertIn("Antigravity", content)
+        self.assertIn("Planning Mode", content)
+        self.assertIn("Implementation Plan", content)
+        self.assertIn("Request Review", content)
+        self.assertIn("Proceed", content)
         self.assertTrue((overlay / "rules" / "sdlc-required.md").is_file())
 
     def test_antigravity_core_overlay_owns_reference_resolution_guidance(self) -> None:
