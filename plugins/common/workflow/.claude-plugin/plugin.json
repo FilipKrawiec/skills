@@ -1,0 +1,7 @@
+{
+  "name": "filipkrawiec-workflow",
+  "version": "5.1.0",
+  "description": "Workflow skills for TDD, VCS, and review critiques.",
+  "author": {"name": "Filip Krawiec", "email": "contact@filipkrawiec.com", "url": "https://github.com/FilipKrawiec"},
+  "skills": "./skills/"
+}

@@ -1,40 +1,16 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "filipkrawiec",
-  "description": "Personal marketplace for Filip Krawiec's plugin-based software engineering skills.",
+  "description": "Personal marketplace for Filip Krawiec's portable software engineering skills.",
   "owner": {
     "name": "Filip Krawiec",
     "email": "contact@filipkrawiec.com",
     "url": "https://github.com/FilipKrawiec"
   },
   "plugins": [
-    {
-      "name": "filipkrawiec-core",
-      "description": "Core agentic software engineering skills for domain modeling and architecture.",
-      "category": "development",
-      "source": "./plugins/core",
-      "homepage": "https://github.com/FilipKrawiec/skills"
-    },
-    {
-      "name": "filipkrawiec-workflow",
-      "description": "Workflow skills for TDD, VCS, and review critiques.",
-      "category": "development",
-      "source": "./plugins/workflow",
-      "homepage": "https://github.com/FilipKrawiec/skills"
-    },
-    {
-      "name": "filipkrawiec-sdlc",
-      "description": "Agent guidance for the internal Autonomous SDLC Specification.",
-      "category": "development",
-      "source": "./plugins/sdlc",
-      "homepage": "https://github.com/FilipKrawiec/skills"
-    },
-    {
-      "name": "filipkrawiec-authoring",
-      "description": "Skill authoring and learning-guide helpers.",
-      "category": "development",
-      "source": "./plugins/authoring",
-      "homepage": "https://github.com/FilipKrawiec/skills"
-    }
+    {"name": "filipkrawiec-core", "description": "Core agentic software engineering skills for domain modeling and architecture.", "category": "development", "source": "./plugins/common/core", "homepage": "https://github.com/FilipKrawiec/skills"},
+    {"name": "filipkrawiec-workflow", "description": "Workflow skills for TDD, VCS, and review critiques.", "category": "development", "source": "./plugins/common/workflow", "homepage": "https://github.com/FilipKrawiec/skills"},
+    {"name": "filipkrawiec-sdlc", "description": "Agent guidance for the internal Autonomous SDLC Specification.", "category": "development", "source": "./plugins/common/sdlc", "homepage": "https://github.com/FilipKrawiec/skills"},
+    {"name": "filipkrawiec-authoring", "description": "Skill authoring and learning-guide helpers.", "category": "development", "source": "./plugins/common/authoring", "homepage": "https://github.com/FilipKrawiec/skills"}
   ]
 }

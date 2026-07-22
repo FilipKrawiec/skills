@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
-# Script to update/sync plugins for both Antigravity (agy) and Claude Code (claude).
-# It fetches/pulls the latest changes, runs validation, and reinstalls the plugins locally.
+# Script to update source, validate it, and rebuild agent-native local bundles.
 
 set -euo pipefail
 
@@ -18,52 +17,21 @@ python3 scripts/validate-plugin-definitions.py
 # 1. Antigravity (agy) plugins update
 if command -v agy >/dev/null 2>&1; then
   echo "=== Updating Antigravity (agy) plugins ==="
-  PLUGINS_DIR="${HOME}/.gemini/config/plugins"
-  mkdir -p "${PLUGINS_DIR}"
-
   for plugin_dir in core workflow sdlc authoring; do
-    plugin_name="filipkrawiec-${plugin_dir}"
-    target_link="${PLUGINS_DIR}/${plugin_name}"
-
-    # If the plugin is not registered, run the installation to register it.
-    if ! agy plugin list | grep -q "\"name\": \"${plugin_name}\""; then
-      echo "Registering ${plugin_name} in manifest..."
-      agy plugin install "${REPO_ROOT}/plugins/${plugin_dir}"
-    fi
-
-    # If the target exists as a symbolic link, remove it to restore a clean copy
-    if [ -L "${target_link}" ]; then
-      echo "Removing symbolic link for ${plugin_name}..."
-      rm -f "${target_link}"
-    fi
-
-    # Sync directory contents to the standard installation path (instead of symlinking)
-    echo "Syncing files for ${plugin_name} to standard path..."
-    rm -rf "${target_link}"
-    cp -R "${REPO_ROOT}/plugins/${plugin_dir}" "${target_link}"
+    agy plugin install "${REPO_ROOT}/plugins/common/${plugin_dir}"
   done
-  echo "Antigravity plugins updated and deduplicated successfully."
+  agy plugin install "${REPO_ROOT}/plugins/agy/core"
+  agy plugin install "${REPO_ROOT}/plugins/agy/sdlc"
+  echo "Antigravity plugins updated successfully."
 else
   echo "--- Antigravity (agy) CLI not found, skipping ---"
 fi
 
-# 2. Claude Code (claude) plugins update
+# 2. Claude Code bundle availability
 if command -v claude >/dev/null 2>&1; then
-  echo "=== Updating Claude Code (claude) plugins ==="
-  
-  # Ensure the marketplace is updated
-  claude plugin marketplace update
-  
-  # Re-install plugins globally (user scope)
-  claude plugin install --scope user filipkrawiec-core@filipkrawiec
-  claude plugin install --scope user filipkrawiec-workflow@filipkrawiec
-  claude plugin install --scope user filipkrawiec-sdlc@filipkrawiec
-  claude plugin install --scope user filipkrawiec-authoring@filipkrawiec
-
-
-  echo "Claude Code plugins updated successfully."
+  echo "Claude Code common packages are ready; run scripts/claude-local-plugins.sh to load them."
 else
   echo "--- Claude Code (claude) not found, skipping ---"
 fi
 
-echo "=== All plugins updated successfully ==="
+echo "=== Common packages and native overlays are ready ==="

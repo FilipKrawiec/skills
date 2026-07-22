@@ -14,13 +14,11 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_SCRIPT = REPOSITORY_ROOT / "scripts" / "bump-version.py"
 
-MANIFEST_VERSIONS = {
-    ".codex-plugin/plugin.json": "2.0.0",
-    ".claude-plugin/plugin.json": "2.0.0",
-    "plugins/core/plugin.json": "2.0.0",
-    "plugins/workflow/plugin.json": "2.0.0",
-    "plugins/sdlc/plugin.json": "4.0.0",
-    "plugins/authoring/plugin.json": "2.0.0",
+PACKAGE_VERSIONS = {
+    "plugins/common/core/package-metadata.json": "2.0.0",
+    "plugins/common/workflow/package-metadata.json": "2.0.0",
+    "plugins/common/sdlc/package-metadata.json": "4.0.0",
+    "plugins/common/authoring/package-metadata.json": "2.0.0",
 }
 
 
@@ -39,13 +37,20 @@ class BumpVersionPackageTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        for relative_path, version in MANIFEST_VERSIONS.items():
-            manifest_path = self.root / relative_path
-            manifest_path.parent.mkdir(parents=True, exist_ok=True)
-            manifest_path.write_text(
-                json.dumps({"name": manifest_path.parent.name, "version": version}) + "\n",
+        for relative_path, version in PACKAGE_VERSIONS.items():
+            metadata_path = self.root / relative_path
+            metadata_path.parent.mkdir(parents=True, exist_ok=True)
+            metadata_path.write_text(
+                json.dumps({"name": metadata_path.parent.name, "version": version}) + "\n",
                 encoding="utf-8",
             )
+            for agent in (".claude-plugin", ".codex-plugin"):
+                manifest_path = metadata_path.parent / agent / "plugin.json"
+                manifest_path.parent.mkdir(parents=True, exist_ok=True)
+                manifest_path.write_text(
+                    json.dumps({"name": metadata_path.parent.name, "version": version}) + "\n",
+                    encoding="utf-8",
+                )
 
         (self.root / "functional-change.txt").write_text("before\n", encoding="utf-8")
         self.git("init")
@@ -76,32 +81,30 @@ class BumpVersionPackageTests(unittest.TestCase):
             text=True,
         )
 
-    def manifest_versions(self) -> dict[str, str]:
+    def package_versions(self) -> dict[str, str]:
         return {
             relative_path: json.loads((self.root / relative_path).read_text(encoding="utf-8"))["version"]
-            for relative_path in MANIFEST_VERSIONS
+            for relative_path in PACKAGE_VERSIONS
         }
 
     def test_workflow_major_bump_leaves_every_other_package_unchanged(self) -> None:
         result = self.run_bump("--plugin", "workflow", "--type", "major")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        versions = self.manifest_versions()
-        self.assertEqual(versions["plugins/workflow/plugin.json"], "3.0.0")
-        self.assertEqual(versions["plugins/sdlc/plugin.json"], "4.0.0")
-        self.assertEqual(versions["plugins/core/plugin.json"], "2.0.0")
-        self.assertEqual(versions[".codex-plugin/plugin.json"], "2.0.0")
-        self.assertEqual(versions[".claude-plugin/plugin.json"], "2.0.0")
-        self.assertEqual(versions["plugins/authoring/plugin.json"], "2.0.0")
+        versions = self.package_versions()
+        self.assertEqual(versions["plugins/common/workflow/package-metadata.json"], "3.0.0")
+        self.assertEqual(versions["plugins/common/sdlc/package-metadata.json"], "4.0.0")
+        self.assertEqual(versions["plugins/common/core/package-metadata.json"], "2.0.0")
+        self.assertEqual(versions["plugins/common/authoring/package-metadata.json"], "2.0.0")
 
     def test_sdlc_major_bump_changes_only_the_sdlc_manifest(self) -> None:
         result = self.run_bump("--plugin", "sdlc", "--type", "major")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        versions = self.manifest_versions()
-        self.assertEqual(versions["plugins/sdlc/plugin.json"], "5.0.0")
-        for relative_path, expected_version in MANIFEST_VERSIONS.items():
-            if relative_path != "plugins/sdlc/plugin.json":
+        versions = self.package_versions()
+        self.assertEqual(versions["plugins/common/sdlc/package-metadata.json"], "5.0.0")
+        for relative_path, expected_version in PACKAGE_VERSIONS.items():
+            if relative_path != "plugins/common/sdlc/package-metadata.json":
                 self.assertEqual(versions[relative_path], expected_version)
 
     def test_plugin_selection_is_required(self) -> None:
@@ -109,14 +112,14 @@ class BumpVersionPackageTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--plugin", result.stderr)
-        self.assertEqual(self.manifest_versions(), MANIFEST_VERSIONS)
+        self.assertEqual(self.package_versions(), PACKAGE_VERSIONS)
 
     def test_invalid_plugin_selection_is_rejected(self) -> None:
         result = self.run_bump("--plugin", "unknown", "--type", "major")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("invalid choice", result.stderr)
-        self.assertEqual(self.manifest_versions(), MANIFEST_VERSIONS)
+        self.assertEqual(self.package_versions(), PACKAGE_VERSIONS)
 
 
 if __name__ == "__main__":

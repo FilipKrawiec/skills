@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SPECIFICATION = ROOT / "spec" / "autonomous-sdlc" / "SPECIFICATION.md"
 CONFORMANCE = ROOT / "spec" / "autonomous-sdlc" / "conformance.md"
-SDLC_SKILL = ROOT / "plugins" / "sdlc" / "skills" / "sdlc" / "SKILL.md"
+SDLC_SKILL = ROOT / "plugins" / "common" / "sdlc" / "skills" / "sdlc" / "SKILL.md"
 SDLC_SKILL_DIRECTORY = SDLC_SKILL.parent
 PACKAGED_SPECIFICATION = SDLC_SKILL_DIRECTORY / "references" / "autonomous-sdlc-specification.md"
 PACKAGED_CONFORMANCE = SDLC_SKILL_DIRECTORY / "references" / "conformance.md"
@@ -104,10 +104,10 @@ class AutonomousSdlcSpecificationTests(unittest.TestCase):
 
     def test_stage_skills_do_not_duplicate_phase_contracts(self) -> None:
         stage_skills = (
-            ROOT / "plugins" / "sdlc" / "skills" / "sdlc-define" / "SKILL.md",
-            ROOT / "plugins" / "sdlc" / "skills" / "sdlc-refine" / "SKILL.md",
-            ROOT / "plugins" / "sdlc" / "skills" / "sdlc-execute" / "SKILL.md",
-            ROOT / "plugins" / "sdlc" / "skills" / "sdlc-improve" / "SKILL.md",
+            ROOT / "plugins" / "common" / "sdlc" / "skills" / "sdlc-define" / "SKILL.md",
+            ROOT / "plugins" / "common" / "sdlc" / "skills" / "sdlc-refine" / "SKILL.md",
+            ROOT / "plugins" / "common" / "sdlc" / "skills" / "sdlc-execute" / "SKILL.md",
+            ROOT / "plugins" / "common" / "sdlc" / "skills" / "sdlc-improve" / "SKILL.md",
         )
 
         for path in stage_skills:
@@ -126,6 +126,15 @@ class AutonomousSdlcSpecificationTests(unittest.TestCase):
     def test_sdlc_skill_does_not_ship_a_cli_contract_or_python_runtime(self) -> None:
         self.assertFalse((SDLC_SKILL_DIRECTORY / "references" / "phase-contract.md").exists())
         self.assertEqual(list(SDLC_SKILL_DIRECTORY.rglob("*.py")), [])
+
+    def test_stage_skills_describe_work_products_without_host_persistence(self) -> None:
+        stage_files = tuple((ROOT / "plugins" / "sdlc" / "skills").rglob("*.md"))
+        for path in stage_files:
+            with self.subTest(path=path):
+                content = path.read_text(encoding="utf-8")
+                self.assertNotIn(".sdlc/tasks/", content)
+                self.assertNotIn("host-scoped artifact", content)
+                self.assertNotIn("copy/symlink", content)
 
 
 if __name__ == "__main__":

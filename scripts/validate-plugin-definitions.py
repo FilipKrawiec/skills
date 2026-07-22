@@ -22,32 +22,19 @@ ALLOWED_FRONTMATTER_KEYS = {
     "metadata",
 }
 
-ROOT_MANIFESTS = {
-    ROOT / ".codex-plugin" / "plugin.json": ("filipkrawiec-core", "./plugins/core/skills/"),
-    ROOT / ".claude-plugin" / "plugin.json": ("filipkrawiec-core", "./plugins/core/skills/"),
-}
-
-PACKAGE_MANIFESTS = {
-    ROOT / "plugins" / "core" / "plugin.json": ("filipkrawiec-core", "./skills/"),
-    ROOT / "plugins" / "workflow" / "plugin.json": ("filipkrawiec-workflow", "./skills/"),
-    ROOT / "plugins" / "sdlc" / "plugin.json": ("filipkrawiec-sdlc", "./skills/"),
-    ROOT / "plugins" / "authoring" / "plugin.json": ("filipkrawiec-authoring", "./skills/"),
+PACKAGE_METADATA = {
+    ROOT / "plugins" / "common" / "core" / "package-metadata.json": "filipkrawiec-core",
+    ROOT / "plugins" / "common" / "workflow" / "package-metadata.json": "filipkrawiec-workflow",
+    ROOT / "plugins" / "common" / "sdlc" / "package-metadata.json": "filipkrawiec-sdlc",
+    ROOT / "plugins" / "common" / "authoring" / "package-metadata.json": "filipkrawiec-authoring",
 }
 
 PACKAGE_SKILL_TREES = {
-    ROOT / "plugins" / "core" / "skills": {"ddd", "hexagonal-architecture"},
-    ROOT / "plugins" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
-    ROOT / "plugins" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-refine", "sdlc-execute", "sdlc-improve"},
-    ROOT / "plugins" / "authoring" / "skills": {"writing-great-skill", "teach"},
+    ROOT / "plugins" / "common" / "core" / "skills": {"ddd", "hexagonal-architecture"},
+    ROOT / "plugins" / "common" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
+    ROOT / "plugins" / "common" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-refine", "sdlc-execute", "sdlc-improve"},
+    ROOT / "plugins" / "common" / "authoring" / "skills": {"writing-great-skill", "teach"},
 }
-
-MARKETPLACE_PLUGINS = {
-    "filipkrawiec-core": "./plugins/core",
-    "filipkrawiec-workflow": "./plugins/workflow",
-    "filipkrawiec-sdlc": "./plugins/sdlc",
-    "filipkrawiec-authoring": "./plugins/authoring",
-}
-
 
 def fail(message: str) -> None:
     print(f"error: {message}", file=sys.stderr)
@@ -126,41 +113,35 @@ def validate_skill_tree(root: Path, expected_skills: set[str]) -> None:
         validate_skill_spec(root / skill_name)
 
 
-def validate_manifest(path: Path, expected_name: str, expected_skills: str) -> None:
-    manifest = load_json(path)
-    if manifest.get("name") != expected_name:
-        fail(f"{path.relative_to(ROOT)} must use plugin name {expected_name}")
-    if manifest.get("skills") != expected_skills:
-        fail(f"{path.relative_to(ROOT)} must set skills to {expected_skills}")
+def validate_package_metadata(path: Path, expected_name: str) -> None:
+    metadata = load_json(path)
+    if metadata.get("name") != expected_name:
+        fail(f"{path.relative_to(ROOT)} must use package name {expected_name}")
+    if not isinstance(metadata.get("version"), str) or not re.fullmatch(r"\d+\.\d+\.\d+", metadata["version"]):
+        fail(f"{path.relative_to(ROOT)} must define a semantic version")
+    if not isinstance(metadata.get("description"), str) or not metadata["description"]:
+        fail(f"{path.relative_to(ROOT)} must define a non-empty description")
 
-
-def validate_marketplace(path: Path) -> None:
-    marketplace = load_json(path)
-    plugins = marketplace.get("plugins")
-    if not isinstance(plugins, list):
-        fail(f"{path.relative_to(ROOT)} must define plugins[]")
-
-    found = {plugin.get("name"): plugin for plugin in plugins if isinstance(plugin, dict)}
-    if set(found) != set(MARKETPLACE_PLUGINS):
-        fail(f"{path.relative_to(ROOT)} must define plugins {sorted(MARKETPLACE_PLUGINS)}")
-
-    for plugin_name, expected_source in MARKETPLACE_PLUGINS.items():
-        plugin = found[plugin_name]
-        if plugin.get("source") != expected_source:
-            fail(f"{path.relative_to(ROOT)} must point {plugin_name} at {expected_source}")
+    package_root = path.parent
+    antigravity = load_json(package_root / "plugin.json")
+    claude = load_json(package_root / ".claude-plugin" / "plugin.json")
+    codex = load_json(package_root / ".codex-plugin" / "plugin.json")
+    if antigravity != {"name": metadata["name"], "description": metadata["description"]}:
+        fail(f"{(package_root / 'plugin.json').relative_to(ROOT)} must match package identity")
+    for manifest_path, manifest in ((package_root / ".claude-plugin" / "plugin.json", claude), (package_root / ".codex-plugin" / "plugin.json", codex)):
+        if manifest.get("name") != metadata["name"] or manifest.get("version") != metadata["version"]:
+            fail(f"{manifest_path.relative_to(ROOT)} must match package name and version")
+        if manifest.get("description") != metadata["description"] or manifest.get("skills") != "./skills/":
+            fail(f"{manifest_path.relative_to(ROOT)} must match package description and skills path")
 
 
 def main() -> None:
-    for path, (name, skills_path) in ROOT_MANIFESTS.items():
-        validate_manifest(path, name, skills_path)
-
-    for path, (name, skills_path) in PACKAGE_MANIFESTS.items():
-        validate_manifest(path, name, skills_path)
+    for path, name in PACKAGE_METADATA.items():
+        validate_package_metadata(path, name)
 
     for root, skills in PACKAGE_SKILL_TREES.items():
         validate_skill_tree(root, skills)
 
-    validate_marketplace(ROOT / ".claude-plugin" / "marketplace.json")
     print("Plugin validation passed.")
 
 

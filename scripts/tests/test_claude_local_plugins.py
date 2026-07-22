@@ -59,13 +59,13 @@ class ClaudeLocalPluginsLauncherTests(unittest.TestCase):
                 json.loads(arguments_file.read_text(encoding="utf-8")),
                 [
                     "--plugin-dir",
-                    str(REPOSITORY_ROOT / "plugins" / "core"),
+                    str(REPOSITORY_ROOT / "plugins" / "common" / "core"),
                     "--plugin-dir",
-                    str(REPOSITORY_ROOT / "plugins" / "workflow"),
+                    str(REPOSITORY_ROOT / "plugins" / "common" / "workflow"),
                     "--plugin-dir",
-                    str(REPOSITORY_ROOT / "plugins" / "sdlc"),
+                    str(REPOSITORY_ROOT / "plugins" / "common" / "sdlc"),
                     "--plugin-dir",
-                    str(REPOSITORY_ROOT / "plugins" / "authoring"),
+                    str(REPOSITORY_ROOT / "plugins" / "common" / "authoring"),
                     *forwarded_arguments,
                 ],
             )

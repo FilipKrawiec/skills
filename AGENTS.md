@@ -6,7 +6,7 @@ Before making any repository code or configuration change, invoke the `sdlc` wor
 
 ## Mandatory Skill Editing Workflow
 
-CRITICAL: You are strictly forbidden from making any edits to the packaged skill directories until you have read `plugins/authoring/skills/writing-great-skill/SKILL.md`. Furthermore, you MUST execute all edits through the `` `sdlc` `` workflow. Treat `writing-great-skill` as the local source of truth for invocation, description craft, information hierarchy, and pruning.
+CRITICAL: You are strictly forbidden from making any edits to the packaged skill directories until you have read `plugins/common/authoring/skills/writing-great-skill/SKILL.md`. Furthermore, you MUST execute all edits through the `` `sdlc` `` workflow. Treat `writing-great-skill` as the local source of truth for invocation, description craft, information hierarchy, and pruning.
 
 ## Goal
 
@@ -14,7 +14,8 @@ Keep this repository as a compact, agent-agnostic skill library.
 
 ## Layout
 
-- `plugins/*/skills/` for canonical skill implementations grouped by plugin
+- `plugins/common/*/skills/` for canonical portable skill implementations
+- `plugins/<agent>/*/` for agent-native overlay plugins
 - `docs/` for ADRs and durable project records
 
 ## Editing Rules

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Domain-Driven Design"
-  short_description: "Model bounded contexts and business rules"
-  default_prompt: "Use $ddd to model bounded contexts and their integrations."

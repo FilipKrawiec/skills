@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class TddContractTests(unittest.TestCase):
     def test_tdd_is_portable_and_does_not_own_delivery_workflow(self) -> None:
-        tdd = (ROOT / "plugins/workflow/skills/tdd/SKILL.md").read_text(encoding="utf-8")
+        tdd = (ROOT / "plugins/common/workflow/skills/tdd/SKILL.md").read_text(encoding="utf-8")
 
         self.assertIn("TDD does not prescribe delegation, persistence, commits, or shipping workflow.", tdd)
         self.assertIn("**RED**", tdd)

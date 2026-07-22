@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate plugin definitions and bump one release package's manifests."""
+"""Validate plugin definitions and bump one release package's source metadata."""
 
 from __future__ import annotations
 
@@ -13,15 +13,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_MANIFEST_PATHS = {
-    "core": [
-        ROOT / ".codex-plugin" / "plugin.json",
-        ROOT / ".claude-plugin" / "plugin.json",
-        ROOT / "plugins" / "core" / "plugin.json",
-    ],
-    "workflow": [ROOT / "plugins" / "workflow" / "plugin.json"],
-    "sdlc": [ROOT / "plugins" / "sdlc" / "plugin.json"],
-    "authoring": [ROOT / "plugins" / "authoring" / "plugin.json"],
+PACKAGE_METADATA_PATHS = {
+    package: [
+        ROOT / "plugins" / "common" / package / "package-metadata.json",
+        ROOT / "plugins" / "common" / package / ".claude-plugin" / "plugin.json",
+        ROOT / "plugins" / "common" / package / ".codex-plugin" / "plugin.json",
+    ]
+    for package in ("core", "workflow", "sdlc", "authoring")
 }
 
 
@@ -120,7 +118,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Bump version in manifest files.")
     parser.add_argument(
         "--plugin",
-        choices=PACKAGE_MANIFEST_PATHS,
+        choices=PACKAGE_METADATA_PATHS,
         required=True,
         help="Release package whose manifests should be bumped.",
     )
@@ -134,7 +132,7 @@ def main() -> None:
 
     functional_changes = [
         f for f in staged_files
-        if not f.endswith("plugin.json") and not f.endswith("marketplace.json")
+        if not f.endswith(("plugin.json", "marketplace.json", "package-metadata.json"))
     ]
 
     if not functional_changes:
@@ -180,11 +178,11 @@ def main() -> None:
         bump_type = "patch"
         print("Defaulting to bump type: patch")
 
-    manifest_paths = PACKAGE_MANIFEST_PATHS[args.plugin]
+    manifest_paths = PACKAGE_METADATA_PATHS[args.plugin]
     manifests = {}
     for path in manifest_paths:
         if not path.exists():
-            print(f"error: Manifest file not found: {path.relative_to(ROOT)}", file=sys.stderr)
+            print(f"error: Package metadata file not found: {path.relative_to(ROOT)}", file=sys.stderr)
             sys.exit(1)
         manifests[path] = json.loads(path.read_text(encoding="utf-8"))
 
@@ -202,7 +200,7 @@ def main() -> None:
     run_cmd(["git", "add", *[str(path.relative_to(ROOT)) for path in manifest_paths]])
     print(
         f"Bumped {args.plugin} package from {current_version} to {new_version} "
-        f"({bump_type} bump) and staged manifest changes."
+        f"({bump_type} bump) and staged package metadata changes. Regenerate target bundles before release."
     )
 
 

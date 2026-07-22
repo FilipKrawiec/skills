@@ -3,69 +3,62 @@ Skills for Software engineering
 
 ## Layout
 
-- `plugins/core/skills/ddd` for Ubiquitous Language, naming, and strategic design
-- `plugins/core/skills/hexagonal-architecture` for dependency inversion, encapsulation, and the 4 layered architecture (API, Application, Domain, Infrastructure)
-- `spec/autonomous-sdlc` for the internal Autonomous SDLC domain specification; `plugins/sdlc/skills/sdlc` for agent guidance that applies it
-- `plugins/workflow/skills/tdd` for Red-Green-Refactor loop using Chicago strategy and Testcontainers
-- `plugins/workflow/skills/vcs` for Git workflow with Conventional Commits and linear history
-- `plugins/workflow/skills/grill-with-docs` for source-backed review and critique work
-- `plugins/authoring/skills/writing-great-skill` for skill authoring and refinement
-- `plugins/authoring/skills/teach` for interactive learning guides
+- `plugins/common/core/skills/ddd` for Ubiquitous Language, naming, and strategic design
+- `plugins/common/core/skills/hexagonal-architecture` for dependency inversion, encapsulation, and the 4 layered architecture (API, Application, Domain, Infrastructure)
+- `spec/autonomous-sdlc` for the internal Autonomous SDLC domain specification; `plugins/common/sdlc/skills/sdlc` for agent guidance that applies it
+- `plugins/common/workflow/skills/tdd` for Red-Green-Refactor loop using Chicago strategy and Testcontainers
+- `plugins/common/workflow/skills/vcs` for Git workflow with Conventional Commits and linear history
+- `plugins/common/workflow/skills/grill-with-docs` for source-backed review and critique work
+- `plugins/common/authoring/skills/writing-great-skill` for skill authoring and refinement
+- `plugins/common/authoring/skills/teach` for interactive learning guides
+- `plugins/common/*/package-metadata.json` for package identity and release version
+- `plugins/<agent>/*/` for agent-native overlay plugins
 - `docs/` for ADRs and durable project records
 
 ## Claude Code
 
-Use the canonical checkout directly during development. Git is only the way that
-checkout is synchronized; Claude loads the plugin files from the directory.
-Its normal marketplace installation is cached, so use the directory loader
-instead of `claude plugin install` while developing:
+Use the common packages directly during development:
 
 ```bash
 claude \
-  --plugin-dir /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/core \
-  --plugin-dir /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/workflow \
-  --plugin-dir /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/sdlc \
-  --plugin-dir /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/authoring
+  --plugin-dir plugins/common/core \
+  --plugin-dir plugins/common/workflow \
+  --plugin-dir plugins/common/sdlc \
+  --plugin-dir plugins/common/authoring
 ```
 
-`scripts/claude-local-plugins.sh` supplies the same launcher relative to its
-checkout. Run it to start a new Claude Code session after changing skills; no
-plugin reinstall is needed.
+`scripts/claude-local-plugins.sh` supplies the same launcher relative to its checkout. Run it to start a new Claude Code session after changing skills; no plugin reinstall is needed.
 
 ## Codex
 
-Add the canonical checkout as a local marketplace once, then install each
-package once:
+Add the canonical checkout as a local marketplace, then install each common package:
 
 ```bash
-codex plugin marketplace add /Users/filip/Developer/projects/github.com/FilipKrawiec/skills
+codex plugin marketplace add .
 codex plugin add filipkrawiec-core@filipkrawiec
 codex plugin add filipkrawiec-workflow@filipkrawiec
 codex plugin add filipkrawiec-sdlc@filipkrawiec
 codex plugin add filipkrawiec-authoring@filipkrawiec
 ```
 
-Codex marks these packages as `local` and resolves their paths in the
-marketplace checkout. Restart a Codex session after edits; no reinstall or
-marketplace upgrade is needed.
+Codex marks these packages as `local` and resolves them from the checkout. Restart a Codex session after edits.
 
 ## Antigravity (`agy`)
 
-Antigravity plugin metadata now lives in package roots under `plugins/*/`.
-The core package id is `filipkrawiec-core`.
+Antigravity installs a common package plus optional native overlays. The core package id is `filipkrawiec-core`.
 
 Install package roots from the canonical local checkout:
 
 ```bash
-agy plugin install /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/core
-agy plugin install /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/workflow
-agy plugin install /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/sdlc
-agy plugin install /Users/filip/Developer/projects/github.com/FilipKrawiec/skills/plugins/authoring
+agy plugin install plugins/common/core
+agy plugin install plugins/common/workflow
+agy plugin install plugins/common/sdlc
+agy plugin install plugins/common/authoring
+agy plugin install plugins/agy/core
+agy plugin install plugins/agy/sdlc
 ```
 
-AGY accepts those absolute local directories. Reload its host after an edit;
-if a host build caches imported skills, re-run the same local command rather
-than installing from Git.
+AGY accepts those local directories. Reload its host after an edit; if a host build caches imported skills, re-run the same local command rather than installing from Git.
 
 ## Package versions
 

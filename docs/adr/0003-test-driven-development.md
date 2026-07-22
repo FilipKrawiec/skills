@@ -4,7 +4,7 @@
 
 We will adopt Test-Driven Development (TDD) as the standard engineering process for all feature implementation and bug fixing.
 
-The detailed process guidelines are maintained in the canonical [tdd SKILL.md](../../plugins/workflow/skills/tdd/SKILL.md) and its partitioned reference files.
+The detailed process guidelines are maintained in the canonical [tdd SKILL.md](../../plugins/common/workflow/skills/tdd/SKILL.md) and its partitioned reference files.
 
 ## Context
 
