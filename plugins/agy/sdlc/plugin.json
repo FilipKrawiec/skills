@@ -1,4 +1,10 @@
 {
   "name": "filipkrawiec-agy-sdlc",
-  "description": "Antigravity-native SDLC guidance and artifact presentation rules."
+  "description": "Antigravity-native SDLC guidance and artifact presentation rules.",
+  "dependencies": [
+    "filipkrawiec-sdlc",
+    "filipkrawiec-workflow",
+    "filipkrawiec-core"
+  ]
 }
+

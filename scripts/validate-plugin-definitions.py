@@ -35,7 +35,7 @@ PACKAGE_METADATA = {
 PACKAGE_SKILL_TREES = {
     ROOT / "plugins" / "common" / "core" / "skills": {"ddd", "hexagonal-architecture"},
     ROOT / "plugins" / "common" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
-    ROOT / "plugins" / "common" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-refine", "sdlc-execute", "sdlc-improve"},
+    ROOT / "plugins" / "common" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-refine", "sdlc-execute", "sdlc-improve", "sdlc-help"},
     ROOT / "plugins" / "common" / "authoring" / "skills": {"writing-great-skill", "teach"},
 }
 
@@ -157,6 +157,45 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
             fail(f"{manifest_path.relative_to(ROOT)} must match package description and skills path")
 
 
+def validate_agy_plugins() -> None:
+    agy_dir = ROOT / "plugins" / "agy"
+    if not agy_dir.is_dir():
+        fail("missing plugins/agy directory")
+
+    valid_packages = set(PACKAGE_METADATA.values())
+    for plugin_path in agy_dir.iterdir():
+        if not plugin_path.is_dir():
+            continue
+        manifest_path = plugin_path / "plugin.json"
+        manifest = load_json(manifest_path)
+        if not isinstance(manifest.get("name"), str) or not manifest["name"].startswith("filipkrawiec-agy-"):
+            fail(f"{manifest_path.relative_to(ROOT)} must use package name starting with filipkrawiec-agy-")
+        if not isinstance(manifest.get("description"), str) or not manifest["description"]:
+            fail(f"{manifest_path.relative_to(ROOT)} must define a non-empty description")
+
+        if "dependencies" in manifest:
+            deps = manifest["dependencies"]
+            if not isinstance(deps, list) or not all(isinstance(dep, str) for dep in deps):
+                fail(f"{manifest_path.relative_to(ROOT)} dependencies must be a list of string package names")
+            for dep in deps:
+                if dep not in valid_packages:
+                    fail(f"{manifest_path.relative_to(ROOT)} dependency '{dep}' is not a valid common package")
+
+        rules_dir = plugin_path / "rules"
+        if rules_dir.is_dir():
+            for rule_file in rules_dir.glob("*.md"):
+                content = rule_file.read_text(encoding="utf-8")
+                if not content.strip().startswith("# "):
+                    fail(f"{rule_file.relative_to(ROOT)} rule file must start with a markdown header (#)")
+
+        agents_dir = plugin_path / "agents"
+        if agents_dir.is_dir():
+            for agent_file in agents_dir.glob("*.md"):
+                content = agent_file.read_text(encoding="utf-8")
+                if not content.strip().startswith("# "):
+                    fail(f"{agent_file.relative_to(ROOT)} agent file must start with a markdown header (#)")
+
+
 def main() -> None:
     for path, name in PACKAGE_METADATA.items():
         validate_package_metadata(path, name)
@@ -164,7 +203,10 @@ def main() -> None:
     for root, skills in PACKAGE_SKILL_TREES.items():
         validate_skill_tree(root, skills)
 
+    validate_agy_plugins()
+
     print("Plugin validation passed.")
+
 
 
 if __name__ == "__main__":
