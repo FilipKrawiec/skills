@@ -29,18 +29,24 @@ class CommonPluginLayoutTests(unittest.TestCase):
                 self.assertFalse((root / "agents").exists())
                 self.assertEqual(list(root.rglob("agents/openai.yaml")), [])
 
-    def test_antigravity_sdlc_overlay_owns_the_native_rule(self) -> None:
+    def test_antigravity_sdlc_overlay_owns_the_native_rule_and_agent(self) -> None:
         overlay = ROOT / "plugins" / "agy" / "sdlc"
         manifest = json.loads((overlay / "plugin.json").read_text(encoding="utf-8"))
-        rule = overlay / "rules" / "sdlc-artifacts.md"
+        rule = overlay / "rules" / "sdlc.md"
         content = rule.read_text(encoding="utf-8")
         self.assertEqual(manifest["name"], "filipkrawiec-agy-sdlc")
-        self.assertIn("Antigravity", content)
-        self.assertIn("Planning Mode", content)
-        self.assertIn("Implementation Plan", content)
-        self.assertIn("Request Review", content)
+        self.assertIn("Antigravity Autonomous SDLC Rules", content)
         self.assertIn("Proceed", content)
-        self.assertTrue((overlay / "rules" / "sdlc-required.md").is_file())
+        self.assertIn("sdlc-reviewer", content)
+
+        agent_def = overlay / "agents" / "sdlc-reviewer.md"
+        self.assertTrue(agent_def.is_file())
+        agent_content = agent_def.read_text(encoding="utf-8")
+        self.assertIn("`ddd`", agent_content)
+        self.assertIn("`hexagonal-architecture`", agent_content)
+        self.assertIn("`grill-with-docs`", agent_content)
+        self.assertIn("`tdd`", agent_content)
+        self.assertIn("`vcs`", agent_content)
 
     def test_antigravity_core_overlay_owns_reference_resolution_guidance(self) -> None:
         overlay = ROOT / "plugins" / "agy" / "core"

@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-sdlc",
-  "version": "8.0.0",
+  "version": "8.1.0",
   "description": "Agent guidance for applying the internal Autonomous SDLC Specification.",
   "author": {
     "name": "Filip Krawiec",

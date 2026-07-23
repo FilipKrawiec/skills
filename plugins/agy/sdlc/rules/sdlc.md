@@ -26,4 +26,4 @@ If the `PLAN` phase uncovers an **unexpected contradiction** or architectural co
 To prevent self-review bias and strictly enforce Segregation of Duties, the agent that performed `EXECUTE` MUST NOT perform `REVIEW` directly in the same conversation context.
 - When entering the `REVIEW` phase, the orchestrator MUST use `invoke_subagent` to launch the dedicated `sdlc-reviewer` subagent defined in [agents/sdlc-reviewer.md](agents/sdlc-reviewer.md).
 - Pass `Role: "Adversarial Code Auditor & Quality Engineer"` and load the system prompt from [agents/sdlc-reviewer.md](agents/sdlc-reviewer.md).
-- The subagent actively invokes and enforces `ddd` and `hexagonal-architecture` skills (including their references), conducts the review in an isolated conversation context, and returns the `ReviewDecision` work product to the orchestrator.
+- The subagent actively invokes and enforces `ddd`, `hexagonal-architecture`, `grill-with-docs`, `tdd`, and `vcs` skills (including their references), conducts the review in an isolated conversation context, and returns the `ReviewDecision` work product to the orchestrator.
