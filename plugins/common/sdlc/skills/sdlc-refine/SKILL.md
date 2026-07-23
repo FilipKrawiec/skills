@@ -7,7 +7,11 @@ description: Execute the REFINE Phase of an Autonomous SDLC Delivery Task.
 
 Read [the packaged Autonomous SDLC Specification](../sdlc/references/autonomous-sdlc-specification.md). Execute only the active REFINE Phase according to that specification and return either its proposed typed `PhaseOutcome`, including its Next Action, or a `BlockerReport`. Do not enact that action, select its Actor, decide approval, record events, or alter the Delivery Task.
 
-Produce the `DeliveryContract` as Markdown with YAML frontmatter containing `deliverable`, `completion_condition`, `acceptance_criteria`, `constraints`, `risks`, `verification_plan`, and `delivery_role_plan`. Return the work product through the active host's normal result mechanism.
+Before constructing the final `DeliveryContract`, you MUST execute the **Refinement Grilling Protocol**:
+
+1. **Codebase & Environment Audit**: Inspect existing code, interfaces, docs, and architecture relevant to the `Definition`. Identify technical friction, hidden complexities, and potential breaking changes.
+2. **Interactive Grilling & Stress Testing**: Actively challenge assumptions, complain about contradictions between the requested outcome and existing code, and ask sharp decision questions in chat. Do not proceed until ambiguities are resolved.
+3. **Contract Construction**: Produce the final `DeliveryContract` as Markdown with YAML frontmatter containing `deliverable`, `completion_condition`, `acceptance_criteria`, `constraints`, `risks`, `verification_plan`, and `delivery_role_plan`. Return the work product through the active host's normal result mechanism.
 
 ## Refinement Guidelines
 
@@ -17,3 +21,4 @@ When producing the `DeliveryContract`, you MUST enforce the following standards 
 2. **Elegant & Optimized Solutions**: Mandate that the plan focus on clean code design, maximizing execution efficiency, and avoiding architectural bloat.
 3. **Parallelizable Slices**: Structure deliverables and acceptance criteria to enable clear, parallelizable slices of implementation that can be built and verified independently.
 4. **Pragmatic Verification**: Require simple, deterministic checks (like fast unit tests and static analysis) rather than booting heavy framework contexts unnecessarily.
+

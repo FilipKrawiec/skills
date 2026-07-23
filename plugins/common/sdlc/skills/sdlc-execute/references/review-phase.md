@@ -13,7 +13,10 @@ The REVIEW phase evaluates the `ExecutionResult` against the original `DeliveryC
 1. **Critical Input Review**: Read the `DeliveryContract`, the `ImplementationPlan`, the `ExecutionResult`, and any prior rework/corrections.
 2. **Four-eyes / Segregation of Duties Enforcement**:
    * You **MUST NOT** execute the REVIEW phase if you were a Contributor to the `ExecutionResult` being evaluated.
-3. **Rigorous Comparison & Challenge**:
+   * On host environments supporting subagents (e.g., Google Antigravity), the orchestrator MUST delegate the `REVIEW` phase to a dedicated subagent with an adversarial reviewer persona (`invoke_subagent`) to guarantee an unbiased, independent evaluation.
+3. **Rigorous Domain & Architectural Inspection**:
+   * **Domain-Driven Design (`ddd`)**: Invoke `ddd` and check its context pointers (`references/ubiquitous-language.md`, `references/value-objects.md`, `references/aggregates-and-repositories.md`). Verify terms match `CONTEXT.md` and business rules are encapsulated in Aggregates.
+   * **Hexagonal Architecture (`hexagonal-architecture`)**: Invoke `hexagonal-architecture` and check its context pointers (`references/domain-layer.md`, `references/infrastructure-layer.md`). Enforce zero framework/database imports in the Domain layer and proper outbound port isolation.
    * Contrast code and verification results directly against the contract deliverables and acceptance criteria.
    * Challenge the implementation approach: Did the executor take shortcuts? Is there code duplication, fragile logic, or missing edge cases?
    * Search for contradictions between the plan, code, and tests (e.g., tests passing but not asserting the correct business logic, or code deviating from contract constraints).

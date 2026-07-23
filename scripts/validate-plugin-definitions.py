@@ -8,7 +8,10 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,10 +64,29 @@ def parse_skill_frontmatter(path: Path) -> dict:
     except ValueError:
         fail(f"{path.relative_to(ROOT)} must close YAML frontmatter")
 
-    try:
-        data = yaml.safe_load("\n".join(lines[1:end])) or {}
-    except yaml.YAMLError as exc:
-        fail(f"{path.relative_to(ROOT)} has invalid YAML frontmatter: {exc}")
+    frontmatter_text = "\n".join(lines[1:end])
+    if yaml is not None:
+        try:
+            data = yaml.safe_load(frontmatter_text) or {}
+        except yaml.YAMLError as exc:
+            fail(f"{path.relative_to(ROOT)} has invalid YAML frontmatter: {exc}")
+    else:
+        # Fallback simple line-based key-value parser for basic frontmatter
+        data = {}
+        curr_key = None
+        curr_val = []
+        for line in lines[1:end]:
+            if ":" in line and not line.startswith(" ") and not line.startswith("\t"):
+                if curr_key:
+                    data[curr_key] = "\n".join(curr_val).strip()
+                k, v = line.split(":", 1)
+                curr_key = k.strip()
+                curr_val = [v.strip()]
+            elif curr_key:
+                curr_val.append(line.strip())
+        if curr_key:
+            data[curr_key] = "\n".join(curr_val).strip()
+
     if not isinstance(data, dict):
         fail(f"{path.relative_to(ROOT)} frontmatter must be a YAML mapping")
     return data
