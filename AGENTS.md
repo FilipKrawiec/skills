@@ -14,9 +14,9 @@ Keep this repository as a compact, agent-agnostic skill library.
 
 ## Layout
 
-- `plugins/common/*/skills/` for canonical portable skill implementations
-- `plugins/<agent>/*/` for agent-native overlay plugins
-- `docs/` for ADRs and durable project records
+- `plugins/common/*/skills/`: Canonical portable skill implementations (YAML and Markdown formats for cross-agent compatibility with Codex, Claude, etc.)
+- `plugins/<agent>/*/`: Agent-native overlay plugins (e.g., `plugins/agy/` for Antigravity-native Artifact workflows with interactive UI review and Proceed buttons)
+- `docs/`: ADRs and durable project records
 
 ## Editing Rules
 
