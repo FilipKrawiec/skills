@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-sdlc",
-  "version": "8.3.1",
+  "version": "8.3.2",
   "description": "Agent guidance for applying the internal Autonomous SDLC Specification.",
   "author": {
     "name": "Filip Krawiec",
@@ -9,9 +9,9 @@
   },
   "skills": "./skills/",
   "dependencies": [
-    {"name": "filipkrawiec-core", "version": "8.3.1"},
-    {"name": "filipkrawiec-workflow", "version": "8.3.1"},
-    {"name": "filipkrawiec-authoring", "version": "8.3.1"}
+    {"name": "filipkrawiec-core", "version": "8.3.2"},
+    {"name": "filipkrawiec-workflow", "version": "8.3.2"},
+    {"name": "filipkrawiec-authoring", "version": "8.3.2"}
   ],
   "hooks": "./hooks/codex-companion-packages.json"
 }

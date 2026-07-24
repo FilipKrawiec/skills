@@ -22,6 +22,9 @@ class CommonPluginLayoutTests(unittest.TestCase):
                 self.assertTrue((root / ".codex-plugin" / "plugin.json").is_file())
 
     def test_all_plugin_definitions_share_the_repository_release_version(self) -> None:
+        release_version = json.loads(
+            (ROOT / "plugins" / "common" / "sdlc" / "package-metadata.json").read_text(encoding="utf-8")
+        )["version"]
         versions = set()
         for package in COMMON_PACKAGES:
             root = ROOT / "plugins" / "common" / package
@@ -36,7 +39,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
         for manifest in (ROOT / "plugins" / "agy").glob("*/plugin.json"):
             versions.add(json.loads(manifest.read_text(encoding="utf-8"))["version"])
 
-        self.assertEqual(versions, {"8.3.1"})
+        self.assertEqual(versions, {release_version})
 
     def test_common_packages_do_not_contain_agent_native_rules_or_agents(self) -> None:
         for package in COMMON_PACKAGES:
@@ -49,16 +52,17 @@ class CommonPluginLayoutTests(unittest.TestCase):
     def test_antigravity_sdlc_overlay_owns_the_native_rule_and_agent(self) -> None:
         overlay = ROOT / "plugins" / "agy" / "sdlc"
         manifest = json.loads((overlay / "plugin.json").read_text(encoding="utf-8"))
+        release_version = manifest["version"]
         rule = overlay / "rules" / "sdlc.md"
         content = rule.read_text(encoding="utf-8")
         self.assertEqual(manifest["name"], "filipkrawiec-agy-sdlc")
         self.assertEqual(
             {dependency["name"]: dependency["version"] for dependency in manifest["dependencies"]},
             {
-                "filipkrawiec-sdlc": "8.3.1",
-                "filipkrawiec-workflow": "8.3.1",
-                "filipkrawiec-core": "8.3.1",
-                "filipkrawiec-authoring": "8.3.1",
+                "filipkrawiec-sdlc": release_version,
+                "filipkrawiec-workflow": release_version,
+                "filipkrawiec-core": release_version,
+                "filipkrawiec-authoring": release_version,
             },
         )
         hooks = json.loads((overlay / "hooks.json").read_text(encoding="utf-8"))["sdlc-companion-packages"]

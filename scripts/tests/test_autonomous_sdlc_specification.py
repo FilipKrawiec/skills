@@ -113,7 +113,7 @@ class AutonomousSdlcSpecificationTests(unittest.TestCase):
                 manifest = json.loads((sdlc_root / host / "plugin.json").read_text(encoding="utf-8"))
                 self.assertEqual(
                     {dependency["name"]: dependency["version"] for dependency in manifest["dependencies"]},
-                    {package: "8.3.1" for package in required},
+                    {package: manifest["version"] for package in required},
                 )
                 hook_config = sdlc_root / manifest["hooks"]
                 self.assertTrue(hook_config.is_file())

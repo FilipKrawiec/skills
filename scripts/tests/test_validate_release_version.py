@@ -15,6 +15,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_SCRIPT = REPOSITORY_ROOT / "scripts" / "validate-release-version.py"
 COMMON_PACKAGES = ("core", "workflow", "sdlc", "authoring")
 AGY_PACKAGES = ("core", "sdlc")
+INITIAL_RELEASE_VERSION = "8.3.0"
+INITIAL_RELEASE_TAG = f"v{INITIAL_RELEASE_VERSION}"
 
 
 class ReleaseVersionValidationTests(unittest.TestCase):
@@ -25,13 +27,13 @@ class ReleaseVersionValidationTests(unittest.TestCase):
         scripts.mkdir()
         shutil.copy2(SOURCE_SCRIPT, scripts / "validate-release-version.py")
 
-        self.write_release("8.3.0")
+        self.write_release(INITIAL_RELEASE_VERSION)
         self.git("init")
         self.git("config", "user.email", "test@example.com")
         self.git("config", "user.name", "Test User")
         self.git("add", ".")
         self.git("commit", "-m", "feat: first repository release")
-        self.git("tag", "-a", "v8.3.0", "-m", "v8.3.0")
+        self.git("tag", "-a", INITIAL_RELEASE_TAG, "-m", INITIAL_RELEASE_TAG)
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
@@ -88,20 +90,20 @@ class ReleaseVersionValidationTests(unittest.TestCase):
         result = self.run_validator()
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Release version validation passed: v8.3.0", result.stdout)
+        self.assertIn(f"Release version validation passed: {INITIAL_RELEASE_TAG}", result.stdout)
 
     def test_rejects_a_manifest_that_differs_from_the_release_tag(self) -> None:
         metadata = self.root / "plugins" / "common" / "workflow" / "package-metadata.json"
-        self.write_json(metadata, {"name": "filipkrawiec-workflow", "version": "8.3.1"})
+        self.write_json(metadata, {"name": "filipkrawiec-workflow", "version": "0.0.0"})
 
         result = self.run_validator()
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("does not match release tag v8.3.0", result.stderr)
+        self.assertIn(f"does not match release tag {INITIAL_RELEASE_TAG}", result.stderr)
 
     def test_rejects_a_lightweight_tag(self) -> None:
-        self.git("tag", "-d", "v8.3.0")
-        self.git("tag", "v8.3.0")
+        self.git("tag", "-d", INITIAL_RELEASE_TAG)
+        self.git("tag", INITIAL_RELEASE_TAG)
 
         result = self.run_validator()
 
@@ -117,7 +119,7 @@ class ReleaseVersionValidationTests(unittest.TestCase):
         result = self.run_validator()
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("dependency does not match release tag v8.3.0", result.stderr)
+        self.assertIn(f"dependency does not match release tag {INITIAL_RELEASE_TAG}", result.stderr)
 
     def test_rejects_a_tag_that_does_not_point_to_head(self) -> None:
         (self.root / "README.md").write_text("next commit\n", encoding="utf-8")

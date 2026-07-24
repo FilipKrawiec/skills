@@ -25,7 +25,14 @@ class AgyIdePluginLinkTests(unittest.TestCase):
             target_root = Path(temporary_directory) / "plugins"
             environment = os.environ | {"AGY_IDE_PLUGIN_DIR": str(target_root)}
 
-            subprocess.run([str(SCRIPT)], cwd=ROOT, env=environment, check=True)
+            subprocess.run(
+                [str(SCRIPT)],
+                cwd=ROOT,
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
             for name, source in EXPECTED_LINKS.items():
                 target = target_root / name
@@ -60,7 +67,14 @@ class AgyIdePluginLinkTests(unittest.TestCase):
             (snapshot / "stale.txt").write_text("snapshot")
             environment = os.environ | {"AGY_IDE_PLUGIN_DIR": str(target_root)}
 
-            subprocess.run([str(SCRIPT), "--replace"], cwd=ROOT, env=environment, check=True)
+            subprocess.run(
+                [str(SCRIPT), "--replace"],
+                cwd=ROOT,
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
             self.assertTrue(snapshot.is_symlink())
             self.assertEqual(snapshot.resolve(), EXPECTED_LINKS["filipkrawiec-core"].resolve())

@@ -76,7 +76,7 @@ Every common package and Antigravity overlay shares one release version. The ann
 ```bash
 # Update every version-bearing manifest to the chosen release version, then:
 git commit -m "feat: describe the release"
-git tag -a v8.3.0 -m "v8.3.0"
+git tag -a v<version> -m "v<version>"
 git push
 ```
 

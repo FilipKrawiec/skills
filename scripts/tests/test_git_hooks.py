@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -39,17 +40,33 @@ class GitHooksTests(unittest.TestCase):
         ).stdout.strip()
         self.assertEqual(follow_tags, "true")
 
-    def test_post_commit_hook_on_main(self) -> None:
-        post_commit = ROOT / "scripts" / "git-hooks" / "post-commit"
-        result = subprocess.run([str(post_commit)], cwd=ROOT, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, f"post-commit failed: {result.stderr}")
-        self.assertIn("Main branch commit detected", result.stdout)
+    def run_hook(self, name: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            environment = os.environ | {"AGY_IDE_PLUGIN_DIR": str(Path(temporary_directory) / "plugins")}
+            return subprocess.run(
+                [str(ROOT / "scripts" / "git-hooks" / name)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
 
-    def test_post_merge_hook_on_main(self) -> None:
-        post_merge = ROOT / "scripts" / "git-hooks" / "post-merge"
-        result = subprocess.run([str(post_merge)], cwd=ROOT, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, f"post-merge failed: {result.stderr}")
-        self.assertIn("Main branch merge/pull detected", result.stdout)
+    def assert_main_only_hook(self, name: str, expected_message: str) -> None:
+        result = self.run_hook(name)
+        self.assertEqual(result.returncode, 0, f"post-commit failed: {result.stderr}")
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"], cwd=ROOT, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        if branch == "main":
+            self.assertIn(expected_message, result.stdout)
+        else:
+            self.assertEqual(result.stdout, "")
+
+    def test_post_commit_hook_runs_only_on_main(self) -> None:
+        self.assert_main_only_hook("post-commit", "Main branch commit detected")
+
+    def test_post_merge_hook_runs_only_on_main(self) -> None:
+        self.assert_main_only_hook("post-merge", "Main branch merge/pull detected")
 
 
 if __name__ == "__main__":
