@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Git post-commit hook: Auto-reinstall plugins locally when committing on main branch.
+# Git post-commit hook: Refresh local plugins when committing on main branch.
 
 set -euo pipefail
 
@@ -7,6 +7,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CURRENT_BRANCH="$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
 
 if [[ "${CURRENT_BRANCH}" == "main" ]]; then
-  echo "=== [git-hook:post-commit] Main branch commit detected: Auto-reinstalling AGY plugins locally ==="
-  "${REPO_ROOT}/scripts/link-agy-ide-plugins.sh" --replace
+  echo "=== [git-hook:post-commit] Main branch commit detected: Refreshing local plugins ==="
+  "${REPO_ROOT}/scripts/refresh-local-plugins.sh"
 fi

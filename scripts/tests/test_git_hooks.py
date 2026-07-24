@@ -42,7 +42,17 @@ class GitHooksTests(unittest.TestCase):
 
     def run_hook(self, name: str) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            environment = os.environ | {"AGY_IDE_PLUGIN_DIR": str(Path(temporary_directory) / "plugins")}
+            temporary_root = Path(temporary_directory)
+            bin_directory = temporary_root / "bin"
+            bin_directory.mkdir()
+            for command in ("codex", "claude"):
+                executable = bin_directory / command
+                executable.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+            environment = os.environ | {
+                "AGY_IDE_PLUGIN_DIR": str(temporary_root / "plugins"),
+                "PATH": f"{bin_directory}{os.pathsep}{os.environ['PATH']}",
+            }
             return subprocess.run(
                 [str(ROOT / "scripts" / "git-hooks" / name)],
                 cwd=ROOT,

@@ -18,15 +18,7 @@ python3 scripts/validate-plugin-definitions.py
 echo "=== Setting up git hooks ==="
 scripts/setup-git-hooks.sh
 
-# 2. Antigravity IDE native plugins
-echo "=== Linking Antigravity IDE plugins ==="
-scripts/link-agy-ide-plugins.sh --replace
-
-# 3. Claude Code bundle availability
-if command -v claude >/dev/null 2>&1; then
-  echo "Claude Code common packages are ready; run scripts/claude-local-plugins.sh to load them."
-else
-  echo "--- Claude Code (claude) not found, skipping ---"
-fi
+# 2. Refresh every installed local host
+scripts/refresh-local-plugins.sh
 
 echo "=== Common packages, native overlays, and git hooks are ready ==="
