@@ -35,7 +35,7 @@ PACKAGE_METADATA = {
 PACKAGE_SKILL_TREES = {
     ROOT / "plugins" / "common" / "core" / "skills": {"ddd", "hexagonal-architecture"},
     ROOT / "plugins" / "common" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
-    ROOT / "plugins" / "common" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-refine", "sdlc-execute", "sdlc-plan", "sdlc-review", "sdlc-ship", "sdlc-improve", "sdlc-help"},
+    ROOT / "plugins" / "common" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-refine", "sdlc-execute", "sdlc-plan", "sdlc-review", "sdlc-ship", "sdlc-improve"},
     ROOT / "plugins" / "common" / "authoring" / "skills": {"writing-great-skill", "teach"},
 }
 

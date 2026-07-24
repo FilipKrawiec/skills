@@ -36,7 +36,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
         for manifest in (ROOT / "plugins" / "agy").glob("*/plugin.json"):
             versions.add(json.loads(manifest.read_text(encoding="utf-8"))["version"])
 
-        self.assertEqual(versions, {"8.3.0"})
+        self.assertEqual(versions, {"8.3.1"})
 
     def test_common_packages_do_not_contain_agent_native_rules_or_agents(self) -> None:
         for package in COMMON_PACKAGES:
@@ -55,10 +55,10 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertEqual(
             {dependency["name"]: dependency["version"] for dependency in manifest["dependencies"]},
             {
-                "filipkrawiec-sdlc": "8.3.0",
-                "filipkrawiec-workflow": "8.3.0",
-                "filipkrawiec-core": "8.3.0",
-                "filipkrawiec-authoring": "8.3.0",
+                "filipkrawiec-sdlc": "8.3.1",
+                "filipkrawiec-workflow": "8.3.1",
+                "filipkrawiec-core": "8.3.1",
+                "filipkrawiec-authoring": "8.3.1",
             },
         )
         hooks = json.loads((overlay / "hooks.json").read_text(encoding="utf-8"))["sdlc-companion-packages"]

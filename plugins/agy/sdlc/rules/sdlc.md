@@ -9,7 +9,6 @@ Every SDLC stage and phase is directly callable from Antigravity:
 - `/sdlc`: Full lifecycle orchestrator.
 - `/sdlc-define`, `/sdlc-refine`, `/sdlc-execute`, and `/sdlc-improve`: Stage commands.
 - `/sdlc-plan`, `/sdlc-review`, and `/sdlc-ship`: EXECUTE-stage phase commands.
-- `/sdlc-help`: Consumer quickstart and configuration reference.
 
 ## 1. Project Configuration Discovery
 

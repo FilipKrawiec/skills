@@ -1,11 +1,11 @@
 {
   "name": "filipkrawiec-agy-sdlc",
-  "version": "8.3.0",
+  "version": "8.3.1",
   "description": "Antigravity-native SDLC guidance and artifact presentation rules.",
   "dependencies": [
-    {"name": "filipkrawiec-sdlc", "version": "8.3.0"},
-    {"name": "filipkrawiec-workflow", "version": "8.3.0"},
-    {"name": "filipkrawiec-core", "version": "8.3.0"},
-    {"name": "filipkrawiec-authoring", "version": "8.3.0"}
+    {"name": "filipkrawiec-sdlc", "version": "8.3.1"},
+    {"name": "filipkrawiec-workflow", "version": "8.3.1"},
+    {"name": "filipkrawiec-core", "version": "8.3.1"},
+    {"name": "filipkrawiec-authoring", "version": "8.3.1"}
   ]
 }
