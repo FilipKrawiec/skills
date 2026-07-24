@@ -21,6 +21,23 @@ class CommonPluginLayoutTests(unittest.TestCase):
                 self.assertTrue((root / ".claude-plugin" / "plugin.json").is_file())
                 self.assertTrue((root / ".codex-plugin" / "plugin.json").is_file())
 
+    def test_all_plugin_definitions_share_the_repository_release_version(self) -> None:
+        versions = set()
+        for package in COMMON_PACKAGES:
+            root = ROOT / "plugins" / "common" / package
+            for manifest in (
+                root / "package-metadata.json",
+                root / "plugin.json",
+                root / ".claude-plugin" / "plugin.json",
+                root / ".codex-plugin" / "plugin.json",
+            ):
+                versions.add(json.loads(manifest.read_text(encoding="utf-8"))["version"])
+
+        for manifest in (ROOT / "plugins" / "agy").glob("*/plugin.json"):
+            versions.add(json.loads(manifest.read_text(encoding="utf-8"))["version"])
+
+        self.assertEqual(versions, {"8.3.0"})
+
     def test_common_packages_do_not_contain_agent_native_rules_or_agents(self) -> None:
         for package in COMMON_PACKAGES:
             root = ROOT / "plugins" / "common" / package
@@ -35,6 +52,18 @@ class CommonPluginLayoutTests(unittest.TestCase):
         rule = overlay / "rules" / "sdlc.md"
         content = rule.read_text(encoding="utf-8")
         self.assertEqual(manifest["name"], "filipkrawiec-agy-sdlc")
+        self.assertEqual(
+            {dependency["name"]: dependency["version"] for dependency in manifest["dependencies"]},
+            {
+                "filipkrawiec-sdlc": "8.3.0",
+                "filipkrawiec-workflow": "8.3.0",
+                "filipkrawiec-core": "8.3.0",
+                "filipkrawiec-authoring": "8.3.0",
+            },
+        )
+        hooks = json.loads((overlay / "hooks.json").read_text(encoding="utf-8"))["sdlc-companion-packages"]
+        self.assertIn("PreInvocation", hooks)
+        self.assertIn("PreToolUse", hooks)
         self.assertIn("Antigravity Autonomous SDLC Rules", content)
         self.assertIn("Proceed", content)
         self.assertIn("sdlc-reviewer", content)
@@ -52,6 +81,16 @@ class CommonPluginLayoutTests(unittest.TestCase):
         overlay = ROOT / "plugins" / "agy" / "core"
         self.assertTrue((overlay / "plugin.json").is_file())
         self.assertTrue((overlay / "rules" / "resolve-skill-references.md").is_file())
+
+    def test_shared_grilling_defines_process_without_stage_focus(self) -> None:
+        grill_skill = (
+            ROOT / "plugins" / "common" / "workflow" / "skills" / "grill-with-docs" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Ask one sharp decision question at a time", grill_skill)
+        self.assertNotIn("When docs propose a new product or initiative", grill_skill)
+        self.assertNotIn("strategic fit", grill_skill)
+        self.assertNotIn("viability", grill_skill)
 
     def test_agent_marketplaces_list_only_their_common_packages(self) -> None:
         claude = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))

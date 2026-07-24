@@ -1,0 +1,26 @@
+{
+  "description": "Require the companion SDLC packages before an SDLC session can continue.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}\"/scripts/check-codex-companion-plugins.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${PLUGIN_ROOT}\"/scripts/check-codex-companion-plugins.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

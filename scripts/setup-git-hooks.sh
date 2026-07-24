@@ -15,7 +15,9 @@ chmod +x "${HOOKS_DIR}"/* 2>/dev/null || true
 
 if command -v git >/dev/null 2>&1 && git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
   git -C "${REPO_ROOT}" config core.hooksPath scripts/git-hooks
+  git -C "${REPO_ROOT}" config push.followTags true
   echo "=== Configured git core.hooksPath to scripts/git-hooks ==="
+  echo "=== Configured git push.followTags ==="
 else
   echo "--- Not inside a git repository, skipping git config core.hooksPath ---"
 fi

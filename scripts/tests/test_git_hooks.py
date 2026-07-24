@@ -15,6 +15,7 @@ class GitHooksTests(unittest.TestCase):
         hooks = [
             ROOT / "scripts" / "git-hooks" / "post-commit",
             ROOT / "scripts" / "git-hooks" / "post-merge",
+            ROOT / "scripts" / "git-hooks" / "pre-push",
             ROOT / "scripts" / "setup-git-hooks.sh",
         ]
         for hook in hooks:
@@ -32,6 +33,11 @@ class GitHooksTests(unittest.TestCase):
             ["git", "config", "core.hooksPath"], cwd=ROOT, capture_output=True, text=True
         ).stdout.strip()
         self.assertEqual(current_hooks_path, "scripts/git-hooks")
+
+        follow_tags = subprocess.run(
+            ["git", "config", "push.followTags"], cwd=ROOT, capture_output=True, text=True
+        ).stdout.strip()
+        self.assertEqual(follow_tags, "true")
 
     def test_post_commit_hook_on_main(self) -> None:
         post_commit = ROOT / "scripts" / "git-hooks" / "post-commit"

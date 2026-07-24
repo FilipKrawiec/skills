@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import os
+import stat
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -95,6 +100,64 @@ class AutonomousSdlcSpecificationTests(unittest.TestCase):
         self.assertIn("references/autonomous-sdlc-specification.md", skill)
         self.assertIn("the authority", skill)
 
+    def test_sdlc_enforces_companion_packages_through_host_plugins(self) -> None:
+        sdlc_root = ROOT / "plugins" / "common" / "sdlc"
+        required = {
+            "filipkrawiec-core",
+            "filipkrawiec-workflow",
+            "filipkrawiec-authoring",
+        }
+
+        for host in (".claude-plugin", ".codex-plugin"):
+            with self.subTest(host=host):
+                manifest = json.loads((sdlc_root / host / "plugin.json").read_text(encoding="utf-8"))
+                self.assertEqual(
+                    {dependency["name"]: dependency["version"] for dependency in manifest["dependencies"]},
+                    {package: "8.3.0" for package in required},
+                )
+                hook_config = sdlc_root / manifest["hooks"]
+                self.assertTrue(hook_config.is_file())
+                hooks = json.loads(hook_config.read_text(encoding="utf-8"))["hooks"]
+                self.assertIn("SessionStart", hooks)
+                self.assertIn("UserPromptSubmit", hooks)
+
+        self.assertTrue((sdlc_root / "scripts" / "check-claude-companion-plugins.sh").is_file())
+        self.assertTrue((sdlc_root / "scripts" / "check-codex-companion-plugins.sh").is_file())
+
+    def test_companion_package_hooks_block_when_a_package_is_missing(self) -> None:
+        scripts = ROOT / "plugins" / "common" / "sdlc" / "scripts"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            bin_dir = Path(temporary_directory)
+            for command, output in (("claude", "[]"), ("codex", "")):
+                command_path = bin_dir / command
+                command_path.write_text(f"#!/usr/bin/env sh\nprintf '%s\\n' '{output}'\n", encoding="utf-8")
+                command_path.chmod(command_path.stat().st_mode | stat.S_IXUSR)
+
+            environment = os.environ | {"PATH": f"{bin_dir}:{os.environ['PATH']}"}
+            claude = subprocess.run(
+                [scripts / "check-claude-companion-plugins.sh"],
+                input='{"hook_event_name":"UserPromptSubmit"}',
+                text=True,
+                capture_output=True,
+                env=environment,
+                check=False,
+            )
+            self.assertEqual(claude.returncode, 2)
+            self.assertIn("filipkrawiec-authoring", claude.stderr)
+
+            codex = subprocess.run(
+                [scripts / "check-codex-companion-plugins.sh"],
+                input='{"hook_event_name":"UserPromptSubmit"}',
+                text=True,
+                capture_output=True,
+                env=environment,
+                check=False,
+            )
+            self.assertEqual(codex.returncode, 0)
+            response = json.loads(codex.stdout)
+            self.assertFalse(response["continue"])
+            self.assertIn("filipkrawiec-workflow", response["stopReason"])
+
     def test_plugin_ships_the_canonical_specification_without_drift(self) -> None:
         self.assertEqual(PACKAGED_SPECIFICATION.read_text(encoding="utf-8").rstrip(), SPECIFICATION.read_text(encoding="utf-8").rstrip())
         packaged_conformance = PACKAGED_CONFORMANCE.read_text(encoding="utf-8").replace(
@@ -135,6 +198,31 @@ class AutonomousSdlcSpecificationTests(unittest.TestCase):
                 self.assertNotIn(".sdlc/tasks/", content)
                 self.assertNotIn("host-scoped artifact", content)
                 self.assertNotIn("copy/symlink", content)
+
+    def test_define_skill_delegates_strategic_grilling_to_the_shared_skill(self) -> None:
+        define_skill = (
+            ROOT / "plugins" / "common" / "sdlc" / "skills" / "sdlc-define" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Strategic Definition Grilling", define_skill)
+        self.assertIn(
+            "Use `grill-with-docs` to perform the mandatory strategic Definition grilling against the available context and references.",
+            define_skill,
+        )
+        self.assertIn("Bigger-picture fit", define_skill)
+        self.assertIn("Viability", define_skill)
+        self.assertNotIn("one sharp question at a time", define_skill)
+        self.assertNotIn("ask concise decision questions", define_skill)
+
+    def test_refine_skill_uses_technical_specification_grilling(self) -> None:
+        refine_skill = (
+            ROOT / "plugins" / "common" / "sdlc" / "skills" / "sdlc-refine" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Technical Specification Grilling", refine_skill)
+        self.assertIn("technical grilling pass", refine_skill)
+        self.assertIn("technical evidence disproves them", refine_skill)
+        self.assertIn("`grill-with-docs`", refine_skill)
 
 
 if __name__ == "__main__":

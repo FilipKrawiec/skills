@@ -2,6 +2,15 @@
 
 Use the standalone `sdlc` skill for repository changes that require lifecycle coordination.
 
+## 0. Stage & Phase Callable Commands
+
+Every SDLC stage and phase is directly callable from Antigravity:
+
+- `/sdlc`: Full lifecycle orchestrator.
+- `/sdlc-define`, `/sdlc-refine`, `/sdlc-execute`, and `/sdlc-improve`: Stage commands.
+- `/sdlc-plan`, `/sdlc-review`, and `/sdlc-ship`: EXECUTE-stage phase commands.
+- `/sdlc-help`: Consumer quickstart and configuration reference.
+
 ## 1. Project Configuration Discovery
 
 Before executing any phase, inspect the target repository root for `.agy/config.json`.
@@ -50,4 +59,3 @@ To prevent self-review bias and strictly enforce Segregation of Duties, the agen
 - **Subagent Fallback Protocol**: If `invoke_subagent` fails or is restricted by environment limits (e.g. subagent depth limit or sandbox restriction), the orchestrator MUST gracefully fall back to an isolated inline review in a fresh turn, notifying the user:
   *"Subagent conversation isolation unavailable; conducting inline code audit..."*
 - The subagent (or fallback reviewer) inspects `.agy/config.json`, actively invokes enabled skills (`ddd`, `hexagonal-architecture`, `grill-with-docs`, `tdd`, `vcs`), conducts the review, and returns the `ReviewDecision` work product to the orchestrator.
-

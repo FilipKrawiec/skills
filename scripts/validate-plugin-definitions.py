@@ -35,8 +35,14 @@ PACKAGE_METADATA = {
 PACKAGE_SKILL_TREES = {
     ROOT / "plugins" / "common" / "core" / "skills": {"ddd", "hexagonal-architecture"},
     ROOT / "plugins" / "common" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
-    ROOT / "plugins" / "common" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-refine", "sdlc-execute", "sdlc-improve", "sdlc-help"},
+    ROOT / "plugins" / "common" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-refine", "sdlc-execute", "sdlc-plan", "sdlc-review", "sdlc-ship", "sdlc-improve", "sdlc-help"},
     ROOT / "plugins" / "common" / "authoring" / "skills": {"writing-great-skill", "teach"},
+}
+
+SDLC_COMPANION_PACKAGES = {
+    "filipkrawiec-core",
+    "filipkrawiec-workflow",
+    "filipkrawiec-authoring",
 }
 
 def fail(message: str) -> None:
@@ -148,8 +154,12 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
     antigravity = load_json(package_root / "plugin.json")
     claude = load_json(package_root / ".claude-plugin" / "plugin.json")
     codex = load_json(package_root / ".codex-plugin" / "plugin.json")
-    if antigravity != {"name": metadata["name"], "description": metadata["description"]}:
-        fail(f"{(package_root / 'plugin.json').relative_to(ROOT)} must match package identity")
+    if (
+        antigravity.get("name") != metadata["name"]
+        or antigravity.get("description") != metadata["description"]
+        or antigravity.get("version") != metadata["version"]
+    ):
+        fail(f"{(package_root / 'plugin.json').relative_to(ROOT)} must match package identity and version")
     for manifest_path, manifest in ((package_root / ".claude-plugin" / "plugin.json", claude), (package_root / ".codex-plugin" / "plugin.json", codex)):
         if manifest.get("name") != metadata["name"] or manifest.get("version") != metadata["version"]:
             fail(f"{manifest_path.relative_to(ROOT)} must match package name and version")
@@ -172,14 +182,22 @@ def validate_agy_plugins() -> None:
             fail(f"{manifest_path.relative_to(ROOT)} must use package name starting with filipkrawiec-agy-")
         if not isinstance(manifest.get("description"), str) or not manifest["description"]:
             fail(f"{manifest_path.relative_to(ROOT)} must define a non-empty description")
+        if not isinstance(manifest.get("version"), str) or not re.fullmatch(r"\d+\.\d+\.\d+", manifest["version"]):
+            fail(f"{manifest_path.relative_to(ROOT)} must define a semantic version")
 
         if "dependencies" in manifest:
             deps = manifest["dependencies"]
-            if not isinstance(deps, list) or not all(isinstance(dep, str) for dep in deps):
-                fail(f"{manifest_path.relative_to(ROOT)} dependencies must be a list of string package names")
+            if not isinstance(deps, list) or not all(
+                isinstance(dep, dict)
+                and isinstance(dep.get("name"), str)
+                and isinstance(dep.get("version"), str)
+                and re.fullmatch(r"\d+\.\d+\.\d+", dep["version"])
+                for dep in deps
+            ):
+                fail(f"{manifest_path.relative_to(ROOT)} dependencies must be versioned package definitions")
             for dep in deps:
-                if dep not in valid_packages:
-                    fail(f"{manifest_path.relative_to(ROOT)} dependency '{dep}' is not a valid common package")
+                if dep["name"] not in valid_packages:
+                    fail(f"{manifest_path.relative_to(ROOT)} dependency '{dep['name']}' is not a valid common package")
 
         rules_dir = plugin_path / "rules"
         if rules_dir.is_dir():
@@ -196,6 +214,79 @@ def validate_agy_plugins() -> None:
                     fail(f"{agent_file.relative_to(ROOT)} agent file must start with a markdown header (#)")
 
 
+def validate_sdlc_companion_enforcement() -> None:
+    sdlc_root = ROOT / "plugins" / "common" / "sdlc"
+    expected_hooks = {
+        ".claude-plugin": "./hooks/claude-companion-packages.json",
+        ".codex-plugin": "./hooks/codex-companion-packages.json",
+    }
+    for host, hook_path in expected_hooks.items():
+        manifest_path = sdlc_root / host / "plugin.json"
+        manifest = load_json(manifest_path)
+        dependencies = manifest.get("dependencies", [])
+        if not isinstance(dependencies, list) or {
+            dependency.get("name") for dependency in dependencies if isinstance(dependency, dict)
+        } != SDLC_COMPANION_PACKAGES:
+            fail(f"{manifest_path.relative_to(ROOT)} must require every SDLC companion package")
+        if any(
+            not isinstance(dependency, dict) or dependency.get("version") != manifest.get("version")
+            for dependency in dependencies
+        ):
+            fail(f"{manifest_path.relative_to(ROOT)} companion dependencies must match the SDLC version")
+        if manifest.get("hooks") != hook_path:
+            fail(f"{manifest_path.relative_to(ROOT)} must register its companion-package hook")
+
+        hooks = load_json(sdlc_root / hook_path.removeprefix("./")).get("hooks")
+        if not isinstance(hooks, dict) or not {"SessionStart", "UserPromptSubmit"} <= set(hooks):
+            fail(f"{hook_path} must notify at session start and block a user prompt")
+
+    for script_name in ("check-claude-companion-plugins.sh", "check-codex-companion-plugins.sh"):
+        script = sdlc_root / "scripts" / script_name
+        if not script.is_file() or not script.stat().st_mode & 0o111:
+            fail(f"{script.relative_to(ROOT)} must be executable")
+
+    agy_root = ROOT / "plugins" / "agy" / "sdlc"
+    agy_manifest = load_json(agy_root / "plugin.json")
+    agy_dependencies = agy_manifest.get("dependencies", [])
+    if not isinstance(agy_dependencies, list) or not SDLC_COMPANION_PACKAGES <= {
+        dependency.get("name") for dependency in agy_dependencies if isinstance(dependency, dict)
+    }:
+        fail("plugins/agy/sdlc/plugin.json must require every SDLC companion package")
+    if any(
+        not isinstance(dependency, dict) or dependency.get("version") != agy_manifest.get("version")
+        for dependency in agy_dependencies
+    ):
+        fail("plugins/agy/sdlc/plugin.json dependencies must match the overlay version")
+    agy_hooks = load_json(agy_root / "hooks.json").get("sdlc-companion-packages")
+    if not isinstance(agy_hooks, dict) or not {"PreInvocation", "PreToolUse"} <= set(agy_hooks):
+        fail("plugins/agy/sdlc/hooks.json must notify before invocation and block tool use")
+
+
+def validate_repository_release_version() -> None:
+    versions: set[str] = set()
+    for metadata_path in PACKAGE_METADATA:
+        package_root = metadata_path.parent
+        for manifest_path in (
+            metadata_path,
+            package_root / "plugin.json",
+            package_root / ".claude-plugin" / "plugin.json",
+            package_root / ".codex-plugin" / "plugin.json",
+        ):
+            version = load_json(manifest_path).get("version")
+            if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+                fail(f"{manifest_path.relative_to(ROOT)} must define a semantic release version")
+            versions.add(version)
+
+    for manifest_path in (ROOT / "plugins" / "agy").glob("*/plugin.json"):
+        version = load_json(manifest_path).get("version")
+        if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+            fail(f"{manifest_path.relative_to(ROOT)} must define a semantic release version")
+        versions.add(version)
+
+    if len(versions) != 1:
+        fail(f"all plugin definitions must share one release version, found {sorted(versions)}")
+
+
 def main() -> None:
     for path, name in PACKAGE_METADATA.items():
         validate_package_metadata(path, name)
@@ -204,6 +295,8 @@ def main() -> None:
         validate_skill_tree(root, skills)
 
     validate_agy_plugins()
+    validate_sdlc_companion_enforcement()
+    validate_repository_release_version()
 
     print("Plugin validation passed.")
 

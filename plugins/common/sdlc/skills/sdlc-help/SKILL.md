@@ -16,6 +16,14 @@ Execute repository changes through the Autonomous SDLC lifecycle:
 
 ## 2. Slash Commands
 
+- `/sdlc`: Run full Autonomous SDLC lifecycle orchestration.
+- `/sdlc-define`: Execute DEFINE and produce the `Definition`.
+- `/sdlc-refine`: Execute REFINE and produce the `DeliveryContract`.
+- `/sdlc-execute`: Execute the EXECUTE stage.
+- `/sdlc-plan`: Execute PLAN and produce the `ImplementationPlan`.
+- `/sdlc-review`: Execute REVIEW and produce the `ReviewDecision`.
+- `/sdlc-ship`: Execute SHIP and produce the `ShipmentCandidate`.
+- `/sdlc-improve`: Execute IMPROVE and produce the `ImprovementOutcome`.
 - `/sdlc-help`: Display this quickstart guide and plugin capabilities.
 - `/grill-me`: Launch an interactive alignment interview to resolve design decisions and ambiguities before execution.
 - `/goal`: Run a long-running delivery task with autonomous persistence until completed.

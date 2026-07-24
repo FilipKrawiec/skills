@@ -137,3 +137,15 @@ An Actor selected for a Phase Run because of its SDLC Role. It performs the Phas
 ### Conforming Host
 
 An implementation that preserves the Autonomous SDLC Specification's domain values, invariants, event ordering, and legal transitions. It owns storage, scheduling, UI, and delegation.
+
+### Release Version
+
+The one semantic version shared by every common and agent-native plugin in this repository. Its authoritative persistent record is the matching annotated Release Tag, not a version file.
+
+### Release Tag
+
+An annotated Git tag in the form `v<semantic-version>` that identifies the exact `main` commit from which a repository-wide plugin release is published.
+
+### Release Publication
+
+The Git push of a `main` commit and its Release Tag. It is permitted only when every version-bearing plugin manifest on that commit contains the tag's semantic version and the version differs from the preceding Release Tag.

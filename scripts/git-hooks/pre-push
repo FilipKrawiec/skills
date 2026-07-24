@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Validate a repository-wide plugin release before publishing main.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CURRENT_BRANCH="$(git -C "${REPO_ROOT}" branch --show-current 2>/dev/null || true)"
+
+if [[ "${CURRENT_BRANCH}" == "main" ]]; then
+  python3 "${REPO_ROOT}/scripts/validate-release-version.py"
+fi

@@ -1,0 +1,21 @@
+{
+  "sdlc-companion-packages": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python3 -c 'import json, subprocess; required={\"filipkrawiec-core\", \"filipkrawiec-workflow\", \"filipkrawiec-authoring\"}; installed={plugin.get(\"name\") for plugin in json.loads(subprocess.check_output([\"agy\", \"plugin\", \"list\"], text=True)).get(\"imports\", [])}; missing=sorted(required-installed); print(json.dumps({\"injectSteps\":[{\"ephemeralMessage\":\"SDLC blocked: required companion plugins are unavailable to Antigravity: \" + \", \".join(missing)}]} if missing else {}))'"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c 'import json, subprocess; required={\"filipkrawiec-core\", \"filipkrawiec-workflow\", \"filipkrawiec-authoring\"}; installed={plugin.get(\"name\") for plugin in json.loads(subprocess.check_output([\"agy\", \"plugin\", \"list\"], text=True)).get(\"imports\", [])}; missing=sorted(required-installed); print(json.dumps({\"decision\":\"deny\", \"reason\":\"SDLC blocked: required companion plugins are unavailable to Antigravity: \" + \", \".join(missing)} if missing else {\"decision\":\"allow\"}))'"
+          }
+        ]
+      }
+    ]
+  }
+}

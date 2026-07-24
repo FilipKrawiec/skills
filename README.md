@@ -11,7 +11,7 @@ Skills for Software engineering
 - `plugins/common/workflow/skills/grill-with-docs` for source-backed review and critique work
 - `plugins/common/authoring/skills/writing-great-skill` for skill authoring and refinement
 - `plugins/common/authoring/skills/teach` for interactive learning guides
-- `plugins/common/*/package-metadata.json` for package identity and release version
+- plugin manifests for package identity and the repository-wide release version
 - `plugins/<agent>/*/` for agent-native overlay plugins
 - `docs/` for ADRs and durable project records
 
@@ -71,11 +71,19 @@ The runner creates and removes an isolated temporary Git repository. It uses `--
 
 ## Package versions
 
-Versions are independent by package. Bump only the package being released:
+Every common package and Antigravity overlay shares one release version. The annotated Git tag (`v<semver>`) is the persistent release record.
 
 ```bash
-python3 scripts/bump-version.py --plugin workflow --type major
-python3 scripts/bump-version.py --plugin sdlc --type major
+# Update every version-bearing manifest to the chosen release version, then:
+git commit -m "feat: describe the release"
+git tag -a v8.3.0 -m "v8.3.0"
+git push
+```
+
+The pre-push hook validates that the annotated tag points to `main`'s `HEAD`, all plugin and dependency versions match it, and the version advances from the prior release. `scripts/setup-git-hooks.sh` configures `push.followTags` so a normal push includes the tag. Run the validator directly before pushing when needed:
+
+```bash
+python3 scripts/validate-release-version.py
 ```
 
 ## Validation
