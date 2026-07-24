@@ -10,8 +10,9 @@ Read [the packaged Autonomous SDLC Specification](../sdlc/references/autonomous-
 Before constructing the final `DeliveryContract`, you MUST execute the **Refinement Grilling Protocol**:
 
 1. **Codebase & Environment Audit**: Inspect existing code, interfaces, docs, and architecture relevant to the `Definition`. Identify technical friction, hidden complexities, and potential breaking changes.
-2. **Interactive Grilling & Stress Testing**: Actively challenge assumptions, complain about contradictions between the requested outcome and existing code, and ask sharp decision questions in chat. Do not proceed until ambiguities are resolved.
-3. **Contract Construction**: Produce the final `DeliveryContract` as Markdown with YAML frontmatter containing `deliverable`, `completion_condition`, `acceptance_criteria`, `constraints`, `risks`, `verification_plan`, and `delivery_role_plan`. Return the work product through the active host's normal result mechanism.
+2. **EventStorming for Business Behavior**: When the `Definition` introduces or changes a business workflow, run an EventStorming session before proposing contexts, aggregates, policies, or components. Scope the workflow; discover and sequence its past-tense domain events, including meaningful alternate paths; then identify their commands, initiators, reactions, and external interactions. Use event ownership and invariant-bearing decisions to justify responsibilities, rather than creating one component per event. Include an `## EventStorming` section in the Markdown body that records event-flow coverage and unresolved questions; keep the required `DeliveryContract` YAML frontmatter unchanged. When `ddd` is installed, use its EventStorming guidance for the detailed modeling pass.
+3. **Interactive Grilling & Stress Testing**: Actively challenge assumptions, complain about contradictions between the requested outcome and existing code, and ask sharp decision questions in chat. Do not proceed until ambiguities are resolved.
+4. **Contract Construction**: Produce the final `DeliveryContract` as Markdown with YAML frontmatter containing `deliverable`, `completion_condition`, `acceptance_criteria`, `constraints`, `risks`, `verification_plan`, and `delivery_role_plan`. Return the work product through the active host's normal result mechanism.
 
 ## Refinement Guidelines
 
@@ -21,4 +22,3 @@ When producing the `DeliveryContract`, you MUST enforce the following standards 
 2. **Elegant & Optimized Solutions**: Mandate that the plan focus on clean code design, maximizing execution efficiency, and avoiding architectural bloat.
 3. **Parallelizable Slices**: Structure deliverables and acceptance criteria to enable clear, parallelizable slices of implementation that can be built and verified independently.
 4. **Pragmatic Verification**: Require simple, deterministic checks (like fast unit tests and static analysis) rather than booting heavy framework contexts unnecessarily.
-
