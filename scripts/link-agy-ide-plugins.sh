@@ -27,6 +27,7 @@ plugin_names=(
   filipkrawiec-orchestration
   filipkrawiec-authoring
   filipkrawiec-agy-core
+  filipkrawiec-agy-orchestration
 )
 plugin_sources=(
   plugins/common/core
@@ -34,6 +35,7 @@ plugin_sources=(
   plugins/common/orchestration
   plugins/common/authoring
   plugins/agy/core
+  plugins/agy/orchestration
 )
 
 if [[ "${target_root}" == "/" ]]; then

@@ -1,0 +1,10 @@
+{
+  "orchestration-companion-packages": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python3 -c 'import json, subprocess; required={\"filipkrawiec-orchestration\", \"filipkrawiec-core\", \"filipkrawiec-workflow\", \"filipkrawiec-authoring\"}; missing=[];\ntry:\n  installed={plugin.get(\"name\") for plugin in json.loads(subprocess.check_output([\"agy\", \"plugin\", \"list\"], text=True, stderr=subprocess.DEVNULL)).get(\"imports\", [])}\n  missing=sorted(required-installed)\nexcept Exception:\n  pass\nprint(json.dumps({\"injectSteps\":[{\"ephemeralMessage\":\"Orchestration notice: missing companion plugins: \" + \", \".join(missing)}]} if missing else {}))'"
+      }
+    ]
+  }
+}

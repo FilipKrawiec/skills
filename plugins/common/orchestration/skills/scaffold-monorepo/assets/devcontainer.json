@@ -1,0 +1,17 @@
+{
+  "name": "Trunk-Based Monorepo Devcontainer",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "skellock.just",
+        "redhat.ansible",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "eamodio.gitlens"
+      ]
+    }
+  },
+  "remoteUser": "developer"
+}
