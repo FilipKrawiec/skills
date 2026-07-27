@@ -176,19 +176,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
 
         self.assertIn("python3 -m unittest discover -s scripts/tests", workflow)
         self.assertIn("python3 scripts/validate-plugin-definitions.py", workflow)
-        self.assertIn("python3 scripts/project-verify.py knowledge-index --check --root knowledge", workflow)
-        self.assertIn(
-            "python3 scripts/project-verify.py knowledge-index --project --check --root examples/typescript-verification-loop/.project-knowledge",
-            workflow,
-        )
-        self.assertIn(
-            "python3 scripts/project-verify.py check --root examples/task-packet-verification-loop",
-            workflow,
-        )
-        self.assertIn(
-            "python3 scripts/project-verify.py verify --root examples/typescript-verification-loop --knowledge-root knowledge",
-            workflow,
-        )
+        self.assertIn("python3 scripts/project-verify.py status", workflow)
 
     def test_readme_defines_the_pre_and_post_merge_release_boundary(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

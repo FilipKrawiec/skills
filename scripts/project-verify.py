@@ -8,43 +8,46 @@ import subprocess
 from pathlib import Path
 
 def parse_yaml_fallback(text: str) -> dict:
-    """Fallback line-parser if PyYAML is not installed."""
-    res = {}
-    current_key = None
-    sub_key = None
+    """Robust fallback YAML line-parser supporting nested dictionaries and lists."""
+    root: dict = {}
+    stack: list[tuple[int, dict]] = [(-1, root)]
     
     for line in text.splitlines():
-        raw = line.strip()
-        if not raw or raw.startswith("#"):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
             continue
-        if ":" in line:
-            parts = line.split(":", 1)
-            k = parts[0].strip()
-            v = parts[1].strip()
-            indent = len(line) - len(line.lstrip())
             
-            if indent == 0:
-                current_key = k
-                sub_key = None
-                if v:
-                    res[k] = v
-                else:
-                    res[k] = {}
-            elif indent == 2 and isinstance(res.get(current_key), dict):
-                sub_key = k
-                if v:
-                    res[current_key][k] = v
-                else:
-                    res[current_key][k] = {}
-            elif indent == 4 and current_key and sub_key and isinstance(res.get(current_key, {}).get(sub_key), dict):
-                if v:
-                    res[current_key][sub_key][k] = v
-        elif raw.startswith("- ") and current_key:
-            item = raw[2:].strip()
-            if not isinstance(res.get(current_key), list):
-                res[current_key] = []
-            res[current_key].append(item)
-    return res
+        indent = len(line) - len(line.lstrip())
+        
+        while len(stack) > 1 and stack[-1][0] >= indent:
+            stack.pop()
+            
+        parent_dict = stack[-1][1]
+        
+        if ":" in stripped and not stripped.startswith("- "):
+            parts = stripped.split(":", 1)
+            k = parts[0].strip().strip("'\"")
+            v = parts[1].strip().strip("'\"")
+            
+            if v:
+                parent_dict[k] = v
+            else:
+                new_dict: dict = {}
+                parent_dict[k] = new_dict
+                stack.append((indent, new_dict))
+        elif stripped.startswith("- "):
+            item = stripped[2:].strip().strip("'\"")
+            # find key in parent dict that corresponds to current list
+            if stack and len(stack) >= 2:
+                parent_of_parent = stack[-2][1]
+                for key, val in list(parent_of_parent.items()):
+                    if val is parent_dict:
+                        if not isinstance(parent_of_parent[key], list):
+                            parent_of_parent[key] = [item]
+                        else:
+                            parent_of_parent[key].append(item)
+                        break
+    return root
 
 def parse_frontmatter_text(text: str) -> dict:
     lines = text.splitlines()
