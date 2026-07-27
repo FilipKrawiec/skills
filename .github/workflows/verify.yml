@@ -18,5 +18,6 @@ jobs:
           node-version: 22
       - run: python3 -m unittest discover -s scripts/tests
       - run: python3 scripts/validate-plugin-definitions.py
-      - run: python3 scripts/project-verify.py knowledge-index --root knowledge
+      - run: python3 scripts/project-verify.py knowledge-index --check --root knowledge
+      - run: python3 scripts/project-verify.py check --root examples/task-packet-verification-loop
       - run: python3 scripts/project-verify.py verify --root examples/typescript-verification-loop --knowledge-root knowledge

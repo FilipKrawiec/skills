@@ -176,7 +176,11 @@ class CommonPluginLayoutTests(unittest.TestCase):
 
         self.assertIn("python3 -m unittest discover -s scripts/tests", workflow)
         self.assertIn("python3 scripts/validate-plugin-definitions.py", workflow)
-        self.assertIn("python3 scripts/project-verify.py knowledge-index --root knowledge", workflow)
+        self.assertIn("python3 scripts/project-verify.py knowledge-index --check --root knowledge", workflow)
+        self.assertIn(
+            "python3 scripts/project-verify.py check --root examples/task-packet-verification-loop",
+            workflow,
+        )
         self.assertIn(
             "python3 scripts/project-verify.py verify --root examples/typescript-verification-loop --knowledge-root knowledge",
             workflow,

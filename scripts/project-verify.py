@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a project's declared task links and completion evidence."""
+"""Verify project task links, packet provenance, and deterministic profile checks."""
 
 from __future__ import annotations
 
@@ -87,22 +87,55 @@ def task_workspace(root: Path, task: dict[str, object], task_id: str) -> tuple[l
             )
         if git_output(root, "cat-file", "-e", f"{workspace['base_revision']}^{{commit}}") is None:
             fail("task.base_revision", "declare an existing Git commit as base_revision", task_id)
+        if git_output(root, "merge-base", "--is-ancestor", workspace["base_revision"], "HEAD") is None:
+            fail(
+                "task.base_not_ancestor",
+                "declare a base_revision that is an ancestor of the checked-out HEAD",
+                task_id,
+            )
+        if git_output(root, "status", "--porcelain"):
+            fail(
+                "task.worktree_dirty",
+                "commit or discard all worktree changes before verification",
+                task_id,
+            )
 
-    affected_paths = task.get("affected_paths")
+    declared_paths = task.get("affected_paths")
     if not (
-        isinstance(affected_paths, list)
-        and affected_paths
+        isinstance(declared_paths, list)
+        and declared_paths
         and all(
             isinstance(path, str)
             and path
             and not Path(path).is_absolute()
             and ".." not in Path(path).parts
-            for path in affected_paths
+            for path in declared_paths
         )
     ):
         fail("task.affected_paths", "declare one or more relative affected_paths", task_id)
-    if len(set(affected_paths)) != len(affected_paths):
+    affected_paths = [Path(path).as_posix() for path in declared_paths]
+    if "." in affected_paths or len(set(affected_paths)) != len(affected_paths):
         fail("task.affected_paths", "use unique affected_paths", task_id)
+
+    if kind == "git-worktree":
+        changed_paths = git_output(
+            root,
+            "diff",
+            "--name-only",
+            "--no-renames",
+            f"{workspace['base_revision']}..HEAD",
+        )
+        assert changed_paths is not None
+        for changed_path in filter(None, changed_paths.splitlines()):
+            if not any(
+                changed_path == boundary or changed_path.startswith(f"{boundary}/")
+                for boundary in affected_paths
+            ):
+                fail(
+                    "task.changed_path",
+                    "declare the changed path in affected_paths or return the slice for replanning",
+                    task_id,
+                )
 
     dependencies = task.get("dependencies")
     if not isinstance(dependencies, list) or not all(
@@ -148,7 +181,7 @@ def front_matter(path: Path, relative_path: Path) -> dict[str, str]:
     return result
 
 
-def knowledge_index(root: Path, project: bool = False, report: bool = True) -> int:
+def knowledge_index(root: Path, project: bool = False, report: bool = True, check: bool = False) -> int:
     root = root.resolve()
     if not root.is_dir():
         knowledge_fail("knowledge.root", root, "provide an existing knowledge root")
@@ -213,12 +246,23 @@ def knowledge_index(root: Path, project: bool = False, report: bool = True) -> i
 
     entries.sort(key=lambda entry: (entry["kind"], entry["id"]))
     index_path = root / KNOWLEDGE_INDEX_NAME
-    index_path.write_text(
-        json.dumps({"version": 1, "entries": entries}, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    contents = json.dumps({"version": 1, "entries": entries}, indent=2) + "\n"
+    if check:
+        try:
+            current_contents = index_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            current_contents = ""
+        if current_contents != contents:
+            knowledge_fail(
+                "knowledge.index_stale",
+                Path(KNOWLEDGE_INDEX_NAME),
+                "run knowledge-index to regenerate the checked-in index",
+            )
+    else:
+        index_path.write_text(contents, encoding="utf-8")
     if report:
-        print(f"PASS entries={len(entries)} index={KNOWLEDGE_INDEX_NAME}")
+        freshness = " fresh" if check else ""
+        print(f"PASS entries={len(entries)} index={KNOWLEDGE_INDEX_NAME}{freshness}")
     return len(entries)
 
 
@@ -572,23 +616,48 @@ def check(root: Path) -> None:
             packet_tasks.append((task_id, task, affected_paths, parallel))
 
     if version == 2:
+        dependencies_by_task: dict[str, list[str]] = {}
         for task_id, task, _, _ in packet_tasks:
             dependencies = task["dependencies"]
             assert isinstance(dependencies, list)
             if task_id in dependencies or any(dependency not in seen_ids for dependency in dependencies):
                 fail("task.dependencies", "reference existing tasks other than this task", task_id)
+            dependencies_by_task[task_id] = dependencies
 
-        for index, (first_id, first_task, first_paths, first_parallel) in enumerate(packet_tasks):
+        visit_state: dict[str, str] = {}
+        closures: dict[str, set[str]] = {}
+
+        def dependency_closure(task_id: str) -> set[str]:
+            state = visit_state.get(task_id)
+            if state == "visiting":
+                fail("task.dependencies", "remove dependency cycles before dispatch", task_id)
+            if state == "visited":
+                return closures[task_id]
+            visit_state[task_id] = "visiting"
+            closure: set[str] = set()
+            for dependency in dependencies_by_task[task_id]:
+                closure.add(dependency)
+                closure.update(dependency_closure(dependency))
+            visit_state[task_id] = "visited"
+            closures[task_id] = closure
+            return closure
+
+        for task_id in dependencies_by_task:
+            dependency_closure(task_id)
+
+        for task_id, _, _, parallel in packet_tasks:
+            if parallel and closures[task_id]:
+                fail(
+                    "task.parallel_dependency",
+                    "serialize a task that has direct or transitive dependencies",
+                    task_id,
+                )
+
+        for index, (_, _, first_paths, first_parallel) in enumerate(packet_tasks):
             if not first_parallel:
                 continue
-            first_dependencies = first_task["dependencies"]
-            assert isinstance(first_dependencies, list)
-            for second_id, second_task, second_paths, second_parallel in packet_tasks[index + 1 :]:
+            for second_id, _, second_paths, second_parallel in packet_tasks[index + 1 :]:
                 if not second_parallel:
-                    continue
-                second_dependencies = second_task["dependencies"]
-                assert isinstance(second_dependencies, list)
-                if first_id in second_dependencies or second_id in first_dependencies:
                     continue
                 if any(paths_overlap(first, second) for first in first_paths for second in second_paths):
                     fail(
@@ -602,16 +671,17 @@ def check(root: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Verify a project's declared task links and completion evidence."
+        description="Verify project task links, packet provenance, and deterministic profile checks."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     check_parser = subparsers.add_parser("check", help="validate .project-verification.json")
     check_parser.add_argument("--root", type=Path, default=Path.cwd(), help="project root")
     index_parser = subparsers.add_parser(
-        "knowledge-index", help="validate knowledge entries and create .knowledge-index.json"
+        "knowledge-index", help="validate knowledge entries and generate or check .knowledge-index.json"
     )
     index_parser.add_argument("--root", type=Path, required=True, help="knowledge root")
     index_parser.add_argument("--project", action="store_true", help="validate a sparse Project Knowledge root")
+    index_parser.add_argument("--check", action="store_true", help="fail when the checked-in index is stale")
     init_parser = subparsers.add_parser(
         "project-init", help="create minimal Project Knowledge scaffolding without overwriting files"
     )
@@ -636,7 +706,7 @@ def main() -> None:
     if arguments.command == "check":
         check(arguments.root)
     elif arguments.command == "knowledge-index":
-        knowledge_index(arguments.root, project=arguments.project)
+        knowledge_index(arguments.root, project=arguments.project, check=arguments.check)
     elif arguments.command == "project-init":
         project_init(arguments.root)
     elif arguments.command == "project-knowledge-check":

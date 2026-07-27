@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "completed_states": ["done"],
+  "tasks": [
+    {
+      "id": "verify-typescript-loop",
+      "state": "done",
+      "specification": "docs/plans/typescript-loop.md",
+      "docs": ["README.md"],
+      "evidence": ["python3 scripts/project-verify.py verify --root examples/typescript-verification-loop --knowledge-root knowledge"],
+      "workspace": {
+        "kind": "isolated-copy",
+        "repository": "task-packet-verification-loop",
+        "worktree": "fixture-copy",
+        "base_revision": "fixture-snapshot-1"
+      },
+      "affected_paths": ["docs", "README.md"],
+      "dependencies": [],
+      "parallel": false,
+      "execution_outcome": "completed",
+      "delivery_record": {
+        "tracker": "local-tracker",
+        "reference": "delivery-example-1"
+      },
+      "review_request": {
+        "published": true,
+        "provider": "local-review",
+        "reference": "review-example-1"
+      }
+    }
+  ]
+}

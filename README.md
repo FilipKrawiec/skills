@@ -96,6 +96,8 @@ Check Codex, Claude, and Antigravity plugin definitions with:
 python3 scripts/validate-plugin-definitions.py
 ```
 
+The repository CI workflow runs the same Python suite, plugin validation, non-mutating Central-index freshness check, version-2 task-packet example, and TypeScript verification loop.
+
 The provider-neutral project verifier validates an opt-in project's declared task links and completion evidence:
 
 ```bash
@@ -117,11 +119,11 @@ The project root declares only the work it wants checked:
 }
 ```
 
-`specification` is the required neutral link for every task and must name an existing file inside the project root. `adr` is optional and only applies to an architectural decision; when present it must be an existing `docs/adr/` file. Optional `docs` links must likewise exist inside the root. A published Review Request additionally carries generic provider/reference fields and exactly one Delivery Record tracker/reference; the CLI validates only this local structure and does not call a tracker or review host.
+`specification` is the required neutral link for every task and must name an existing file inside the project root. `adr` is optional and only applies to an architectural decision; when present it must be an existing `docs/adr/` file. Optional `docs` links must likewise exist inside the root. A published Review Request additionally carries generic provider/reference fields and exactly one Delivery Record tracker/reference; the CLI validates only this local structure and does not call a tracker or review host. An `evidence` string is likewise declared structural metadata: the executable verification is the separately invoked `verify` loop.
 
 See [ADR-001](docs/adr/001-provider-neutral-project-verification.md) for the intentionally small contract and boundary.
 
-For an orchestrated implementation task, use manifest `version: 2`. Each task declares its isolated workspace kind, repository identity, base revision, affected paths, dependencies, parallel eligibility, execution outcome, and verifier evidence. Git worktrees are the default; `isolated-copy` is the documented fallback for a non-Git project. The CLI validates this declared provenance but never creates or cleans up worktrees.
+For an orchestrated implementation task, use manifest `version: 2`. Each task declares its isolated workspace kind, repository identity, base revision, affected paths, dependencies, parallel eligibility, execution outcome, and verifier evidence. Git worktrees are the default; `isolated-copy` is the documented fallback for a non-Git project. For a Git worktree, the CLI requires a clean worktree, an ancestor base revision, and only committed `base..HEAD` changes within normalized declared paths. It rejects dependency cycles and a `parallel: true` task with any direct or transitive dependency. It validates packet fields and declared evidence structurally; it never creates worktrees, invokes tracker/review APIs, or treats arbitrary evidence text as executed verification.
 
 The orchestrator creates one short-lived branch and linked worktree per implementation task from its declared base revision. It may dispatch only non-overlapping, dependency-independent tasks in parallel. Executors may commit, push verified task branches, and publish or update Review Requests; non-AFK work requires a Review Request. Only the user may authorize merge, approval, or force-push of a protected/default branch.
 
@@ -129,6 +131,12 @@ To validate a Central Knowledge Base or Project Knowledge root and generate its 
 
 ```bash
 python3 scripts/project-verify.py knowledge-index --root /path/to/knowledge
+```
+
+Use `--check` in CI to confirm a checked-in Central Knowledge index is fresh without rewriting it:
+
+```bash
+python3 scripts/project-verify.py knowledge-index --check --root knowledge
 ```
 
 Use `--project` for sparse Project Knowledge, whose kind directories are optional:

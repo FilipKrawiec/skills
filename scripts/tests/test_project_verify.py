@@ -14,6 +14,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CLI = REPOSITORY_ROOT / "scripts" / "project-verify.py"
 TYPESCRIPT_EXAMPLE = REPOSITORY_ROOT / "examples" / "typescript-verification-loop"
+TASK_PACKET_EXAMPLE = REPOSITORY_ROOT / "examples" / "task-packet-verification-loop"
 
 
 class ProjectVerifyTests(unittest.TestCase):
@@ -82,6 +83,31 @@ class ProjectVerifyTests(unittest.TestCase):
             text=True,
         )
         return worktree, base_revision
+
+    def commit_all(self, root: Path, message: str) -> str:
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True, text=True)
+        subprocess.run(["git", "commit", "-m", message], cwd=root, check=True, capture_output=True, text=True)
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    def prepare_clean_linked_packet(
+        self, root: Path, task_id: str = "linked-worktree-task"
+    ) -> tuple[Path, Path, str, dict[str, object]]:
+        worktree, base_revision = self.create_linked_worktree(root)
+        task = self.task_packet(
+            task_id,
+            {
+                "kind": "git-worktree",
+                "repository": "repository",
+                "worktree": ".",
+                "base_revision": base_revision,
+            },
+        )
+        task["affected_paths"] = [".project-verification.json", "README.md", "docs"]
+        self.write_v2_manifest(worktree, [task])
+        self.commit_all(worktree, "add task packet")
+        return worktree, root / "repository", base_revision, task
 
     def central_scaffold(self, root: Path) -> None:
         for directory in (
@@ -348,25 +374,83 @@ class ProjectVerifyTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_accepts_a_task_packet_for_a_linked_git_worktree(self) -> None:
+    def test_accepts_the_repository_task_packet_example(self) -> None:
+        result = self.run_cli("check", "--root", str(TASK_PACKET_EXAMPLE))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "PASS tasks=1\n")
+
+    def test_accepts_clean_committed_changes_within_a_git_task_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
-            worktree, base_revision = self.create_linked_worktree(Path(temporary_directory))
-            task = self.task_packet(
-                "linked-worktree-task",
-                {
-                    "kind": "git-worktree",
-                    "repository": "repository",
-                    "worktree": ".",
-                    "base_revision": base_revision,
-                },
-            )
-            self.write_v2_manifest(worktree, [task])
+            worktree, _, _, _ = self.prepare_clean_linked_packet(Path(temporary_directory))
 
             result = self.run_cli("check", "--root", str(worktree))
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "PASS tasks=1\n")
         self.assertEqual(result.stderr, "")
+
+    def test_rejects_a_git_worktree_base_that_is_not_an_ancestor_of_head(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            worktree, repository, _, task = self.prepare_clean_linked_packet(root)
+            (repository / "future.txt").write_text("future\n", encoding="utf-8")
+            future_revision = self.commit_all(repository, "future base")
+            task["workspace"]["base_revision"] = future_revision
+            self.write_v2_manifest(worktree, [task])
+            self.commit_all(worktree, "declare future base")
+
+            result = self.run_cli("check", "--root", str(worktree))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.base_not_ancestor", result.stderr)
+
+    def test_rejects_an_unrelated_git_worktree_base(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            worktree, repository, _, task = self.prepare_clean_linked_packet(root)
+            unrelated_revision = subprocess.run(
+                [
+                    "git",
+                    "commit-tree",
+                    "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                    "-m",
+                    "unrelated",
+                ],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            task["workspace"]["base_revision"] = unrelated_revision
+            self.write_v2_manifest(worktree, [task])
+            self.commit_all(worktree, "declare unrelated base")
+
+            result = self.run_cli("check", "--root", str(worktree))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.base_not_ancestor", result.stderr)
+
+    def test_rejects_a_dirty_git_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            worktree, _, _, _ = self.prepare_clean_linked_packet(Path(temporary_directory))
+            (worktree / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+
+            result = self.run_cli("check", "--root", str(worktree))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.worktree_dirty", result.stderr)
+
+    def test_rejects_committed_changes_outside_a_git_task_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            worktree, _, _, _ = self.prepare_clean_linked_packet(Path(temporary_directory))
+            (worktree / "outside.txt").write_text("outside\n", encoding="utf-8")
+            self.commit_all(worktree, "change outside boundary")
+
+            result = self.run_cli("check", "--root", str(worktree))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.changed_path", result.stderr)
 
     def test_requires_complete_workspace_provenance_for_a_task_packet(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -439,6 +523,97 @@ class ProjectVerifyTests(unittest.TestCase):
             "ERROR task.affected_paths_overlap task=second-task remedy=serialize overlapping tasks or give them non-overlapping affected_paths\n",
         )
 
+    def test_rejects_a_direct_dependency_declared_parallel(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first = self.task_packet(
+                "first-task",
+                {"kind": "isolated-copy", "repository": "copy", "worktree": "one", "base_revision": "one"},
+            )
+            second = self.task_packet(
+                "second-task",
+                {"kind": "isolated-copy", "repository": "copy", "worktree": "two", "base_revision": "two"},
+            )
+            first["parallel"] = True
+            first["dependencies"] = ["second-task"]
+            self.write_v2_manifest(root, [first, second])
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.parallel_dependency task=first-task", result.stderr)
+
+    def test_rejects_a_transitive_dependency_declared_parallel(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first = self.task_packet(
+                "first-task",
+                {"kind": "isolated-copy", "repository": "copy", "worktree": "one", "base_revision": "one"},
+            )
+            second = self.task_packet(
+                "second-task",
+                {"kind": "isolated-copy", "repository": "copy", "worktree": "two", "base_revision": "two"},
+            )
+            third = self.task_packet(
+                "third-task",
+                {"kind": "isolated-copy", "repository": "copy", "worktree": "three", "base_revision": "three"},
+            )
+            first["parallel"] = True
+            first["dependencies"] = ["second-task"]
+            second["dependencies"] = ["third-task"]
+            self.write_v2_manifest(root, [first, second, third])
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.parallel_dependency task=first-task", result.stderr)
+
+    def test_rejects_a_dependency_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first = self.task_packet(
+                "first-task",
+                {"kind": "isolated-copy", "repository": "copy", "worktree": "one", "base_revision": "one"},
+            )
+            second = self.task_packet(
+                "second-task",
+                {"kind": "isolated-copy", "repository": "copy", "worktree": "two", "base_revision": "two"},
+            )
+            third = self.task_packet(
+                "third-task",
+                {"kind": "isolated-copy", "repository": "copy", "worktree": "three", "base_revision": "three"},
+            )
+            first["dependencies"] = ["second-task"]
+            second["dependencies"] = ["third-task"]
+            third["dependencies"] = ["first-task"]
+            self.write_v2_manifest(root, [first, second, third])
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.dependencies", result.stderr)
+
+    def test_accepts_independent_parallel_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first = self.task_packet(
+                "first-task",
+                {"kind": "isolated-copy", "repository": "copy", "worktree": "one", "base_revision": "one"},
+            )
+            second = self.task_packet(
+                "second-task",
+                {"kind": "isolated-copy", "repository": "copy", "worktree": "two", "base_revision": "two"},
+            )
+            first["parallel"] = True
+            second["parallel"] = True
+            first["affected_paths"] = ["src/first"]
+            second["affected_paths"] = ["src/second"]
+            self.write_v2_manifest(root, [first, second])
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_accepts_the_documented_non_git_isolated_copy_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -487,6 +662,25 @@ class ProjectVerifyTests(unittest.TestCase):
                 ],
             },
         )
+
+    def test_rejects_a_stale_checked_in_knowledge_index_without_rewriting_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self.central_scaffold(root)
+            first = root / "doctrines" / "first.md"
+            first.write_text("---\nid: first\nkind: doctrine\n---\n# First\n", encoding="utf-8")
+            generated = self.run_cli("knowledge-index", "--root", str(root))
+            before = (root / ".knowledge-index.json").read_text(encoding="utf-8")
+            second = root / "doctrines" / "second.md"
+            second.write_text("---\nid: second\nkind: doctrine\n---\n# Second\n", encoding="utf-8")
+
+            result = self.run_cli("knowledge-index", "--check", "--root", str(root))
+            after = (root / ".knowledge-index.json").read_text(encoding="utf-8")
+
+        self.assertEqual(generated.returncode, 0, generated.stderr)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR knowledge.index_stale", result.stderr)
+        self.assertEqual(after, before)
 
     def test_accepts_the_complete_central_knowledge_scaffold_without_entries(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
