@@ -206,7 +206,16 @@ class CommonPluginLayoutTests(unittest.TestCase):
                     f"Record file {record_file.name} is not indexed in docs/index.md or docs/records/README.md",
                 )
 
+    def test_root_justfile_defines_standard_lifecycle_recipes(self) -> None:
+        justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+        self.assertTrue((ROOT / "justfile").is_file())
+        self.assertIn("unit:", justfile)
+        self.assertIn("verify:", justfile)
+        self.assertIn("knowledge-check:", justfile)
+        self.assertIn("release-check:", justfile)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

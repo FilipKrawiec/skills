@@ -124,14 +124,20 @@ This creates `.project-knowledge/`, `docs/adr/`, and `.project-knowledge/project
 
 ### 2. Run Deterministic Verification
 
-Agents and developers execute project verification tasks defined in `AGENTS.md`:
+Agents and developers execute project verification tasks defined in `justfile` and `AGENTS.md`:
 
 ```bash
-# Execute unit tests declared in AGENTS.md
-python3 scripts/project-verify.py unit
+# Execute unit tests across script tools
+just unit         # or: python3 scripts/project-verify.py unit
 
 # Run full project verifier & git hygiene checks
-python3 scripts/project-verify.py verify
+just verify       # or: python3 scripts/project-verify.py verify
+
+# Check Central Knowledge index freshness
+just knowledge-check
+
+# Run release version validator
+just release-check
 ```
 
 ---

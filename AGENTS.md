@@ -8,6 +8,11 @@ active_skills:
   - scaffold-monorepo
 
 build_tools:
+  just:
+    build_script: justfile
+    lifecycle_tasks:
+      unit: python3 -m unittest discover -s scripts/tests
+      verify: python3 scripts/validate-plugin-definitions.py
   python:
     build_script: scripts/validate-plugin-definitions.py
     lifecycle_tasks:

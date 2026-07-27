@@ -83,13 +83,16 @@ Before committing or submitting a Review Request, run the local verification sui
 
 ```bash
 # 1. Run Python unit tests
-python3 scripts/project-verify.py unit
+just unit              # or: python3 scripts/project-verify.py unit
 
 # 2. Run plugin definition validator
-python3 scripts/project-verify.py verify
+just verify            # or: python3 scripts/project-verify.py verify
 
 # 3. Check Central Knowledge index freshness
-python3 scripts/project-verify.py knowledge-index --check --root knowledge
+just knowledge-check   # or: python3 scripts/project-verify.py knowledge-index --check --root knowledge
+
+# 4. Check release version alignment
+just release-check     # or: python3 scripts/validate-release-version.py
 ```
 
 ### Git Hooks Setup
@@ -97,7 +100,7 @@ python3 scripts/project-verify.py knowledge-index --check --root knowledge
 Configure local Git hooks to automatically run pre-push tag and version checks:
 
 ```bash
-./scripts/setup-git-hooks.sh
+just setup-hooks       # or: ./scripts/setup-git-hooks.sh
 ```
 
 ---
