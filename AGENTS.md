@@ -1,3 +1,20 @@
+---
+active_skills:
+  - ddd
+  - hexagonal-architecture
+  - tdd
+  - vcs
+  - orchestrate-delivery
+  - scaffold-monorepo
+
+build_tools:
+  python:
+    build_script: scripts/validate-plugin-definitions.py
+    lifecycle_tasks:
+      unit: python3 -m unittest discover -s scripts/tests
+      verify: python3 scripts/validate-plugin-definitions.py
+---
+
 # Agent Guidance
 
 ## Verification Required for Changes
