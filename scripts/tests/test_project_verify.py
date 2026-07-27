@@ -682,6 +682,49 @@ class ProjectVerifyTests(unittest.TestCase):
         self.assertIn("ERROR knowledge.index_stale", result.stderr)
         self.assertEqual(after, before)
 
+    def test_rejects_a_stale_project_knowledge_index_without_rewriting_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            first = root / "technology-profiles" / "typescript.md"
+            first.parent.mkdir()
+            first.write_text(
+                "---\nid: typescript\nkind: technology-profile\n---\n# TypeScript\n",
+                encoding="utf-8",
+            )
+            generated = self.run_cli("knowledge-index", "--project", "--root", str(root))
+            before = (root / ".knowledge-index.json").read_text(encoding="utf-8")
+            second = root / "glossary" / "project-term.md"
+            second.parent.mkdir()
+            second.write_text(
+                "---\nid: project-term\nkind: glossary\n---\n# Project Term\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli("knowledge-index", "--project", "--check", "--root", str(root))
+            after = (root / ".knowledge-index.json").read_text(encoding="utf-8")
+
+        self.assertEqual(generated.returncode, 0, generated.stderr)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR knowledge.index_stale", result.stderr)
+        self.assertEqual(after, before)
+
+    def test_accepts_a_fresh_sparse_project_knowledge_index(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            entry = root / "technology-profiles" / "typescript.md"
+            entry.parent.mkdir()
+            entry.write_text(
+                "---\nid: typescript\nkind: technology-profile\n---\n# TypeScript\n",
+                encoding="utf-8",
+            )
+            generated = self.run_cli("knowledge-index", "--project", "--root", str(root))
+
+            result = self.run_cli("knowledge-index", "--project", "--check", "--root", str(root))
+
+        self.assertEqual(generated.returncode, 0, generated.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "PASS entries=1 index=.knowledge-index.json fresh\n")
+
     def test_accepts_the_complete_central_knowledge_scaffold_without_entries(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

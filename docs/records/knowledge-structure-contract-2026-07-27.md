@@ -95,6 +95,12 @@ Central validation requires every allowed category directory. To validate a spar
 python3 scripts/project-verify.py knowledge-index --project --root <project-knowledge-root>
 ```
 
+When a Project Knowledge index is tracked, `--project --check` is its non-mutating freshness gate. It preserves sparse semantics and fails rather than regenerating stale index content:
+
+```bash
+python3 scripts/project-verify.py knowledge-index --project --check --root <project-knowledge-root>
+```
+
 ## Verification loop
 
 Run the same local and CI gate:

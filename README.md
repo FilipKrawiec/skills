@@ -96,7 +96,7 @@ Check Codex, Claude, and Antigravity plugin definitions with:
 python3 scripts/validate-plugin-definitions.py
 ```
 
-The repository CI workflow runs the same Python suite, plugin validation, non-mutating Central-index freshness check, version-2 task-packet example, and TypeScript verification loop.
+The repository CI workflow runs the same Python suite, plugin validation, non-mutating Central and TypeScript-example Project Knowledge index freshness checks, version-2 task-packet example, and TypeScript verification loop.
 
 The provider-neutral project verifier validates an opt-in project's declared task links and completion evidence:
 
@@ -143,6 +143,12 @@ Use `--project` for sparse Project Knowledge, whose kind directories are optiona
 
 ```bash
 python3 scripts/project-verify.py knowledge-index --project --root /path/to/project/.project-knowledge
+```
+
+Use `--project --check` in CI before `verify` when a project tracks its Project Knowledge index. This confirms freshness without regenerating or accepting a stale sparse index:
+
+```bash
+python3 scripts/project-verify.py knowledge-index --project --check --root /path/to/project/.project-knowledge
 ```
 
 For the MVP, Central Knowledge belongs at this repository's `knowledge/` root; a separate Central Knowledge repository is a future evolution.
