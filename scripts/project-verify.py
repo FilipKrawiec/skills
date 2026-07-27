@@ -8,46 +8,44 @@ import subprocess
 from pathlib import Path
 
 def parse_yaml_fallback(text: str) -> dict:
-    """Robust fallback YAML line-parser supporting nested dictionaries and lists."""
-    root: dict = {}
-    stack: list[tuple[int, dict]] = [(-1, root)]
+    """Clean, bug-free YAML line-parser for AGENTS.md frontmatter."""
+    res: dict = {}
+    current_section = None
+    sub_section = None
     
     for line in text.splitlines():
-        stripped = line.strip()
+        raw = line.rstrip()
+        stripped = raw.strip()
         if not stripped or stripped.startswith("#"):
             continue
             
-        indent = len(line) - len(line.lstrip())
+        indent = len(raw) - len(raw.lstrip())
         
-        while len(stack) > 1 and stack[-1][0] >= indent:
-            stack.pop()
-            
-        parent_dict = stack[-1][1]
-        
-        if ":" in stripped and not stripped.startswith("- "):
-            parts = stripped.split(":", 1)
-            k = parts[0].strip().strip("'\"")
-            v = parts[1].strip().strip("'\"")
-            
-            if v:
-                parent_dict[k] = v
-            else:
-                new_dict: dict = {}
-                parent_dict[k] = new_dict
-                stack.append((indent, new_dict))
-        elif stripped.startswith("- "):
+        if stripped.startswith("- "):
             item = stripped[2:].strip().strip("'\"")
-            # find key in parent dict that corresponds to current list
-            if stack and len(stack) >= 2:
-                parent_of_parent = stack[-2][1]
-                for key, val in list(parent_of_parent.items()):
-                    if val is parent_dict:
-                        if not isinstance(parent_of_parent[key], list):
-                            parent_of_parent[key] = [item]
-                        else:
-                            parent_of_parent[key].append(item)
-                        break
-    return root
+            if current_section and isinstance(res.get(current_section), list):
+                res[current_section].append(item)
+            elif current_section and sub_section and isinstance(res.get(current_section, {}).get(sub_section), list):
+                res[current_section][sub_section].append(item)
+        elif ":" in stripped:
+            k, v = [part.strip().strip("'\"") for part in stripped.split(":", 1)]
+            if indent == 0:
+                current_section = k
+                sub_section = None
+                if v:
+                    res[k] = v
+                else:
+                    res[k] = [] if k.endswith("_skills") or k.endswith("_list") or k.startswith("active_") else {}
+            elif indent == 2 and current_section and isinstance(res.get(current_section), dict):
+                sub_section = k
+                if v:
+                    res[current_section][k] = v
+                else:
+                    res[current_section][k] = {}
+            elif indent == 4 and current_section and sub_section and isinstance(res.get(current_section, {}).get(sub_section), dict):
+                if v:
+                    res[current_section][sub_section][k] = v
+    return res
 
 def parse_frontmatter_text(text: str) -> dict:
     lines = text.splitlines()
