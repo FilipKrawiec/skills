@@ -8,10 +8,11 @@ import subprocess
 from pathlib import Path
 
 def parse_yaml_fallback(text: str) -> dict:
-    """Clean, bug-free YAML line-parser for AGENTS.md frontmatter."""
+    """Clean YAML line-parser for AGENTS.md frontmatter."""
     res: dict = {}
-    current_section = None
-    sub_section = None
+    sec0 = None
+    sec2 = None
+    sec4 = None
     
     for line in text.splitlines():
         raw = line.rstrip()
@@ -23,28 +24,21 @@ def parse_yaml_fallback(text: str) -> dict:
         
         if stripped.startswith("- "):
             item = stripped[2:].strip().strip("'\"")
-            if current_section and isinstance(res.get(current_section), list):
-                res[current_section].append(item)
-            elif current_section and sub_section and isinstance(res.get(current_section, {}).get(sub_section), list):
-                res[current_section][sub_section].append(item)
+            if sec0 and isinstance(res.get(sec0), list):
+                res[sec0].append(item)
         elif ":" in stripped:
             k, v = [part.strip().strip("'\"") for part in stripped.split(":", 1)]
             if indent == 0:
-                current_section = k
-                sub_section = None
-                if v:
-                    res[k] = v
-                else:
-                    res[k] = [] if k.endswith("_skills") or k.endswith("_list") or k.startswith("active_") else {}
-            elif indent == 2 and current_section and isinstance(res.get(current_section), dict):
-                sub_section = k
-                if v:
-                    res[current_section][k] = v
-                else:
-                    res[current_section][k] = {}
-            elif indent == 4 and current_section and sub_section and isinstance(res.get(current_section, {}).get(sub_section), dict):
-                if v:
-                    res[current_section][sub_section][k] = v
+                sec0, sec2, sec4 = k, None, None
+                res[k] = v if v else ([] if k.startswith("active_") or k.endswith("_list") else {})
+            elif indent == 2 and sec0 and isinstance(res.get(sec0), dict):
+                sec2, sec4 = k, None
+                res[sec0][k] = v if v else {}
+            elif indent == 4 and sec0 and sec2 and isinstance(res.get(sec0, {}).get(sec2), dict):
+                sec4 = k
+                res[sec0][sec2][k] = v if v else {}
+            elif indent == 6 and sec0 and sec2 and sec4 and isinstance(res.get(sec0, {}).get(sec2, {}).get(sec4), dict):
+                res[sec0][sec2][sec4][k] = v
     return res
 
 def parse_frontmatter_text(text: str) -> dict:
