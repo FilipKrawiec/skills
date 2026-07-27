@@ -37,3 +37,31 @@ To prevent self-review bias and strictly enforce Segregation of Duties, the agen
 - **Subagent Fallback Protocol**: If `invoke_subagent` fails or is restricted by environment limits, the orchestrator MUST gracefully fall back to an isolated inline review in a fresh turn, notifying the user:
   *"Subagent conversation isolation unavailable; conducting inline code audit..."*
 - The subagent (or fallback reviewer) inspects `.agy/config.json`, actively invokes enabled skills (`ddd`, `hexagonal-architecture`, `tdd`, `vcs`), conducts the review, and returns the review decision to the orchestrator.
+
+## 4. Stage-by-Stage Native Artifact Workflow & Safety Guardrails
+
+The orchestrator MUST explicitly track progress through all 7 delivery stages using native Antigravity artifacts to provide visual transparency and step-by-step guidance:
+
+1. **DEFINE / SPECIFY / PLAN**:
+   - Create or update the `implementation_plan.md` artifact.
+   - Set `RequestFeedback: true` and `UserFacing: true` in `ArtifactMetadata`.
+   - STOP and wait for the user to review the plan and click **Proceed** before moving to `DISPATCH`.
+
+2. **DISPATCH**:
+   - Create an isolated short-lived task branch (e.g. `task/<name>`) and Git worktree.
+   - Never edit implementation code directly on protected default branches (`main`).
+   - Create task packet records for the assigned executor.
+
+3. **COLLECT / VERIFY**:
+   - Run deterministic verification commands (`python3 scripts/project-verify.py verify`).
+   - Document execution results and evidence in the `walkthrough.md` artifact (`UserFacing: true`).
+
+4. **REVIEW**:
+   - Invoke the `orchestration-reviewer` subagent (or fallback reviewer) to audit changes against specifications and `AGENTS.md` rules.
+   - Record findings in `walkthrough.md`.
+
+5. **SHIP / RETURN**:
+   - Prepare the **Review Request** artifact on the task branch, linking the Delivery Record, verification logs, and `walkthrough.md`.
+   - Present the Review Request artifact to the human operator with user-facing merge instructions.
+   - **Merge Guardrail**: Executors must NEVER merge, approve, or force-push protected default branches (`main`). The user alone retains merge authority.
+

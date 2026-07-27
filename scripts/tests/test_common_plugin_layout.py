@@ -185,6 +185,37 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("Post-merge", readme)
         self.assertIn("does not claim a release tag", readme)
 
+    def test_all_docs_and_adrs_are_indexed_in_docs_index(self) -> None:
+        docs_index = (ROOT / "docs" / "index.md").read_text(encoding="utf-8")
+        adr_readme = (ROOT / "docs" / "adr" / "README.md").read_text(encoding="utf-8")
+        records_readme = (ROOT / "docs" / "records" / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("CONCEPTS.md", docs_index)
+
+        for adr_file in (ROOT / "docs" / "adr").glob("*.md"):
+            if adr_file.name != "README.md":
+                self.assertTrue(
+                    adr_file.name in docs_index or adr_file.name in adr_readme,
+                    f"ADR file {adr_file.name} is not indexed in docs/index.md or docs/adr/README.md",
+                )
+
+        for record_file in (ROOT / "docs" / "records").glob("*.md"):
+            if record_file.name != "README.md":
+                self.assertTrue(
+                    record_file.name in docs_index or record_file.name in records_readme,
+                    f"Record file {record_file.name} is not indexed in docs/index.md or docs/records/README.md",
+                )
+
+    def test_root_justfile_defines_standard_lifecycle_recipes(self) -> None:
+        justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+        self.assertTrue((ROOT / "justfile").is_file())
+        self.assertIn("unit:", justfile)
+        self.assertIn("verify:", justfile)
+        self.assertIn("knowledge-check:", justfile)
+        self.assertIn("release-check:", justfile)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
