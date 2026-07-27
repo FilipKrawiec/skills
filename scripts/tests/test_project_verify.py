@@ -84,15 +84,15 @@ class CompactProjectVerifyTests(unittest.TestCase):
                 "  dummy:\n"
                 "    build_script: build.txt\n"
                 "    lifecycle_tasks:\n"
-                "      unit: echo 'RUNNING UNIT TESTS'\n"
+                "      unit: echo RUNNING_UNIT_TESTS\n"
                 "---\n",
                 encoding="utf-8",
             )
             (tmp_path / "build.txt").write_text("dummy build script\n", encoding="utf-8")
 
             res = self.run_cli("--root", str(tmp_path), "unit")
-            self.assertEqual(res.returncode, 0)
-            self.assertIn("RUNNING UNIT TESTS", res.stdout)
+            self.assertEqual(res.returncode, 0, f"stderr: {res.stderr}, stdout: {res.stdout}")
+            self.assertIn("RUNNING_UNIT_TESTS", res.stdout)
             self.assertIn("PASS: Task 'unit' completed successfully.", res.stdout)
 
     def test_reports_error_when_task_not_found(self) -> None:
