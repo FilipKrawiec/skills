@@ -36,4 +36,5 @@ This is a public repository. Do not add proprietary, client, or secret material 
 ## Shipping
 
 - Implement in an isolated task worktree on a short-lived branch. After verification, an executor may push the task branch and publish or update a Review Request within its packet boundaries; non-AFK work requires that Review Request safety boundary.
+- Once specification and plan are durable, a published Review Request must carry one Delivery Record reference from the configured tracker. Chat-only, local, and unpushed work does not require one.
 - The user retains merge authority. Do not merge, approve, or force-push a protected/default branch unless the user explicitly authorizes that action.

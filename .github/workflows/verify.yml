@@ -1,0 +1,22 @@
+name: Verify repository
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: python3 -m unittest discover -s scripts/tests
+      - run: python3 scripts/validate-plugin-definitions.py
+      - run: python3 scripts/project-verify.py knowledge-index --root knowledge
+      - run: python3 scripts/project-verify.py verify --root examples/typescript-verification-loop --knowledge-root knowledge

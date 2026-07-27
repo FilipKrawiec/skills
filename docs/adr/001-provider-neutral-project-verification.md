@@ -14,6 +14,6 @@ AFK grants bounded autonomy across one complete slice. Executors may commit veri
 
 ## Consequences
 
-- `scripts/project-verify.py verify --root <project> --knowledge-root <knowledge>` is the execution gate; `check` validates task evidence and packet provenance; `orchestrator-config-check` validates local routing configuration.
+- `scripts/project-verify.py verify --root <project> --knowledge-root <knowledge>` is the execution gate; `check` validates specification links, optional ADR links, task evidence, published-review traceability, and packet provenance; `orchestrator-config-check` validates local executor/tracker/review-provider routing configuration.
 - The active portable plugin is `plugins/common/orchestration/`; host adapters and executor control paths remain outside it.
 - The retired Autonomous SDLC implementation and interim baseline records were removed during release-candidate cleanup; Git history retains them if needed.

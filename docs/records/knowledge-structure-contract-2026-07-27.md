@@ -83,6 +83,12 @@ python3 scripts/project-verify.py knowledge-index --root <knowledge-root>
 
 The command validates the root and writes `.knowledge-index.json` scoped only to that root. It contains deterministic, sorted entry records with `id`, `kind`, relative `path`, and `disabled`. The index is a discovery inventory, not a semantic search result, resolver output, or Central/Project merge.
 
+Central validation requires every allowed category directory. To validate a sparse Project Knowledge root directly, add `--project`:
+
+```bash
+python3 scripts/project-verify.py knowledge-index --project --root <project-knowledge-root>
+```
+
 ## Verification loop
 
 Run the same local and CI gate:

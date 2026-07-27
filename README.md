@@ -61,12 +61,20 @@ Link the canonical checkout into Antigravity IDE's native global plugin discover
 
 This replaces any old copied snapshots with symlinks for the four common packages and the Antigravity-native core overlay. The IDE therefore reads the repository files directly; restart Antigravity after the first link or after changing a plugin. Use `--dry-run` to inspect the links first. To install into a workspace rather than globally, set `AGY_IDE_PLUGIN_DIR=/path/to/workspace/.agents/plugins`.
 
-### Release hooks
+### Release procedure
 
 Every common package and Antigravity overlay shares one release version. The annotated Git tag (`v<semver>`) is the persistent release record.
 
+#### Pre-merge
+
+Before a Review Request is ready for user review, run the full repository verification matrix: Python tests, plugin-definition validation, Central Knowledge indexing, and the TypeScript verification-loop example. The Review Request records its linked Delivery Record and that evidence. The user alone decides whether to merge; this stage does not claim a release tag, published version, or completed release.
+
+#### Post-merge
+
+After the user-authorized merge to `main`, choose the next version, update every version-bearing manifest, run the release validator, create the annotated tag at that verified `main` commit, and publish the release through the configured repository process. Re-run release validation after the tag is present.
+
 ```bash
-# Update every version-bearing manifest to the chosen release version, then:
+# After the user-authorized merge and version update:
 git commit -m "feat: describe the release"
 git tag -a v<version> -m "v<version>"
 git push
@@ -103,12 +111,13 @@ The project root declares only the work it wants checked:
   "tasks": [{
     "id": "example-change",
     "state": "done",
-    "adr": "docs/adr/001-example.md",
-    "docs": ["README.md"],
+    "specification": "docs/plans/example-change.md",
     "evidence": ["python3 -m unittest"]
   }]
 }
 ```
+
+`specification` is the required neutral link for every task and must name an existing file inside the project root. `adr` is optional and only applies to an architectural decision; when present it must be an existing `docs/adr/` file. Optional `docs` links must likewise exist inside the root. A published Review Request additionally carries generic provider/reference fields and exactly one Delivery Record tracker/reference; the CLI validates only this local structure and does not call a tracker or review host.
 
 See [ADR-001](docs/adr/001-provider-neutral-project-verification.md) for the intentionally small contract and boundary.
 
@@ -120,6 +129,12 @@ To validate a Central Knowledge Base or Project Knowledge root and generate its 
 
 ```bash
 python3 scripts/project-verify.py knowledge-index --root /path/to/knowledge
+```
+
+Use `--project` for sparse Project Knowledge, whose kind directories are optional:
+
+```bash
+python3 scripts/project-verify.py knowledge-index --project --root /path/to/project/.project-knowledge
 ```
 
 For the MVP, Central Knowledge belongs at this repository's `knowledge/` root; a separate Central Knowledge repository is a future evolution.

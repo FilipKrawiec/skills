@@ -27,7 +27,10 @@ class ProjectVerifyTests(unittest.TestCase):
     def write_manifest(self, root: Path, task: dict[str, object]) -> None:
         (root / "docs" / "adr").mkdir(parents=True)
         (root / "docs" / "adr" / "0001-example.md").write_text("# Example\n", encoding="utf-8")
+        (root / "docs" / "plans").mkdir(parents=True)
+        (root / "docs" / "plans" / "example.md").write_text("# Example plan\n", encoding="utf-8")
         (root / "README.md").write_text("# Example\n", encoding="utf-8")
+        task.setdefault("specification", "docs/plans/example.md")
         (root / ".project-verification.json").write_text(
             json.dumps({"version": 1, "tasks": [task]}) + "\n", encoding="utf-8"
         )
@@ -49,7 +52,11 @@ class ProjectVerifyTests(unittest.TestCase):
     def write_v2_manifest(self, root: Path, tasks: list[dict[str, object]]) -> None:
         (root / "docs" / "adr").mkdir(parents=True, exist_ok=True)
         (root / "docs" / "adr" / "0001-example.md").write_text("# Example\n", encoding="utf-8")
+        (root / "docs" / "plans").mkdir(parents=True, exist_ok=True)
+        (root / "docs" / "plans" / "example.md").write_text("# Example plan\n", encoding="utf-8")
         (root / "README.md").write_text("# Example\n", encoding="utf-8")
+        for task in tasks:
+            task.setdefault("specification", "docs/plans/example.md")
         (root / ".project-verification.json").write_text(
             json.dumps({"version": 2, "tasks": tasks}) + "\n", encoding="utf-8"
         )
@@ -76,6 +83,18 @@ class ProjectVerifyTests(unittest.TestCase):
         )
         return worktree, base_revision
 
+    def central_scaffold(self, root: Path) -> None:
+        for directory in (
+            "doctrines",
+            "glossary",
+            "preferences",
+            "technology-profiles",
+            "templates",
+            "examples",
+            "config-artifacts",
+        ):
+            (root / directory).mkdir(parents=True, exist_ok=True)
+
 
     def test_help_is_discoverable(self) -> None:
         result = self.run_cli("--help")
@@ -91,21 +110,24 @@ class ProjectVerifyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             config = Path(temporary_directory) / "orchestrator.yaml"
             config.write_text(
-                "version: 1\ndefault_executor: antigravity\nexecutor_failure: return-for-review\n",
+                "version: 1\ndefault_executor: antigravity\ntracker: local-tracker\nreview_provider: local-review\nexecutor_failure: return-for-review\n",
                 encoding="utf-8",
             )
 
             result = self.run_cli("orchestrator-config-check", "--config", str(config))
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "PASS default_executor=antigravity failure=return-for-review\n")
+        self.assertEqual(
+            result.stdout,
+            "PASS default_executor=antigravity tracker=local-tracker review_provider=local-review failure=return-for-review\n",
+        )
         self.assertEqual(result.stderr, "")
 
     def test_rejects_an_executor_config_that_allows_automatic_retry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             config = Path(temporary_directory) / "orchestrator.yaml"
             config.write_text(
-                "version: 1\ndefault_executor: antigravity\nexecutor_failure: retry-another\n",
+                "version: 1\ndefault_executor: antigravity\ntracker: local-tracker\nreview_provider: local-review\nexecutor_failure: retry-another\n",
                 encoding="utf-8",
             )
 
@@ -117,6 +139,19 @@ class ProjectVerifyTests(unittest.TestCase):
             result.stderr,
             "ERROR orchestrator.failure path=" + str(config) + " remedy=set executor_failure: return-for-review\n",
         )
+
+    def test_requires_provider_neutral_tracker_and_review_provider_identifiers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config = Path(temporary_directory) / "orchestrator.yaml"
+            config.write_text(
+                "version: 1\ndefault_executor: antigravity\nexecutor_failure: return-for-review\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli("orchestrator-config-check", "--config", str(config))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR orchestrator.config", result.stderr)
 
     def test_accepts_a_completed_task_with_declared_links_and_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -161,7 +196,7 @@ class ProjectVerifyTests(unittest.TestCase):
             "ERROR task.evidence_missing task=verification-foundation remedy=record at least one verification command or artifact\n",
         )
 
-    def test_requires_a_documentation_link_for_each_task(self) -> None:
+    def test_requires_a_specification_or_plan_link_for_each_task(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             self.write_manifest(
@@ -169,7 +204,7 @@ class ProjectVerifyTests(unittest.TestCase):
                 {
                     "id": "verification-foundation",
                     "state": "planned",
-                    "adr": "docs/adr/0001-example.md",
+                    "specification": "",
                     "docs": [],
                     "evidence": [],
                 },
@@ -180,8 +215,138 @@ class ProjectVerifyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(
             result.stderr,
-            "ERROR task.docs task=verification-foundation remedy=provide one or more relative documentation paths\n",
+            "ERROR task.specification task=verification-foundation remedy=provide an existing relative specification or plan path inside the project root\n",
         )
+
+    def test_rejects_a_missing_specification_link(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            task = {"id": "missing-specification", "state": "planned", "specification": "docs/plans/missing.md"}
+            self.write_manifest(root, task)
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.specification", result.stderr)
+
+    def test_rejects_a_specification_link_outside_the_project_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "project"
+            root.mkdir()
+            task = {"id": "escaping-specification", "state": "planned", "specification": "../outside.md"}
+            self.write_manifest(root, task)
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.specification", result.stderr)
+
+    def test_rejects_a_missing_documentation_link(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            task = {
+                "id": "missing-doc",
+                "state": "planned",
+                "specification": "docs/plans/example.md",
+                "docs": ["docs/missing.md"],
+            }
+            self.write_manifest(root, task)
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.docs", result.stderr)
+
+    def test_rejects_a_documentation_link_outside_the_project_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "project"
+            root.mkdir()
+            task = {
+                "id": "escaping-doc",
+                "state": "planned",
+                "specification": "docs/plans/example.md",
+                "docs": ["../outside.md"],
+            }
+            self.write_manifest(root, task)
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.docs", result.stderr)
+
+    def test_accepts_a_valid_non_adr_specification_link(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            task = {"id": "ordinary-change", "state": "planned", "specification": "docs/plans/example.md"}
+            self.write_manifest(root, task)
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_accepts_an_optional_architectural_adr_link(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            task = {
+                "id": "architectural-change",
+                "state": "planned",
+                "specification": "docs/plans/example.md",
+                "adr": "docs/adr/0001-example.md",
+            }
+            self.write_manifest(root, task)
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_requires_a_delivery_record_when_a_review_request_is_published(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            task = {
+                "id": "published-review",
+                "state": "done",
+                "specification": "docs/plans/example.md",
+                "evidence": ["python3 -m unittest"],
+                "review_request": {"published": True, "provider": "local-review", "reference": "review-42"},
+            }
+            self.write_manifest(root, task)
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR task.delivery_record", result.stderr)
+
+    def test_does_not_require_traceability_for_an_unpublished_review_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            task = {
+                "id": "local-review",
+                "state": "planned",
+                "specification": "docs/plans/example.md",
+                "review_request": {"published": False},
+            }
+            self.write_manifest(root, task)
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_accepts_traceability_evidence_for_a_published_review_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            task = {
+                "id": "published-review",
+                "state": "done",
+                "specification": "docs/plans/example.md",
+                "evidence": ["python3 -m unittest"],
+                "delivery_record": {"tracker": "local-tracker", "reference": "delivery-42"},
+                "review_request": {"published": True, "provider": "local-review", "reference": "review-42"},
+            }
+            self.write_manifest(root, task)
+
+            result = self.run_cli("check", "--root", str(root))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_accepts_a_task_packet_for_a_linked_git_worktree(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -296,8 +461,8 @@ class ProjectVerifyTests(unittest.TestCase):
     def test_creates_a_concise_index_for_valid_knowledge_entries(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
+            self.central_scaffold(root)
             entry = root / "doctrines" / "no-any.md"
-            entry.parent.mkdir()
             entry.write_text(
                 "---\nid: no-any\nkind: doctrine\n---\n# No any\n",
                 encoding="utf-8",
@@ -349,8 +514,8 @@ class ProjectVerifyTests(unittest.TestCase):
     def test_includes_explicit_entry_disablement_in_the_index(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
+            self.central_scaffold(root)
             entry = root / "preferences" / "use-prettier.md"
-            entry.parent.mkdir()
             entry.write_text(
                 "---\nid: use-prettier\nkind: preference\ndisabled: true\n---\n# Use Prettier\n",
                 encoding="utf-8",
@@ -365,6 +530,7 @@ class ProjectVerifyTests(unittest.TestCase):
     def test_indexes_typescript_profile_and_artifact_entries(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
+            self.central_scaffold(root)
             entries = {
                 "technology-profiles/typescript.md": "technology-profile",
                 "config-artifacts/typescript-eslint.md": "config-artifact",
@@ -372,7 +538,6 @@ class ProjectVerifyTests(unittest.TestCase):
             }
             for relative_path, kind in entries.items():
                 entry = root / relative_path
-                entry.parent.mkdir(exist_ok=True)
                 entry.write_text(
                     f"---\nid: {entry.stem}\nkind: {kind}\n---\n# {entry.stem}\n",
                     encoding="utf-8",
@@ -390,8 +555,8 @@ class ProjectVerifyTests(unittest.TestCase):
     def test_rejects_an_entry_whose_metadata_does_not_match_its_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
+            self.central_scaffold(root)
             entry = root / "doctrines" / "no-any.md"
-            entry.parent.mkdir()
             entry.write_text(
                 "---\nid: no-any\nkind: preference\n---\n# No any\n",
                 encoding="utf-8",
@@ -417,6 +582,30 @@ class ProjectVerifyTests(unittest.TestCase):
             result.stderr,
             "ERROR knowledge.structure path=notes remedy=use only allowed kind directories and the generated index\n",
         )
+
+    def test_rejects_an_incomplete_central_knowledge_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "doctrines").mkdir()
+
+            result = self.run_cli("knowledge-index", "--root", str(root))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR knowledge.directory path=glossary", result.stderr)
+
+    def test_accepts_a_sparse_project_knowledge_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            entry = root / "technology-profiles" / "typescript.md"
+            entry.parent.mkdir()
+            entry.write_text(
+                "---\nid: typescript\nkind: technology-profile\n---\n# TypeScript\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_cli("knowledge-index", "--project", "--root", str(root))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_initializes_minimal_project_knowledge_scaffolding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -509,6 +698,7 @@ class ProjectVerifyTests(unittest.TestCase):
             root = Path(temporary_directory) / "project"
             knowledge = Path(temporary_directory) / "knowledge"
             root.mkdir()
+            self.central_scaffold(knowledge)
             (root / ".project-knowledge").mkdir()
             (root / ".project-knowledge" / "project-profiles.yaml").write_text(
                 "version: 1\nprofiles:\n  - typescript\n", encoding="utf-8"
@@ -518,7 +708,7 @@ class ProjectVerifyTests(unittest.TestCase):
                 encoding="utf-8",
             )
             profile = knowledge / "technology-profiles" / "typescript.md"
-            profile.parent.mkdir(parents=True)
+            profile.parent.mkdir(parents=True, exist_ok=True)
             profile.write_text(
                 "---\nid: typescript\nkind: technology-profile\ncheck: npm run verify\n---\n# TypeScript\n",
                 encoding="utf-8",
@@ -537,6 +727,7 @@ class ProjectVerifyTests(unittest.TestCase):
             root = Path(temporary_directory) / "project"
             knowledge = Path(temporary_directory) / "knowledge"
             root.mkdir()
+            self.central_scaffold(knowledge)
             (root / ".project-knowledge").mkdir()
             (root / ".project-knowledge" / "project-profiles.yaml").write_text(
                 "version: 1\nprofiles:\n  - typescript\n", encoding="utf-8"
@@ -546,7 +737,7 @@ class ProjectVerifyTests(unittest.TestCase):
                 encoding="utf-8",
             )
             profile = knowledge / "technology-profiles" / "typescript.md"
-            profile.parent.mkdir(parents=True)
+            profile.parent.mkdir(parents=True, exist_ok=True)
             profile.write_text(
                 "---\nid: typescript\nkind: technology-profile\ncheck: npm run verify\n---\n# TypeScript\n",
                 encoding="utf-8",

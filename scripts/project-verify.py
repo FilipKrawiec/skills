@@ -50,6 +50,9 @@ def load_manifest(root: Path) -> dict[str, object]:
 def local_file(root: Path, value: object, condition: str, remedy: str, task_id: str) -> None:
     if not isinstance(value, str) or not value or Path(value).is_absolute():
         fail(condition, remedy, task_id)
+    candidate = (root / value).resolve()
+    if root not in candidate.parents or not candidate.is_file():
+        fail(condition, remedy, task_id)
 
 
 def git_output(root: Path, *arguments: str) -> str | None:
@@ -120,9 +123,6 @@ def paths_overlap(first: str, second: str) -> bool:
     second_parts = Path(second).parts
     shortest = min(len(first_parts), len(second_parts))
     return first_parts[:shortest] == second_parts[:shortest]
-    candidate = (root / value).resolve()
-    if root not in candidate.parents or not candidate.is_file():
-        fail(condition, remedy, task_id)
 
 
 def knowledge_fail(condition: str, path: Path, remedy: str) -> NoReturn:
@@ -148,7 +148,7 @@ def front_matter(path: Path, relative_path: Path) -> dict[str, str]:
     return result
 
 
-def knowledge_index(root: Path, report: bool = True) -> int:
+def knowledge_index(root: Path, project: bool = False, report: bool = True) -> int:
     root = root.resolve()
     if not root.is_dir():
         knowledge_fail("knowledge.root", root, "provide an existing knowledge root")
@@ -162,6 +162,15 @@ def knowledge_index(root: Path, report: bool = True) -> int:
                 child.relative_to(root),
                 "use only allowed kind directories and the generated index",
             )
+
+    if not project:
+        for directory in KNOWLEDGE_KINDS:
+            if not (root / directory).is_dir():
+                knowledge_fail(
+                    "knowledge.directory",
+                    Path(directory),
+                    "create every required Central Knowledge category",
+                )
 
     entries: list[dict[str, object]] = []
     for directory, expected_kind in KNOWLEDGE_KINDS.items():
@@ -274,16 +283,20 @@ def orchestrator_config_check(path: Path) -> None:
         if key in values or not key or not value:
             knowledge_fail("orchestrator.config", path, "use each required key once with a value")
         values[key] = value
-    if set(values) != {"version", "default_executor", "executor_failure"}:
+    if set(values) != {"version", "default_executor", "tracker", "review_provider", "executor_failure"}:
         knowledge_fail(
             "orchestrator.config",
             path,
-            "use only version, default_executor, and executor_failure",
+            "use only version, default_executor, tracker, review_provider, and executor_failure",
         )
     if values["version"] != "1":
         knowledge_fail("orchestrator.version", path, "set version: 1")
     if not ENTRY_ID.fullmatch(values["default_executor"]):
         knowledge_fail("orchestrator.default_executor", path, "use a kebab-case default_executor")
+    if not ENTRY_ID.fullmatch(values["tracker"]):
+        knowledge_fail("orchestrator.tracker", path, "use a kebab-case tracker identifier")
+    if not ENTRY_ID.fullmatch(values["review_provider"]):
+        knowledge_fail("orchestrator.review_provider", path, "use a kebab-case review_provider identifier")
     if values["executor_failure"] != "return-for-review":
         knowledge_fail(
             "orchestrator.failure",
@@ -291,7 +304,7 @@ def orchestrator_config_check(path: Path) -> None:
             "set executor_failure: return-for-review",
         )
     print(
-        f"PASS default_executor={values['default_executor']} failure={values['executor_failure']}"
+        f"PASS default_executor={values['default_executor']} tracker={values['tracker']} review_provider={values['review_provider']} failure={values['executor_failure']}"
     )
 
 
@@ -367,7 +380,7 @@ def project_knowledge_check(root: Path) -> None:
             "run project-init or create an empty valid profile manifest",
         )
     profiles = project_profiles(profiles_path)
-    entries = knowledge_index(knowledge_root, report=False)
+    entries = knowledge_index(knowledge_root, project=True, report=False)
     selected = ",".join(profiles) if profiles else "none"
     print(f"PASS profiles={selected} entries={entries}")
 
@@ -411,7 +424,7 @@ def verify(root: Path, knowledge_root: Path) -> None:
         )
 
     knowledge_index(knowledge_root, report=False)
-    knowledge_index(project_knowledge_root, report=False)
+    knowledge_index(project_knowledge_root, project=True, report=False)
     profiles = project_profiles(profiles_path)
     for profile in profiles:
         central = profile_metadata(knowledge_root, profile)
@@ -494,20 +507,25 @@ def check(root: Path) -> None:
         if not isinstance(state, str) or not state:
             fail("task.state", "provide the project's task state", task_id)
 
+        local_file(
+            root,
+            task.get("specification"),
+            "task.specification",
+            "provide an existing relative specification or plan path inside the project root",
+            task_id,
+        )
+
         adr = task.get("adr")
-        if not isinstance(adr, str) or not adr.startswith("docs/adr/"):
-            fail("task.adr", "link an ADR below docs/adr", task_id)
-        local_file(root, adr, "task.adr_missing", "create the linked ADR or correct its path", task_id)
+        if adr is not None:
+            if not isinstance(adr, str) or not adr.startswith("docs/adr/"):
+                fail("task.adr", "use an architectural ADR below docs/adr when one applies", task_id)
+            local_file(root, adr, "task.adr", "link an existing architectural ADR inside the project root", task_id)
 
         docs = task.get("docs", [])
-        if not (
-            isinstance(docs, list)
-            and docs
-            and all(isinstance(doc, str) and doc for doc in docs)
-        ):
-            fail("task.docs", "provide one or more relative documentation paths", task_id)
+        if not isinstance(docs, list) or not all(isinstance(doc, str) and doc for doc in docs):
+            fail("task.docs", "provide documentation links as relative paths", task_id)
         for doc in docs:
-            local_file(root, doc, "task.doc_missing", "create the linked document or correct its path", task_id)
+            local_file(root, doc, "task.docs", "link an existing document inside the project root", task_id)
 
         evidence = task.get("evidence", [])
         if not isinstance(evidence, list) or not all(
@@ -520,6 +538,35 @@ def check(root: Path) -> None:
                 "record at least one verification command or artifact",
                 task_id,
             )
+        review_request = task.get("review_request")
+        if review_request is not None:
+            if not isinstance(review_request, dict) or not isinstance(review_request.get("published"), bool):
+                fail("task.review_request", "declare review_request.published as true or false", task_id)
+            if review_request["published"]:
+                if not (
+                    isinstance(review_request.get("provider"), str)
+                    and ENTRY_ID.fullmatch(review_request["provider"])
+                    and isinstance(review_request.get("reference"), str)
+                    and review_request["reference"]
+                ):
+                    fail(
+                        "task.review_request",
+                        "declare a kebab-case provider and non-empty reference for a published Review Request",
+                        task_id,
+                    )
+                delivery_record = task.get("delivery_record")
+                if not (
+                    isinstance(delivery_record, dict)
+                    and isinstance(delivery_record.get("tracker"), str)
+                    and ENTRY_ID.fullmatch(delivery_record["tracker"])
+                    and isinstance(delivery_record.get("reference"), str)
+                    and delivery_record["reference"]
+                ):
+                    fail(
+                        "task.delivery_record",
+                        "declare a kebab-case tracker and non-empty reference for a published Review Request",
+                        task_id,
+                    )
         if version == 2:
             affected_paths, parallel = task_workspace(root, task, task_id)
             packet_tasks.append((task_id, task, affected_paths, parallel))
@@ -564,6 +611,7 @@ def main() -> None:
         "knowledge-index", help="validate knowledge entries and create .knowledge-index.json"
     )
     index_parser.add_argument("--root", type=Path, required=True, help="knowledge root")
+    index_parser.add_argument("--project", action="store_true", help="validate a sparse Project Knowledge root")
     init_parser = subparsers.add_parser(
         "project-init", help="create minimal Project Knowledge scaffolding without overwriting files"
     )
@@ -588,7 +636,7 @@ def main() -> None:
     if arguments.command == "check":
         check(arguments.root)
     elif arguments.command == "knowledge-index":
-        knowledge_index(arguments.root)
+        knowledge_index(arguments.root, project=arguments.project)
     elif arguments.command == "project-init":
         project_init(arguments.root)
     elif arguments.command == "project-knowledge-check":

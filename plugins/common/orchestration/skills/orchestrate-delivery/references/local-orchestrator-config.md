@@ -5,10 +5,12 @@ The local routing configuration is not committed to a project. The standard loca
 ```yaml
 version: 1
 default_executor: antigravity
+tracker: local-tracker
+review_provider: local-review
 executor_failure: return-for-review
 ```
 
-`default_executor` is a provider-neutral kebab-case identifier. `antigravity` is the current local example. `executor_failure` is fixed to `return-for-review`: when the selected/default executor fails, is unavailable, or cannot safely handle the slice, the orchestrator returns the slice for review/replanning. It does not automatically retry with another harness.
+`default_executor`, `tracker`, and `review_provider` are provider-neutral kebab-case identifiers. `antigravity`, `local-tracker`, and `local-review` are local examples, not host integrations. The orchestrator records the selected tracker and review-provider identifiers in a published task's Delivery Record and Review Request evidence; this config does not prescribe an API or create external records. `executor_failure` is fixed to `return-for-review`: when the selected/default executor fails, is unavailable, or cannot safely handle the slice, the orchestrator returns the slice for review/replanning. It does not automatically retry with another harness.
 
 Validate the local file without changing it:
 

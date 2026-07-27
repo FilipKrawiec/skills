@@ -171,6 +171,24 @@ class CommonPluginLayoutTests(unittest.TestCase):
             {f"./plugins/common/{package}" for package in COMMON_PACKAGES},
         )
 
+    def test_root_ci_runs_the_authoritative_operational_mvp_checks(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "verify.yml").read_text(encoding="utf-8")
+
+        self.assertIn("python3 -m unittest discover -s scripts/tests", workflow)
+        self.assertIn("python3 scripts/validate-plugin-definitions.py", workflow)
+        self.assertIn("python3 scripts/project-verify.py knowledge-index --root knowledge", workflow)
+        self.assertIn(
+            "python3 scripts/project-verify.py verify --root examples/typescript-verification-loop --knowledge-root knowledge",
+            workflow,
+        )
+
+    def test_readme_defines_the_pre_and_post_merge_release_boundary(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("Pre-merge", readme)
+        self.assertIn("Post-merge", readme)
+        self.assertIn("does not claim a release tag", readme)
+
 
 if __name__ == "__main__":
     unittest.main()
