@@ -3,7 +3,7 @@
     "PreInvocation": [
       {
         "type": "command",
-        "command": "python3 -c 'import json, subprocess; required={\"filipkrawiec-orchestration\", \"filipkrawiec-core\", \"filipkrawiec-workflow\", \"filipkrawiec-authoring\"}; missing=[];\ntry:\n  installed={plugin.get(\"name\") for plugin in json.loads(subprocess.check_output([\"agy\", \"plugin\", \"list\"], text=True, stderr=subprocess.DEVNULL)).get(\"imports\", [])}\n  missing=sorted(required-installed)\nexcept Exception:\n  pass\nprint(json.dumps({\"injectSteps\":[{\"ephemeralMessage\":\"Orchestration notice: missing companion plugins: \" + \", \".join(missing)}]} if missing else {}))'"
+        "command": "python3 -c 'import json, os, subprocess, pathlib; required={\"filipkrawiec-orchestration\", \"filipkrawiec-core\", \"filipkrawiec-workflow\", \"filipkrawiec-authoring\"}; installed=set(); missing=[];\ntry:\n  installed={plugin.get(\"name\") for plugin in json.loads(subprocess.check_output([\"agy\", \"plugin\", \"list\"], text=True, stderr=subprocess.DEVNULL)).get(\"imports\", [])}\nexcept Exception:\n  pass\nplugin_dir=pathlib.Path(os.environ.get(\"AGY_IDE_PLUGIN_DIR\", os.path.expanduser(\"~/.gemini/config/plugins\")))\nfor req in list(required):\n  if req not in installed and (plugin_dir / req).exists():\n    installed.add(req)\nmissing=sorted(required-installed)\nprint(json.dumps({\"injectSteps\":[{\"ephemeralMessage\":\"Orchestration notice: missing companion plugins: \" + \", \".join(missing)}]} if missing else {}))'"
       }
     ]
   }

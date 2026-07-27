@@ -92,6 +92,19 @@ for index in "${!plugin_names[@]}"; do
   echo "Linked ${plugin_names[${index}]} for Antigravity IDE."
 done
 
+retired_plugins=(
+  filipkrawiec-sdlc
+  filipkrawiec-agy-sdlc
+)
+
+for retired in "${retired_plugins[@]}"; do
+  retired_target="${target_root}/${retired}"
+  if [[ -e "${retired_target}" || -L "${retired_target}" ]]; then
+    rm -rf "${retired_target}"
+    echo "Removed stale retired plugin: ${retired_target}"
+  fi
+done
+
 if "${created_backup}"; then
   echo "Previous IDE plugin snapshots were preserved in ${backup_root}."
 fi
