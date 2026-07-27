@@ -10,7 +10,7 @@
   "plugins": [
     {"name": "filipkrawiec-core", "description": "Core agentic software engineering skills for domain modeling and architecture.", "category": "development", "source": "./plugins/common/core", "homepage": "https://github.com/FilipKrawiec/skills"},
     {"name": "filipkrawiec-workflow", "description": "Workflow skills for TDD, VCS, and review critiques.", "category": "development", "source": "./plugins/common/workflow", "homepage": "https://github.com/FilipKrawiec/skills"},
-    {"name": "filipkrawiec-sdlc", "description": "Agent guidance for the internal Autonomous SDLC Specification.", "category": "development", "source": "./plugins/common/sdlc", "homepage": "https://github.com/FilipKrawiec/skills"},
+    {"name": "filipkrawiec-orchestration", "description": "Provider-neutral, code-free orchestration skills for bounded delivery.", "category": "development", "source": "./plugins/common/orchestration", "homepage": "https://github.com/FilipKrawiec/skills"},
     {"name": "filipkrawiec-authoring", "description": "Skill authoring and learning-guide helpers.", "category": "development", "source": "./plugins/common/authoring", "homepage": "https://github.com/FilipKrawiec/skills"}
   ]
 }

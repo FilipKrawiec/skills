@@ -63,7 +63,7 @@ class ClaudeLocalPluginsLauncherTests(unittest.TestCase):
                     "--plugin-dir",
                     str(REPOSITORY_ROOT / "plugins" / "common" / "workflow"),
                     "--plugin-dir",
-                    str(REPOSITORY_ROOT / "plugins" / "common" / "sdlc"),
+                    str(REPOSITORY_ROOT / "plugins" / "common" / "orchestration"),
                     "--plugin-dir",
                     str(REPOSITORY_ROOT / "plugins" / "common" / "authoring"),
                     *forwarded_arguments,

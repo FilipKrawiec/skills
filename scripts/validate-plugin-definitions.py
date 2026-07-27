@@ -28,21 +28,15 @@ ALLOWED_FRONTMATTER_KEYS = {
 PACKAGE_METADATA = {
     ROOT / "plugins" / "common" / "core" / "package-metadata.json": "filipkrawiec-core",
     ROOT / "plugins" / "common" / "workflow" / "package-metadata.json": "filipkrawiec-workflow",
-    ROOT / "plugins" / "common" / "sdlc" / "package-metadata.json": "filipkrawiec-sdlc",
+    ROOT / "plugins" / "common" / "orchestration" / "package-metadata.json": "filipkrawiec-orchestration",
     ROOT / "plugins" / "common" / "authoring" / "package-metadata.json": "filipkrawiec-authoring",
 }
 
 PACKAGE_SKILL_TREES = {
     ROOT / "plugins" / "common" / "core" / "skills": {"ddd", "hexagonal-architecture"},
     ROOT / "plugins" / "common" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
-    ROOT / "plugins" / "common" / "sdlc" / "skills": {"sdlc", "sdlc-define", "sdlc-refine", "sdlc-execute", "sdlc-plan", "sdlc-review", "sdlc-ship", "sdlc-improve"},
+    ROOT / "plugins" / "common" / "orchestration" / "skills": {"orchestrate-delivery"},
     ROOT / "plugins" / "common" / "authoring" / "skills": {"writing-great-skill", "teach"},
-}
-
-SDLC_COMPANION_PACKAGES = {
-    "filipkrawiec-core",
-    "filipkrawiec-workflow",
-    "filipkrawiec-authoring",
 }
 
 def fail(message: str) -> None:
@@ -214,52 +208,19 @@ def validate_agy_plugins() -> None:
                     fail(f"{agent_file.relative_to(ROOT)} agent file must start with a markdown header (#)")
 
 
-def validate_sdlc_companion_enforcement() -> None:
-    sdlc_root = ROOT / "plugins" / "common" / "sdlc"
-    expected_hooks = {
-        ".claude-plugin": "./hooks/claude-companion-packages.json",
-        ".codex-plugin": "./hooks/codex-companion-packages.json",
-    }
-    for host, hook_path in expected_hooks.items():
-        manifest_path = sdlc_root / host / "plugin.json"
-        manifest = load_json(manifest_path)
-        dependencies = manifest.get("dependencies", [])
-        if not isinstance(dependencies, list) or {
-            dependency.get("name") for dependency in dependencies if isinstance(dependency, dict)
-        } != SDLC_COMPANION_PACKAGES:
-            fail(f"{manifest_path.relative_to(ROOT)} must require every SDLC companion package")
-        if any(
-            not isinstance(dependency, dict) or dependency.get("version") != manifest.get("version")
-            for dependency in dependencies
-        ):
-            fail(f"{manifest_path.relative_to(ROOT)} companion dependencies must match the SDLC version")
-        if manifest.get("hooks") != hook_path:
-            fail(f"{manifest_path.relative_to(ROOT)} must register its companion-package hook")
+def validate_retired_sdlc_is_absent() -> None:
+    active_paths = (
+        ROOT / "plugins" / "common" / "sdlc",
+        ROOT / "plugins" / "agy" / "sdlc",
+        ROOT / "spec" / "autonomous-sdlc",
+    )
+    for active_path in active_paths:
+        if active_path.exists():
+            fail(f"retired SDLC material remains active at {active_path.relative_to(ROOT)}")
 
-        hooks = load_json(sdlc_root / hook_path.removeprefix("./")).get("hooks")
-        if not isinstance(hooks, dict) or not {"SessionStart", "UserPromptSubmit"} <= set(hooks):
-            fail(f"{hook_path} must notify at session start and block a user prompt")
-
-    for script_name in ("check-claude-companion-plugins.sh", "check-codex-companion-plugins.sh"):
-        script = sdlc_root / "scripts" / script_name
-        if not script.is_file() or not script.stat().st_mode & 0o111:
-            fail(f"{script.relative_to(ROOT)} must be executable")
-
-    agy_root = ROOT / "plugins" / "agy" / "sdlc"
-    agy_manifest = load_json(agy_root / "plugin.json")
-    agy_dependencies = agy_manifest.get("dependencies", [])
-    if not isinstance(agy_dependencies, list) or not SDLC_COMPANION_PACKAGES <= {
-        dependency.get("name") for dependency in agy_dependencies if isinstance(dependency, dict)
-    }:
-        fail("plugins/agy/sdlc/plugin.json must require every SDLC companion package")
-    if any(
-        not isinstance(dependency, dict) or dependency.get("version") != agy_manifest.get("version")
-        for dependency in agy_dependencies
-    ):
-        fail("plugins/agy/sdlc/plugin.json dependencies must match the overlay version")
-    agy_hooks = load_json(agy_root / "hooks.json").get("sdlc-companion-packages")
-    if not isinstance(agy_hooks, dict) or not {"PreInvocation", "PreToolUse"} <= set(agy_hooks):
-        fail("plugins/agy/sdlc/hooks.json must notify before invocation and block tool use")
+    archive = ROOT / "archive" / "autonomous-sdlc"
+    if archive.exists():
+        fail("retired SDLC archive must be removed; Git history is the only legacy reference")
 
 
 def validate_repository_release_version() -> None:
@@ -295,7 +256,7 @@ def main() -> None:
         validate_skill_tree(root, skills)
 
     validate_agy_plugins()
-    validate_sdlc_companion_enforcement()
+    validate_retired_sdlc_is_absent()
     validate_repository_release_version()
 
     print("Plugin validation passed.")

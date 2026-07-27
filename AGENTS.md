@@ -1,16 +1,24 @@
 # Agent Guidance
 
-## SDLC Required for Changes
+## Verification Required for Changes
 
-Before making any repository code or configuration change, invoke the `sdlc` workflow. This includes changes to agent instructions, skills, plugin manifests, scripts, and tests. Read-only analysis and explicitly requested plan-only work are exempt.
+Before making any repository code or configuration change, identify the relevant deterministic verification gate and the evidence it will produce. Run the project's verifier when it is configured, plus proportionate repository checks. Read-only analysis and explicitly requested plan-only work are exempt.
+
+`orchestrate-delivery` is the default provider-neutral, code-free orchestration workflow for bounded project changes.
 
 ## Mandatory Skill Editing Workflow
 
-CRITICAL: You are strictly forbidden from making any edits to the packaged skill directories until you have read `plugins/common/authoring/skills/writing-great-skill/SKILL.md`. Furthermore, you MUST execute all edits through the `` `sdlc` `` workflow. Treat `writing-great-skill` as the local source of truth for invocation, description craft, information hierarchy, and pruning.
+CRITICAL: You are strictly forbidden from making any edits to the packaged skill directories until you have read `plugins/common/authoring/skills/writing-great-skill/SKILL.md`. Treat `writing-great-skill` as the local source of truth for invocation, description craft, information hierarchy, and pruning.
 
 ## Goal
 
 Keep this repository as a compact, agent-agnostic skill library.
+
+This is a public repository. Do not add proprietary, client, or secret material to its skills or `knowledge/` content.
+
+## Architectural Decisions
+
+`docs/adr/001-provider-neutral-project-verification.md` is the single current ADR baseline. See `docs/adr/README.md`.
 
 ## Layout
 
@@ -27,4 +35,5 @@ Keep this repository as a compact, agent-agnostic skill library.
 
 ## Shipping
 
-- For now, skip feature branches during SHIP: once the SHIP phase is finished and the user approves shipping, commit directly to `main`.
+- Implement in an isolated task worktree on a short-lived branch. After verification, an executor may push the task branch and open or update a merge request within its packet boundaries; non-AFK work requires that merge request safety boundary.
+- The user retains merge authority. Do not merge, approve, or force-push a protected/default branch unless the user explicitly authorizes that action.

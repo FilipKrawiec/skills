@@ -1,0 +1,7 @@
+{
+  "name": "typescript-verification-loop-example",
+  "private": true,
+  "scripts": {
+    "verify": "node -e \"process.exit(0)\""
+  }
+}

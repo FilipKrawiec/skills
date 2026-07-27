@@ -1,6 +1,0 @@
-{
-  "name": "sdlc-skill-rubric",
-  "version": "1.0.0",
-  "supportedTargetKinds": ["skill"],
-  "command": ["node", "./sdlc-skill-rubric.js"]
-}

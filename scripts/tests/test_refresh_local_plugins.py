@@ -15,7 +15,7 @@ PACKAGES = (
     "filipkrawiec-core",
     "filipkrawiec-workflow",
     "filipkrawiec-authoring",
-    "filipkrawiec-sdlc",
+    "filipkrawiec-orchestration",
 )
 
 
@@ -52,8 +52,8 @@ class RefreshLocalPluginsTests(unittest.TestCase):
                 self.assertIn(f"claude plugin update {package}@filipkrawiec", commands)
 
             self.assertEqual(
-                (temporary_root / "plugins" / "filipkrawiec-sdlc").resolve(),
-                ROOT / "plugins" / "common" / "sdlc",
+                (temporary_root / "plugins" / "filipkrawiec-orchestration").resolve(),
+                ROOT / "plugins" / "common" / "orchestration",
             )
 
 

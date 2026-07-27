@@ -1,0 +1,24 @@
+---
+name: orchestrate-delivery
+description: Use when an orchestrator coordinates a bounded project change from business intent through specification, task dispatch, evidence review, and ship-or-return decisions.
+---
+
+# Provider-Neutral Delivery Orchestration
+
+The **orchestrator** owns the delivery decision flow but does not edit implementation code. A host may conduct DEFINE and specification conversations remotely, then dispatch the executable plan to installed local or remote harnesses. This skill specifies neutral behavior and contracts, not host control paths.
+
+1. **DEFINE** — capture the business outcome, scope, non-goals, constraints, and decision owner. Ask the user only about a material ambiguity.
+2. **SPECIFY / GRILL** — inspect the target repository and the relevant Central and Project Knowledge entries. Challenge contradictions, risks, scope, dependencies, and acceptance conditions with the user. Use `grill-with-docs` when source-backed challenge is needed.
+3. **PLAN** — create minimal dependency-aware cohesive delivery slices, not artificial microtasks. Every packet has the fields in [task-packet.md](references/task-packet.md), including its worktree provenance, ownership boundary, verification-loop command/evidence, and AFK boundary when applicable.
+4. **DISPATCH** — load the local routing configuration. Use its configured default executor for ordinary eligible slices when no explicit routing choice is warranted. The current configuration uses Antigravity (AG); it is an example, not a hard dependency. Select another available executor when practical task criteria—complexity, required local tools, repository fit, or autonomy boundary—make it more suitable. Record the selection and a short rationale in the packet. If the selected executor fails, is unavailable, or is unsuitable, return the slice for review/replanning; never auto-retry with another harness or fabricate execution. Create one dedicated Git worktree and short-lived branch from the declared base revision for each slice, then send the packet to that executor. Codex, Claude Code, Antigravity, and local/Ollama-capable harnesses are examples only. For a non-Git project, create and name an isolated copy instead. Do not prescribe an executor lifecycle, capability registry, scoring engine, or control API. The executor retains the slice context to understand local code, implement, use TDD where relevant, run and fix the verification loop, and return reviewable evidence.
+5. **COLLECT / VERIFY** — collect each executor's change summary, verification result, evidence, and blockers. Check slice completion and rerun the shared CLI gate when needed. A failed or missing gate returns the slice for correction.
+6. **REVIEW** — compare the collected result with the specification, applicable knowledge, task boundaries, and gate evidence. Create a minimal corrective task for a finding, or mark the work ready to ship.
+7. **SHIP / RETURN** — make the ship-or-return decision with the user or designated authority. Preserve the specification, plan, results, and verification evidence as reviewable delivery records.
+
+Keep the primary checkout protected. The orchestrator creates and cleans up slice worktrees; the CLI only verifies their declared provenance. Coordinate slices in parallel only when their declared dependencies and affected paths do not overlap; otherwise serialize them. An AFK packet grants autonomy for the whole bounded slice, including implementation and verification, only within its stated boundaries; an executor stops and returns the slice when a material boundary issue emerges.
+
+Executors may commit verified task branches, push them, and open or update merge requests as normal delivery within packet boundaries, including AFK work where permitted. A merge request is the required safety/review boundary for non-AFK work. Executors do not merge, approve, or force-push a protected/default branch unless the user explicitly authorizes that action; the user retains merge authority.
+
+The shared CLI is a verification loop, not a workflow engine. It resolves declared checks, runs native tools, and reports normalized evidence; it does not schedule work, manage task state, edit content, or make delivery decisions.
+
+Read [task-packet.md](references/task-packet.md) when preparing or reviewing a task packet. Read [local-orchestrator-config.md](references/local-orchestrator-config.md) when loading or validating local routing. Host adapters and operational instructions stay optional and outside this portable skill.

@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-COMMON_PACKAGES = ("core", "workflow", "sdlc", "authoring")
+COMMON_PACKAGES = ("core", "workflow", "orchestration", "authoring")
 
 
 class CommonPluginLayoutTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
 
     def test_all_plugin_definitions_share_the_repository_release_version(self) -> None:
         release_version = json.loads(
-            (ROOT / "plugins" / "common" / "sdlc" / "package-metadata.json").read_text(encoding="utf-8")
+            (ROOT / "plugins" / "common" / "orchestration" / "package-metadata.json").read_text(encoding="utf-8")
         )["version"]
         versions = set()
         for package in COMMON_PACKAGES:
@@ -49,52 +49,105 @@ class CommonPluginLayoutTests(unittest.TestCase):
                 self.assertFalse((root / "agents").exists())
                 self.assertEqual(list(root.rglob("agents/openai.yaml")), [])
 
-    def test_antigravity_sdlc_overlay_owns_the_native_rule_and_agent(self) -> None:
-        overlay = ROOT / "plugins" / "agy" / "sdlc"
-        manifest = json.loads((overlay / "plugin.json").read_text(encoding="utf-8"))
-        release_version = manifest["version"]
-        rule = overlay / "rules" / "sdlc.md"
-        content = rule.read_text(encoding="utf-8")
-        self.assertEqual(manifest["name"], "filipkrawiec-agy-sdlc")
-        self.assertEqual(
-            {dependency["name"]: dependency["version"] for dependency in manifest["dependencies"]},
-            {
-                "filipkrawiec-sdlc": release_version,
-                "filipkrawiec-workflow": release_version,
-                "filipkrawiec-core": release_version,
-                "filipkrawiec-authoring": release_version,
-            },
-        )
-        hooks = json.loads((overlay / "hooks.json").read_text(encoding="utf-8"))["sdlc-companion-packages"]
-        self.assertIn("PreInvocation", hooks)
-        self.assertIn("PreToolUse", hooks)
-        self.assertIn("Antigravity Autonomous SDLC Rules", content)
-        self.assertIn("Proceed", content)
-        self.assertIn("sdlc-reviewer", content)
-
-        agent_def = overlay / "agents" / "sdlc-reviewer.md"
-        self.assertTrue(agent_def.is_file())
-        agent_content = agent_def.read_text(encoding="utf-8")
-        self.assertIn("`ddd`", agent_content)
-        self.assertIn("`hexagonal-architecture`", agent_content)
-        self.assertIn("`grill-with-docs`", agent_content)
-        self.assertIn("`tdd`", agent_content)
-        self.assertIn("`vcs`", agent_content)
+    def test_retired_sdlc_material_is_absent(self) -> None:
+        self.assertFalse((ROOT / "plugins" / "common" / "sdlc").exists())
+        self.assertFalse((ROOT / "plugins" / "agy" / "sdlc").exists())
+        self.assertFalse((ROOT / "spec" / "autonomous-sdlc").exists())
+        self.assertFalse((ROOT / "archive" / "autonomous-sdlc").exists())
 
     def test_antigravity_core_overlay_owns_reference_resolution_guidance(self) -> None:
         overlay = ROOT / "plugins" / "agy" / "core"
         self.assertTrue((overlay / "plugin.json").is_file())
         self.assertTrue((overlay / "rules" / "resolve-skill-references.md").is_file())
 
-    def test_shared_grilling_defines_process_without_stage_focus(self) -> None:
+    def test_shared_grilling_uses_progressive_disclosure_for_planning_handoff(self) -> None:
         grill_skill = (
             ROOT / "plugins" / "common" / "workflow" / "skills" / "grill-with-docs" / "SKILL.md"
         ).read_text(encoding="utf-8")
 
         self.assertIn("Ask one sharp decision question at a time", grill_skill)
-        self.assertNotIn("When docs propose a new product or initiative", grill_skill)
-        self.assertNotIn("strategic fit", grill_skill)
-        self.assertNotIn("viability", grill_skill)
+        self.assertIn("selected technology profiles", grill_skill)
+        self.assertIn("Central Knowledge index entries", grill_skill)
+        self.assertIn("Project Knowledge overrides", grill_skill)
+        self.assertIn("compact record for the orchestrator", grill_skill)
+        self.assertIn("does not edit implementation code", grill_skill)
+        self.assertIn("only when the outcome is an architectural decision", grill_skill)
+        self.assertNotIn("CONTEXT.md", grill_skill)
+        self.assertNotIn("Autonomous SDLC", grill_skill)
+
+    def test_vcs_delivery_authority_allows_task_branch_delivery_but_reserves_merge(self) -> None:
+        vcs_skill = (ROOT / "plugins" / "common" / "workflow" / "skills" / "vcs" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("push verified task branches", vcs_skill)
+        self.assertIn("open or update merge requests", vcs_skill)
+        self.assertIn("Do not merge, approve, or force-push a protected/default branch", vcs_skill)
+
+    def test_orchestration_keeps_one_executor_context_for_a_cohesive_slice(self) -> None:
+        skill = (
+            ROOT
+            / "plugins"
+            / "common"
+            / "orchestration"
+            / "skills"
+            / "orchestrate-delivery"
+            / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        packet = (
+            ROOT
+            / "plugins"
+            / "common"
+            / "orchestration"
+            / "skills"
+            / "orchestrate-delivery"
+            / "references"
+            / "task-packet.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("cohesive delivery slices", skill)
+        self.assertIn("retains the slice context", skill)
+        self.assertIn("Do not split test-writing, implementation, and verification", packet)
+        self.assertIn("Executor rationale", packet)
+        self.assertIn("Routing config", packet)
+        self.assertIn("current configuration is Antigravity (AG)", packet)
+        self.assertIn("does not automatically retry with another harness or fabricate execution", packet)
+        self.assertIn("does not automatically retry with another harness", packet)
+
+    def test_active_delivery_guidance_preserves_the_provider_neutral_lifecycle(self) -> None:
+        orchestration = (
+            ROOT
+            / "plugins"
+            / "common"
+            / "orchestration"
+            / "skills"
+            / "orchestrate-delivery"
+            / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        grilling = (
+            ROOT / "plugins" / "common" / "workflow" / "skills" / "grill-with-docs" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        guidance = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+        for stage in (
+            "DEFINE",
+            "SPECIFY / GRILL",
+            "PLAN",
+            "DISPATCH",
+            "COLLECT / VERIFY",
+            "REVIEW",
+            "SHIP / RETURN",
+        ):
+            self.assertIn(stage, orchestration)
+        self.assertIn("does not edit implementation code", orchestration)
+        self.assertIn("Central Knowledge index entries", grilling)
+        self.assertIn("Project Knowledge overrides", grilling)
+        self.assertIn("stops and returns the slice", orchestration)
+        self.assertIn("merge request", orchestration)
+        self.assertIn("user retains merge authority", orchestration)
+        self.assertNotIn("skip feature branches", guidance)
+        self.assertIn("merge request", guidance)
+        self.assertIn("user retains merge authority", guidance)
 
     def test_agent_marketplaces_list_only_their_common_packages(self) -> None:
         claude = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))

@@ -31,4 +31,4 @@ The release of the repository's common and Antigravity-native plugins from a `ma
 
 The Commit Author owns version selection, manifest synchronization, and tag creation. Release Validator owns local release checks. Git stores and transports commits and tags but does not decide release validity.
 
-Runtime SDLC gates have one narrower responsibility across every host: verify that the declared companion plugins are enabled. They rely on the validated repository-wide release for compatibility and do not implement host-specific version comparison.
+Runtime plugin compatibility gates have one narrower responsibility across every host: verify that declared companion plugins are enabled. They rely on the validated repository-wide release for compatibility and do not implement host-specific version comparison.

@@ -24,18 +24,16 @@ target_root="${AGY_IDE_PLUGIN_DIR:-"${HOME}/.gemini/config/plugins"}"
 plugin_names=(
   filipkrawiec-core
   filipkrawiec-workflow
-  filipkrawiec-sdlc
+  filipkrawiec-orchestration
   filipkrawiec-authoring
   filipkrawiec-agy-core
-  filipkrawiec-agy-sdlc
 )
 plugin_sources=(
   plugins/common/core
   plugins/common/workflow
-  plugins/common/sdlc
+  plugins/common/orchestration
   plugins/common/authoring
   plugins/agy/core
-  plugins/agy/sdlc
 )
 
 if [[ "${target_root}" == "/" ]]; then

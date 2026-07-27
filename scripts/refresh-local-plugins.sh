@@ -8,7 +8,7 @@ PACKAGES=(
   filipkrawiec-core
   filipkrawiec-workflow
   filipkrawiec-authoring
-  filipkrawiec-sdlc
+  filipkrawiec-orchestration
 )
 
 if command -v codex >/dev/null 2>&1; then

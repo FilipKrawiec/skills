@@ -14,7 +14,13 @@ Follow these steps for all version control and git operations to maintain a clea
 3. **Execute File Operations:** MANDATORY: Always use `git mv` (never standard shell `mv` or creating/deleting copies) for all file moves and renames to preserve Git revision history and blame tracking.
 4. **Stage Intentionally:** Stage only files that belong to the current task; inspect staged changes before committing.
 5. **Commit Logically:** Write atomic commits using the Conventional Commits format, prefixed with `#<task-id>` if linked to an issue tracker.
-6. **Integrate and Sync:** Rebase the task branch onto current main/trunk. Use either local squash integration or the repository's merge-request flow, but finish with exactly one cohesive outcome commit on main/trunk and verify the remote ref.
+6. **Integrate and Sync:** Rebase the task branch onto current main/trunk when needed, push its verified branch, and open or update its merge request. Leave merging to the user unless they explicitly authorize it.
+
+## Delivery Authority
+
+Agents may create commits, push verified task branches, and open or update merge requests as normal delivery work, including AFK tasks when their packet permits it. A merge request is the required safety and review boundary for non-AFK work.
+
+The user retains merge authority. Do not merge, approve, or force-push a protected/default branch unless the user explicitly authorizes that exact action. Report a ready branch, merge request, and verification evidence when a user decision is needed.
 
 ## Context Pointers
 

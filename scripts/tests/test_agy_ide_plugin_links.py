@@ -12,10 +12,9 @@ SCRIPT = ROOT / "scripts" / "link-agy-ide-plugins.sh"
 EXPECTED_LINKS = {
     "filipkrawiec-core": ROOT / "plugins" / "common" / "core",
     "filipkrawiec-workflow": ROOT / "plugins" / "common" / "workflow",
-    "filipkrawiec-sdlc": ROOT / "plugins" / "common" / "sdlc",
+    "filipkrawiec-orchestration": ROOT / "plugins" / "common" / "orchestration",
     "filipkrawiec-authoring": ROOT / "plugins" / "common" / "authoring",
     "filipkrawiec-agy-core": ROOT / "plugins" / "agy" / "core",
-    "filipkrawiec-agy-sdlc": ROOT / "plugins" / "agy" / "sdlc",
 }
 
 

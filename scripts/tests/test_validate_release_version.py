@@ -13,8 +13,8 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_SCRIPT = REPOSITORY_ROOT / "scripts" / "validate-release-version.py"
-COMMON_PACKAGES = ("core", "workflow", "sdlc", "authoring")
-AGY_PACKAGES = ("core", "sdlc")
+COMMON_PACKAGES = ("core", "workflow", "orchestration", "authoring")
+AGY_PACKAGES = ("core",)
 INITIAL_RELEASE_VERSION = "8.3.0"
 INITIAL_RELEASE_TAG = f"v{INITIAL_RELEASE_VERSION}"
 
@@ -55,20 +55,10 @@ class ReleaseVersionValidationTests(unittest.TestCase):
             self.write_json(package_root / "plugin.json", {"name": name, "version": version})
             for host in (".claude-plugin", ".codex-plugin"):
                 manifest: dict[str, object] = {"name": name, "version": version}
-                if package == "sdlc":
-                    manifest["dependencies"] = [
-                        {"name": f"filipkrawiec-{dependency}", "version": version}
-                        for dependency in ("core", "workflow", "authoring")
-                    ]
                 self.write_json(package_root / host / "plugin.json", manifest)
 
         for package in AGY_PACKAGES:
             manifest: dict[str, object] = {"name": f"filipkrawiec-agy-{package}", "version": version}
-            if package == "sdlc":
-                manifest["dependencies"] = [
-                    {"name": f"filipkrawiec-{dependency}", "version": version}
-                    for dependency in ("core", "workflow", "sdlc", "authoring")
-                ]
             self.write_json(
                 self.root / "plugins" / "agy" / package / "plugin.json",
                 manifest,
@@ -109,17 +99,6 @@ class ReleaseVersionValidationTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must be annotated", result.stderr)
-
-    def test_rejects_a_dependency_version_that_differs_from_the_release_tag(self) -> None:
-        manifest = self.root / "plugins" / "common" / "sdlc" / ".codex-plugin" / "plugin.json"
-        value = json.loads(manifest.read_text(encoding="utf-8"))
-        value["dependencies"][0]["version"] = "8.2.0"
-        self.write_json(manifest, value)
-
-        result = self.run_validator()
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(f"dependency does not match release tag {INITIAL_RELEASE_TAG}", result.stderr)
 
     def test_rejects_a_tag_that_does_not_point_to_head(self) -> None:
         (self.root / "README.md").write_text("next commit\n", encoding="utf-8")

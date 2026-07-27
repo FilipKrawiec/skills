@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "typescript",
+      "kind": "technology-profile",
+      "path": "technology-profiles/typescript.md",
+      "disabled": false
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
-  "name": "filipkrawiec-workflow",
+  "name": "filipkrawiec-orchestration",
   "version": "8.3.3",
-  "description": "Workflow skills for provider-neutral delivery orchestration, TDD, VCS, and review critiques.",
+  "description": "Provider-neutral, code-free orchestration skills for bounded delivery.",
   "author": {
     "name": "Filip Krawiec",
     "email": "contact@filipkrawiec.com",
@@ -10,11 +10,5 @@
   "repository": "https://github.com/FilipKrawiec/skills",
   "homepage": "https://github.com/FilipKrawiec/skills",
   "license": "UNLICENSED",
-  "keywords": [
-    "skills",
-    "workflow",
-    "tdd",
-    "vcs",
-    "review"
-  ]
+  "keywords": ["skills", "orchestration", "verification"]
 }
