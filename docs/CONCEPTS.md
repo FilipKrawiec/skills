@@ -81,15 +81,16 @@ Delivery is managed through the provider-neutral `orchestrate-delivery` workflow
    └─────────────┘      └────────────┘      └────────────────┘
 ```
 
-### The 7 Delivery Stages
+### The 7 Delivery Stages & Native Artifact Tracking
 
-1. **DEFINE**: Capture business goals, non-goals, constraints, and scope boundaries.
-2. **SPECIFY / GRILL**: Challenge requirements against existing code and knowledge base entries. Resolve contradictions early.
-3. **PLAN**: Break work down into minimal, cohesive delivery slices and prepare task packets (`version: 2`).
-4. **DISPATCH**: Create dedicated Git worktrees and short-lived branches for each slice, routing execution to suitable harnesses.
-5. **COLLECT / VERIFY**: Gather evidence, test results, and change summaries from executors.
-6. **REVIEW**: Audit outcomes against task acceptance criteria and verification gates.
-7. **SHIP / RETURN**: Link the delivery record, publish the review request, and present the work for user merge approval.
+1. **DEFINE**: Capture business goals, non-goals, constraints, and scope boundaries. Record findings in `implementation_plan.md`.
+2. **SPECIFY / GRILL**: Challenge requirements against existing code and knowledge base entries. Resolve contradictions early and update `implementation_plan.md`.
+3. **PLAN**: Break work down into minimal, cohesive delivery slices, prepare task packets (`version: 2`), and present `implementation_plan.md` with interactive feedback request (`RequestFeedback: true`). Wait for user **Proceed** approval.
+4. **DISPATCH**: Create dedicated Git worktrees and short-lived task branches (`task/<name>`) for each slice, routing execution to suitable harnesses.
+5. **COLLECT / VERIFY**: Gather evidence, test results, and change summaries from executors into `walkthrough.md`. Run deterministic verification gates.
+6. **REVIEW**: Audit outcomes against task acceptance criteria and verification gates, logging findings in `walkthrough.md`.
+7. **SHIP / RETURN**: Link the Delivery Record, publish the **Review Request** artifact on the task branch, and present the work for user merge approval. Never commit directly to or merge protected default branches (`main`).
+
 
 ### Worktree Provenance & Safety
 
