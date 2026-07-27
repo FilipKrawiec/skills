@@ -9,21 +9,21 @@ Follow these guidelines to sync, rebase, and merge changes cleanly:
   git fetch origin
   git rebase origin/main
   ```
-- Before rebasing, merging, creating a pull request, or cleaning up a branch, check branch and worktree state with `git status --short --branch` and preserve unrelated user changes.
+- Before rebasing, merging, publishing a Review Request, or cleaning up a branch, check branch and worktree state with `git status --short --branch` and preserve unrelated user changes.
 
 For any task, rebase and verify the task branch first. Then select the repository's authorized integration mechanism:
 
 1. Commit only task files in the task worktree.
 2. Fetch and rebase the task branch onto current `origin/main`.
 3. Resolve conflicts in the task worktree, rerun required checks, and keep unrelated changes out of the commit.
-4. Integrate either by squashing in the primary main worktree or by a squash merge request on the hosting platform.
+4. Integrate through the configured provider's Review Request process.
 5. Confirm main/trunk contains exactly one cohesive outcome commit for the task, including a rejected task when its outcome must be recorded.
 6. Push or verify the hosting-platform merge, then confirm `main...origin/main` has no ahead or behind count. Do not report shipping before this verification.
 
 ## 2. Squashing Commits
 - Squash intermediate commits (e.g., "fix typo", "wip") into logical, cohesive units before requesting a review or merging.
 - **Target Squash Outcome:** The ultimate goal is that **only a single cohesive Conventional Commit per feature branch appears on the trunk/main branch** after the whole lifecycle is done.
-  - **PR/MR Workflow:** If the repository uses a pull request workflow (e.g., GitHub/GitLab), you can let the remote platform handle the squashing during the merge (ensure "Squash and merge" or "Squash commits" is enabled/configured in the PR/MR settings).
+  - **Review Request Workflow:** Use the configured provider's supported squash mechanism when one cohesive trunk commit is required.
   - **Local/Fast-forward Workflow:** If you are merging directly or using a fast-forward/direct push workflow, you must squash your branch commits locally first (using interactive rebase `git rebase -i HEAD~<n>` or `git merge --squash`).
 - Ensure all commits on the main branch remain green, buildable, and pass all tests.
 - **Amending Commits:** When updating a feature branch with new changes or addressing review feedback, prefer amending the existing commit (`git commit --amend`) instead of creating a new commit. This keeps the branch history clean and ensures a single Conventional Commit tracks the entire change.

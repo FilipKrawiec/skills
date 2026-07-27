@@ -35,5 +35,5 @@ This is a public repository. Do not add proprietary, client, or secret material 
 
 ## Shipping
 
-- Implement in an isolated task worktree on a short-lived branch. After verification, an executor may push the task branch and open or update a merge request within its packet boundaries; non-AFK work requires that merge request safety boundary.
+- Implement in an isolated task worktree on a short-lived branch. After verification, an executor may push the task branch and publish or update a Review Request within its packet boundaries; non-AFK work requires that Review Request safety boundary.
 - The user retains merge authority. Do not merge, approve, or force-push a protected/default branch unless the user explicitly authorizes that action.

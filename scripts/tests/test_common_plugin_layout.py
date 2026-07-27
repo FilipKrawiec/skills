@@ -81,8 +81,12 @@ class CommonPluginLayoutTests(unittest.TestCase):
         )
 
         self.assertIn("push verified task branches", vcs_skill)
-        self.assertIn("open or update merge requests", vcs_skill)
+        self.assertIn("publish or update Review Requests", vcs_skill)
         self.assertIn("Do not merge, approve, or force-push a protected/default branch", vcs_skill)
+        self.assertIn("exactly one durable Delivery Record", vcs_skill)
+        self.assertIn("configured host integration may close or update it on merge", vcs_skill)
+        self.assertNotIn("GitHub Issue", vcs_skill)
+        self.assertNotIn("pull request", vcs_skill)
 
     def test_orchestration_keeps_one_executor_context_for_a_cohesive_slice(self) -> None:
         skill = (
@@ -113,6 +117,12 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("current configuration is Antigravity (AG)", packet)
         self.assertIn("does not automatically retry with another harness or fabricate execution", packet)
         self.assertIn("does not automatically retry with another harness", packet)
+        self.assertIn("Delivery Record", packet)
+        self.assertIn("exactly one durable Delivery Record", packet)
+        self.assertIn("Every published Review Request links exactly one Delivery Record", packet)
+        self.assertIn("chat-only ideation", packet)
+        self.assertNotIn("GitHub Issue", packet)
+        self.assertNotIn("pull request", packet)
 
     def test_active_delivery_guidance_preserves_the_provider_neutral_lifecycle(self) -> None:
         orchestration = (
@@ -143,10 +153,10 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("Central Knowledge index entries", grilling)
         self.assertIn("Project Knowledge overrides", grilling)
         self.assertIn("stops and returns the slice", orchestration)
-        self.assertIn("merge request", orchestration)
+        self.assertIn("Review Request", orchestration)
         self.assertIn("user retains merge authority", orchestration)
         self.assertNotIn("skip feature branches", guidance)
-        self.assertIn("merge request", guidance)
+        self.assertIn("Review Request", guidance)
         self.assertIn("user retains merge authority", guidance)
 
     def test_agent_marketplaces_list_only_their_common_packages(self) -> None:

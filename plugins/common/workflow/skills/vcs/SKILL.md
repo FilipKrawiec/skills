@@ -9,18 +9,18 @@ Follow these steps for all version control and git operations to maintain a clea
 
 ## Steps
 
-1. **Preflight State:** Check branch, upstream, and worktree status before edits, staging, commits, pull requests, merges, and cleanup. Preserve unrelated user changes.
+1. **Preflight State:** Check branch, upstream, and worktree status before edits, staging, commits, Review Requests, merges, and cleanup. Preserve unrelated user changes.
 2. **Worktree Per Task:** Create a dedicated worktree and short-lived branch for the task. Keep the primary worktree on main/trunk.
 3. **Execute File Operations:** MANDATORY: Always use `git mv` (never standard shell `mv` or creating/deleting copies) for all file moves and renames to preserve Git revision history and blame tracking.
 4. **Stage Intentionally:** Stage only files that belong to the current task; inspect staged changes before committing.
-5. **Commit Logically:** Write atomic commits using the Conventional Commits format, prefixed with `#<task-id>` if linked to an issue tracker.
-6. **Integrate and Sync:** Rebase the task branch onto current main/trunk when needed, push its verified branch, and open or update its merge request. Leave merging to the user unless they explicitly authorize it.
+5. **Commit Logically:** Write atomic commits using the Conventional Commits format, prefixed with the Delivery Record identifier when the configured tracker convention uses one.
+6. **Integrate and Sync:** Once the specification and plan are durable, create exactly one durable Delivery Record for the cohesive delivery slice in the configured tracker. Rebase the task branch onto current main/trunk when needed, push its verified branch, and publish or update its Review Request. Every published Review Request links exactly one Delivery Record; the configured host integration may close or update it on merge. Leave merging to the user unless they explicitly authorize it.
 
 ## Delivery Authority
 
-Agents may create commits, push verified task branches, and open or update merge requests as normal delivery work, including AFK tasks when their packet permits it. A merge request is the required safety and review boundary for non-AFK work.
+Agents may create commits, push verified task branches, and publish or update Review Requests as normal delivery work, including AFK tasks when their packet permits it. A Review Request is the required safety and review boundary for non-AFK work. The Delivery Record records business intent, acceptance criteria, plan/task boundaries, and verification context. The agent uses the configured tracker and review provider; it does not hard-code a host API or flow. Do not require a Delivery Record for chat-only ideation, pure local experiments, or unpushed work. Existing Review Requests that predate this rule are historical exceptions pending user choice; do not create a Delivery Record for them without explicit user authorization.
 
-The user retains merge authority. Do not merge, approve, or force-push a protected/default branch unless the user explicitly authorizes that exact action. Report a ready branch, merge request, and verification evidence when a user decision is needed.
+The user retains merge authority. Do not merge, approve, or force-push a protected/default branch unless the user explicitly authorizes that exact action. Report a ready branch, Review Request, and verification evidence when a user decision is needed.
 
 ## Context Pointers
 

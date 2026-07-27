@@ -7,7 +7,7 @@ Follow these guidelines to construct clean, atomic, and standardized commit mess
 - Avoid mixing unrelated changes (e.g., refactoring code while implementing a feature) in a single commit.
 
 ## 2. Commit Message Format
-- Prefix commit messages with `#<task-id>` if the task is linked to an issue tracker. Do not include the `#` prefix if there is no task ID.
+- Prefix commit messages with the Delivery Record identifier only when the configured tracker convention requires it.
 - Use the Conventional Commits specification:
   ```
   [#<task-id> ]<type>[(<scope>)][!]: <description>

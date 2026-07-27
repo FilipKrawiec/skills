@@ -10,7 +10,7 @@ Routing uses local orchestrator configuration, not project-committed profiles. I
 
 The shared Python CLI is the local and CI verification loop. It validates Central/Project Knowledge, project profiles, task evidence, version-2 packet provenance, and declared native profile checks; it runs declared native checks and reports deterministic condition/remedy output. It does not create worktrees, schedule tasks, manage packages, edit content, or interpret prose. Executors rerun the loop until the gate passes or return the slice.
 
-AFK grants bounded autonomy across one complete slice. Executors may commit verified branches, push them, and open/update merge requests. Non-AFK work requires a merge request; merge, approval, and force-push of protected/default branches remain user-authorized.
+AFK grants bounded autonomy across one complete slice. Executors may commit verified branches, push them, and publish/update Review Requests. Non-AFK work requires a Review Request; merge, approval, and force-push of protected/default branches remain user-authorized. A published Review Request links exactly one durable Delivery Record in the configured tracker; the configured host integration may close or update it on merge.
 
 ## Consequences
 

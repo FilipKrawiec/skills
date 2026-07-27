@@ -114,7 +114,7 @@ See [ADR-001](docs/adr/001-provider-neutral-project-verification.md) for the int
 
 For an orchestrated implementation task, use manifest `version: 2`. Each task declares its isolated workspace kind, repository identity, base revision, affected paths, dependencies, parallel eligibility, execution outcome, and verifier evidence. Git worktrees are the default; `isolated-copy` is the documented fallback for a non-Git project. The CLI validates this declared provenance but never creates or cleans up worktrees.
 
-The orchestrator creates one short-lived branch and linked worktree per implementation task from its declared base revision. It may dispatch only non-overlapping, dependency-independent tasks in parallel. Executors may commit, push verified task branches, and open or update merge requests; non-AFK work requires a merge request. Only the user may authorize merge, approval, or force-push of a protected/default branch.
+The orchestrator creates one short-lived branch and linked worktree per implementation task from its declared base revision. It may dispatch only non-overlapping, dependency-independent tasks in parallel. Executors may commit, push verified task branches, and publish or update Review Requests; non-AFK work requires a Review Request. Only the user may authorize merge, approval, or force-push of a protected/default branch.
 
 To validate a Central Knowledge Base or Project Knowledge root and generate its discovery index:
 
