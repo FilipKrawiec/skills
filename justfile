@@ -22,6 +22,10 @@ release-check:
 setup-hooks:
     ./scripts/setup-git-hooks.sh
 
-# Link plugins into local Antigravity IDE environment
+# Install plugins as directory copies into local Antigravity IDE environment
+install-agy:
+    ./scripts/link-agy-ide-plugins.sh --copy --replace
+
+# Link plugins as symlinks into local Antigravity IDE environment (dev mode)
 link-agy:
-    ./scripts/link-agy-ide-plugins.sh --replace
+    ./scripts/link-agy-ide-plugins.sh --link --replace

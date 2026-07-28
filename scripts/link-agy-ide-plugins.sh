@@ -2,15 +2,19 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 [--replace] [--dry-run]" >&2
+  echo "Usage: $0 [--replace] [--dry-run] [--copy|--link]" >&2
 }
 
 replace=false
 dry_run=false
+mode="copy"
+
 for argument in "$@"; do
   case "${argument}" in
     --replace) replace=true ;;
     --dry-run) dry_run=true ;;
+    --copy) mode="copy" ;;
+    --link) mode="link" ;;
     *)
       usage
       exit 2
@@ -52,18 +56,31 @@ for index in "${!plugin_names[@]}"; do
     exit 1
   fi
 
-  if [[ -e "${target_directory}" || -L "${target_directory}" ]] && \
-    ! ([[ -L "${target_directory}" ]] && [[ "$(cd "${target_directory}" && pwd -P)" == "${source_directory}" ]]); then
-    if ! "${replace}"; then
-      echo "Refusing to replace existing IDE plugin snapshot: ${target_directory}. Re-run with --replace." >&2
-      exit 1
+  if [[ "${mode}" == "link" ]]; then
+    if [[ -e "${target_directory}" || -L "${target_directory}" ]] && \
+      ! ([[ -L "${target_directory}" ]] && [[ "$(cd "${target_directory}" && pwd -P)" == "${source_directory}" ]]); then
+      if ! "${replace}"; then
+        echo "Refusing to replace existing IDE plugin snapshot: ${target_directory}. Re-run with --replace." >&2
+        exit 1
+      fi
+    fi
+  else
+    if [[ -e "${target_directory}" || -L "${target_directory}" ]]; then
+      if ! "${replace}"; then
+        echo "Refusing to replace existing IDE plugin snapshot: ${target_directory}. Re-run with --replace." >&2
+        exit 1
+      fi
     fi
   fi
 done
 
 if "${dry_run}"; then
   for index in "${!plugin_names[@]}"; do
-    printf 'link %s -> %s\n' "${target_root}/${plugin_names[${index}]}" "${repo_root}/${plugin_sources[${index}]}"
+    if [[ "${mode}" == "link" ]]; then
+      printf 'link %s -> %s\n' "${target_root}/${plugin_names[${index}]}" "${repo_root}/${plugin_sources[${index}]}"
+    else
+      printf 'copy %s -> %s\n' "${repo_root}/${plugin_sources[${index}]}" "${target_root}/${plugin_names[${index}]}"
+    fi
   done
   exit 0
 fi
@@ -76,8 +93,10 @@ for index in "${!plugin_names[@]}"; do
   source_directory="${repo_root}/${plugin_sources[${index}]}"
   target_directory="${target_root}/${plugin_names[${index}]}"
 
-  if [[ -L "${target_directory}" ]] && [[ "$(cd "${target_directory}" && pwd -P)" == "${source_directory}" ]]; then
-    continue
+  if [[ "${mode}" == "link" ]]; then
+    if [[ -L "${target_directory}" ]] && [[ "$(cd "${target_directory}" && pwd -P)" == "${source_directory}" ]]; then
+      continue
+    fi
   fi
 
   if [[ -e "${target_directory}" || -L "${target_directory}" ]]; then
@@ -88,8 +107,13 @@ for index in "${!plugin_names[@]}"; do
     mv "${target_directory}" "${backup_root}/${plugin_names[${index}]}"
   fi
 
-  ln -s "${source_directory}" "${target_directory}"
-  echo "Linked ${plugin_names[${index}]} for Antigravity IDE."
+  if [[ "${mode}" == "link" ]]; then
+    ln -s "${source_directory}" "${target_directory}"
+    echo "Linked ${plugin_names[${index}]} for Antigravity IDE."
+  else
+    cp -r "${source_directory}" "${target_directory}"
+    echo "Installed copy of ${plugin_names[${index}]} for Antigravity IDE."
+  fi
 done
 
 retired_plugins=(
@@ -108,3 +132,4 @@ done
 if "${created_backup}"; then
   echo "Previous IDE plugin snapshots were preserved in ${backup_root}."
 fi
+

@@ -35,6 +35,6 @@ else
 fi
 
 echo "=== Refreshing Antigravity plugins ==="
-"${REPO_ROOT}/scripts/link-agy-ide-plugins.sh" --replace
+"${REPO_ROOT}/scripts/link-agy-ide-plugins.sh" --copy --replace
 
 echo "=== Local plugin refresh complete; restart active Codex and Claude sessions to load changes ==="

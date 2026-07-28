@@ -51,10 +51,10 @@ class RefreshLocalPluginsTests(unittest.TestCase):
                 self.assertIn(f"codex plugin add {package}@filipkrawiec", commands)
                 self.assertIn(f"claude plugin update {package}@filipkrawiec", commands)
 
-            self.assertEqual(
-                (temporary_root / "plugins" / "filipkrawiec-orchestration").resolve(),
-                ROOT / "plugins" / "common" / "orchestration",
-            )
+            target_plugin = temporary_root / "plugins" / "filipkrawiec-orchestration"
+            self.assertTrue(target_plugin.is_dir())
+            self.assertFalse(target_plugin.is_symlink())
+            self.assertTrue((target_plugin / "plugin.json").is_file())
 
 
 if __name__ == "__main__":
