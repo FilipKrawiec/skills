@@ -214,6 +214,19 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("knowledge-check:", justfile)
         self.assertIn("release-check:", justfile)
 
+    def test_define_skill_layout_and_authoring_spec(self) -> None:
+        define_dir = ROOT / "plugins" / "common" / "orchestration" / "skills" / "define"
+        self.assertTrue((define_dir / "SKILL.md").is_file())
+        self.assertTrue((define_dir / "references" / "idea-capture.md").is_file())
+
+        content = (define_dir / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---\nname: define\n"))
+        self.assertIn("description: Use when capturing business outcomes", content)
+        self.assertIn("[idea-capture.md](references/idea-capture.md)", content)
+        self.assertIn("gh issue create", content)
+        self.assertIn("Backlog", content)
+        self.assertIn("Completion Boundary Guardrail", content)
+
 
 if __name__ == "__main__":
     unittest.main()

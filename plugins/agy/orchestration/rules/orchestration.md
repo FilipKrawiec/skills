@@ -28,7 +28,7 @@ Before executing any orchestration phase:
 ## 2. GitHub Issue & Project Board Synchronization (`DEFINE` & `REFINE`)
 
 The human operator acts as **Product Owner** during specification refinement.
-- **`DEFINE` Output**: Create a structured GitHub Issue (`gh issue create`) with type labels (`type:feature`, `type:story`, `type:task`, `type:bug`). Move Project item to **Backlog**.
+- **`DEFINE` Output & Mandatory Completion Gate**: Create a structured GitHub Issue (`gh issue create`) with type labels (`type:feature`, `type:story`, `type:task`, `type:bug`). Move Project item to **Backlog**. `DEFINE` MUST execute `gh issue create` and present the Issue link to the Product Owner as its completion output BEFORE technical `implementation_plan.md` drafting or code execution.
 - **`REFINE` Output**: Conduct specification challenge (`grill-with-docs`), update issue description (`gh issue edit`), and post refinement comments (`gh issue comment`). Set Project status to **Backlog** (or **Blocked** if blocked).
 
 ---
