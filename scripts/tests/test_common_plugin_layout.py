@@ -223,7 +223,20 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertTrue(content.startswith("---\nname: define\n"))
         self.assertIn("description: Use when capturing business outcomes", content)
         self.assertIn("[idea-capture.md](references/idea-capture.md)", content)
+        self.assertIn("Duplicate Prevention Check", content)
         self.assertIn("gh issue create", content)
+        self.assertIn("Backlog", content)
+        self.assertIn("Completion Boundary Guardrail", content)
+
+    def test_specify_skill_layout_and_authoring_spec(self) -> None:
+        specify_dir = ROOT / "plugins" / "common" / "orchestration" / "skills" / "specify"
+        self.assertTrue((specify_dir / "SKILL.md").is_file())
+
+        content = (specify_dir / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---\nname: specify\n"))
+        self.assertIn("description: Use when refining, grilling, and detailing a Backlog GitHub Issue", content)
+        self.assertIn("grill-with-docs", content)
+        self.assertIn("gh issue edit", content)
         self.assertIn("Backlog", content)
         self.assertIn("Completion Boundary Guardrail", content)
 
