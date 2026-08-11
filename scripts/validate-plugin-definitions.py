@@ -35,7 +35,7 @@ PACKAGE_METADATA = {
 PACKAGE_SKILL_TREES = {
     ROOT / "plugins" / "common" / "core" / "skills": {"ddd", "hexagonal-architecture"},
     ROOT / "plugins" / "common" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
-    ROOT / "plugins" / "common" / "orchestration" / "skills": {"orchestrate-delivery", "scaffold-monorepo", "define"},
+    ROOT / "plugins" / "common" / "orchestration" / "skills": {"orchestrate-delivery", "scaffold-monorepo", "define", "specify"},
     ROOT / "plugins" / "common" / "authoring" / "skills": {"writing-great-skill", "teach"},
 }
 

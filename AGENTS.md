@@ -7,6 +7,7 @@ active_skills:
   - orchestrate-delivery
   - scaffold-monorepo
   - define
+  - specify
 
 build_tools:
   just:
