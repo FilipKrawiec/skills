@@ -29,8 +29,9 @@ The **define** skill captures raw ideas, feature proposals, or user needs and tr
 4. **Initialize Board Status**:
    - Add the issue to the GitHub Project board and set status to **Backlog**.
 
-5. **Handoff to Delivery Lifecycle**:
-   - Transition to Stage 2 (**SPECIFY / GRILL**) using `orchestrate-delivery` or `grill-with-docs` to challenge assumptions and refine technical specifications before planning.
+5. **Completion Boundary Guardrail**:
+   - The `define` skill MUST finish by creating the tracker item (`gh issue create`), placing it on the **Backlog**, and presenting the Issue link to the user.
+   - It MUST NOT proceed directly to code execution or drafting `implementation_plan.md`; the created GitHub Issue is the required output so the Product Owner can refine and specify the idea in Stage 2 (**SPECIFY / GRILL**).
 
 ---
 

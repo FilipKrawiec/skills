@@ -225,6 +225,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("[idea-capture.md](references/idea-capture.md)", content)
         self.assertIn("gh issue create", content)
         self.assertIn("Backlog", content)
+        self.assertIn("Completion Boundary Guardrail", content)
 
 
 if __name__ == "__main__":
