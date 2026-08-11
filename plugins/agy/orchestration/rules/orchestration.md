@@ -1,67 +1,72 @@
-# Antigravity Orchestration Rules
+# Antigravity Native Orchestration Rules
 
-Use the portable `orchestrate-delivery` skill for delivery orchestration across bounded project changes.
+Use the portable `orchestrate-delivery` skill for delivery orchestration across bounded project changes, enhanced with Antigravity native harness capabilities (interactive artifacts, subagent delegation, background command management, and native Proceed buttons).
+
+---
 
 ## 1. Project Configuration Discovery
 
 Before executing any orchestration phase, inspect the target repository root for `.agy/config.json`.
-- If present, parse user configuration overrides for architectural rules, test frameworks, and review behavior:
+- Parse configuration overrides for persona rules, test frameworks, and review behavior:
   ```json
   {
     "orchestration": {
       "enforce_hexagonal": true,
       "enforce_ddd": true,
-      "require_four_eyes_review": true
+      "require_security_audit": true,
+      "max_autonomous_retries": 3
     }
   }
   ```
-- If `.agy/config.json` is missing or unreadable, fall back to safe default settings (`enforce_hexagonal: true`, `enforce_ddd: true`, `require_four_eyes_review: true`).
+- If `.agy/config.json` is missing or unreadable, fall back to safe defaults (`enforce_hexagonal: true`, `enforce_ddd: true`, `require_security_audit: true`, `max_autonomous_retries: 3`).
 
-## 2. Native UI Specification Approval
+---
 
-When `SPECIFY / GRILL` completes and `PLAN` produces a `DeliveryContract` or `ImplementationPlan`, present the artifact with `RequestFeedback: true` (`UserFacing: true`).
-- Include human review instructions micro-copy in the natural language response:
-  > **Review Instructions for Human Operator:**
-  > - Review the `ImplementationPlan` / `DeliveryContract` in the interactive panel.
-  > - Add inline comments on specific lines if changes are required.
-  > - Click **Proceed** at the top right to approve execution.
-- Antigravity will render the native IDE/App **Proceed** button and feedback UI.
-- When the user clicks **Proceed** or accepts the artifact, proceed to task slice `DISPATCH`.
-- If the user provides review comments or requests changes, treat this as a rework request and update the specification/plan.
+## 2. Product Owner Refinement & Native UI Approval (`DEFINE` / `SPECIFY` / `PLAN`)
 
-## 3. Unbiased Subagent Code Review (Four-Eyes Control & Fallback Protocol)
+The human operator acts as **Product Owner** during initial specification refinement.
+- When `SPECIFY / GRILL` completes and `PLAN` constructs the Directed Acyclic Graph (DAG) of task slices, present `implementation_plan.md` with `RequestFeedback: true` and `UserFacing: true`.
+- Antigravity renders the native IDE **Proceed** button and feedback UI.
+- Include user guidance micro-copy:
+  > **Review Instructions for Product Owner:**
+  > - Review the `implementation_plan.md` in the interactive panel.
+  > - Click **Proceed** at top right to authorize autonomous execution by the agent team.
+- When the user clicks **Proceed**, transition into autonomous execution (`DISPATCH`).
 
-To prevent self-review bias and strictly enforce Segregation of Duties, the agent that performed task slice execution MUST NOT perform `REVIEW` directly in the same conversation context.
-- When entering the `REVIEW` phase, the orchestrator MUST use `invoke_subagent` to launch the dedicated `orchestration-reviewer` subagent defined in [agents/orchestration-reviewer.md](../agents/orchestration-reviewer.md).
-- Pass `Role: "Adversarial Code Auditor & Quality Engineer"` and load the system prompt from [agents/orchestration-reviewer.md](../agents/orchestration-reviewer.md).
-- **Subagent Fallback Protocol**: If `invoke_subagent` fails or is restricted by environment limits, the orchestrator MUST gracefully fall back to an isolated inline review in a fresh turn, notifying the user:
-  *"Subagent conversation isolation unavailable; conducting inline code audit..."*
-- The subagent (or fallback reviewer) inspects `.agy/config.json`, actively invokes enabled skills (`ddd`, `hexagonal-architecture`, `tdd`, `vcs`), conducts the review, and returns the review decision to the orchestrator.
+---
 
-## 4. Stage-by-Stage Native Artifact Workflow & Safety Guardrails
+## 3. Subagent Persona Delegation (`DISPATCH` & `REVIEW`)
 
-The orchestrator MUST explicitly track progress through all 7 delivery stages using native Antigravity artifacts to provide visual transparency and step-by-step guidance:
+To prevent self-review bias and leverage specialized team roles, the orchestrator MUST invoke persona subagents via `invoke_subagent`:
 
-1. **DEFINE / SPECIFY / PLAN**:
-   - Create or update the `implementation_plan.md` artifact.
-   - Set `RequestFeedback: true` and `UserFacing: true` in `ArtifactMetadata`.
-   - STOP and wait for the user to review the plan and click **Proceed** before moving to `DISPATCH`.
+1. **`developer` Subagent** ([agents/developer.md](../agents/developer.md)):
+   - Dispatched during `DISPATCH` to execute code within an isolated Git worktree.
+2. **`quality-engineer` Subagent** ([agents/quality-engineer.md](../agents/quality-engineer.md)):
+   - Dispatched during `COLLECT / VERIFY` to run deterministic verification (`python3 scripts/project-verify.py verify`) and test coverage checks.
+3. **`solution-architect` Subagent** ([agents/solution-architect.md](../agents/solution-architect.md)):
+   - Dispatched during `REVIEW` to audit domain purity (DDD aggregate invariants) and Hexagonal layer isolation.
+4. **`security-auditor` Subagent** ([agents/security-auditor.md](../agents/security-auditor.md)):
+   - Dispatched during `REVIEW` to audit OWASP vulnerabilities, secret leaks, and command injection risks.
 
-2. **DISPATCH**:
-   - Create an isolated short-lived task branch (e.g. `task/<name>`) and Git worktree.
-   - Never edit implementation code directly on protected default branches (`main`).
-   - Create task packet records for the assigned executor.
+---
 
-3. **COLLECT / VERIFY**:
-   - Run deterministic verification commands (`python3 scripts/project-verify.py verify`).
-   - Document execution results and evidence in the `walkthrough.md` artifact (`UserFacing: true`).
+## 4. Autonomous Self-Correction Rework Loop
 
-4. **REVIEW**:
-   - Invoke the `orchestration-reviewer` subagent (or fallback reviewer) to audit changes against specifications and `AGENTS.md` rules.
-   - Record findings in `walkthrough.md`.
+During `COLLECT / VERIFY` and `REVIEW`, when a verifier or reviewer persona rejects a slice (`VERIFICATION_FAILED`, `CORRECT_EXECUTE`, `CORRECT_PLAN`, or `SECURITY_VULNERABILITY_FOUND`):
+- Increment slice `attempt_count`.
+- If `attempt_count <= max_autonomous_retries` (default 3), automatically re-dispatch the `developer` subagent with the exact failure payload. DO NOT stop or request human input during intermediate retries.
+- Update the native live progress artifact `walkthrough.md` (`UserFacing: true`) showing retry attempt progress.
+- If `attempt_count > max_autonomous_retries`, stop execution, log failure state in `walkthrough.md`, and return decision to the Product Owner.
 
-5. **SHIP / RETURN**:
-   - Prepare the **Review Request** artifact on the task branch, linking the Delivery Record, verification logs, and `walkthrough.md`.
-   - Present the Review Request artifact to the human operator with user-facing merge instructions.
-   - **Merge Guardrail**: Executors must NEVER merge, approve, or force-push protected default branches (`main`). The user alone retains merge authority.
+---
 
+## 5. Stage 7 Native `ReviewRequest` & Interactive Merge Approval (`SHIP / RETURN`)
+
+Once all DAG slices pass deterministic verification and persona reviews:
+- Prepare the native `ReviewRequest` artifact on the short-lived task branch linking the tracker Delivery Record, verification logs, and `walkthrough.md`.
+- Present `ReviewRequest` with `RequestFeedback: true` to the Product Owner.
+- Provide interactive merge prompt instructions:
+  > **Delivery Ready for Merge:**
+  > - All persona reviews (`quality-engineer`, `solution-architect`, `security-auditor`) passed cleanly.
+  > - Click **Proceed** to authorize branch merge into `main`.
+- **Merge Guardrail**: Executors must NEVER merge, approve, or force-push protected default branches (`main`). The Product Owner alone retains merge authority.

@@ -1,11 +1,12 @@
-# Minimal Task Packet
+# Minimal Task Packet Specification
 
-Use one concise packet per cohesive, bounded delivery slice. One executor retains the slice context end-to-end: understand local context, implement, use TDD where relevant, run and fix the verification loop, and return reviewable evidence. Do not split test-writing, implementation, and verification merely to create delegation boundaries.
+Use one concise packet per cohesive, bounded delivery slice. One executor persona retains the slice context end-to-end: understand local context, implement, use TDD where relevant, run and fix the verification loop, and return reviewable evidence. Do not split test-writing, implementation, and verification merely to create delegation boundaries.
 
 ```text
 Task: <stable task name>
 Intent: <business/specification outcome>
 Slice: <cohesive end-to-end outcome>
+Assigned persona: <developer | quality-engineer | solution-architect | security-auditor>
 Executor: <selected available harness>
 Executor rationale: <configured default, or complexity/local-tool/repository-fit/autonomy basis>
 Routing config: <local config path and validated executor/tracker/review-provider/failure policy>
@@ -15,6 +16,9 @@ Repository: <repository identity>
 Base revision: <Git commit/ref, or non-Git source snapshot>
 Affected paths: <non-overlapping ownership boundary>
 Dependencies: <completed task names, or none>
+DAG node: <node identifier in plan dependency graph>
+Attempt count: <current execution attempt N, starting at 1>
+Max retries: <maximum autonomous retry ceiling, default 3>
 Parallel: <true only when dependencies and affected paths do not clash>
 Allowed scope: <files, component, or behavior boundary>
 Inputs: <relevant specification and Central/Project Knowledge identifiers>
