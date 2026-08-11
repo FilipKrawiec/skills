@@ -36,4 +36,4 @@ The **specify** skill takes an existing GitHub Issue on the **Backlog** and cond
 ## Context Pointers
 
 - Read `grill-with-docs` when conducting source-backed specification challenges.
-- Read [github-pipeline-integration.md](../orchestrate-delivery/references/github-pipeline-integration.md) when executing `gh issue` updates.
+- Read [github-pipeline-integration.md](../../references/github-pipeline-integration.md) when executing `gh issue` updates.
