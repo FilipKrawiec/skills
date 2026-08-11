@@ -25,6 +25,7 @@ Before executing any orchestration phase, inspect the target repository root for
 ## 2. Product Owner Refinement & Native UI Approval (`DEFINE` / `SPECIFY` / `PLAN`)
 
 The human operator acts as **Product Owner** during initial specification refinement.
+- At the start of `DEFINE`, read `vcs` to create and checkout a dedicated short-lived feature branch off current `main`/trunk for the delivery scope. Do not execute delivery phases or accumulate changes directly on `main` or an unassigned dirty branch.
 - When `SPECIFY / GRILL` completes and `PLAN` constructs the Directed Acyclic Graph (DAG) of task slices, present `implementation_plan.md` with `RequestFeedback: true` and `UserFacing: true`.
 - Antigravity renders the native IDE **Proceed** button and feedback UI.
 - Include user guidance micro-copy:
