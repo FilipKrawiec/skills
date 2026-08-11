@@ -16,7 +16,7 @@ Do not mutate state on multiple aggregates in a single Domain Service. To preser
 
 ## 2. Application Services
 
-An **Application Service** (UseCase in the Application Layer) contains **no business logic**. It coordinates the transaction, security, loading, and saving of domain state.
+An **Application Service** (UseCase in the Application Layer) contains **no business logic**. It coordinates the transaction, security, loading, and saving of domain state via repository ports and application commands.
 
 ---
 
@@ -27,51 +27,3 @@ An **Application Service** (UseCase in the Application Layer) contains **no busi
 | **Domain** | Domain | Core business calculations / transformations | No (stateless) | `OrderPricingService`, `DiscountPolicy` |
 | **Application** | Application | Usecase orchestration, tx boundary, security | Yes (via repository ports) | `CheckOutUseCase`, `CancelOrderHandler` |
 | **Infrastructure** | Infrastructure| Technical adapters (SMS, Emails, API client) | No (typically) | `SmtpNotificationSender`, `BcryptHasher` |
-
----
-
-## 4. Code Example
-
-```pseudocode
-// Domain Layer: Domain Service (Stateless calculation only)
-class OrderPricingService {
-  constructor(discountPolicy) {
-    this.discountPolicy = discountPolicy
-  }
-
-  function calculateFinalPrice(customer, basePrice: Price): Price {
-    discount = this.discountPolicy.calculateDiscount(customer)
-    return basePrice.subtract(discount)
-  }
-}
-
-// Application Layer: Application Service (Coordinates usecase and tx)
-class CheckOutUseCase {
-  constructor(orders, customers, pricingService, unitOfWork) {
-    this.orders = orders
-    this.customers = customers
-    this.pricingService = pricingService
-    this.unitOfWork = unitOfWork
-  }
-
-  function execute(command) {
-    this.unitOfWork.transaction(() -> {
-      customer = this.customers.findById(command.customerId)
-      if (customer == null) raise Error("Customer not found")
-
-      order = new Order(command.orderId, customer.id)
-      
-      // Construct Value Object first
-      basePrice = new Price(command.baseAmount, command.currency)
-      
-      // Calculate via Domain Service
-      finalPrice = this.pricingService.calculateFinalPrice(customer, basePrice)
-
-      // Aggregate mutates itself
-      order.checkout(finalPrice)
-
-      this.orders.save(order)
-    })
-  }
-}
-```

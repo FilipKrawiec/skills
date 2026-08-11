@@ -18,13 +18,19 @@ Reference constraints derived from Vaughn Vernon's *Implementing Domain-Driven D
    - A single transaction/use-case must only mutate a **single** Aggregate Root.
    - If a change to one Aggregate requires changes to another, publish a **Domain Event** and handle the secondary update asynchronously (eventual consistency).
 
-## 2. Repositories
+---
+
+## 2. Repositories & Hydration Boundaries
 
 - **Root-Only Access:** Provide Repositories only for Aggregate Roots. Local Entities have no Repository (e.g., query `Comment` through the `Threads` collection).
 - **Save/Load Whole:** Repositories must save and load the Aggregate in its entirety to ensure the Aggregate Root can validate invariants.
-- **Persistence Hydration Stays in the Adapter:** The repository port expresses loading and saving domain objects; it does not prescribe how persistence data becomes an Aggregate. Keep ORM, serialization, and state-hydration mechanisms inside the infrastructure adapter. Do not add a public `reconstitute` method, persistence constructor, or generic hydration factory to every Aggregate. If a technology requires a narrow hydration mechanism, keep it non-public and specific to that adapter; it is not part of the domain model or Ubiquitous Language.
-
+- **Creation vs. Persistence Hydration (ACL Concern):**
+  - Initial creation of new domain aggregates is handled exclusively by domain [factories.md](factories.md) (`AggregateFactory`).
+  - Loading existing state from persistence (database/ORM) is strictly an **Anti-Corruption Layer (ACL) / Infrastructure Adapter** concern. Keep ORM mapping, data hydration, and reflection inside the infrastructure adapter.
+  - Do NOT add public `reconstitute(...)` methods or persistence constructors to Aggregate Roots. State hydration is not part of the domain model or Ubiquitous Language.
 - **Lightweight Query Methods (Count, Existence, and Summaries):** Avoid loading full entities or collections just to perform existence checks, counts, or basic calculations. Expose explicit query methods directly on the collection port interface (e.g., `exists(id): boolean` or `countUnresolved(parentId): number`). The concrete implementation (e.g., `JPAThreads`) must execute lightweight database queries (e.g., `EXISTS` or `SELECT COUNT(*)`) rather than rehydrating domain objects into memory.
+
+---
 
 ## 3. Large/Endless Collections (The Local Entity Growth Problem)
 
@@ -34,42 +40,10 @@ Even if a child entity has no conceptual meaning outside its parent context (e.g
 
 If the parent Aggregate has invariants that depend on the state of the collection (e.g., *"Cannot merge if there are unresolved threads"*), do not load the collection. Use one of two query-based approaches:
 
-#### Approach A: Application-Level Query Validation
-Query a check method on the collection port in the Application Service before invoking the aggregate action:
-```pseudocode
-class MergeMergeRequestUseCase {
-  function execute(command) {
-    this.unitOfWork.transaction(() -> {
-      mr = this.mergeRequests.findById(command.mrId)
-      if (mr == null) raise Error("Merge request not found")
-      
-      // Invariant check via outbound port query
-      if (this.threads.hasUnresolvedThreads(mr.id)) {
-        raise Error("Cannot merge: unresolved threads exist")
-      }
-      
-      mr.merge()
-      this.mergeRequests.save(mr)
-    })
-  }
-}
-```
+- **Approach A (Application-Level Query Validation):** Query a check method on the collection port in the Application Service before invoking the aggregate action.
+- **Approach B (Double-Dispatch via Domain Service / Port - Preferred for Encapsulation):** Define a domain-level validation port interface in the Domain layer, and pass it directly to the aggregate's business method.
 
-#### Approach B: Double-Dispatch via Domain Service / Port (Preferred for Strict Encapsulation)
-Define a domain-level service or validation interface in the Domain layer, and pass it directly to the aggregate's business method:
-```pseudocode
-interface MergeRequestValidator {
-  hasUnresolvedThreads(mrId): boolean
-}
-
-class MergeRequest {
-  function merge(validator: MergeRequestValidator) {
-    if (validator.hasUnresolvedThreads(this.id)) {
-      raise Error("Cannot merge: unresolved threads exist")
-    }
-    this.status = "Merged"
-  }
-}
+---
 
 ## 4. Repository vs. DAO (Data Access Object)
 
@@ -83,11 +57,12 @@ class MergeRequest {
 
 - **Design Guideline:** Never use a DAO directly in the Domain or Application layers. If an Application use-case or domain invariant requires checking database state (e.g., uniqueness validator), define a domain-centric Outbound Port (e.g., `EmailUniqueness`) and implement it in the Infrastructure layer, utilizing a private DAO to perform the query.
 
+---
+
 ## 5. CQRS & Query Ports returning Value Objects
 
 To query complex projections, dashboards, or tabular reports without overloading the write-side Repository or loading entire Aggregates (performance cost):
 
 1. **Bypass the Domain Write Model:** Define a dedicated Query Port (e.g., `ThreadQueries`) in the Domain layer.
-2. **Return Domain Value Objects:** The Query Port must return immutable **Value Objects** (e.g., `ThreadSummary`) defined in the Domain layer. This preserves domain-level schema ownership and enables attaching business behavior directly to the returned objects (e.g., `ThreadSummary.isResolved()`).
-3. **Use a Private DAO in Infrastructure:** The implementation adapter (e.g., `JPAThreadQueries` in Infrastructure) executes optimized database queries (raw SQL or projections) via a private `ThreadsDao`, mapping tabular rows directly into the Domain's `ThreadSummary` Value Objects.
-```
+2. **Return Domain Value Objects:** The Query Port must return immutable **Value Objects** (e.g., `ThreadSummary`) defined in the Domain layer using `.of(...)`. This preserves domain-level schema ownership and enables attaching business behavior directly to the returned objects (e.g., `ThreadSummary.isResolved()`).
+3. **Use a Private DAO in Infrastructure:** The implementation adapter (e.g., `JPAThreadQueries` in Infrastructure) executes optimized database queries (raw SQL or projections) via a private `ThreadsDao`, mapping tabular rows directly into the Domain's `ThreadSummary` Value Objects via `.of(...)`.

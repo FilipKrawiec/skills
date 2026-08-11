@@ -2,60 +2,22 @@
 
 Reference constraints for designing Value Objects, derived from Vaughn Vernon's *Implementing Domain-Driven Design*.
 
-## 1. Vernon's 6 Characteristics of Value Objects
+## 1. Core Principles & Strict Value-Object Scope
 
-1. **It measures, quantifies, or describes a thing in the domain:**
-   - It is not a first-class business entity with a lifecycle; it is a descriptive attribute or quantity (e.g., `Money`, `Color`, `EmailAddress`).
-2. **It is immutable:**
-   - Its state cannot be changed after creation. All fields must be read-only.
-   - To update a Value Object, replace the entire instance with a new one.
-3. **It models a conceptual whole:**
-   - It binds related properties into a cohesive unit. For example, rather than storing `street`, `city`, and `zip` as raw strings directly on a `User` entity, group them into a single `Address` Value Object.
-4. **It is compared by Value Equality:**
-   - Value Objects have **no identity**.
-   - Two instances are considered identical if all of their attributes hold the exact same values.
-5. **It exhibits Side-Effect-Free behavior:**
-   - Methods on a Value Object must be pure functions. They perform calculations and return a **new instance** of the Value Object rather than modifying the current one.
-6. **It is replaceable:**
-   - When an Entity's value changes, the old Value Object is completely discarded and replaced with a new instance.
+1. **Zero Primitive Leakage in Domain Models**: 
+   - **Forbidden in Domain Layer**: Never use raw language primitives (`String`, `Double`, `Int`, `Long`, `UUID`, `Boolean`) directly as attributes in Entities, Aggregate Roots, Domain Events, or Domain Service parameters.
+   - **Mandatory Value Objects**: Wrap all domain concepts in explicit Value Objects (e.g., `EmailAddress`, `Money`, `Quantity`, `Percentage`, `OrderId`, `CustomerName`, `AccountStatus`).
+   - **Boundary Isolation**: Raw primitives are permitted strictly at the outer system boundary (REST DTOs, JSON payloads, DB persistence columns). Boundary primitives must be validated and converted into Value Objects via `.of(...)` before crossing into the application or domain layers.
+2. **No Identity**: Value Objects describe, measure, or quantify a domain concept. Two instances are equal if all their attributes are equal.
+3. **Immutability & Replacement**: State cannot be changed after creation. All fields must be read-only. To modify a Value Object, construct and return a new instance (`withXxx(...)` or domain operations).
+4. **Self-Validating & Invariant Protection**: A Value Object can never exist in an invalid state. Validation occurs upon creation inside `.of(...)`.
+5. **Side-Effect-Free Behavior**: Methods on a Value Object are pure functions returning new instances.
 
 ---
 
-## 2. Code Example: Money Value Object
+## 2. Creation Standard: The `.of(...)` Static Factory Method
 
-```pseudocode
-class Money {
-  private amount: number
-  private currency: string
+All Value Objects must use a static `.of(...)` factory method as their sole creation interface. Keep constructors private or protected.
 
-  constructor(amount, currency) {
-    // Invariant validation: Value Objects must be fully valid upon creation
-    if (amount < 0) raise Error("Amount cannot be negative")
-    if (currency == null || currency.isEmpty()) raise Error("Currency is required")
-
-    this.amount = amount
-    this.currency = currency
-  }
-
-  function getAmount(): number { return this.amount }
-  function getCurrency(): string { return this.currency }
-
-  // Side-effect-free arithmetic (returns a new instance)
-  function add(otherMoney): Money {
-    if (this.currency != otherMoney.getCurrency()) {
-      raise Error("Cannot add money of different currencies")
-    }
-    return new Money(this.amount + otherMoney.getAmount(), this.currency)
-  }
-
-  // Value Equality: compares all attributes
-  function equals(other): boolean {
-    if (other == null || !(other is Money)) return false
-    return this.amount == other.getAmount() && this.currency == other.getCurrency()
-  }
-
-  function hash(): number {
-    return hashOf(this.amount) + hashOf(this.currency)
-  }
-}
-```
+- In object-oriented domain models, `.of(...)` throws an explicit `InvariantViolationException` when validation fails.
+- *(Note for functional paradigms: `.of(...)` may return a `Result` or `Either` type containing the validated Value Object or a list of validation errors.)*

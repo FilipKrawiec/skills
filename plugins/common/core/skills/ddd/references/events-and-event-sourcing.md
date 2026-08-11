@@ -9,99 +9,27 @@ Reference constraints for Events, derived from Vaughn Vernon's *Implementing Dom
 - [Core Architecture Rules](#3-core-architecture-rules)
 
 ## 1. Domain Events (Standard state-persisted aggregates)
+
 A **Domain Event** is a record of a state transition or significant occurrence in the past.
 - **Naming:** Past-tense verbs matching the Ubiquitous Language (`ThreadCreated`, `ThreadResolved`).
-- **Registration:** Aggregates register events internally during command execution. The Application Service/Repository dispatches them *after* a successful transaction commit.
-
-```pseudocode
-class Thread {
-  private status: ThreadStatus = ThreadStatus.ACTIVE
-  private events: List<DomainEvent> = []
-
-  // Command method mutates state and registers the event (dumb value list)
-  function resolve(resolverId) {
-    if (this.status != ThreadStatus.ACTIVE) raise Error("Thread not active")
-    
-    this.status = ThreadStatus.RESOLVED
-    this.events.add(new ThreadResolvedEvent(this.id, resolverId, currentTimestamp()))
-  }
-
-  // Encapsulated dispatcher: passes events to the publisher lambda and clears them on success.
-  // If the lambda throws an exception, execution halts, events are not cleared, 
-  // and the repository transaction rolls back.
-  function publishEvents(publisher: Function<DomainEvent>) {
-    for (event in this.events) {
-      publisher.apply(event)
-    }
-    this.events.clear()
-  }
-}
-
-// Infrastructure Layer: Repository encapsulates transaction and outbox persistence
-class JPAThreads implements Threads {
-  function save(thread: Thread) {
-    this.unitOfWork.transaction(() -> {
-      // 1. Persist the state snapshot
-      database.update("UPDATE threads SET status = ? WHERE id = ?", thread.status, thread.id)
-
-      // 2. Publish uncommitted events to the Outbox table in the same transaction
-      thread.publishEvents(event -> {
-        database.insert("INSERT INTO outbox (id, event_type, payload) VALUES (?, ?, ?)", 
-          event.id, event.type, serialize(event))
-      })
-    })
-  }
-}
-```
+- **Registration:** Aggregates register events internally during command execution. The Application Service or Repository dispatches them after a successful transaction commit (e.g. via a Transactional Outbox pattern).
+- **Value-Object Payloads:** All attributes carried in a Domain Event payload MUST be typed as Value Objects (`OrderId`, `CustomerId`, `Money`, `Timestamp`), never raw primitives (`String`, `Double`, `UUID`).
+- **Clearing & Rolldown:** Events published by the aggregate are cleared upon successful delivery or outbox insertion. If publishing fails, the transaction rolls back without clearing events.
 
 ---
 
 ## 2. Event-Sourced Aggregates
+
 In Event Sourcing, the aggregate's state is not stored as a snapshot; it is rehydrated by replaying historical events.
 
 ### State Mutation Rules
-- **No Direct Mutation in Commands:** Command methods must only validate invariants and emit events (via a `raise` method).
-- **Mutate in Apply Only:** State variables must be updated **exclusively** inside private `apply` methods, ensuring command execution and historical rehydration share the same code path.
-
-```pseudocode
-class Account {
-  private id: AccountId
-  private balance: number = 0
-  private uncommittedEvents: List<DomainEvent> = []
-
-  // 1. Command: Validates invariants and emits event
-  function deposit(amount) {
-    if (amount <= 0) raise Error("Must deposit positive amount")
-    this.raise(new MoneyDepositedEvent(this.id, amount))
-  }
-
-  // 2. Raise Mechanism
-  private function raise(event) {
-    this.uncommittedEvents.add(event)
-    this.apply(event)
-  }
-
-  // 3. Rehydration (invoked on load)
-  function replay(historicalEvents) {
-    for (event in historicalEvents) {
-      this.apply(event)
-    }
-  }
-
-  // 4. Mutation Point (Single source of state mutation)
-  private function apply(event) {
-    if (event is AccountOpenedEvent) {
-      this.id = event.accountId
-      this.balance = event.initialBalance
-    } else if (event is MoneyDepositedEvent) {
-      this.balance += event.amount
-    }
-  }
-}
-```
+- **No Direct Mutation in Commands:** Command methods validate invariants and emit events.
+- **Mutate in Apply Only:** State variables must be updated **exclusively** inside private `apply` handlers, ensuring command execution and historical event rehydration share the same code path.
+- **Rehydration:** Aggregate rehydration on load loops through historical events and passes each to the internal `apply` handler without emitting new uncommitted events.
 
 ---
 
 ## 3. Core Architecture Rules
+
 - **Transactional Outbox:** Write events to a persistent outbox table in the same transaction as the aggregate write. A background process publishes them to ensure at-least-once delivery (avoiding dual-writes).
 - **Upcasters:** Use event upcasting (converters that translate old event schemas to new formats in-memory) to handle event schema version changes.

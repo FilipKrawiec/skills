@@ -1,63 +1,21 @@
-# Factories
+# Aggregate Factories
 
-Reference constraints for Factories, derived from Vaughn Vernon's *Implementing Domain-Driven Design*.
+Reference constraints for Aggregate Factories, derived from Vaughn Vernon's *Implementing Domain-Driven Design*.
 
-## 1. When to Use a Factory
-Use a Factory to encapsulate the creation of a complex Aggregate Root or Entity. A Factory is responsible for returning a **fully valid object** with all invariants met.
+## 1. Role of an Aggregate Factory
 
-## 2. Vernon's 3 Factory Patterns
+An **`AggregateFactory`** encapsulates the creation of complex Aggregate Roots and their child entities. A factory ensures that:
+- Aggregates are instantiated in a **fully valid state** with all initial invariants met.
+- Initial identity generation and domain creation events (e.g. `OrderPlacedEvent`) are properly orchestrated.
+- External domain dependencies (e.g. identity generators, domain calculation policies) are encapsulated without leaking infrastructure or service references into the Aggregate entity itself.
 
-### A. Factory Method on another Aggregate Root
-Use when the creation of a new Aggregate depends directly on the state or lifecycle of an existing Aggregate Root.
-```pseudocode
-class Customer {
-  private isActive: boolean = true
+---
 
-  // Customer (AR) acts as a factory for Order (AR)
-  function placeOrder(orderId, itemsList): Order {
-    if (!this.isActive) {
-      raise Error("Inactive customers cannot place orders")
-    }
-    return Order.create(orderId, this.id, itemsList)
-  }
-}
-```
+## 2. Structural Rules
 
-### B. Static Factory Method
-Expose descriptive static methods on the class itself, keeping the constructor private or protected.
-```pseudocode
-class User {
-  private constructor(id, email, status) {
-    this.id = id
-    this.email = email
-    this.status = status
-  }
-
-  // Clear intent-revealing static factories
-  static function registerPending(id, email): User {
-    user = new User(id, email, UserStatus.PENDING)
-    user.events.add(new UserRegisteredEvent(id, email))
-    return user
-  }
-
-}
-```
-
-### C. Standalone Factory Class/Service
-Use when the instantiation requires dependencies (e.g., Domain Services, calculators) or translation from complex external configurations.
-```pseudocode
-class OrderFactory {
-  constructor(taxCalculator) {
-    this.taxCalculator = taxCalculator
-  }
-
-  function create(id, customerId, rawItemsList): Order {
-    domainItems = []
-    for (item in rawItemsList) {
-      taxRate = this.taxCalculator.calculate(item.productCategory)
-      domainItems.add(new OrderItem(item.productId, item.quantity, item.price, taxRate))
-    }
-    return Order.create(id, customerId, domainItems)
-  }
-}
-```
+1. **Use Standalone `AggregateFactory` Classes**: Encapsulate complex aggregate creation in a dedicated domain factory class (e.g., `OrderFactory`, `CustomerFactory`).
+2. **Do Not Add `Aggregate.create(...)` Static Methods**: Static `create(...)` methods on Aggregate Roots lead to bloated aggregate classes and awkward dependency passing. Aggregate Root constructors should remain package-private or private, accessible only to their designated `AggregateFactory`.
+3. **No Reconstitution / Hydration in Domain Factories**: 
+   - **Domain Creation** (handled by `AggregateFactory`) creates a *new* aggregate, assigns a new ID, enforces creation rules, and registers initial domain creation events.
+   - **Persistence Reconstitution** (hydrating existing aggregates from a database or ORM) is strictly an **Anti-Corruption Layer (ACL) / Infrastructure Adapter** responsibility. Do NOT put `reconstitute(...)` methods or persistence mapping logic inside `AggregateFactory` or core domain models.
+4. **Boundary Translation to Value Objects**: An `AggregateFactory` translates boundary inputs (primitives from commands or DTOs) into strict Value Objects via `.of(...)` before passing them to entity constructors. Raw primitives must never leak past the factory into domain models.
