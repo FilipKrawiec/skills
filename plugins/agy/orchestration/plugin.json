@@ -1,11 +1,23 @@
 {
   "name": "filipkrawiec-agy-orchestration",
-  "version": "8.3.4",
+  "version": "8.3.5",
   "description": "Antigravity-native guidance and artifact presentation rules for orchestration.",
   "dependencies": [
-    {"name": "filipkrawiec-orchestration", "version": "8.3.4"},
-    {"name": "filipkrawiec-workflow", "version": "8.3.4"},
-    {"name": "filipkrawiec-core", "version": "8.3.4"},
-    {"name": "filipkrawiec-authoring", "version": "8.3.4"}
+    {
+      "name": "filipkrawiec-orchestration",
+      "version": "8.3.5"
+    },
+    {
+      "name": "filipkrawiec-workflow",
+      "version": "8.3.5"
+    },
+    {
+      "name": "filipkrawiec-core",
+      "version": "8.3.5"
+    },
+    {
+      "name": "filipkrawiec-authoring",
+      "version": "8.3.5"
+    }
   ]
 }

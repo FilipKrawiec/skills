@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-orchestration",
-  "version": "8.3.4",
+  "version": "8.3.5",
   "description": "Provider-neutral, code-free orchestration skills for bounded delivery.",
   "author": {
     "name": "Filip Krawiec",
@@ -10,5 +10,9 @@
   "repository": "https://github.com/FilipKrawiec/skills",
   "homepage": "https://github.com/FilipKrawiec/skills",
   "license": "UNLICENSED",
-  "keywords": ["skills", "orchestration", "verification"]
+  "keywords": [
+    "skills",
+    "orchestration",
+    "verification"
+  ]
 }

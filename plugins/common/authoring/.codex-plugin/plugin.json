@@ -1,7 +1,11 @@
 {
   "name": "filipkrawiec-authoring",
-  "version": "8.3.4",
+  "version": "8.3.5",
   "description": "Skill authoring and learning-guide helpers.",
-  "author": {"name": "Filip Krawiec", "email": "contact@filipkrawiec.com", "url": "https://github.com/FilipKrawiec"},
+  "author": {
+    "name": "Filip Krawiec",
+    "email": "contact@filipkrawiec.com",
+    "url": "https://github.com/FilipKrawiec"
+  },
   "skills": "./skills/"
 }
