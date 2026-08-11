@@ -28,7 +28,7 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  │                            PORTABLE SKILLS                                  │
  │   Architecture: ddd, hexagonal-architecture                                 │
  │   Workflow:     tdd, vcs, grill-with-docs                                   │
- │   Delivery:     orchestrate-delivery, scaffold-monorepo                     │
+ │   Delivery:     orchestrate-delivery, scaffold-monorepo, define             │
  │   Authoring:    writing-great-skill, teach                                  │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -65,6 +65,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`grill-with-docs`](plugins/common/workflow/skills/grill-with-docs/SKILL.md) | Spec Challenge: Progressive disclosure requirement grilling against knowledge. |
 | **`filipkrawiec-orchestration`** | [`orchestrate-delivery`](plugins/common/orchestration/skills/orchestrate-delivery/SKILL.md) | Delivery Flow: Provider-neutral, code-free task orchestration & worktrees. |
 | | [`scaffold-monorepo`](plugins/common/orchestration/skills/scaffold-monorepo/SKILL.md) | Repository Scaffolding: Trunk-based monorepo layout with `.devcontainer` and `justfile`. |
+| | [`define`](plugins/common/orchestration/skills/define/SKILL.md) | Intent Definition: Capture outcomes, scope boundaries, non-goals, and issue tracker payload. |
 | **`filipkrawiec-authoring`** | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Meta-Skill: Authoring, refining, and pruning portable skills & agent rules. |
 | | [`teach`](plugins/common/authoring/skills/teach/SKILL.md) | Education: Interactive learning guides and architectural trade-off walkthroughs. |
 

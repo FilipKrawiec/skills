@@ -6,6 +6,7 @@ active_skills:
   - vcs
   - orchestrate-delivery
   - scaffold-monorepo
+  - define
 
 build_tools:
   just:
