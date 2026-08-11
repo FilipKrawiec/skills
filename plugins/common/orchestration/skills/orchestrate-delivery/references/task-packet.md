@@ -9,7 +9,7 @@ Slice: <cohesive end-to-end outcome>
 Assigned persona: <developer | quality-engineer | solution-architect | security-auditor>
 Executor: <selected available harness>
 Executor rationale: <configured default, or complexity/local-tool/repository-fit/autonomy basis>
-Routing config: <local config path and validated executor/tracker/review-provider/failure policy>
+Routing config: <validated configuration path and execution policy>
 Workspace: <linked Git worktree path, or named isolated copy>
 Workspace kind: <git-worktree or isolated-copy>
 Repository: <repository identity>
