@@ -14,24 +14,6 @@
 - Mock outbound ports and network boundaries; use MSW for browser/API request behavior where practical.
 - Keep async tests explicit: return/await the action that triggers the assertion.
 
-```typescript
-import { describe, expect, it, vi } from "vitest";
-import { SubmitThread } from "./submit-thread";
-
-describe("Given an empty thread store", () => {
-  describe("When a user submits a thread", () => {
-    it("Then it saves the thread", async () => {
-      const threads = { save: vi.fn().mockResolvedValue(undefined) };
-      const useCase = new SubmitThread(threads);
-
-      await useCase.execute("TypeScript Title");
-
-      expect(threads.save).toHaveBeenCalledWith("TypeScript Title");
-    });
-  });
-});
-```
-
 ## Component, UI, And Acceptance Tests
 
 - Use runner-level projects or package scripts as the source-set equivalent:

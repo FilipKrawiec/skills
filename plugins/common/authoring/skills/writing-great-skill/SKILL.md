@@ -38,6 +38,7 @@ Describe the target behavior positively. Keep a prohibition only for a hard safe
 - **Reference Scope & Sizing**:
   - Keep each reference file focused on a single topic, domain model, language profile, or specification.
   - Prioritize scannable reference formats: tables, checklists, and minimal self-contained code examples. Keep reference files under 300 lines (~1,500 tokens).
+  - Do not include a Table of Contents (TOC) or section anchor list in reference files; agents parse markdown headings directly, and TOCs duplicate text without changing behavior.
   - Do not duplicate procedural steps or execution workflows from `SKILL.md` in reference files.
 - **Lazy Loading Guardrail**:
   - Write explicit, disjoint trigger conditions for context pointers to prevent eager pre-fetching.

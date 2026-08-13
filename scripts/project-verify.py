@@ -7,6 +7,12 @@ import argparse
 import subprocess
 from pathlib import Path
 
+def strip_enclosing_quotes(s: str) -> str:
+    s = s.strip()
+    if len(s) >= 2 and ((s.startswith("'") and s.endswith("'")) or (s.startswith('"') and s.endswith('"'))):
+        return s[1:-1]
+    return s
+
 def parse_yaml_fallback(text: str) -> dict:
     """Clean YAML line-parser for AGENTS.md frontmatter."""
     res: dict = {}
@@ -23,11 +29,13 @@ def parse_yaml_fallback(text: str) -> dict:
         indent = len(raw) - len(raw.lstrip())
         
         if stripped.startswith("- "):
-            item = stripped[2:].strip().strip("'\"")
+            item = strip_enclosing_quotes(stripped[2:])
             if sec0 and isinstance(res.get(sec0), list):
                 res[sec0].append(item)
         elif ":" in stripped:
-            k, v = [part.strip().strip("'\"") for part in stripped.split(":", 1)]
+            parts = stripped.split(":", 1)
+            k = strip_enclosing_quotes(parts[0])
+            v = strip_enclosing_quotes(parts[1]) if len(parts) > 1 else ""
             if indent == 0:
                 sec0, sec2, sec4 = k, None, None
                 res[k] = v if v else ([] if k.startswith("active_") or k.endswith("_list") else {})
@@ -106,14 +114,19 @@ def detect_build_tool(root: Path, config: dict) -> tuple[str, dict]:
         return fallback_tool
     return "default", {}
 
-def verify_git_hygiene(root: Path) -> None:
+def verify_git_hygiene(root: Path, strict: bool = False) -> None:
     res = subprocess.run(["git", "-C", str(root), "status", "--porcelain"], capture_output=True, text=True)
     if res.returncode == 0 and res.stdout.strip():
-        print("WARNING: Git worktree has uncommitted changes", file=sys.stderr)
+        if strict or os.environ.get("CI") == "true" or os.environ.get("STRICT_GIT") == "1":
+            print("ERROR: Git worktree has uncommitted changes (strict git hygiene enforced)", file=sys.stderr)
+            sys.exit(1)
+        else:
+            print("WARNING: Git worktree has uncommitted changes", file=sys.stderr)
 
 def main():
     parser = argparse.ArgumentParser(description="Canonical AGENTS.md Verifier")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Start directory for AGENTS.md search")
+    parser.add_argument("--strict-git", action="store_true", help="Fail with exit code 1 if git worktree has uncommitted changes")
     parser.add_argument("task", nargs="?", default="verify", help="Task name (default: verify)")
 
     args = parser.parse_args()
@@ -140,7 +153,7 @@ def main():
         sys.exit(res.returncode)
 
     if args.task == "verify":
-        verify_git_hygiene(project_root)
+        verify_git_hygiene(project_root, strict=args.strict_git)
 
     print(f"PASS: Task '{args.task}' completed successfully.")
 

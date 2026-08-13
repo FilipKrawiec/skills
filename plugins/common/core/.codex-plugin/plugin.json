@@ -1,11 +1,6 @@
 {
   "name": "filipkrawiec-core",
-  "version": "8.3.5",
   "description": "Core agentic software engineering skills for domain modeling and architecture.",
-  "author": {
-    "name": "Filip Krawiec",
-    "email": "contact@filipkrawiec.com",
-    "url": "https://github.com/FilipKrawiec"
-  },
+  "version": "8.3.5",
   "skills": "./skills/"
 }

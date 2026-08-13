@@ -1,6 +1,6 @@
 ---
 name: grill-with-docs
-description: Use during provider-neutral SPECIFY/GRILL work to challenge a proposed change against task-relevant project and knowledge sources before planning.
+description: Use when challenging a proposed change against task-relevant project and knowledge sources during provider-neutral SPECIFY/GRILL before planning.
 ---
 
 # Grill With Docs

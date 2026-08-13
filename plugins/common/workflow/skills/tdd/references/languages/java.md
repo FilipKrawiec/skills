@@ -9,39 +9,10 @@
 
 ## Scenario Shape
 
-- Prefer `Given...` nested classes or `@DisplayName` groups for scenario context.
+- Prefer `Given...` nested classes (`@Nested`) or `@DisplayName` groups for scenario context.
 - Name test methods as behavior: `whenSubmittingThread_thenItIsSaved`.
 - Keep `Given / When / Then` comments only where they clarify a non-trivial setup, action, or assertion.
 - Assert observable outcomes first; verify interactions only at architectural boundaries.
-
-```java
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-
-class SubmitThreadTest {
-    @Nested
-    class GivenAnEmptyThreadStore {
-        @Test
-        void whenSubmittingThread_thenItIsSaved() {
-            // Given
-            Threads threads = mock(Threads.class);
-            SubmitThreadUseCase useCase = new SubmitThreadUseCase(threads);
-
-            // When
-            SubmissionResult result = useCase.execute(new SubmitThreadCommand("Java Title"));
-
-            // Then
-            assertThat(result.isSuccess()).isTrue();
-            verify(threads).save(any(ForumThread.class));
-        }
-    }
-}
-```
 
 ## Component And Acceptance Tests
 

@@ -1,10 +1,56 @@
 {
   "name": "filipkrawiec",
-  "interface": {"displayName": "Filip Krawiec Skills"},
+  "interface": {
+    "displayName": "Filip Krawiec Skills"
+  },
   "plugins": [
-    {"name": "filipkrawiec-core", "source": {"source": "local", "path": "./plugins/common/core"}, "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}, "category": "Engineering"},
-    {"name": "filipkrawiec-workflow", "source": {"source": "local", "path": "./plugins/common/workflow"}, "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}, "category": "Engineering"},
-    {"name": "filipkrawiec-orchestration", "source": {"source": "local", "path": "./plugins/common/orchestration"}, "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}, "category": "Engineering"},
-    {"name": "filipkrawiec-authoring", "source": {"source": "local", "path": "./plugins/common/authoring"}, "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}, "category": "Engineering"}
+    {
+      "name": "filipkrawiec-authoring",
+      "source": {
+        "source": "local",
+        "path": "./plugins/common/authoring"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Engineering"
+    },
+    {
+      "name": "filipkrawiec-core",
+      "source": {
+        "source": "local",
+        "path": "./plugins/common/core"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Engineering"
+    },
+    {
+      "name": "filipkrawiec-orchestration",
+      "source": {
+        "source": "local",
+        "path": "./plugins/common/orchestration"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Engineering"
+    },
+    {
+      "name": "filipkrawiec-workflow",
+      "source": {
+        "source": "local",
+        "path": "./plugins/common/workflow"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Engineering"
+    }
   ]
 }

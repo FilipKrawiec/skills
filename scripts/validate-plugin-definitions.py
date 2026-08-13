@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 try:
     import yaml
@@ -24,52 +26,49 @@ ALLOWED_FRONTMATTER_KEYS = {
     "compatibility",
     "metadata",
 }
+MAX_REFERENCE_LINES = 300
 
-PACKAGE_METADATA = {
-    ROOT / "plugins" / "common" / "core" / "package-metadata.json": "filipkrawiec-core",
-    ROOT / "plugins" / "common" / "workflow" / "package-metadata.json": "filipkrawiec-workflow",
-    ROOT / "plugins" / "common" / "orchestration" / "package-metadata.json": "filipkrawiec-orchestration",
-    ROOT / "plugins" / "common" / "authoring" / "package-metadata.json": "filipkrawiec-authoring",
-}
 
-PACKAGE_SKILL_TREES = {
-    ROOT / "plugins" / "common" / "core" / "skills": {"ddd", "hexagonal-architecture"},
-    ROOT / "plugins" / "common" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
-    ROOT / "plugins" / "common" / "orchestration" / "skills": {"orchestrate-delivery", "scaffold-monorepo", "define", "specify", "improve"},
-    ROOT / "plugins" / "common" / "authoring" / "skills": {"writing-great-skill", "teach", "swot"},
-}
+class ValidationError(Exception):
+    """Raised when validation fails."""
+
+
+def rel(path: Path) -> Path:
+    return path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+
 
 def fail(message: str) -> None:
     print(f"error: {message}", file=sys.stderr)
-    sys.exit(1)
+    raise ValidationError(message)
 
 
 def load_json(path: Path) -> dict:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        fail(f"missing {path.relative_to(ROOT)}")
+        fail(f"missing {rel(path)}")
     except json.JSONDecodeError as exc:
-        fail(f"invalid JSON in {path.relative_to(ROOT)}: {exc}")
+        fail(f"invalid JSON in {rel(path)}: {exc}")
 
 
 def parse_skill_frontmatter(path: Path) -> dict:
     content = path.read_text(encoding="utf-8")
     lines = content.splitlines()
+    rel_path = rel(path)
     if not lines or lines[0] != "---":
-        fail(f"{path.relative_to(ROOT)} must start with YAML frontmatter")
+        fail(f"{rel_path} must start with YAML frontmatter")
 
     try:
         end = lines.index("---", 1)
     except ValueError:
-        fail(f"{path.relative_to(ROOT)} must close YAML frontmatter")
+        fail(f"{rel_path} must close YAML frontmatter")
 
     frontmatter_text = "\n".join(lines[1:end])
     if yaml is not None:
         try:
             data = yaml.safe_load(frontmatter_text) or {}
         except yaml.YAMLError as exc:
-            fail(f"{path.relative_to(ROOT)} has invalid YAML frontmatter: {exc}")
+            fail(f"{rel_path} has invalid YAML frontmatter: {exc}")
     else:
         # Fallback simple line-based key-value parser for basic frontmatter
         data = {}
@@ -88,7 +87,7 @@ def parse_skill_frontmatter(path: Path) -> dict:
             data[curr_key] = "\n".join(curr_val).strip()
 
     if not isinstance(data, dict):
-        fail(f"{path.relative_to(ROOT)} frontmatter must be a YAML mapping")
+        fail(f"{rel_path} frontmatter must be a YAML mapping")
     return data
 
 
@@ -104,73 +103,104 @@ def strip_markdown_code_blocks(text: str) -> str:
 def validate_markdown_links(file_path: Path) -> None:
     raw_content = file_path.read_text(encoding="utf-8")
     content = strip_markdown_code_blocks(raw_content)
+    rel_path = rel(file_path)
     for match in MARKDOWN_LINK_RE.finditer(content):
         target = match.group(2).strip()
         if target.startswith(("http://", "https://", "mailto:", "#")):
             continue
         if target.startswith("file://") or target.startswith("/"):
-            fail(f"{file_path.relative_to(ROOT)} must not use absolute file URL or path in link target: '{target}'")
+            fail(f"{rel_path} must not use absolute file URL or path in link target: '{target}'")
 
         target_file_path = target.split("#", 1)[0]
+        if not target_file_path:
+            continue
         resolved = (file_path.parent / target_file_path).resolve()
         if not resolved.is_file():
-            fail(f"{file_path.relative_to(ROOT)} contains broken relative link target '{target}' -> {resolved}")
+            fail(f"{rel_path} contains broken relative link target '{target}' -> {resolved}")
 
 
 def validate_skill_spec(skill_dir: Path) -> None:
     skill_name = skill_dir.name
+    rel_dir = rel(skill_dir)
     if not SKILL_NAME_RE.fullmatch(skill_name):
-        fail(f"skill directory must be lowercase kebab-case: {skill_dir.relative_to(ROOT)}")
+        fail(f"skill directory must be lowercase kebab-case: {rel_dir}")
 
     skill_file = skill_dir / "SKILL.md"
     frontmatter = parse_skill_frontmatter(skill_file)
     extra_keys = set(frontmatter) - ALLOWED_FRONTMATTER_KEYS
     if extra_keys:
-        fail(f"{skill_file} uses non-spec frontmatter keys: {sorted(extra_keys)}")
+        fail(f"{rel(skill_file)} uses non-spec frontmatter keys: {sorted(extra_keys)}")
     if frontmatter.get("name") != skill_name:
-        fail(f"{skill_file} name must match directory '{skill_name}'")
-    if not isinstance(frontmatter.get("description"), str) or not frontmatter.get("description"):
-        fail(f"{skill_file} must define a non-empty description")
-    if len(frontmatter["description"]) > 1024:
-        fail(f"{skill_file} description exceeds 1024 characters")
+        fail(f"{rel(skill_file)} name must match directory '{skill_name}'")
+
+    description = frontmatter.get("description")
+    if not isinstance(description, str) or not description:
+        fail(f"{rel(skill_file)} must define a non-empty description")
+    if len(description) > 1024:
+        fail(f"{rel(skill_file)} description exceeds 1024 characters")
+    if not description.startswith("Use when"):
+        fail(f"{rel(skill_file)} description must begin with 'Use when...': '{description[:30]}...'")
 
     validate_markdown_links(skill_file)
 
     legacy_resources = skill_dir / "resources"
     if legacy_resources.exists():
-        fail(f"{legacy_resources.relative_to(ROOT)} must be renamed to assets/")
+        fail(f"{rel(legacy_resources)} must be renamed to assets/")
 
     references_dir = skill_dir / "references"
     if references_dir.exists():
         for reference in references_dir.rglob("*.md"):
+            rel_ref = rel(reference)
             if not REFERENCE_NAME_RE.fullmatch(reference.name):
-                fail(f"reference file must be lowercase kebab-case.md: {reference.relative_to(ROOT)}")
+                fail(f"reference file must be lowercase kebab-case.md: {rel_ref}")
+            ref_text = reference.read_text(encoding="utf-8")
+            ref_lines = len(ref_text.splitlines())
+            if ref_lines > MAX_REFERENCE_LINES:
+                fail(f"reference file {rel_ref} exceeds {MAX_REFERENCE_LINES} lines ({ref_lines} lines)")
+            if re.search(r"^##\s+(?:Contents|Table of Contents)", ref_text, re.MULTILINE | re.IGNORECASE):
+                fail(f"reference file {rel_ref} must not include a Table of Contents (TOC)")
             validate_markdown_links(reference)
 
 
-def validate_skill_tree(root: Path, expected_skills: set[str]) -> None:
+def discover_common_packages(root: Path = ROOT) -> dict[Path, str]:
+    common_dir = root / "plugins" / "common"
+    if not common_dir.is_dir():
+        fail("missing plugins/common directory")
+
+    packages = {}
+    for pkg_dir in sorted(common_dir.iterdir()):
+        if pkg_dir.is_dir() and not pkg_dir.name.startswith("."):
+            meta_path = pkg_dir / "package-metadata.json"
+            expected_name = f"filipkrawiec-{pkg_dir.name}"
+            packages[meta_path] = expected_name
+    return packages
+
+
+def validate_skill_tree(root: Path) -> set[str]:
     if not root.is_dir():
-        fail(f"missing {root.relative_to(ROOT)}/")
+        fail(f"missing {rel(root)}/")
 
     found = {
         path.name
         for path in root.iterdir()
         if path.is_dir() and (path / "SKILL.md").is_file()
     }
-    if found != expected_skills:
-        fail(f"{root.relative_to(ROOT)} mismatch: expected {sorted(expected_skills)}, found {sorted(found)}")
+    if not found:
+        fail(f"{rel(root)} has no valid skills")
     for skill_name in sorted(found):
         validate_skill_spec(root / skill_name)
+    return found
 
 
 def validate_package_metadata(path: Path, expected_name: str) -> None:
     metadata = load_json(path)
+    rel_path = rel(path)
     if metadata.get("name") != expected_name:
-        fail(f"{path.relative_to(ROOT)} must use package name {expected_name}")
+        fail(f"{rel_path} must use package name {expected_name}")
     if not isinstance(metadata.get("version"), str) or not re.fullmatch(r"\d+\.\d+\.\d+", metadata["version"]):
-        fail(f"{path.relative_to(ROOT)} must define a semantic version")
+        fail(f"{rel_path} must define a semantic version")
     if not isinstance(metadata.get("description"), str) or not metadata["description"]:
-        fail(f"{path.relative_to(ROOT)} must define a non-empty description")
+        fail(f"{rel_path} must define a non-empty description")
 
     package_root = path.parent
     antigravity = load_json(package_root / "plugin.json")
@@ -181,38 +211,38 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
         or antigravity.get("description") != metadata["description"]
         or antigravity.get("version") != metadata["version"]
     ):
-        fail(f"{(package_root / 'plugin.json').relative_to(ROOT)} must match package identity and version")
+        fail(f"{rel(package_root / 'plugin.json')} must match package identity and version")
     for manifest_path, manifest in ((package_root / ".claude-plugin" / "plugin.json", claude), (package_root / ".codex-plugin" / "plugin.json", codex)):
         if manifest.get("name") != metadata["name"] or manifest.get("version") != metadata["version"]:
-            fail(f"{manifest_path.relative_to(ROOT)} must match package name and version")
+            fail(f"{rel(manifest_path)} must match package name and version")
         if manifest.get("description") != metadata["description"] or manifest.get("skills") != "./skills/":
-            fail(f"{manifest_path.relative_to(ROOT)} must match package description and skills path")
+            fail(f"{rel(manifest_path)} must match package description and skills path")
 
     package_references = package_root / "references"
     if package_references.exists():
         for ref in package_references.rglob("*.md"):
             if not REFERENCE_NAME_RE.fullmatch(ref.name):
-                fail(f"package reference file must be lowercase kebab-case.md: {ref.relative_to(ROOT)}")
+                fail(f"package reference file must be lowercase kebab-case.md: {rel(ref)}")
             validate_markdown_links(ref)
 
 
-def validate_agy_plugins() -> None:
-    agy_dir = ROOT / "plugins" / "agy"
+def validate_agy_plugins(root: Path = ROOT) -> None:
+    agy_dir = root / "plugins" / "agy"
     if not agy_dir.is_dir():
         fail("missing plugins/agy directory")
 
-    valid_packages = set(PACKAGE_METADATA.values())
-    for plugin_path in agy_dir.iterdir():
+    valid_packages = set(discover_common_packages(root).values())
+    for plugin_path in sorted(agy_dir.iterdir()):
         if not plugin_path.is_dir():
             continue
         manifest_path = plugin_path / "plugin.json"
         manifest = load_json(manifest_path)
         if not isinstance(manifest.get("name"), str) or not manifest["name"].startswith("filipkrawiec-agy-"):
-            fail(f"{manifest_path.relative_to(ROOT)} must use package name starting with filipkrawiec-agy-")
+            fail(f"{rel(manifest_path)} must use package name starting with filipkrawiec-agy-")
         if not isinstance(manifest.get("description"), str) or not manifest["description"]:
-            fail(f"{manifest_path.relative_to(ROOT)} must define a non-empty description")
+            fail(f"{rel(manifest_path)} must define a non-empty description")
         if not isinstance(manifest.get("version"), str) or not re.fullmatch(r"\d+\.\d+\.\d+", manifest["version"]):
-            fail(f"{manifest_path.relative_to(ROOT)} must define a semantic version")
+            fail(f"{rel(manifest_path)} must define a semantic version")
 
         if "dependencies" in manifest:
             deps = manifest["dependencies"]
@@ -223,44 +253,44 @@ def validate_agy_plugins() -> None:
                 and re.fullmatch(r"\d+\.\d+\.\d+", dep["version"])
                 for dep in deps
             ):
-                fail(f"{manifest_path.relative_to(ROOT)} dependencies must be versioned package definitions")
+                fail(f"{rel(manifest_path)} dependencies must be versioned package definitions")
             for dep in deps:
                 if dep["name"] not in valid_packages:
-                    fail(f"{manifest_path.relative_to(ROOT)} dependency '{dep['name']}' is not a valid common package")
+                    fail(f"{rel(manifest_path)} dependency '{dep['name']}' is not a valid common package")
 
         rules_dir = plugin_path / "rules"
         if rules_dir.is_dir():
             for rule_file in rules_dir.glob("*.md"):
                 content = rule_file.read_text(encoding="utf-8")
                 if not content.strip().startswith("# "):
-                    fail(f"{rule_file.relative_to(ROOT)} rule file must start with a markdown header (#)")
+                    fail(f"{rel(rule_file)} rule file must start with a markdown header (#)")
 
         agents_dir = plugin_path / "agents"
         if agents_dir.is_dir():
             for agent_file in agents_dir.glob("*.md"):
                 content = agent_file.read_text(encoding="utf-8")
                 if not content.strip().startswith("# "):
-                    fail(f"{agent_file.relative_to(ROOT)} agent file must start with a markdown header (#)")
+                    fail(f"{rel(agent_file)} agent file must start with a markdown header (#)")
 
 
-def validate_retired_sdlc_is_absent() -> None:
+def validate_retired_sdlc_is_absent(root: Path = ROOT) -> None:
     active_paths = (
-        ROOT / "plugins" / "common" / "sdlc",
-        ROOT / "plugins" / "agy" / "sdlc",
-        ROOT / "spec" / "autonomous-sdlc",
+        root / "plugins" / "common" / "sdlc",
+        root / "plugins" / "agy" / "sdlc",
+        root / "spec" / "autonomous-sdlc",
     )
     for active_path in active_paths:
         if active_path.exists():
-            fail(f"retired SDLC material remains active at {active_path.relative_to(ROOT)}")
+            fail(f"retired SDLC material remains active at {rel(active_path)}")
 
-    archive = ROOT / "archive" / "autonomous-sdlc"
+    archive = root / "archive" / "autonomous-sdlc"
     if archive.exists():
         fail("retired SDLC archive must be removed; Git history is the only legacy reference")
 
 
-def validate_repository_release_version() -> None:
+def validate_repository_release_version(root: Path = ROOT) -> None:
     versions: set[str] = set()
-    for metadata_path in PACKAGE_METADATA:
+    for metadata_path in discover_common_packages(root):
         package_root = metadata_path.parent
         for manifest_path in (
             metadata_path,
@@ -270,32 +300,159 @@ def validate_repository_release_version() -> None:
         ):
             version = load_json(manifest_path).get("version")
             if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
-                fail(f"{manifest_path.relative_to(ROOT)} must define a semantic release version")
+                fail(f"{rel(manifest_path)} must define a semantic release version")
             versions.add(version)
 
-    for manifest_path in (ROOT / "plugins" / "agy").glob("*/plugin.json"):
+    for manifest_path in (root / "plugins" / "agy").glob("*/plugin.json"):
         version = load_json(manifest_path).get("version")
         if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
-            fail(f"{manifest_path.relative_to(ROOT)} must define a semantic release version")
+            fail(f"{rel(manifest_path)} must define a semantic release version")
         versions.add(version)
 
     if len(versions) != 1:
         fail(f"all plugin definitions must share one release version, found {sorted(versions)}")
 
 
+def validate_repository_markdown_links(root: Path = ROOT) -> None:
+    for candidate in ("docs", "AGENTS.md", "README.md", "CONTRIBUTING.md", "EVENT-STORMING.md"):
+        path = root / candidate
+        if path.is_file():
+            validate_markdown_links(path)
+        elif path.is_dir():
+            for md_file in path.rglob("*.md"):
+                validate_markdown_links(md_file)
+
+
+def sync_manifests(root: Path = ROOT) -> None:
+    common_pkgs = discover_common_packages(root)
+    if not common_pkgs:
+        fail("No common packages found to sync")
+
+    versions: set[str] = set()
+    for meta_path in common_pkgs:
+        data = load_json(meta_path)
+        v = data.get("version")
+        if v:
+            versions.add(v)
+    if len(versions) != 1:
+        fail(f"Cannot sync: found multiple versions across package-metadata.json: {sorted(versions)}")
+    release_version = next(iter(versions))
+
+    synced_files: list[Path] = []
+    claude_plugins: list[dict[str, Any]] = []
+    codex_plugins: list[dict[str, Any]] = []
+
+    # 1. Sync common packages
+    for meta_path, pkg_name in sorted(common_pkgs.items()):
+        pkg_root = meta_path.parent
+        meta_data = load_json(meta_path)
+        description = meta_data.get("description", "")
+        pkg_rel_source = f"./plugins/common/{pkg_root.name}"
+
+        # plugin.json
+        plugin_json = pkg_root / "plugin.json"
+        plugin_data = {
+            "name": pkg_name,
+            "description": description,
+            "version": release_version,
+        }
+        plugin_json.write_text(json.dumps(plugin_data, indent=2) + "\n", encoding="utf-8")
+        synced_files.append(plugin_json)
+
+        # .claude-plugin/plugin.json
+        claude_dir = pkg_root / ".claude-plugin"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        claude_json = claude_dir / "plugin.json"
+        claude_data = {
+            "name": pkg_name,
+            "description": description,
+            "version": release_version,
+            "skills": "./skills/",
+        }
+        claude_json.write_text(json.dumps(claude_data, indent=2) + "\n", encoding="utf-8")
+        synced_files.append(claude_json)
+
+        # .codex-plugin/plugin.json
+        codex_dir = pkg_root / ".codex-plugin"
+        codex_dir.mkdir(parents=True, exist_ok=True)
+        codex_json = codex_dir / "plugin.json"
+        codex_data = {
+            "name": pkg_name,
+            "description": description,
+            "version": release_version,
+            "skills": "./skills/",
+        }
+        codex_json.write_text(json.dumps(codex_data, indent=2) + "\n", encoding="utf-8")
+        synced_files.append(codex_json)
+
+        claude_plugins.append({
+            "name": pkg_name,
+            "description": description,
+            "category": "development",
+            "source": pkg_rel_source,
+            "homepage": "https://github.com/FilipKrawiec/skills",
+        })
+
+        codex_plugins.append({
+            "name": pkg_name,
+            "source": {"source": "local", "path": pkg_rel_source},
+            "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+            "category": "Engineering",
+        })
+
+    # 2. Sync AGY overlays
+    agy_dir = root / "plugins" / "agy"
+    if agy_dir.is_dir():
+        for agy_manifest in sorted(agy_dir.glob("*/plugin.json")):
+            agy_data = load_json(agy_manifest)
+            agy_data["version"] = release_version
+            if "dependencies" in agy_data and isinstance(agy_data["dependencies"], list):
+                for dep in agy_data["dependencies"]:
+                    if isinstance(dep, dict) and "version" in dep:
+                        dep["version"] = release_version
+            agy_manifest.write_text(json.dumps(agy_data, indent=2) + "\n", encoding="utf-8")
+            synced_files.append(agy_manifest)
+
+    # 3. Sync Marketplace Catalogs
+    claude_market = root / ".claude-plugin" / "marketplace.json"
+    if claude_market.is_file():
+        cm_data = load_json(claude_market)
+        cm_data["plugins"] = claude_plugins
+        claude_market.write_text(json.dumps(cm_data, indent=2) + "\n", encoding="utf-8")
+        synced_files.append(claude_market)
+
+    codex_market = root / ".agents" / "plugins" / "marketplace.json"
+    if codex_market.is_file():
+        cx_data = load_json(codex_market)
+        cx_data["plugins"] = codex_plugins
+        codex_market.write_text(json.dumps(cx_data, indent=2) + "\n", encoding="utf-8")
+        synced_files.append(codex_market)
+
+    print(f"Synchronized {len(synced_files)} manifest files to release version {release_version}.")
+
+
 def main() -> None:
-    for path, name in PACKAGE_METADATA.items():
-        validate_package_metadata(path, name)
+    parser = argparse.ArgumentParser(description="Validate or synchronize plugin definitions and skills.")
+    parser.add_argument("--sync", action="store_true", help="Synchronize all host plugin manifests from package-metadata.json")
+    args = parser.parse_args()
 
-    for root, skills in PACKAGE_SKILL_TREES.items():
-        validate_skill_tree(root, skills)
+    try:
+        if args.sync:
+            sync_manifests(ROOT)
 
-    validate_agy_plugins()
-    validate_retired_sdlc_is_absent()
-    validate_repository_release_version()
+        packages = discover_common_packages(ROOT)
+        for path, name in packages.items():
+            validate_package_metadata(path, name)
+            validate_skill_tree(path.parent / "skills")
 
-    print("Plugin validation passed.")
+        validate_agy_plugins(ROOT)
+        validate_retired_sdlc_is_absent(ROOT)
+        validate_repository_release_version(ROOT)
+        validate_repository_markdown_links(ROOT)
 
+        print("Plugin validation passed.")
+    except ValidationError:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
