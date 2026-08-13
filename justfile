@@ -18,6 +18,10 @@ sync-manifests:
 release-check:
     python3 scripts/validate-release-version.py
 
+# Perform automated semantic release (bumps version, syncs manifests, commits, and tags)
+release bump="auto":
+    python3 scripts/release.py {{bump}}
+
 # Display verifier status and detected lifecycle tasks
 status:
     python3 scripts/project-verify.py status

@@ -183,6 +183,9 @@ just knowledge-check
 
 # Run release version validator
 just release-check
+
+# Perform automated semantic release (bumps version, syncs manifests, commits, and tags)
+just release      # or: python3 scripts/release.py auto
 ```
 
 ---
@@ -194,7 +197,7 @@ Want to add a new skill, update plugin manifests, or prepare a release tag? Read
 ### Release Procedure Summary
 
 * **Pre-merge**: Run the full repository verification suite (`python3 scripts/project-verify.py unit` and `verify`) and submit a Review Request. This stage does not claim a release tag, published version, or completed release.
-* **Post-merge**: Once the user merges to `main`, update version manifests, create the annotated tag (`v<version>`), run `python3 scripts/validate-release-version.py`, and push with tags (`git push --follow-tags`).
+* **Post-merge / Ship**: Once merged to `main`, execute the automated release workflow (`just release` or `python3 scripts/release.py`) which computes the semver bump from conventional commits, synchronizes all plugin manifests, creates the annotated tag (`v<version>`), and pushes with tags (`git push --follow-tags`).
 
 ---
 
