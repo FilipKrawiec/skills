@@ -34,10 +34,10 @@ The **define** skill captures raw ideas, feature proposals, or user needs and tr
    - Record the created Issue number and URL.
 
 5. **Initialize Board Status**:
-   - Add the issue to the GitHub Project board and set status to **Backlog**.
+   - Add the issue to the GitHub Project board (`gh project item-add ... --format json`) and immediately assign its status to **`01 Define`** (or `Backlog`) using `gh project item-edit`.
 
 6. **Completion Boundary Guardrail**:
-   - The `define` skill MUST finish by creating the tracker item (`gh issue create`), placing it on the **Backlog**, and presenting the Issue link to the user.
+   - The `define` skill MUST finish by creating the tracker item (`gh issue create`), assigning its project board phase to **`01 Define`** (or `Backlog`), and presenting the Issue link to the user.
    - It MUST NOT proceed directly to code execution or drafting `implementation_plan.md`; the created GitHub Issue is the required output so the Product Owner can refine and specify the idea in Stage 2 (**SPECIFY / GRILL**).
 
 ---

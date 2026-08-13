@@ -24,11 +24,12 @@ The **specify** skill takes an existing GitHub Issue on the **Backlog** and cond
      - Testing requirements (TDD contracts).
 
 3. **Update Tracker Specification**:
+   - Update the project board item phase to **`02 Spec`** using `gh project item-edit`.
    - Update issue description using `gh issue edit <id> --body-file <refined-file>`.
    - Post summary comment (`gh issue comment <id>`) detailing resolved decisions and acceptance criteria.
 
 4. **Completion Boundary Guardrail**:
-   - The `specify` skill MUST finish by updating the GitHub Issue on the **Backlog** (or setting status to **Blocked** if unresolved blockers remain).
+   - The `specify` skill MUST finish by updating the GitHub Issue and its project board phase to **`02 Spec`** (or setting status to **Blocked** if unresolved blockers remain).
    - It MUST NOT proceed to drafting technical `implementation_plan.md` or executing code changes. `orchestrate-delivery` owns stage 3+ execution when the item is ready.
 
 ---
