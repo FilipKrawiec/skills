@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-authoring",
   "description": "Skill authoring and learning-guide helpers.",
-  "version": "8.4.0",
+  "version": "9.0.0",
   "skills": "./skills/"
 }
