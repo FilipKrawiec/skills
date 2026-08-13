@@ -98,8 +98,12 @@ def bump_package_metadata(root: Path, new_version: str) -> None:
 
 
 def sync_all_manifests(root: Path) -> None:
-    from validate_plugin_definitions import sync_manifests
-    sync_manifests(root)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("validator", root / "scripts" / "validate-plugin-definitions.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.sync_manifests(root)
 
 
 def refresh_environments(root: Path) -> None:
@@ -185,9 +189,14 @@ def perform_release(
     refresh_environments(root)
 
     # 5. Validate release
-    from validate_release_version import tag_at_head, validate_manifest_versions
-    tag = tag_at_head()
-    validate_manifest_versions(tag)
+    import importlib.util
+    rel_spec = importlib.util.spec_from_file_location("rel_validator", root / "scripts" / "validate-release-version.py")
+    assert rel_spec and rel_spec.loader
+    rel_module = importlib.util.module_from_spec(rel_spec)
+    rel_spec.loader.exec_module(rel_module)
+
+    tag = rel_module.tag_at_head()
+    rel_module.validate_manifest_versions(tag)
 
     print(f"Successfully released and tagged {tag_name}!")
     return next_version
