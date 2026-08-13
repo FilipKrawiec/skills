@@ -8,5 +8,23 @@ CURRENT_BRANCH="$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null 
 
 if [[ "${CURRENT_BRANCH}" == "main" ]]; then
   echo "=== [git-hook:post-merge] Main branch merge/pull detected: Refreshing local plugins ==="
-  "${REPO_ROOT}/scripts/refresh-local-plugins.sh"
+  if command -v just >/dev/null 2>&1; then
+    (cd "${REPO_ROOT}" && just refresh)
+  else
+    target_dir="${AGY_IDE_PLUGIN_DIR:-"$HOME/.gemini/config/plugins"}"
+    mkdir -p "${target_dir}"
+    for dir in "${REPO_ROOT}"/plugins/common/*; do
+      [ -d "$dir" ] || continue
+      pkg="filipkrawiec-$(basename "$dir")"
+      rm -rf "${target_dir}/${pkg}"
+      cp -r "$dir" "${target_dir}/${pkg}"
+    done
+    for dir in "${REPO_ROOT}"/plugins/agy/*; do
+      [ -d "$dir" ] || continue
+      pkg="filipkrawiec-agy-$(basename "$dir")"
+      rm -rf "${target_dir}/${pkg}"
+      cp -r "$dir" "${target_dir}/${pkg}"
+    done
+    echo "Refreshed local plugin installations."
+  fi
 fi
