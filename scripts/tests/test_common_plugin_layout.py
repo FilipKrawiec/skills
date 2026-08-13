@@ -319,6 +319,32 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertLess(len(methodology.splitlines()), 300)
         self.assertLess(len(template.splitlines()), 300)
 
+    def test_improve_skill_layout_and_authoring_spec(self) -> None:
+        skill_dir = ROOT / "plugins" / "common" / "orchestration" / "skills" / "improve"
+        self.assertTrue((skill_dir / "SKILL.md").is_file())
+        self.assertTrue((skill_dir / "references" / "friction-taxonomy.md").is_file())
+
+        content = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---\nname: improve\n"))
+        self.assertIn("description: Use when capturing workflow friction, debugging pain points, or agent mistakes in any project to generate sanitized, actionable improvements or report issues upstream to FilipKrawiec/skills.", content)
+        self.assertIn("[friction-taxonomy.md](references/friction-taxonomy.md)", content)
+        self.assertIn("5-Point Root Cause", content)
+        self.assertIn("Automated Privacy Scrubbing", content)
+        self.assertIn("gh issue create -R FilipKrawiec/skills", content)
+        self.assertIn("01 Define", content)
+        self.assertIn("Offline & Fallback", content)
+        self.assertLess(len(content.splitlines()), 65)
+
+        taxonomy = (skill_dir / "references" / "friction-taxonomy.md").read_text(encoding="utf-8")
+        self.assertIn("skill-guidance", taxonomy)
+        self.assertIn("tooling-error", taxonomy)
+        self.assertIn("workflow-friction", taxonomy)
+        self.assertIn("testing-gap", taxonomy)
+        self.assertIn("boundary-violation", taxonomy)
+        self.assertIn("Privacy Scrubbing Checklist", taxonomy)
+        self.assertIn("Sanitized Issue Template", taxonomy)
+        self.assertLess(len(taxonomy.splitlines()), 300)
+
     def test_all_skills_and_package_markdown_links_resolve_correctly(self) -> None:
         import re
         link_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
