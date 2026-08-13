@@ -37,7 +37,7 @@ Execute the Red-Green-Refactor loop in strict linear sequence for each observabl
 *Exit Gate*: Code is clean; all tests pass without behavior drift.
 
 ### Phase 4: **VERIFY** (Deterministic Gate)
-1. Run repository verification: `python3 scripts/project-verify.py verify`.
+1. Run repository verification: execute the project's configured verification command (e.g. `just verify` or test runner).
 *Exit Gate*: Project verification passes with exit code 0.
 
 ---

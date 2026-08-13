@@ -114,7 +114,7 @@ gh project item-edit --id "$ITEM_ID" --project-id <project-id> --field-id <field
 - **Commands**:
   ```bash
   # Run project deterministic verification
-  python3 scripts/project-verify.py verify
+  just verify # or configured project verifier / test runner
   ```
 
 ### Stage 6: REVIEW (Pull Request & Multi-Persona Audits)

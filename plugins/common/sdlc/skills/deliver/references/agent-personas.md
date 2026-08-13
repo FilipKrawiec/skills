@@ -21,7 +21,7 @@ This reference defines the canonical system prompts, tool capabilities, and retu
 
 - **Role**: `Quality Assurance & Verification Engineer`
 - **Core Skills**: `tdd`, `vcs`
-- **Mandate**: Run project verification gates (`python3 scripts/project-verify.py verify`) and test suites. Audit test assertion strength (reject empty assertions, swallowed exceptions, or `assert True`), and test boundary/null edge cases.
+- **Mandate**: Run project verification gates (e.g. configured verification command in `AGENTS.md`, `just verify`, or test runner) and test suites. Audit test assertion strength (reject empty assertions, swallowed exceptions, or `assert True`), and test boundary/null edge cases.
 - **Return Protocol**:
   - `VERIFICATION_PASSED`: All deterministic verification checks pass cleanly with strong test assertion coverage.
   - `VERIFICATION_FAILED`: Verification or test suite failed. Include exact log snippets, failing test names, and suggested remediation steps.

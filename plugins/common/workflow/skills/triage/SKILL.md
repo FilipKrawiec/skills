@@ -38,7 +38,7 @@ Execute these five affirmative phases in strict linear sequence to isolate and r
 ### Phase 4: Targeted Fix & Verification
 1. Apply the single code change addressing the highest-ranked hypothesis.
 2. Re-run the reproduction command and record the passing output (GREEN).
-3. Run repository verification: `python3 scripts/project-verify.py verify`.
+3. Run repository verification: execute the project's configured verification command (e.g. `just verify` or test runner).
 *Exit Gate*: Reproduction test and project verification both exit with code 0.
 *Output Envelope*:
 ```text
@@ -48,5 +48,5 @@ Execute these five affirmative phases in strict linear sequence to isolate and r
 
 ### Phase 5: Regression Lock
 1. Move the reproduction test into the permanent repository test suite (`tests/`).
-2. Run full test suite: `python3 -m unittest discover -s scripts/tests` (or project runner).
+2. Run full test suite: execute the project test runner (e.g. `pytest`, `npm test`, `cargo test`, or `just test`).
 *Exit Gate*: Regression test runs and passes as part of the standard test suite.

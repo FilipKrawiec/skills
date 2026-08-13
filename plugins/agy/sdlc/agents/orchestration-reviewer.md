@@ -46,7 +46,7 @@ Actively invoke and enforce the enabled skills (`ddd`, `hexagonal-architecture`,
 
 1. **Inspect Diffs & Verification Evidence**:
    - Read the task packet specification and implementation plan.
-   - Run `python3 scripts/project-verify.py verify` to verify automated test execution and git worktree scope compliance.
+   - Run the project's configured verification gate (e.g., `AGENTS.md` lifecycle task, `just verify`, or test runner) to verify automated test execution and git worktree scope compliance.
 
 2. **Determine Decision**:
    - **`CORRECT_PLAN`**: Select if the underlying approach or architecture violated domain boundaries.

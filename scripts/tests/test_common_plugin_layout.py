@@ -180,6 +180,13 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("python3 scripts/validate-plugin-definitions.py", workflow)
         self.assertIn("python3 scripts/project-verify.py status", workflow)
 
+    def test_root_ci_defines_automated_release_on_main(self) -> None:
+        release_wf = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+        self.assertIn("branches:\n      - main", release_wf)
+        self.assertIn("python3 scripts/release.py auto", release_wf)
+        self.assertIn("git push origin main --follow-tags", release_wf)
+
     def test_readme_defines_the_pre_and_post_merge_release_boundary(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
@@ -387,6 +394,20 @@ class CommonPluginLayoutTests(unittest.TestCase):
                     resolved.is_file(),
                     f"{md_file.relative_to(ROOT)} broken relative link '{target}' -> {resolved}",
                 )
+
+    def test_skills_are_portable_and_do_not_hardcode_repo_specific_scripts(self) -> None:
+        for md_file in (ROOT / "plugins").rglob("*.md"):
+            content = md_file.read_text(encoding="utf-8")
+            self.assertNotIn(
+                "scripts/release.py",
+                content,
+                f"{md_file.relative_to(ROOT)} must not hardcode repository-specific release script 'scripts/release.py'",
+            )
+            self.assertNotIn(
+                "scripts/tests",
+                content,
+                f"{md_file.relative_to(ROOT)} must not hardcode repository test directory 'scripts/tests'",
+            )
 
 
 if __name__ == "__main__":
