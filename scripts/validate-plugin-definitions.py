@@ -92,6 +92,31 @@ def parse_skill_frontmatter(path: Path) -> dict:
     return data
 
 
+MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+
+
+def strip_markdown_code_blocks(text: str) -> str:
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    text = re.sub(r"`[^`\n]+`", "", text)
+    return text
+
+
+def validate_markdown_links(file_path: Path) -> None:
+    raw_content = file_path.read_text(encoding="utf-8")
+    content = strip_markdown_code_blocks(raw_content)
+    for match in MARKDOWN_LINK_RE.finditer(content):
+        target = match.group(2).strip()
+        if target.startswith(("http://", "https://", "mailto:", "#")):
+            continue
+        if target.startswith("file://") or target.startswith("/"):
+            fail(f"{file_path.relative_to(ROOT)} must not use absolute file URL or path in link target: '{target}'")
+
+        target_file_path = target.split("#", 1)[0]
+        resolved = (file_path.parent / target_file_path).resolve()
+        if not resolved.is_file():
+            fail(f"{file_path.relative_to(ROOT)} contains broken relative link target '{target}' -> {resolved}")
+
+
 def validate_skill_spec(skill_dir: Path) -> None:
     skill_name = skill_dir.name
     if not SKILL_NAME_RE.fullmatch(skill_name):
@@ -109,6 +134,8 @@ def validate_skill_spec(skill_dir: Path) -> None:
     if len(frontmatter["description"]) > 1024:
         fail(f"{skill_file} description exceeds 1024 characters")
 
+    validate_markdown_links(skill_file)
+
     legacy_resources = skill_dir / "resources"
     if legacy_resources.exists():
         fail(f"{legacy_resources.relative_to(ROOT)} must be renamed to assets/")
@@ -118,6 +145,7 @@ def validate_skill_spec(skill_dir: Path) -> None:
         for reference in references_dir.rglob("*.md"):
             if not REFERENCE_NAME_RE.fullmatch(reference.name):
                 fail(f"reference file must be lowercase kebab-case.md: {reference.relative_to(ROOT)}")
+            validate_markdown_links(reference)
 
 
 def validate_skill_tree(root: Path, expected_skills: set[str]) -> None:
@@ -159,6 +187,13 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
             fail(f"{manifest_path.relative_to(ROOT)} must match package name and version")
         if manifest.get("description") != metadata["description"] or manifest.get("skills") != "./skills/":
             fail(f"{manifest_path.relative_to(ROOT)} must match package description and skills path")
+
+    package_references = package_root / "references"
+    if package_references.exists():
+        for ref in package_references.rglob("*.md"):
+            if not REFERENCE_NAME_RE.fullmatch(ref.name):
+                fail(f"package reference file must be lowercase kebab-case.md: {ref.relative_to(ROOT)}")
+            validate_markdown_links(ref)
 
 
 def validate_agy_plugins() -> None:

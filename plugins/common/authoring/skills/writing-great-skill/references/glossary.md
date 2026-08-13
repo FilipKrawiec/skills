@@ -18,19 +18,31 @@ The always-loaded trigger text for a model-invoked skill.
 
 ## Context Pointer
 
-A line that tells the agent when to load some out-of-context material.
+A relative markdown link paired with an explicit, conditional trigger instructing the agent when to load auxiliary reference material on-demand.
 
 ## Information Hierarchy
 
-The ordering of material by immediacy: required steps, in-file reference, disclosed reference.
+The ordering of material by immediacy: required workflow steps, in-file essential reference, conditionally disclosed reference files.
 
 ## Branch
 
-A distinct way a skill can be used.
+A distinct operational path or mode in which a skill can be executed.
 
 ## Single Source Of Truth
 
-Each behavior or rule has one authoritative home.
+Each behavior, rule, or architectural concept has one authoritative home.
+
+## Shared Package Authority
+
+A single authoritative reference document stored at the plugin package level and shared by sibling skills within that package to prevent duplication across skills.
+
+## Lazy Loading (Progressive Disclosure)
+
+The architectural practice of loading reference materials only when the active execution branch requires them, preserving the agent's context window.
+
+## Greedy Pre-fetching
+
+A failure mode where an agent eagerly loads every listed reference file upon skill startup regardless of relevance, exhausting the context token budget.
 
 ## No-Op
 
@@ -46,8 +58,8 @@ A single user-invoked skill designed to route the user's intent to more speciali
 
 ## Steps
 
-Actionable, sequential instructions that the agent must execute.
+Actionable, sequential instructions that the agent must execute directly in `SKILL.md`.
 
 ## Reference
 
-Durable vocabulary, guidelines, or long-lived details relevant to the skill execution.
+Durable vocabulary, language profiles, domain models, or specifications stored in auxiliary markdown files loaded conditionally via context pointers.

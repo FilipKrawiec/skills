@@ -73,6 +73,24 @@ Concise, stepwise guidance with a working example tends to outperform exhaustive
 #### Structure Large Skills with Progressive Disclosure
 The specification recommends keeping `SKILL.md` under 500 lines and 5,000 tokens — just the core instructions the agent needs on every run. When a skill legitimately needs more content, move detailed reference material to separate files in `references/` or similar directories and tell the agent *when* to load each file.
 
+### Crafting High-Quality Reference Documents
+Reference files in `references/` hold durable, auxiliary domain knowledge that should only enter context on-demand.
+
+#### Reference Taxonomy
+Structure reference documents into recognizable, purposeful archetypes:
+* **Cheatsheets & Quick References**: Terse tabular mappings, CLI arguments, or configuration options (e.g. `github-pipeline-integration.md`).
+* **Domain & Architectural Models**: Explicit boundary definitions, layer policies, and aggregate invariants (e.g. `domain-layer.md`, `strategic-design.md`).
+* **Language & Technology Profiles**: Stack-specific conventions, type mappings, and test idiom snippets (e.g. `references/languages/kotlin.md`).
+* **Specifications & Formats**: Precise schemas, payload envelopes, or state machine transitions (e.g. `task-packet.md`).
+* **Glossaries**: Authoritative terminology definitions ensuring ubiquitous language consistency (e.g. `glossary.md`).
+
+#### Design Rules for Reference Documents
+1. **Single Topic Focus**: Every reference file should address exactly one concept or layer.
+2. **Strict Size Budget**: Keep reference files under 300 lines (~1,500 tokens). Long reference files trigger context fatigue and dilute reasoning.
+3. **High Scannability**: Use markdown tables, bulleted checklists, and minimal code snippets instead of conversational prose.
+4. **No Workflow Duplication**: Do not restate the procedural "how-to" steps from `SKILL.md` inside reference files.
+5. **Deterministic Triggers**: Ensure context pointers in `SKILL.md` specify distinct conditions (`"Read X only when doing Y"`) so agents do not eagerly preload unused references.
+
 ---
 
 ## 2. Optimizing Skill Descriptions
