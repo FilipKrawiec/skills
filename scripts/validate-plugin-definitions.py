@@ -36,7 +36,7 @@ PACKAGE_SKILL_TREES = {
     ROOT / "plugins" / "common" / "core" / "skills": {"ddd", "hexagonal-architecture"},
     ROOT / "plugins" / "common" / "workflow" / "skills": {"tdd", "vcs", "grill-with-docs"},
     ROOT / "plugins" / "common" / "orchestration" / "skills": {"orchestrate-delivery", "scaffold-monorepo", "define", "specify"},
-    ROOT / "plugins" / "common" / "authoring" / "skills": {"writing-great-skill", "teach"},
+    ROOT / "plugins" / "common" / "authoring" / "skills": {"writing-great-skill", "teach", "swot"},
 }
 
 def fail(message: str) -> None:

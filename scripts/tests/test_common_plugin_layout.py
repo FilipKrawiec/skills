@@ -271,6 +271,27 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("## Lazy Loading (Progressive Disclosure)", glossary)
         self.assertIn("## Greedy Pre-fetching", glossary)
 
+    def test_swot_skill_layout_and_authoring_spec(self) -> None:
+        skill_dir = ROOT / "plugins" / "common" / "authoring" / "skills" / "swot"
+        self.assertTrue((skill_dir / "SKILL.md").is_file())
+        self.assertTrue((skill_dir / "references" / "swot-methodology.md").is_file())
+        self.assertTrue((skill_dir / "references" / "swot-template.md").is_file())
+
+        content = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---\nname: swot\n"))
+        self.assertIn(
+            "description: Use when performing a SWOT analysis (Strengths, Weaknesses, Opportunities, Threats), strategic audit, or architectural health evaluation of a codebase, skill, framework, or technical component.",
+            content,
+        )
+        self.assertIn("[swot-methodology.md](references/swot-methodology.md)", content)
+        self.assertIn("[swot-template.md](references/swot-template.md)", content)
+        self.assertLess(len(content.splitlines()), 45)
+
+        methodology = (skill_dir / "references" / "swot-methodology.md").read_text(encoding="utf-8")
+        template = (skill_dir / "references" / "swot-template.md").read_text(encoding="utf-8")
+        self.assertLess(len(methodology.splitlines()), 300)
+        self.assertLess(len(template.splitlines()), 300)
+
     def test_all_skills_and_package_markdown_links_resolve_correctly(self) -> None:
         import re
         link_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
