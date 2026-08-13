@@ -5,19 +5,19 @@ description: Use when performing a SWOT analysis (Strengths, Weaknesses, Opportu
 
 # SWOT Analysis (Strategic Evaluation Skill)
 
-Perform evidence-grounded strategic audits and architectural health evaluations across technical components, codebases, frameworks, or skills.
+Perform evidence-grounded, low-ceremony strategic audits and architectural health evaluations across technical components, codebases, frameworks, or skills.
 
-## Evaluation Workflow
+## Playbook Steps
 
-1. **Define Scope & Boundary**: Identify the target system, codebase, skill, or architectural component under evaluation and clarify the assessment objectives.
-2. **Gather Concrete Evidence**: Inspect repository structure, implementation files, test coverage, dependencies, and configuration to ground every finding in verifiable evidence.
-3. **Classify Quadrant Factors**: Categorize verified observations into internal factors (Strengths, Weaknesses) and external factors (Opportunities, Threats).
-4. **Develop Strategic Actions**: Formulate targeted strategies pairing internal capabilities with external dynamics (SO, WO, ST, WT).
-5. **Publish Scored Matrix**: Generate a scannable quadrant summary and prioritized roadmap for decision makers.
+1. **Scope & Target**: Define the exact component or codebase boundary under evaluation.
+2. **Gather Evidence**: Inspect files, test suites, and configurations; require concrete file citations for every observation.
+3. **Classify 4-Quadrant Factors**: Map verified findings to Strengths, Weaknesses, Opportunities, and Threats with priority tiers (P0/P1/P2).
+4. **Action Roadmap**: Derive high-leverage engineering actions directly from the quadrant findings.
+5. **Publish Compact Report**: Generate a scannable summary table and prioritized action roadmap.
 
 ---
 
 ## Context Pointers
 
 - Read [swot-methodology.md](references/swot-methodology.md) when classifying factors, applying scoring rubrics, or rendering visual quadrant charts.
-- Read [swot-template.md](references/swot-template.md) when formatting the evaluation report, artifact layout, or strategic recommendation matrix.
+- Read [swot-template.md](references/swot-template.md) when formatting the evaluation report or artifact layout.
