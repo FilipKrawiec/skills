@@ -252,6 +252,33 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("04 Execute", content)
         self.assertIn("05 Review", content)
         self.assertIn("06 Ship", content)
+        self.assertIn("07 Improve", content)
+        self.assertIn("completes as **Done**", content)
+
+    def test_agent_personas_mandates_and_anti_overengineering_rules(self) -> None:
+        personas_file = (
+            ROOT
+            / "plugins"
+            / "common"
+            / "orchestration"
+            / "skills"
+            / "orchestrate-delivery"
+            / "references"
+            / "agent-personas.md"
+        )
+        self.assertTrue(personas_file.is_file())
+        content = personas_file.read_text(encoding="utf-8")
+        self.assertIn("solution-architect", content)
+        self.assertIn("anti-overengineering", content.lower())
+        self.assertIn("developer", content)
+        self.assertIn("examples/", content)
+
+    def test_github_pipeline_integration_stage_7_archive_flow(self) -> None:
+        pipeline_file = ROOT / "plugins" / "common" / "orchestration" / "references" / "github-pipeline-integration.md"
+        self.assertTrue(pipeline_file.is_file())
+        content = pipeline_file.read_text(encoding="utf-8")
+        self.assertIn("07 Improve", content)
+        self.assertIn("gh project item-archive", content)
 
     def test_writing_great_skill_layout_and_reference_rules(self) -> None:
         skill_dir = ROOT / "plugins" / "common" / "authoring" / "skills" / "writing-great-skill"
