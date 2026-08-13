@@ -40,7 +40,7 @@ plugins/common/<package>/skills/<skill-name>/
 * **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent rather than internal mechanics, and specify precise trigger boundaries to prevent false activations.
 * **Information Hierarchy**:
   * `SKILL.md` contains only the core workflow steps and essential rules.
-  * Deep domain reference material lives in relative markdown files inside `references/` and is referenced via **context pointers** (e.g., *"Read [ubiquitous-language.md](references/ubiquitous-language.md) when defining domain terminology."*).
+  * Deep domain reference material lives in relative markdown files inside `references/` and is referenced via **context pointers** (e.g., *"Read `[ubiquitous-language.md](references/ubiquitous-language.md)` when defining domain terminology."*).
 
 ---
 

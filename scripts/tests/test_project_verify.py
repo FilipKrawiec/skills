@@ -138,6 +138,41 @@ class CompactProjectVerifyTests(unittest.TestCase):
             self.assertEqual(res.returncode, 0)
             self.assertIn("Detected Tool: 'root_tool'", res.stdout)
 
+    def test_strict_git_hygiene_blocks_dirty_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            # Initialize a git repo with a dirty worktree
+            subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmp_path, capture_output=True, check=True)
+
+            agents_file = tmp_path / "AGENTS.md"
+            agents_file.write_text(
+                "---\n"
+                "build_tools:\n"
+                "  dummy:\n"
+                "    build_script: build.txt\n"
+                "    lifecycle_tasks:\n"
+                "      verify: echo 'RUNNING VERIFY'\n"
+                "---\n",
+                encoding="utf-8",
+            )
+            (tmp_path / "build.txt").write_text("dummy\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True, check=True)
+            subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=tmp_path, capture_output=True, check=True)
+
+            # Non-strict verify passes with warning
+            res_warn = self.run_cli("--root", str(tmp_path), "verify")
+            self.assertEqual(res_warn.returncode, 0)
+
+            # Make worktree dirty
+            (tmp_path / "dirty.txt").write_text("uncommitted\n", encoding="utf-8")
+
+            # Strict verify fails
+            res_strict = self.run_cli("--root", str(tmp_path), "--strict-git", "verify")
+            self.assertEqual(res_strict.returncode, 1)
+            self.assertIn("ERROR: Git worktree has uncommitted changes", res_strict.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

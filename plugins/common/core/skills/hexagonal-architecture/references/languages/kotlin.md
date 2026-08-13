@@ -2,18 +2,6 @@
 
 Use this as a Kotlin-specific delta on top of the generic Domain, Application, API, and Infrastructure references.
 
-## Contents
-
-- [Package and Module Boundaries](#1-package-and-module-boundaries)
-- [Aggregate Boundary Files](#2-aggregate-boundary-files)
-- [Domain Modeling Idioms](#3-domain-modeling-idioms)
-- [Creation, Time, and Randomness](#4-creation-time-and-randomness)
-- [Application Layer](#5-application-layer)
-- [Query Ports and Read Models](#6-query-ports-and-read-models)
-- [API and Infrastructure Models](#7-api-and-infrastructure-models)
-- [Adapters, DAOs, and Framework Wiring](#8-adapters-daos-and-framework-wiring)
-- [Testing Rules](#9-testing-rules)
-
 ## 1. Package and Module Boundaries
 
 - Use feature-first packages with layer suffixes: `users.domain`, `users.app`, `users.api`, `users.infra`.
@@ -26,77 +14,16 @@ Use this as a Kotlin-specific delta on top of the generic Domain, Application, A
 
 - Default Kotlin aggregate file name to the plural repository port when the file stays readable: `users/domain/Users.kt`.
 - Keep one aggregate root per boundary file.
-- Co-locate aggregate-local creation logic, sealed outcomes/errors, events, value types, and repository port when they belong only to that aggregate.
+- Co-locate aggregate-local creation logic, sealed outcomes/errors, events, value types, and repository port (`Users`) when they belong only to that aggregate.
 - Move large policies, cross-aggregate concepts, or shared language out to separate files/packages.
-
-Example:
-
-```kotlin
-// users/domain/Users.kt
-package users.domain
-
-import platform.domain.BaseEntity
-import platform.domain.DomainEvent
-
-class User(
-    override val id: UserId,
-    email: EmailAddress,
-) : BaseEntity<UserId>(id) {
-    var email: EmailAddress = email
-        private set
-
-    fun changeEmail(newEmail: EmailAddress): ChangeUserEmailOutcome =
-        if (newEmail == email) {
-            ChangeUserEmailOutcome.Unchanged
-        } else {
-            email = newEmail
-            ChangeUserEmailOutcome.Changed(UserEmailChanged(id, newEmail))
-        }
-
-    companion object {
-        fun create(email: EmailAddress): User =
-            User(
-                id = UserId.new(),
-                email = email,
-            )
-    }
-}
-
-interface Users {
-    fun get(id: UserId): User?
-    fun save(user: User)
-}
-
-sealed interface ChangeUserEmailOutcome {
-    data object Unchanged : ChangeUserEmailOutcome
-    data class Changed(val event: UserEmailChanged) : ChangeUserEmailOutcome
-}
-
-data class UserEmailChanged(
-    val userId: UserId,
-    val email: EmailAddress,
-) : DomainEvent
-
-@JvmInline
-value class UserId(val value: String) {
-    companion object {
-        fun new(): UserId =
-            UserId(java.util.UUID.randomUUID().toString())
-    }
-}
-
-@JvmInline
-value class EmailAddress(val value: String)
-```
-
-`Users` is the domain repository port interface. It is not a concrete adapter and should not extend a generic `Repository<User>` abstraction. Kotlin implementations use idiomatic technology prefixes such as `JpaUsers`, `ExposedUsers`, or `JdbcUsers`.
+- `Users` is the domain repository port interface. It is not a concrete adapter and should not extend a generic `Repository<User>` abstraction. Concrete implementations use technology prefixes (e.g., `JpaUsers`, `ExposedUsers`, `JdbcUsers`).
 
 ## 3. Domain Modeling Idioms
 
 - Entities own their identity semantics. An optional pure `platform.domain.BaseEntity<ID>` is acceptable when it does not impose business policy; never make it the universal base class.
 - Do not use Kotlin `data class` for mutable Entities or Aggregate Roots; generated `copy`, structural equality, and destructuring can bypass invariants.
-- Use Kotlin value classes for small identity and value types when they preserve domain meaning.
-- Model expected business failures as sealed domain errors or sealed domain outcomes, not framework exceptions.
+- Use Kotlin value classes (`@JvmInline value class UserId(val value: String)`) for small identity and value types when they preserve domain meaning.
+- Model expected business failures as sealed domain errors or sealed domain outcomes (`sealed interface Outcome`), not framework exceptions.
 - Use nullable types only when absence is part of the domain language; otherwise enforce construction through value objects, factories, or aggregate methods.
 - Domain methods should usually be synchronous and free of IO. Put `suspend` on application, port, or adapter functions only when IO requires it.
 
@@ -108,101 +35,19 @@ value class EmailAddress(val value: String)
 - `UserId.new()` is acceptable only for local, pure, uncoordinated ID generation.
 - Use injected ports such as `UserIds` or `Clock` when IDs or time are sequential, tenant-aware, externally coordinated, database-issued, or need deterministic tests.
 
-Example:
-
-```kotlin
-// users/domain/Users.kt
-package users.domain
-
-class UserFactory(
-    private val userIds: UserIds,
-) {
-    fun create(email: EmailAddress): User =
-        User(
-            id = userIds.next(),
-            email = email,
-        )
-}
-
-interface UserIds {
-    fun next(): UserId
-}
-```
-
 ## 5. Application Layer
 
 - Keep transactions, authorization, idempotency, domain event dispatch, and application workflow in this layer.
 - Load aggregates, call domain methods, save through domain ports, then dispatch typed domain events after state is saved.
 - For external publication reliability, use after-commit hooks or a transactional outbox instead of publishing directly from inside aggregates.
-- Return explicit application results for expected failures; do not silently return on missing aggregates.
-
-Example:
-
-```kotlin
-// users/app/ChangeUserEmail.kt
-package users.app
-
-import users.domain.ChangeUserEmailOutcome
-import users.domain.EmailAddress
-import users.domain.UserEmailChanged
-import users.domain.UserId
-import users.domain.Users
-
-data class ChangeUserEmailCommand(
-    val userId: String,
-    val email: String,
-)
-
-sealed interface ChangeUserEmailResult {
-    data object UserNotFound : ChangeUserEmailResult
-    data object Unchanged : ChangeUserEmailResult
-    data object Changed : ChangeUserEmailResult
-}
-
-interface UserEventPublisher {
-    fun publish(event: UserEmailChanged)
-}
-
-class ChangeUserEmail(
-    private val users: Users,
-    private val events: UserEventPublisher,
-) {
-    fun handle(command: ChangeUserEmailCommand): ChangeUserEmailResult {
-        val user = users.get(UserId(command.userId))
-            ?: return ChangeUserEmailResult.UserNotFound
-
-        return when (val outcome = user.changeEmail(EmailAddress(command.email))) {
-            is ChangeUserEmailOutcome.Changed -> {
-                users.save(user)
-                events.publish(outcome.event)
-                ChangeUserEmailResult.Changed
-            }
-            ChangeUserEmailOutcome.Unchanged -> ChangeUserEmailResult.Unchanged
-        }
-    }
-}
-```
+- Return explicit application results (`sealed interface Result`) for expected failures; do not silently return on missing aggregates.
 
 ## 6. Query Ports and Read Models
 
 - Use aggregate repositories for commands that need aggregate invariants.
 - Use query ports for read models that should not load or mutate aggregates.
-- Name domain-owned query ports with the `Queries` suffix.
+- Name domain-owned query ports with the `Queries` suffix (e.g., `UserQueries`).
 - Return read models shaped for the use case, not ORM entities and not API DTOs.
-
-```kotlin
-// users/domain/UserQueries.kt
-package users.domain
-
-interface UserQueries {
-    fun profile(id: UserId): UserProfile?
-}
-
-data class UserProfile(
-    val id: UserId,
-    val email: EmailAddress,
-)
-```
 
 ## 7. API and Infrastructure Models
 
@@ -211,46 +56,6 @@ data class UserProfile(
 - Never expose Domain models as API DTOs, and never pass ORM entities inward.
 - Persistence shape is not expected to be 1:1 with Domain shape.
 
-```kotlin
-// users/api/UserDtos.kt
-package users.api
-
-import com.fasterxml.jackson.annotation.JsonProperty
-import io.swagger.v3.oas.annotations.media.Schema
-import users.app.ChangeUserEmailCommand
-
-@Schema(name = "ChangeUserEmailRequest")
-data class ChangeUserEmailRequest(
-    @field:Schema(example = "user@example.com")
-    @JsonProperty("email")
-    val email: String,
-) {
-    fun toCommand(userId: String): ChangeUserEmailCommand =
-        ChangeUserEmailCommand(userId = userId, email = email)
-}
-```
-
-```kotlin
-// users/infra/UserRecord.kt
-package users.infra
-
-import jakarta.persistence.Column
-import jakarta.persistence.Entity
-import jakarta.persistence.Id
-import jakarta.persistence.Table
-
-@Entity
-@Table(name = "users")
-internal class UserRecord(
-    @Id
-    @Column(name = "id")
-    var id: String,
-
-    @Column(name = "email_address")
-    var emailAddress: String,
-)
-```
-
 ## 8. Adapters, DAOs, and Framework Wiring
 
 - Concrete adapters are usually `internal`; domain/application ports remain public.
@@ -258,44 +63,7 @@ internal class UserRecord(
 - Make helper types `internal` only when framework wiring must reference them from a visible factory method.
 - Match the host framework already used by the codebase; do not introduce Spring, Quarkus, Ktor, or another framework because of this reference.
 - Put framework wiring in composition root/configuration code, not in Domain.
-
-Spring/JPA note: if the existing codebase already uses Spring Data, a Spring-specific DAO can implement the same adapter boundary. Treat this as explanatory only.
-
-```kotlin
-// users/infra/JpaUsers.kt
-package users.infra
-
-import org.springframework.data.jpa.repository.JpaRepository
-import users.domain.EmailAddress
-import users.domain.User
-import users.domain.UserId
-import users.domain.Users
-
-internal class JpaUsers(
-    private val dao: SpringDataUserDao,
-) : Users {
-    override fun get(id: UserId): User? =
-        dao.findById(id.value).orElse(null)?.toDomain()
-
-    override fun save(user: User) {
-        dao.save(user.toRecord())
-    }
-}
-
-internal interface SpringDataUserDao : JpaRepository<UserRecord, String>
-
-private fun UserRecord.toDomain(): User =
-    User(
-        id = UserId(id),
-        email = EmailAddress(emailAddress),
-    )
-
-private fun User.toRecord(): UserRecord =
-    UserRecord(
-        id = id.value,
-        emailAddress = email.value,
-    )
-```
+- If the existing codebase uses Spring Data, a Spring-specific DAO interface can be used behind the concrete adapter (e.g., `JpaUsers(private val dao: SpringDataUserDao) : Users`).
 
 ## 9. Testing Rules
 

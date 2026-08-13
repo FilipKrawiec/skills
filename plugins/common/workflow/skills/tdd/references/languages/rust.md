@@ -14,31 +14,6 @@
 - Assert return values and state first; verify mock expectations only for outbound trait boundaries.
 - In async tests, use the runtime already chosen by the project, commonly `#[tokio::test]`.
 
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use mockall::predicate::eq;
-
-    #[test]
-    fn given_empty_store_when_submitting_thread_then_it_is_saved() {
-        // Given
-        let mut threads = MockThreads::new();
-        threads.expect_save()
-            .with(eq("Rust Title"))
-            .times(1)
-            .return_const(());
-        let use_case = SubmitThreadUseCase::new(&threads);
-
-        // When
-        let result = use_case.execute("Rust Title");
-
-        // Then
-        assert!(result.is_success());
-    }
-}
-```
-
 ## Component And Acceptance Tests
 
 - Use Cargo's target boundaries as the source-set equivalent:

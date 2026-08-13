@@ -85,7 +85,7 @@ claude \
   --plugin-dir plugins/common/authoring
 ```
 
-*Tip*: Run `./scripts/claude-local-plugins.sh` to launch a pre-configured Claude Code session.
+*Tip*: Run `just refresh` to update all local plugin installations (Codex, Claude, and Antigravity IDE).
 
 ### Codex
 
@@ -104,7 +104,7 @@ codex plugin add filipkrawiec-authoring@filipkrawiec
 Link common packages and native overlays directly into Antigravity IDE:
 
 ```bash
-./scripts/link-agy-ide-plugins.sh --replace
+just link-agy
 ```
 
 This creates live symlinks to your checkout so changes take effect immediately upon restarting Antigravity.

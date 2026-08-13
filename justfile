@@ -10,22 +10,81 @@ unit:
 verify: unit
     python3 scripts/validate-plugin-definitions.py
 
-# Check Central Knowledge index freshness
-knowledge-check:
-    python3 scripts/project-verify.py knowledge-index --check --root knowledge
+# Synchronize all host plugin manifests and marketplace catalogs from canonical package metadata
+sync-manifests:
+    python3 scripts/validate-plugin-definitions.py --sync
 
 # Check release version alignment across manifests and tags
 release-check:
     python3 scripts/validate-release-version.py
 
+# Display verifier status and detected lifecycle tasks
+status:
+    python3 scripts/project-verify.py status
+
 # Install/configure repository git hooks
 setup-hooks:
-    ./scripts/setup-git-hooks.sh
+    git config core.hooksPath scripts/git-hooks
+    @echo "Configured git core.hooksPath to scripts/git-hooks"
 
 # Install plugins as directory copies into local Antigravity IDE environment
 install-agy:
-    ./scripts/link-agy-ide-plugins.sh --copy --replace
+    #!/usr/bin/env bash
+    set -euo pipefail
+    target_dir="${AGY_IDE_PLUGIN_DIR:-"$HOME/.gemini/config/plugins"}"
+    mkdir -p "${target_dir}"
+    for dir in plugins/common/*; do
+      [ -d "$dir" ] || continue
+      pkg="filipkrawiec-$(basename "$dir")"
+      rm -rf "${target_dir}/${pkg}"
+      cp -r "$dir" "${target_dir}/${pkg}"
+    done
+    for dir in plugins/agy/*; do
+      [ -d "$dir" ] || continue
+      pkg="filipkrawiec-agy-$(basename "$dir")"
+      rm -rf "${target_dir}/${pkg}"
+      cp -r "$dir" "${target_dir}/${pkg}"
+    done
+    echo "Installed plugins into ${target_dir}"
 
 # Link plugins as symlinks into local Antigravity IDE environment (dev mode)
 link-agy:
-    ./scripts/link-agy-ide-plugins.sh --link --replace
+    #!/usr/bin/env bash
+    set -euo pipefail
+    repo_root="$(pwd -P)"
+    target_dir="${AGY_IDE_PLUGIN_DIR:-"$HOME/.gemini/config/plugins"}"
+    mkdir -p "${target_dir}"
+    for dir in plugins/common/*; do
+      [ -d "$dir" ] || continue
+      pkg="filipkrawiec-$(basename "$dir")"
+      rm -rf "${target_dir}/${pkg}"
+      ln -s "${repo_root}/${dir}" "${target_dir}/${pkg}"
+    done
+    for dir in plugins/agy/*; do
+      [ -d "$dir" ] || continue
+      pkg="filipkrawiec-agy-$(basename "$dir")"
+      rm -rf "${target_dir}/${pkg}"
+      ln -s "${repo_root}/${dir}" "${target_dir}/${pkg}"
+    done
+    echo "Linked plugins into ${target_dir}"
+
+# Refresh local plugin installations (Codex, Claude, Antigravity IDE)
+refresh: install-agy
+    #!/usr/bin/env bash
+    if command -v codex >/dev/null 2>&1; then
+      for dir in plugins/common/*; do
+        [ -d "$dir" ] || continue
+        pkg="filipkrawiec-$(basename "$dir")"
+        codex plugin remove "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
+        codex plugin add "${pkg}@filipkrawiec" || true
+      done
+    fi
+    if command -v claude >/dev/null 2>&1; then
+      for dir in plugins/common/*; do
+        [ -d "$dir" ] || continue
+        pkg="filipkrawiec-$(basename "$dir")"
+        claude plugin update "${pkg}@filipkrawiec" || true
+      done
+    fi
+    echo "Refreshed local plugin installations."
+

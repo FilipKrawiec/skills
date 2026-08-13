@@ -8,7 +8,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-COMMON_PACKAGES = ("core", "workflow", "orchestration", "authoring")
+COMMON_PACKAGES = tuple(
+    sorted(p.name for p in (ROOT / "plugins" / "common").glob("*") if p.is_dir() and not p.name.startswith("."))
+)
 
 
 class CommonPluginLayoutTests(unittest.TestCase):
@@ -211,8 +213,10 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertTrue((ROOT / "justfile").is_file())
         self.assertIn("unit:", justfile)
         self.assertIn("verify:", justfile)
-        self.assertIn("knowledge-check:", justfile)
+        self.assertIn("status:", justfile)
         self.assertIn("release-check:", justfile)
+        self.assertIn("install-agy:", justfile)
+        self.assertIn("link-agy:", justfile)
 
     def test_define_skill_layout_and_authoring_spec(self) -> None:
         define_dir = ROOT / "plugins" / "common" / "orchestration" / "skills" / "define"
