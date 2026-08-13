@@ -30,12 +30,11 @@ Follow these steps for all version control and git operations to maintain a clea
 📝 Message: `<type>: <description>`
 ```
 
-### Phase 4: Sync, Push & Release
+### Phase 4: Sync & Push
 1. Rebase task branch onto the latest origin main when upstream moves.
 2. Push branch to remote: `git push -u origin <branch-name>`.
 3. Open Review Request linking the Delivery Record identifier.
-4. On `main`, trigger automated release: `python3 scripts/release.py` (or `just release`) and push tags: `git push --follow-tags`.
-*Exit Gate*: Branch or release tag is pushed with clean verification pass.
+*Exit Gate*: Branch is pushed with clean verification pass.
 
 ---
 

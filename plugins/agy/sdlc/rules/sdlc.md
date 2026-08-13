@@ -40,7 +40,7 @@ Transition Project column to **In Progress**. Create feature branch `issue-<id>-
 - Antigravity renders the native IDE **Proceed** button and feedback UI.
 - When the user clicks **Proceed**, dispatch persona subagents via `invoke_subagent`:
   1. **`developer` Subagent** ([agents/developer.md](../agents/developer.md)): Dispatched during `IMPLEMENT` in an isolated Git worktree using TDD.
-  2. **`quality-engineer` Subagent** ([agents/quality-engineer.md](../agents/quality-engineer.md)): Dispatched during `COLLECT / VERIFY` to run deterministic verification (`python3 scripts/project-verify.py verify`).
+  2. **`quality-engineer` Subagent** ([agents/quality-engineer.md](../agents/quality-engineer.md)): Dispatched during `COLLECT / VERIFY` to run deterministic verification (e.g., `AGENTS.md` verification task, `just verify`, or test runner).
   3. **`solution-architect` Subagent** ([agents/solution-architect.md](../agents/solution-architect.md)): Dispatched during `REVIEW` to audit domain purity and Hexagonal layer isolation.
   4. **`security-auditor` Subagent** ([agents/security-auditor.md](../agents/security-auditor.md)): Dispatched during `REVIEW` to audit OWASP security risks and secrets.
 

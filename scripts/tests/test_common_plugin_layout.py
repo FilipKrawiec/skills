@@ -388,6 +388,20 @@ class CommonPluginLayoutTests(unittest.TestCase):
                     f"{md_file.relative_to(ROOT)} broken relative link '{target}' -> {resolved}",
                 )
 
+    def test_skills_are_portable_and_do_not_hardcode_repo_specific_scripts(self) -> None:
+        for md_file in (ROOT / "plugins").rglob("*.md"):
+            content = md_file.read_text(encoding="utf-8")
+            self.assertNotIn(
+                "scripts/release.py",
+                content,
+                f"{md_file.relative_to(ROOT)} must not hardcode repository-specific release script 'scripts/release.py'",
+            )
+            self.assertNotIn(
+                "scripts/tests",
+                content,
+                f"{md_file.relative_to(ROOT)} must not hardcode repository test directory 'scripts/tests'",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

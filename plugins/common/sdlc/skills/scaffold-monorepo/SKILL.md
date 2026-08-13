@@ -19,7 +19,7 @@ Use this skill to initialize or upgrade a monorepository for Trunk-Based Develop
 4. Define application components inside `components/`:
    - Microservices use `components/<name>/.deploy/helm/` for Helm charts.
    - Monoliths use `components/<name>/.deploy/ansible/` for Ansible playbooks.
-5. Verify the scaffolded environment by running `python3 scripts/project-verify.py status` or `just verify`.
+5. Verify the scaffolded environment by running `just verify` or the configured project verification command.
 
 ## Context Pointers
 
