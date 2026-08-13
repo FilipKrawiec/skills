@@ -225,7 +225,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("[idea-capture.md](references/idea-capture.md)", content)
         self.assertIn("Duplicate Prevention Check", content)
         self.assertIn("gh issue create", content)
-        self.assertIn("Backlog", content)
+        self.assertIn("01 Define", content)
         self.assertIn("Completion Boundary Guardrail", content)
 
     def test_specify_skill_layout_and_authoring_spec(self) -> None:
@@ -237,8 +237,21 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("description: Use when refining, grilling, and detailing a Backlog GitHub Issue", content)
         self.assertIn("grill-with-docs", content)
         self.assertIn("gh issue edit", content)
-        self.assertIn("Backlog", content)
+        self.assertIn("02 Spec", content)
         self.assertIn("Completion Boundary Guardrail", content)
+
+    def test_orchestrate_delivery_skill_board_phase_transitions(self) -> None:
+        orchestrate_dir = ROOT / "plugins" / "common" / "orchestration" / "skills" / "orchestrate-delivery"
+        self.assertTrue((orchestrate_dir / "SKILL.md").is_file())
+
+        content = (orchestrate_dir / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---\nname: orchestrate-delivery\n"))
+        self.assertIn("01 Define", content)
+        self.assertIn("02 Spec", content)
+        self.assertIn("03 Plan", content)
+        self.assertIn("04 Execute", content)
+        self.assertIn("05 Review", content)
+        self.assertIn("06 Ship", content)
 
     def test_writing_great_skill_layout_and_reference_rules(self) -> None:
         skill_dir = ROOT / "plugins" / "common" / "authoring" / "skills" / "writing-great-skill"
