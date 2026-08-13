@@ -23,10 +23,10 @@
       "homepage": "https://github.com/FilipKrawiec/skills"
     },
     {
-      "name": "filipkrawiec-orchestration",
-      "description": "Provider-neutral, code-free orchestration skills for bounded delivery.",
+      "name": "filipkrawiec-sdlc",
+      "description": "Provider-neutral SDLC skills for delivery orchestration, backlog definition, monorepo scaffolding, and continuous improvement.",
       "category": "development",
-      "source": "./plugins/common/orchestration",
+      "source": "./plugins/common/sdlc",
       "homepage": "https://github.com/FilipKrawiec/skills"
     },
     {

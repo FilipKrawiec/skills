@@ -9,9 +9,9 @@ A skill should make agent behavior more predictable. Bold terms are defined in `
 
 ## Invocation
 
-- Use **model invocation** only when the agent must discover the skill by itself or another skill must reach it.
-- Use **user invocation** when the human should choose the skill explicitly; keep the description as a terse human-facing label unless the target agent supports explicit invocation controls.
-- If user-invoked skills become hard to remember, add one **router skill** instead of making every skill model-invoked.
+- Use **model invocation** when the agent must discover the skill autonomously or another skill chains to it via `Skill(skill="name")`.
+- Use **user invocation** when the human should trigger the workflow explicitly. Add `disable-model-invocation: true` in YAML frontmatter and keep the description as a terse human-facing label.
+- Provide a dedicated **router skill** (`guide`) to help users and models select the optimal workflow path.
 
 ## Description Craft
 
@@ -22,11 +22,27 @@ A model-invoked **description** is always in startup context. It must earn that 
 - Keep the boundary clear enough to avoid near-miss false triggers.
 - Stay under 1024 characters.
 
-For user-invoked skills, keep the description as a one-line human summary.
+For user-invoked skills (`disable-model-invocation: true`), keep the description as a one-line human summary.
 
-## Instruction Wording
+## Instruction Wording & Affirmative State Machines
 
-Describe the target behavior positively. Keep a prohibition only for a hard safety or compliance guardrail that cannot be expressed positively, and pair it with the desired behavior.
+Structure skills as **unidirectional affirmative state machines**:
+- Divide workflows into sequential numbered phases.
+- State only the single desired affirmative action in each phase. Omit negative phrasing ("Don't do X", "Never do Y") to prevent negative prompt priming.
+- Pair each phase with a concrete **Exit Gate** (test output, command exit code 0, or file diff).
+
+## Explicit Output Envelopes
+
+Output tokens are significantly more expensive and slower than input tokens. Define an **Explicit Output Envelope** (compact Markdown template) for each phase or turn to eliminate unsolicited narrative essays and token bloat.
+
+## Diagramming Standard
+
+Use clean standard ASCII / Unicode box-drawing diagrams and structured Markdown tables. Do not use Mermaid code blocks (unreliable rendering across terminal pagers and editor viewers).
+
+## Code Anti-Overengineering Invariants
+
+- **Rule of Two Adapters**: Never create an interface or abstraction layer unless at least two concrete implementations exist in the active codebase.
+- **YAGNI & Deep Modules**: Favor deep modules with small interfaces over shallow file proliferation. Pass domain types directly rather than creating speculative DTO chains.
 
 ## Information Hierarchy
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-COMMON_PACKAGES = ("core", "workflow", "orchestration", "authoring")
+COMMON_PACKAGES = ("core", "workflow", "sdlc", "authoring")
 RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 INITIAL_RELEASE_VERSION = "8.3.0"
 

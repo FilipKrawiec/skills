@@ -136,7 +136,7 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
         packages = v.discover_common_packages(ROOT)
         self.assertIn(ROOT / "plugins" / "common" / "core" / "package-metadata.json", packages)
         self.assertIn(ROOT / "plugins" / "common" / "workflow" / "package-metadata.json", packages)
-        self.assertIn(ROOT / "plugins" / "common" / "orchestration" / "package-metadata.json", packages)
+        self.assertIn(ROOT / "plugins" / "common" / "sdlc" / "package-metadata.json", packages)
         self.assertIn(ROOT / "plugins" / "common" / "authoring" / "package-metadata.json", packages)
 
         for meta_path, pkg_name in packages.items():

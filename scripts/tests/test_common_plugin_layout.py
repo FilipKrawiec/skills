@@ -25,7 +25,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
 
     def test_all_plugin_definitions_share_the_repository_release_version(self) -> None:
         release_version = json.loads(
-            (ROOT / "plugins" / "common" / "orchestration" / "package-metadata.json").read_text(encoding="utf-8")
+            (ROOT / "plugins" / "common" / "sdlc" / "package-metadata.json").read_text(encoding="utf-8")
         )["version"]
         versions = set()
         for package in COMMON_PACKAGES:
@@ -51,9 +51,9 @@ class CommonPluginLayoutTests(unittest.TestCase):
                 self.assertFalse((root / "agents").exists())
                 self.assertEqual(list(root.rglob("agents/openai.yaml")), [])
 
-    def test_retired_sdlc_material_is_absent(self) -> None:
-        self.assertFalse((ROOT / "plugins" / "common" / "sdlc").exists())
-        self.assertFalse((ROOT / "plugins" / "agy" / "sdlc").exists())
+    def test_retired_orchestration_material_is_absent(self) -> None:
+        self.assertFalse((ROOT / "plugins" / "common" / "orchestration").exists())
+        self.assertFalse((ROOT / "plugins" / "agy" / "orchestration").exists())
         self.assertFalse((ROOT / "spec" / "autonomous-sdlc").exists())
         self.assertFalse((ROOT / "archive" / "autonomous-sdlc").exists())
 
@@ -64,7 +64,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
 
     def test_shared_grilling_uses_progressive_disclosure_for_planning_handoff(self) -> None:
         grill_skill = (
-            ROOT / "plugins" / "common" / "workflow" / "skills" / "grill-with-docs" / "SKILL.md"
+            ROOT / "plugins" / "common" / "workflow" / "skills" / "grill-with-context" / "SKILL.md"
         ).read_text(encoding="utf-8")
 
         self.assertIn("Ask one sharp decision question at a time", grill_skill)
@@ -95,18 +95,18 @@ class CommonPluginLayoutTests(unittest.TestCase):
             ROOT
             / "plugins"
             / "common"
-            / "orchestration"
+            / "sdlc"
             / "skills"
-            / "orchestrate-delivery"
+            / "deliver"
             / "SKILL.md"
         ).read_text(encoding="utf-8")
         packet = (
             ROOT
             / "plugins"
             / "common"
-            / "orchestration"
+            / "sdlc"
             / "skills"
-            / "orchestrate-delivery"
+            / "deliver"
             / "references"
             / "task-packet.md"
         ).read_text(encoding="utf-8")
@@ -131,13 +131,13 @@ class CommonPluginLayoutTests(unittest.TestCase):
             ROOT
             / "plugins"
             / "common"
-            / "orchestration"
+            / "sdlc"
             / "skills"
-            / "orchestrate-delivery"
+            / "deliver"
             / "SKILL.md"
         ).read_text(encoding="utf-8")
         grilling = (
-            ROOT / "plugins" / "common" / "workflow" / "skills" / "grill-with-docs" / "SKILL.md"
+            ROOT / "plugins" / "common" / "workflow" / "skills" / "grill-with-context" / "SKILL.md"
         ).read_text(encoding="utf-8")
         guidance = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
@@ -219,37 +219,35 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("link-agy:", justfile)
 
     def test_define_skill_layout_and_authoring_spec(self) -> None:
-        define_dir = ROOT / "plugins" / "common" / "orchestration" / "skills" / "define"
+        define_dir = ROOT / "plugins" / "common" / "sdlc" / "skills" / "define"
         self.assertTrue((define_dir / "SKILL.md").is_file())
-        self.assertTrue((define_dir / "references" / "idea-capture.md").is_file())
 
         content = (define_dir / "SKILL.md").read_text(encoding="utf-8")
         self.assertTrue(content.startswith("---\nname: define\n"))
-        self.assertIn("description: Use when capturing business outcomes", content)
-        self.assertIn("[idea-capture.md](references/idea-capture.md)", content)
+        self.assertIn("description: Use when capturing business outcomes, scope boundaries", content)
         self.assertIn("Duplicate Prevention Check", content)
         self.assertIn("gh issue create", content)
         self.assertIn("01 Define", content)
         self.assertIn("Completion Boundary Guardrail", content)
 
     def test_specify_skill_layout_and_authoring_spec(self) -> None:
-        specify_dir = ROOT / "plugins" / "common" / "orchestration" / "skills" / "specify"
+        specify_dir = ROOT / "plugins" / "common" / "sdlc" / "skills" / "specify"
         self.assertTrue((specify_dir / "SKILL.md").is_file())
 
         content = (specify_dir / "SKILL.md").read_text(encoding="utf-8")
         self.assertTrue(content.startswith("---\nname: specify\n"))
         self.assertIn("description: Use when refining, grilling, and detailing a Backlog GitHub Issue", content)
-        self.assertIn("grill-with-docs", content)
+        self.assertIn("grill-with-context", content)
         self.assertIn("gh issue edit", content)
         self.assertIn("02 Spec", content)
         self.assertIn("Completion Boundary Guardrail", content)
 
     def test_orchestrate_delivery_skill_board_phase_transitions(self) -> None:
-        orchestrate_dir = ROOT / "plugins" / "common" / "orchestration" / "skills" / "orchestrate-delivery"
+        orchestrate_dir = ROOT / "plugins" / "common" / "sdlc" / "skills" / "deliver"
         self.assertTrue((orchestrate_dir / "SKILL.md").is_file())
 
         content = (orchestrate_dir / "SKILL.md").read_text(encoding="utf-8")
-        self.assertTrue(content.startswith("---\nname: orchestrate-delivery\n"))
+        self.assertTrue(content.startswith("---\nname: deliver\n"))
         self.assertIn("01 Define", content)
         self.assertIn("02 Spec", content)
         self.assertIn("03 Plan", content)
@@ -264,9 +262,9 @@ class CommonPluginLayoutTests(unittest.TestCase):
             ROOT
             / "plugins"
             / "common"
-            / "orchestration"
+            / "sdlc"
             / "skills"
-            / "orchestrate-delivery"
+            / "deliver"
             / "references"
             / "agent-personas.md"
         )
@@ -277,8 +275,26 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("developer", content)
         self.assertIn("examples/", content)
 
-    def test_github_pipeline_integration_stage_7_archive_flow(self) -> None:
-        pipeline_file = ROOT / "plugins" / "common" / "orchestration" / "references" / "github-pipeline-integration.md"
+    def test_scaffold_monorepo_layout_and_assets(self) -> None:
+        scaffold_dir = (
+            ROOT
+            / "plugins"
+            / "common"
+            / "sdlc"
+            / "skills"
+            / "scaffold-monorepo"
+        )
+        self.assertTrue((scaffold_dir / "SKILL.md").is_file())
+        self.assertTrue((scaffold_dir / "assets" / "devcontainer.json").is_file())
+        self.assertTrue((scaffold_dir / "assets" / "Dockerfile").is_file())
+        self.assertTrue((scaffold_dir / "assets" / "justfile").is_file())
+        self.assertTrue((scaffold_dir / "assets" / "AGENTS.md").is_file())
+        self.assertTrue((scaffold_dir / "assets" / "umbrella-chart" / "Chart.yaml").is_file())
+
+        content = (scaffold_dir / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---\nname: scaffold-monorepo\n"))
+
+        pipeline_file = ROOT / "plugins" / "common" / "sdlc" / "references" / "github-pipeline-integration.md"
         self.assertTrue(pipeline_file.is_file())
         content = pipeline_file.read_text(encoding="utf-8")
         self.assertIn("07 Improve", content)
@@ -324,7 +340,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertLess(len(template.splitlines()), 300)
 
     def test_improve_skill_layout_and_authoring_spec(self) -> None:
-        skill_dir = ROOT / "plugins" / "common" / "orchestration" / "skills" / "improve"
+        skill_dir = ROOT / "plugins" / "common" / "sdlc" / "skills" / "improve"
         self.assertTrue((skill_dir / "SKILL.md").is_file())
         self.assertTrue((skill_dir / "references" / "friction-taxonomy.md").is_file())
 

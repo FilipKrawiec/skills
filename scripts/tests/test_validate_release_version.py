@@ -13,7 +13,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_SCRIPT = REPOSITORY_ROOT / "scripts" / "validate-release-version.py"
-COMMON_PACKAGES = ("core", "workflow", "orchestration", "authoring")
+COMMON_PACKAGES = ("core", "workflow", "sdlc", "authoring")
 AGY_PACKAGES = ("core",)
 INITIAL_RELEASE_VERSION = "8.3.0"
 INITIAL_RELEASE_TAG = f"v{INITIAL_RELEASE_VERSION}"

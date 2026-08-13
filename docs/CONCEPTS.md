@@ -6,12 +6,14 @@ This document provides a comprehensive guide to the architectural design, core c
 
 ## 1. Core Philosophy & Principles
 
-The `skills` repository is designed around four foundational principles:
+The `skills` repository is designed around six foundational principles:
 
-1. **Provider Neutrality**: Skill instructions, knowledge bases, and verification contracts do not lock you into any single AI provider or host harness. They work seamlessly across Codex, Claude Code, Antigravity (`agy`), and local LLM runners.
-2. **Single Source of Truth**: Every domain concept, architectural rule, and instruction has a canonical location. Duplication across skills or documentation is avoided by delegating details to `references/` or `knowledge/`.
-3. **Deterministic Verification**: AI agents should never rely on subjective self-assessment to claim completion. All changes are validated against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
-4. **Hierarchical Overlay Architecture**: Base capabilities are defined in common, provider-neutral plugins, while agent-specific user experience enhancements (such as Antigravity interactive artifacts) are layered on top via native overlays.
+1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions, knowledge bases, and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
+2. **Affirmative State Machines**: Skills structure instructions as unidirectional linear phases with positive actions and concrete exit gates. Negative "Do/Don't" phrasing is eliminated to prevent negative prompt priming.
+3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
+4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`triage` ➔ `tdd` ➔ `review` ➔ `vcs`) for immediate defect resolution alongside the Enterprise Delivery Loop (`define` ➔ `specify` ➔ `deliver`) for multi-agent worktrees.
+5. **Deterministic Verification**: AI agents validate all work against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
+6. **Hierarchical Overlay Architecture**: Base capabilities are defined in common, provider-neutral plugins (`plugins/common/*`), while agent-specific enhancements (such as Antigravity interactive artifacts) are layered on top via native overlays (`plugins/agy/*`).
 
 ---
 
@@ -22,7 +24,7 @@ A **skill** is a compact, reusable package of instructions, scripts, and context
 ```
 plugins/common/<package>/skills/<skill-name>/
 ├── SKILL.md                 # Primary instruction entrypoint with frontmatter
-├── references/              # Context pointers loaded on-demand
+├── references/              # Context pointers loaded on-demand (<300 lines)
 │   └── domain-details.md
 ├── scripts/                 # Non-interactive CLI helper tools
 └── assets/                  # Templates, boilerplate, or visual assets
@@ -30,17 +32,19 @@ plugins/common/<package>/skills/<skill-name>/
 
 ### Key Components of a Skill
 
-* **YAML Frontmatter**: Defines the skill's identity and invocation trigger.
+* **YAML Frontmatter**: Defines the skill's identity, trigger, and invocation type.
   ```yaml
   ---
   name: ddd
   description: Use when defining a business domain's language, contexts and maps, aggregates, entities, value objects, repositories, domain events, or strategic design.
   ---
   ```
-* **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent rather than internal mechanics, and specify precise trigger boundaries to prevent false activations.
-* **Information Hierarchy**:
-  * `SKILL.md` contains only the core workflow steps and essential rules.
-  * Deep domain reference material lives in relative markdown files inside `references/` and is referenced via **context pointers** (e.g., *"Read `[ubiquitous-language.md](references/ubiquitous-language.md)` when defining domain terminology."*).
+  For human-triggered workflows, add `disable-model-invocation: true`.
+* **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent, and specify clear trigger boundaries under 1024 characters.
+* **Affirmative Phase Sequencing**: Steps are organized into sequential numbered phases, each pairing a single affirmative action with an observable exit gate (such as a command exit code 0 or diff block).
+* **Explicit Output Envelopes**: Every phase defines the exact compact Markdown template the agent should emit, preventing conversational wandering.
+* **Universal ASCII Diagram Standard**: Uses clean ASCII/Unicode box diagrams and Markdown tables; Mermaid code blocks are prohibited to guarantee rendering across all editor environments.
+* **On-Demand Doctrine Chaining**: Flow skills (`tdd`, `review`) invoke Doctrine skills (`ddd`, `hexagonal-architecture`) via native `Skill` tool calls on demand, preventing startup context clutter.
 
 ---
 
@@ -52,12 +56,12 @@ Skills are grouped into **plugins** for distribution and host discovery.
 plugins/
 ├── common/                  # Canonical portable plugins (Cross-Agent)
 │   ├── core/                # DDD, Hexagonal Architecture
-│   ├── workflow/            # TDD, VCS, Grill with Docs
-│   ├── orchestration/       # Delivery Orchestration, Monorepo Scaffolding
-│   └── authoring/           # Writing Great Skills, Teach
+│   ├── workflow/            # Triage, TDD, Review, VCS, Grill with Context
+│   ├── sdlc/                # Delivery Orchestration, Define, Specify, Scaffold Monorepo, Improve
+│   └── authoring/           # Writing Great Skills, Guide, Rephrase, SWOT, Teach
 └── agy/                     # Antigravity-Native Overlay Plugins
     ├── core/                # Interactive UI review overlays
-    └── orchestration/       # Artifact UI proceed buttons & state trackers
+    └── sdlc/                # Artifact UI proceed buttons & state trackers
 ```
 
 ### Common vs. Overlay Plugins
@@ -69,7 +73,7 @@ plugins/
 
 ## 4. Delivery Orchestration & Task Packets
 
-Delivery is managed through the provider-neutral `orchestrate-delivery` workflow, which guides changes through a bounded 7-stage lifecycle.
+Delivery is managed through the provider-neutral `deliver` workflow, which guides changes through a bounded 7-stage lifecycle.
 
 ```
    ┌──────────┐      ┌───────────────┐      ┌──────────┐      ┌────────────┐

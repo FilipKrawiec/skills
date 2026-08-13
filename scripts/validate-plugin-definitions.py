@@ -25,6 +25,7 @@ ALLOWED_FRONTMATTER_KEYS = {
     "license",
     "compatibility",
     "metadata",
+    "disable-model-invocation",
 }
 MAX_REFERENCE_LINES = 300
 
@@ -275,13 +276,13 @@ def validate_agy_plugins(root: Path = ROOT) -> None:
 
 def validate_retired_sdlc_is_absent(root: Path = ROOT) -> None:
     active_paths = (
-        root / "plugins" / "common" / "sdlc",
-        root / "plugins" / "agy" / "sdlc",
+        root / "plugins" / "common" / "orchestration",
+        root / "plugins" / "agy" / "orchestration",
         root / "spec" / "autonomous-sdlc",
     )
     for active_path in active_paths:
         if active_path.exists():
-            fail(f"retired SDLC material remains active at {rel(active_path)}")
+            fail(f"retired orchestration material remains active at {rel(active_path)}")
 
     archive = root / "archive" / "autonomous-sdlc"
     if archive.exists():

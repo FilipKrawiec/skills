@@ -29,7 +29,7 @@ class CompactProjectVerifyTests(unittest.TestCase):
                 "---\n"
                 "active_skills:\n"
                 "  - ddd\n"
-                "  - orchestrate-delivery\n"
+                "  - deliver\n"
                 "build_tools:\n"
                 "  just:\n"
                 "    build_script: justfile\n"
@@ -45,7 +45,7 @@ class CompactProjectVerifyTests(unittest.TestCase):
             res = self.run_cli("--root", str(tmp_path), "status")
             self.assertEqual(res.returncode, 0)
             self.assertIn("Project Root:", res.stdout)
-            self.assertIn("Active Skills: ['ddd', 'orchestrate-delivery']", res.stdout)
+            self.assertIn("Active Skills: ['ddd', 'deliver']", res.stdout)
             self.assertIn("Detected Tool: 'just'", res.stdout)
             self.assertIn("Available Tasks: ['unit', 'verify']", res.stdout)
 

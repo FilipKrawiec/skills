@@ -29,10 +29,10 @@
       "category": "Engineering"
     },
     {
-      "name": "filipkrawiec-orchestration",
+      "name": "filipkrawiec-sdlc",
       "source": {
         "source": "local",
-        "path": "./plugins/common/orchestration"
+        "path": "./plugins/common/sdlc"
       },
       "policy": {
         "installation": "AVAILABLE",

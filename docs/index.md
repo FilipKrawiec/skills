@@ -4,7 +4,7 @@ This directory contains concepts, architectural decisions, and durable project r
 
 ## Sections
 
-- [`CONCEPTS.md`](CONCEPTS.md) for core architecture, concepts, plugins, orchestration, and knowledge base
+- [`CONCEPTS.md`](CONCEPTS.md) for core architecture, concepts, plugins, SDLC delivery, and knowledge base
 - `adr/` for architectural and repository-structure decisions
 - `records/` for dated notes, research summaries, and follow-up records
 
