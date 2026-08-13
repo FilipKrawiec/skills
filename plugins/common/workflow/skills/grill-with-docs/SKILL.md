@@ -18,7 +18,8 @@ Use this skill during SPECIFY / GRILL. It turns task-relevant evidence into a co
 1. Challenge contradictions, missing decisions, hidden assumptions, risks, scope boundaries, and acceptance or verification gaps against the loaded sources.
 2. Ask one sharp decision question at a time only when an answer is genuinely needed; wait before continuing.
 3. Treat Project Knowledge as sparse overrides of matching Central Knowledge entries. Report missing or conflicting evidence rather than silently choosing a policy.
-4. Stop when remaining uncertainty would not block a bounded plan, or return the unresolved material decision to the user.
+4. Use `swot` to structure evidence when evaluating legacy components, system health, or strategic trade-offs.
+5. Stop when remaining uncertainty would not block a bounded plan, or return the unresolved material decision to the user.
 
 ## Planning handoff
 
