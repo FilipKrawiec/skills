@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Automated Semantic Release
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    steps:
+      - name: Checkout repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure Git Author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run Pre-Release Verifications
+        run: |
+          python3 -m unittest discover -s scripts/tests
+          python3 scripts/validate-plugin-definitions.py
+
+      - name: Execute Release & Tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/release.py auto
+          git push origin main --follow-tags
+          RELEASE_TAG=$(git describe --tags --abbrev=0)
+          gh release create "${RELEASE_TAG}" --generate-notes --title "${RELEASE_TAG}" || true
