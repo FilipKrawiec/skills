@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -108,6 +110,9 @@ def sync_all_manifests(root: Path) -> None:
 
 def refresh_environments(root: Path) -> None:
     """Synchronize plugins into local Antigravity IDE and CLI caches."""
+    if os.environ.get("CI") == "true":
+        return
+
     target_dir = Path(root.parent / ".gemini" / "config" / "plugins").expanduser()
     if not target_dir.exists():
         target_dir = Path.home() / ".gemini" / "config" / "plugins"
@@ -132,7 +137,7 @@ def refresh_environments(root: Path) -> None:
             subprocess.run(["cp", "-r", str(dir_path), str(dest)], check=False)
 
     # 2. Codex
-    if subprocess.run(["command", "-v", "codex"], capture_output=True, shell=True).returncode == 0:
+    if shutil.which("codex") is not None:
         for dir_path in (root / "plugins" / "common").glob("*"):
             if dir_path.is_dir():
                 pkg = f"filipkrawiec-{dir_path.name}"
@@ -140,7 +145,7 @@ def refresh_environments(root: Path) -> None:
                 subprocess.run(["codex", "plugin", "add", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
 
     # 3. Claude Code
-    if subprocess.run(["command", "-v", "claude"], capture_output=True, shell=True).returncode == 0:
+    if shutil.which("claude") is not None:
         for dir_path in (root / "plugins" / "common").glob("*"):
             if dir_path.is_dir():
                 pkg = f"filipkrawiec-{dir_path.name}"

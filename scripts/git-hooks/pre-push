@@ -7,5 +7,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CURRENT_BRANCH="$(git -C "${REPO_ROOT}" branch --show-current 2>/dev/null || true)"
 
 if [[ "${CURRENT_BRANCH}" == "main" ]]; then
-  python3 "${REPO_ROOT}/scripts/validate-release-version.py"
+  TAGS="$(git -C "${REPO_ROOT}" tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)"
+  if [[ -n "${TAGS}" ]]; then
+    python3 "${REPO_ROOT}/scripts/validate-release-version.py"
+  else
+    python3 "${REPO_ROOT}/scripts/validate-plugin-definitions.py"
+  fi
 fi
