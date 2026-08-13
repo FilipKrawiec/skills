@@ -240,8 +240,50 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("Backlog", content)
         self.assertIn("Completion Boundary Guardrail", content)
 
+    def test_writing_great_skill_layout_and_reference_rules(self) -> None:
+        skill_dir = ROOT / "plugins" / "common" / "authoring" / "skills" / "writing-great-skill"
+        self.assertTrue((skill_dir / "SKILL.md").is_file())
+        self.assertTrue((skill_dir / "references" / "glossary.md").is_file())
+        self.assertTrue((skill_dir / "references" / "agentskills-guide.md").is_file())
+
+        content = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---\nname: writing-great-skill\n"))
+        self.assertIn("Reference Scope & Sizing", content)
+        self.assertIn("Lazy Loading Guardrail", content)
+        self.assertIn("[glossary.md](references/glossary.md)", content)
+        self.assertIn("[agentskills-guide.md](references/agentskills-guide.md)", content)
+
+        glossary = (skill_dir / "references" / "glossary.md").read_text(encoding="utf-8")
+        self.assertIn("## Shared Package Authority", glossary)
+        self.assertIn("## Lazy Loading (Progressive Disclosure)", glossary)
+        self.assertIn("## Greedy Pre-fetching", glossary)
+
+    def test_all_skills_and_package_markdown_links_resolve_correctly(self) -> None:
+        import re
+        link_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+        for md_file in (ROOT / "plugins" / "common").rglob("*.md"):
+            raw_content = md_file.read_text(encoding="utf-8")
+            # Strip code blocks and inline code
+            content = re.sub(r"```[\s\S]*?```", "", raw_content)
+            content = re.sub(r"`[^`\n]+`", "", content)
+            for match in link_pattern.finditer(content):
+                target = match.group(2).strip()
+                if target.startswith(("http://", "https://", "mailto:", "#")):
+                    continue
+                self.assertFalse(
+                    target.startswith("file://") or target.startswith("/"),
+                    f"{md_file.relative_to(ROOT)} should not use absolute link '{target}'",
+                )
+                target_path = target.split("#", 1)[0]
+                resolved = (md_file.parent / target_path).resolve()
+                self.assertTrue(
+                    resolved.is_file(),
+                    f"{md_file.relative_to(ROOT)} broken relative link '{target}' -> {resolved}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

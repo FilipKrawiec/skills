@@ -31,11 +31,19 @@ Describe the target behavior positively. Keep a prohibition only for a hard safe
 ## Information Hierarchy
 
 - Put required **steps** in `SKILL.md`.
-- Put only always-needed **reference** in `SKILL.md`.
 - Move branch-specific reference behind a clear **context pointer**: "Read X when Y."
-  - Rule: `X` must be a relative link targeting a file inside the skill's own local `references/` subdirectory.
-  - Exception — shared package authority: skills shipped together in one plugin MAY use a relative link to one package-local authority outside their own directory. Verify that link from the installed package; do not copy the authority per skill.
-  - Rule: Never use absolute local file URLs (e.g., `file:///Users/...`) or reference files outside the installed plugin. Reference other skills textually using backticks (e.g., `` `other-skill` ``) unless using the shared-authority exception.
+  - **Path Rule (Local)**: `X` must be a relative link targeting a file inside the skill's own local `references/` directory (e.g., `[glossary.md](references/glossary.md)` or `[subtopic.md](references/category/subtopic.md)`).
+  - **Path Rule (Shared Package Authority)**: Skills shipped together in one plugin MAY use a relative link to one package-local authority outside their own directory (e.g., `[shared.md](../../references/shared.md)` from a skill directory). Verify that link from the installed package; do not copy the authority per skill.
+  - **Rule**: Never use absolute local file URLs (e.g., `file:///...`) or reference files outside the installed plugin. Reference other skills textually using backticks (e.g., `` `other-skill` ``) unless using the shared-authority exception.
+- **Reference Scope & Sizing**:
+  - Keep each reference file focused on a single topic, domain model, language profile, or specification.
+  - Prioritize scannable reference formats: tables, checklists, and minimal self-contained code examples. Keep reference files under 300 lines (~1,500 tokens).
+  - Do not duplicate procedural steps or execution workflows from `SKILL.md` in reference files.
+- **Lazy Loading Guardrail**:
+  - Write explicit, disjoint trigger conditions for context pointers to prevent eager pre-fetching.
+  - Load only the specific reference required for the active branch; do not preload the entire `references/` directory.
+- **Cross-Reference Hygiene**:
+  - Reference files may link to sibling reference files via relative paths. Keep reference graphs flat and avoid circular reference chains.
 - Keep each meaning in one source of truth.
 - Evaluate instruction cost, shared-contract dependency cost, and observed run cost separately; static contract size alone is not a skill-quality failure.
 
@@ -43,7 +51,7 @@ Describe the target behavior positively. Keep a prohibition only for a hard safe
 
 - **Skill Directory**: Must use `lowercase-kebab-case` (e.g., `ddd`).
 - **Main Instruction File**: Must be named exactly `SKILL.md` (all uppercase).
-- **Reference Files**: Must use `lowercase-kebab-case.md` (e.g., `ubiquitous-language.md`), and reside within a local `references/` subdirectory or the verified shared package authority.
+- **Reference Files**: Must use `lowercase-kebab-case.md` (e.g., `ubiquitous-language.md`), and reside within a local `references/` subdirectory (or nested subdirectories like `references/languages/`) or the verified shared package authority.
 - **Assets**: Store templates and static resources in `assets/`.
 - **Scripts**: Store executable helper code in `scripts/`; scripts must be non-interactive and document usage.
 
