@@ -131,8 +131,8 @@ gh project item-edit --id "$ITEM_ID" --project-id <project-id> --field-id <field
   gh pr review <pr-number> --approve --body "### Quality Engineer Review\n- TDD Assertion Strength: PASSED"
   ```
 
-### Stage 7: SHIP / RETURN (Merge Authorization & Cleanup)
-- **Board Phase**: `06 Ship` -> `Done` / `07 Improve`.
+### Stage 7: SHIP / RETURN (Merge Authorization, Improve & Done)
+- **Board Phase**: `06 Ship` -> `07 Improve` -> `Done`.
 - **CLI Commands**:
   ```bash
   # 1. Update Project Board to 06 Ship
@@ -140,6 +140,12 @@ gh project item-edit --id "$ITEM_ID" --project-id <project-id> --field-id <field
 
   # 2. Merge PR upon user authorization (auto-closes issue)
   gh pr merge <pr-number> --squash --delete-branch
+
+  # 3. Update Project Board to 07 Improve for learning capture
+  gh project item-edit --id <item-id> --project-id <project-id> --field-id <status-field-id> --single-select-option-id <improve-option-id>
+
+  # 4. If no follow-up improvement is required, archive item to mark as Done
+  gh project item-archive <project-number> --owner <owner> --id <item-id>
   ```
 
 ---
