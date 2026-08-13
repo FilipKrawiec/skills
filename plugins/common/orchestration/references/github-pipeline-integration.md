@@ -141,10 +141,13 @@ gh project item-edit --id "$ITEM_ID" --project-id <project-id> --field-id <field
   # 2. Merge PR upon user authorization (auto-closes issue)
   gh pr merge <pr-number> --squash --delete-branch
 
-  # 3. Update Project Board to 07 Improve for learning capture
+  # 3. Update Project Board to 07 Improve for retrospective learning capture
   gh project item-edit --id <item-id> --project-id <project-id> --field-id <status-field-id> --single-select-option-id <improve-option-id>
 
-  # 4. If no follow-up improvement is required, archive item to mark as Done
+  # 4. Optional: If friction or skill gaps occurred, invoke improve to report upstream to FilipKrawiec/skills
+  # gh issue create -R FilipKrawiec/skills --title "friction(<skill>): <summary>" --body "<sanitized-payload>" --label "type:feature,friction"
+
+  # 5. If no follow-up improvement is required, archive item to mark as Done
   gh project item-archive <project-number> --owner <owner> --id <item-id>
   ```
 

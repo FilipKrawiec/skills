@@ -8,6 +8,7 @@ active_skills:
   - scaffold-monorepo
   - define
   - specify
+  - improve
 
 build_tools:
   just:
