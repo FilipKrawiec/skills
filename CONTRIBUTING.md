@@ -6,7 +6,7 @@ Thank you for contributing to the `skills` repository! This document outlines wo
 
 ## 1. Overview & Guidelines
 
-* **Public Repository**: Do not add proprietary, client, or secret material to skills, plugins, or `knowledge/` entries.
+* **Public Repository**: Do not add proprietary, client, or secret material to skills or plugin packages.
 * **Compact & Agent-Agnostic**: Skills must remain portable, lightweight, and host-neutral.
 * **Single Source of Truth**: Move granular domain details into `references/` instead of duplicating them across files.
 * **Deterministic Verification**: Every change must pass the automated verification matrix before being published.
@@ -88,10 +88,7 @@ just unit              # or: python3 scripts/project-verify.py unit
 # 2. Run plugin definition validator
 just verify            # or: python3 scripts/project-verify.py verify
 
-# 3. Check Central Knowledge index freshness
-just knowledge-check   # or: python3 scripts/project-verify.py knowledge-index --check --root knowledge
-
-# 4. Check release version alignment
+# 3. Check release version alignment
 just release-check     # or: python3 scripts/validate-release-version.py
 ```
 

@@ -4,7 +4,7 @@ This directory contains concepts, architectural decisions, and durable project r
 
 ## Sections
 
-- [`CONCEPTS.md`](CONCEPTS.md) for core architecture, concepts, plugins, SDLC delivery, and knowledge base
+- [`CONCEPTS.md`](CONCEPTS.md) for core architecture, concepts, plugins, and SDLC delivery
 - `adr/` for architectural and repository-structure decisions
 - `records/` for dated notes, research summaries, and follow-up records
 
@@ -16,6 +16,4 @@ Skill authoring and maintainer guidance belongs in [`CONTRIBUTING.md`](../CONTRI
 - `CONCEPTS.md`
 - `adr/README.md`
 - `adr/001-provider-neutral-project-verification.md`
-- `records/knowledge-structure-contract-2026-07-27.md`
-
 
