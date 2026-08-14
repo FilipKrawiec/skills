@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-sdlc",
   "description": "Provider-neutral SDLC skills for delivery orchestration, backlog definition, monorepo scaffolding, and continuous improvement.",
-  "version": "9.1.3",
+  "version": "9.2.0",
   "skills": "./skills/"
 }
