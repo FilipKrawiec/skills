@@ -74,6 +74,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("compact record for the orchestrator", grill_skill)
         self.assertIn("does not edit implementation code", grill_skill)
         self.assertIn("only when the outcome is an architectural decision", grill_skill)
+        self.assertNotIn("❓ Q1", grill_skill)
         self.assertNotIn("CONTEXT.md", grill_skill)
         self.assertNotIn("Autonomous SDLC", grill_skill)
 
@@ -317,6 +318,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertTrue(content.startswith("---\nname: writing-great-skill\n"))
         self.assertIn("Reference Scope & Sizing", content)
         self.assertIn("Lazy Loading Guardrail", content)
+        self.assertIn("Size & Semantic Payload Output Envelopes", content)
         self.assertIn("[glossary.md](references/glossary.md)", content)
         self.assertIn("[agentskills-guide.md](references/agentskills-guide.md)", content)
 
@@ -324,6 +326,19 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("## Shared Package Authority", glossary)
         self.assertIn("## Lazy Loading (Progressive Disclosure)", glossary)
         self.assertIn("## Greedy Pre-fetching", glossary)
+
+    def test_rephrase_skill_layout_and_authoring_spec(self) -> None:
+        skill_dir = ROOT / "plugins" / "common" / "authoring" / "skills" / "rephrase"
+        self.assertTrue((skill_dir / "SKILL.md").is_file())
+
+        content = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("---\nname: rephrase\n"))
+        self.assertIn("description: Use when resetting and simplifying", content)
+        self.assertIn("Core Intent", content)
+        self.assertIn("Key Trade-off", content)
+        self.assertIn("Decision Needed", content)
+        self.assertNotIn("💡 Core Intent:", content)
+        self.assertNotIn("```text", content)
 
     def test_swot_skill_layout_and_authoring_spec(self) -> None:
         skill_dir = ROOT / "plugins" / "common" / "authoring" / "skills" / "swot"
