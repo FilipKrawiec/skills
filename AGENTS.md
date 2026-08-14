@@ -65,7 +65,7 @@ CRITICAL: You are strictly forbidden from making any edits to the packaged skill
 
 Keep this repository as a compact, agent-agnostic skill library.
 
-This is a public repository. Do not add proprietary, client, or secret material to its skills or `knowledge/` content.
+This is a public repository. Do not add proprietary, client, or secret material to its skills or plugin packages.
 
 ## Architectural Decisions
 

@@ -34,10 +34,9 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
                                        │
                                        ▼
  ┌─────────────────────────────────────────────────────────────────────────────┐
- │                      KNOWLEDGE BASE & VERIFICATION                          │
- │   Central Knowledge:  Doctrines, Glossary, Tech Profiles, Preferences       │
- │   Project Knowledge:  .project-knowledge/ (Sparse local overrides)          │
- │   Verifier CLI:       scripts/project-verify.py                              │
+ │                      AGENTS.md & VERIFICATION ENGINE                        │
+ │   Declarative Frontmatter: Active Skills, Build Tools, Lifecycle Tasks      │
+ │   Deterministic Verifier:  scripts/project-verify.py (Zero Dependencies)    │
  └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -155,21 +154,9 @@ This creates live symlinks to your checkout so changes take effect immediately u
 
 ---
 
-## 🛠️ Project Verification & Knowledge Setup
+## 🛠️ Project Verification & Lifecycle Tasks
 
-### 1. Initialize Project Knowledge
-
-To equip your target software project with sparse Project Knowledge and validation manifests:
-
-```bash
-python3 scripts/project-verify.py project-init --root /path/to/your/project
-```
-
-This creates `.project-knowledge/`, `docs/adr/`, and `.project-knowledge/project-profiles.yaml`.
-
-### 2. Run Deterministic Verification
-
-Agents and developers execute project verification tasks defined in `justfile` and `AGENTS.md`:
+Agents and developers execute deterministic project verification tasks defined in `justfile` and `AGENTS.md`:
 
 ```bash
 # Execute unit tests across script tools
@@ -177,9 +164,6 @@ just unit         # or: python3 scripts/project-verify.py unit
 
 # Run full project verifier & git hygiene checks
 just verify       # or: python3 scripts/project-verify.py verify
-
-# Check Central Knowledge index freshness
-just knowledge-check
 
 # Run release version validator
 just release-check
@@ -203,4 +187,4 @@ Want to add a new skill, update plugin manifests, or prepare a release tag? Read
 
 ## 📄 License & Public Mandate
 
-This repository is **public**. Do not add proprietary, client, or secret material to skills, plugins, or `knowledge/` entries.
+This repository is **public**. Do not add proprietary, client, or secret material to skills or plugin packages.

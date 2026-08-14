@@ -8,7 +8,7 @@ This document provides a comprehensive guide to the architectural design, core c
 
 The `skills` repository is designed around six foundational principles:
 
-1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions, knowledge bases, and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
+1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
 2. **Affirmative State Machines**: Skills structure instructions as unidirectional linear phases with positive actions and concrete exit gates. Negative "Do/Don't" phrasing is eliminated to prevent negative prompt priming.
 3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
 4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`triage` ➔ `tdd` ➔ `review` ➔ `vcs`) for immediate defect resolution alongside the Enterprise Delivery Loop (`define` ➔ `specify` ➔ `deliver`) for multi-agent worktrees.
@@ -88,13 +88,12 @@ Delivery is managed through the provider-neutral `deliver` workflow, which guide
 ### The 7 Delivery Stages & Native Artifact Tracking
 
 1. **DEFINE**: Capture business goals, non-goals, constraints, and scope boundaries. Record findings in `implementation_plan.md`.
-2. **SPECIFY / GRILL**: Challenge requirements against existing code and knowledge base entries. Resolve contradictions early and update `implementation_plan.md`.
+2. **SPECIFY / GRILL**: Challenge requirements against existing code and repository context. Resolve contradictions early and update `implementation_plan.md`.
 3. **PLAN**: Break work down into minimal, cohesive delivery slices, prepare task packets (`version: 2`), and present `implementation_plan.md` with interactive feedback request (`RequestFeedback: true`). Wait for user **Proceed** approval.
 4. **DISPATCH**: Create dedicated Git worktrees and short-lived task branches (`task/<name>`) for each slice, routing execution to suitable harnesses.
 5. **COLLECT / VERIFY**: Gather evidence, test results, and change summaries from executors into `walkthrough.md`. Run deterministic verification gates.
 6. **REVIEW**: Audit outcomes against task acceptance criteria and verification gates, logging findings in `walkthrough.md`.
 7. **SHIP / RETURN**: Link the Delivery Record, publish the **Review Request** artifact on the task branch, and present the work for user merge approval. Never commit directly to or merge protected default branches (`main`).
-
 
 ### Worktree Provenance & Safety
 
@@ -105,31 +104,7 @@ Every orchestrated task slice executes inside an isolated Git worktree branched 
 
 ---
 
-## 5. Central & Project Knowledge System
-
-The repository defines a structured **Knowledge Base** framework that provides agents with deterministic guidance, patterns, and verification checks.
-
-### Knowledge Categories
-
-Central Knowledge is structured into seven distinct categories:
-
-| Category | Kind | Purpose |
-| :--- | :--- | :--- |
-| `doctrines/` | `doctrine` | Non-negotiable architectural and engineering mandates. |
-| `glossary/` | `glossary` | Ubiquitous language definitions across domain boundaries. |
-| `preferences/` | `preference` | Coding style, library, and tool choices. |
-| `technology-profiles/` | `technology-profile` | Stack definitions and native verification checks. |
-| `templates/` | `template` | Boilerplate structures for specs, code, or configs. |
-| `examples/` | `example` | Reference implementations and usage patterns. |
-| `config-artifacts/` | `config-artifact` | Standardized environment and tooling configurations. |
-
-### Sparse Project Knowledge
-
-Target repositories initialize a lightweight `.project-knowledge/` directory using `python3 scripts/project-verify.py project-init`. This creates a sparse overlay allowing local project rules and active technology profile choices (`project-profiles.yaml`) to override or extend Central Knowledge.
-
----
-
-## 6. Deterministic Verification Loop
+## 5. Deterministic Verification Loop
 
 Agents verify their work using deterministic project checks rather than guesswork.
 
