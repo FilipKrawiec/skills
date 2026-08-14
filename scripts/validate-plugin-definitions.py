@@ -26,6 +26,7 @@ ALLOWED_FRONTMATTER_KEYS = {
     "compatibility",
     "metadata",
     "disable-model-invocation",
+    "allowed-tools",
 }
 MAX_REFERENCE_LINES = 300
 
@@ -72,20 +73,26 @@ def parse_skill_frontmatter(path: Path) -> dict:
             fail(f"{rel_path} has invalid YAML frontmatter: {exc}")
     else:
         # Fallback simple line-based key-value parser for basic frontmatter
+        def clean_val(val_list: list[str]) -> str:
+            val_str = "\n".join(val_list).strip()
+            if (val_str.startswith('"') and val_str.endswith('"')) or (val_str.startswith("'") and val_str.endswith("'")):
+                val_str = val_str[1:-1]
+            return val_str
+
         data = {}
         curr_key = None
         curr_val = []
         for line in lines[1:end]:
             if ":" in line and not line.startswith(" ") and not line.startswith("\t"):
                 if curr_key:
-                    data[curr_key] = "\n".join(curr_val).strip()
+                    data[curr_key] = clean_val(curr_val)
                 k, v = line.split(":", 1)
                 curr_key = k.strip()
                 curr_val = [v.strip()]
             elif curr_key:
                 curr_val.append(line.strip())
         if curr_key:
-            data[curr_key] = "\n".join(curr_val).strip()
+            data[curr_key] = clean_val(curr_val)
 
     if not isinstance(data, dict):
         fail(f"{rel_path} frontmatter must be a YAML mapping")
@@ -142,6 +149,10 @@ def validate_skill_spec(skill_dir: Path) -> None:
     is_user_invoked = frontmatter.get("disable-model-invocation") in (True, "true", "True")
     if not is_user_invoked and not description.startswith("Use when"):
         fail(f"{rel(skill_file)} description must begin with 'Use when...': '{description[:30]}...'")
+
+    allowed_tools = frontmatter.get("allowed-tools")
+    if not isinstance(allowed_tools, str) or not allowed_tools.strip() or "\n" in allowed_tools or allowed_tools.strip().startswith("-"):
+        fail(f"{rel(skill_file)} must define a non-empty 'allowed-tools' space-delimited string")
 
     validate_markdown_links(skill_file)
 

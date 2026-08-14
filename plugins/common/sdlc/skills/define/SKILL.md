@@ -2,6 +2,7 @@
 name: define
 description: Use when capturing business outcomes, scope boundaries, non-goals, and constraints to create a GitHub Issue on the Backlog before delivery orchestration (Issue-creation only; does not write code or implementation plans).
 disable-model-invocation: true
+allowed-tools: Bash(gh:*) Read
 ---
 
 # Delivery Intent Definition

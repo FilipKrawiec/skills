@@ -1,17 +1,25 @@
 ---
 name: writing-great-skill
 description: Use when creating, modifying, editing, or validating skills, agent rules (AGENTS.md), or plugin manifests in this repository.
+allowed-tools: Skill Read Edit Bash(python3:*,just:*)
 ---
 
 # Writing Great Skill
 
 A skill should make agent behavior more predictable. Bold terms are defined in `references/glossary.md`.
 
-## Invocation
+## Invocation & Cross-Skill Calling
 
-- Use **model invocation** when the agent must discover the skill autonomously or another skill chains to it via `Skill(skill="name")`.
-- Use **user invocation** when the human should trigger the workflow explicitly. Add `disable-model-invocation: true` in YAML frontmatter and keep the description as a terse human-facing label.
-- Provide a dedicated **router skill** (`guide`) to help users and models select the optimal workflow path.
+- **Frontmatter Tool Allowance (`allowed-tools`)**: Every skill MUST declare its permitted tool capabilities as a space-delimited string in YAML frontmatter (e.g. `allowed-tools: Skill Read Edit Bash(git:*)`). Declare `Skill` when the workflow invokes downstream skills.
+- **Model Invocation**: Use when the agent must discover the skill autonomously.
+- **User Invocation**: Use when the human triggers the workflow explicitly. Set `disable-model-invocation: true` in YAML frontmatter and keep the description as a terse human-facing label.
+- **Router Skill**: Provide a dedicated router skill (`guide`) to help users and models select the optimal workflow path.
+- **Dual Invocation Modes**:
+  - **Inline Chaining**: Caller borrows domain rules directly into the active turn context (e.g. `tdd` invoking `ddd` or `hexagonal-architecture`). Phrase as: "When designing domain models, invoke `ddd`."
+  - **Delegated Subagent Invocation**: Orchestrator dispatches an isolated subagent with a dedicated task packet and active skill bundle (e.g. `deliver` dispatching `developer`).
+- **Composition Invariants**:
+  - **Strict DAG (No Recursion)**: Skill dependency graphs must form a Directed Acyclic Graph with max depth <= 2. Never call skills cyclically.
+  - **Deterministic Exit Gates**: Every callee skill must produce a verified exit gate before yielding control back to the caller.
 
 ## Description Craft
 

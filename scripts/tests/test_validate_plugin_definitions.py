@@ -88,20 +88,20 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
             skill_file = skill_dir / "SKILL.md"
 
             # Rejects non-"Use when..."
-            skill_file.write_text("---\nname: sample-skill\ndescription: Do something for testing.\n---\n", encoding="utf-8")
+            skill_file.write_text("---\nname: sample-skill\ndescription: Do something for testing.\nallowed-tools: Read\n---\n", encoding="utf-8")
             with self.assertRaises(v.ValidationError) as ctx:
                 v.validate_skill_spec(skill_dir)
             self.assertIn("description must begin with 'Use when...'", str(ctx.exception))
 
             # Rejects description > 1024 chars
             long_desc = "Use when " + ("x" * 1020)
-            skill_file.write_text(f"---\nname: sample-skill\ndescription: {long_desc}\n---\n", encoding="utf-8")
+            skill_file.write_text(f"---\nname: sample-skill\ndescription: {long_desc}\nallowed-tools: Read\n---\n", encoding="utf-8")
             with self.assertRaises(v.ValidationError) as ctx:
                 v.validate_skill_spec(skill_dir)
             self.assertIn("description exceeds 1024 characters", str(ctx.exception))
 
             # Rejects reference > 300 lines
-            skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\n---\n", encoding="utf-8")
+            skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: Read\n---\n", encoding="utf-8")
             ref_dir = skill_dir / "references"
             ref_dir.mkdir()
             ref_file = ref_dir / "oversized.md"
@@ -121,7 +121,36 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
             v.validate_skill_spec(skill_dir)
 
             # Accepts human summary when disable-model-invocation is true
-            skill_file.write_text("---\nname: sample-skill\ndescription: Human summary description.\ndisable-model-invocation: true\n---\n", encoding="utf-8")
+            skill_file.write_text("---\nname: sample-skill\ndescription: Human summary description.\ndisable-model-invocation: true\nallowed-tools: Read\n---\n", encoding="utf-8")
+            v.validate_skill_spec(skill_dir)
+
+    def test_validate_skill_spec_enforces_mandatory_allowed_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            skill_dir = tmp_path / "sample-skill"
+            skill_dir.mkdir()
+            skill_file = skill_dir / "SKILL.md"
+
+            # Rejects missing allowed-tools
+            skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\n---\n", encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_skill_spec(skill_dir)
+            self.assertIn("must define a non-empty 'allowed-tools'", str(ctx.exception))
+
+            # Rejects empty allowed-tools
+            skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: \"   \"\n---\n", encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_skill_spec(skill_dir)
+            self.assertIn("must define a non-empty 'allowed-tools'", str(ctx.exception))
+
+            # Rejects non-string allowed-tools (e.g., list)
+            skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools:\n  - Skill\n  - Read\n---\n", encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_skill_spec(skill_dir)
+            self.assertIn("must define a non-empty 'allowed-tools'", str(ctx.exception))
+
+            # Accepts valid space-delimited string
+            skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: Skill Read Edit Bash(pytest:*)\n---\n", encoding="utf-8")
             v.validate_skill_spec(skill_dir)
 
     def test_validate_skill_spec_rejects_legacy_resources_directory(self) -> None:
@@ -129,7 +158,7 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
             tmp_path = Path(tmp_dir)
             skill_dir = tmp_path / "sample-skill"
             skill_dir.mkdir()
-            (skill_dir / "SKILL.md").write_text("---\nname: sample-skill\ndescription: Use when testing.\n---\n", encoding="utf-8")
+            (skill_dir / "SKILL.md").write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: Read\n---\n", encoding="utf-8")
             (skill_dir / "resources").mkdir()
 
             with self.assertRaises(v.ValidationError) as ctx:
@@ -166,7 +195,7 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
             (common_pkg / "package-metadata.json").write_text(json.dumps(meta), encoding="utf-8")
             skills_dir = common_pkg / "skills" / "sample"
             skills_dir.mkdir(parents=True)
-            (skills_dir / "SKILL.md").write_text("---\nname: sample\ndescription: Use when testing.\n---\n", encoding="utf-8")
+            (skills_dir / "SKILL.md").write_text("---\nname: sample\ndescription: Use when testing.\nallowed-tools: Read\n---\n", encoding="utf-8")
 
             # Marketplace dirs
             (tmp_root / ".claude-plugin").mkdir(parents=True)

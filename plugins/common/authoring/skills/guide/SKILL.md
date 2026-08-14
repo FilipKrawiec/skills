@@ -2,6 +2,7 @@
 name: guide
 description: Use when determining which skill, workflow, or delivery loop fits your current task.
 disable-model-invocation: true
+allowed-tools: Skill Read
 ---
 
 # Workflow Navigator & Intent Router

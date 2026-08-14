@@ -1,6 +1,7 @@
 ---
 name: vcs
 description: Use when performing Git or version control operations, including branching, commits, rebases, squashes, force-with-lease pushes, merges, and file moves.
+allowed-tools: Bash(git:*) Read
 ---
 
 # Version Control System (VCS) Workflow
