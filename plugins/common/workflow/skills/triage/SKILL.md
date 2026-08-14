@@ -33,12 +33,14 @@ Execute these five affirmative phases in strict linear sequence to isolate and r
    Hypothesis 2: ...
    Hypothesis 3: ...
    ```
+3. When the user requests diagnosis or investigation only, emit the root cause analysis and ranked hypotheses and stop here without modifying code.
 *Exit Gate*: Three falsifiable predictions ranked by probability.
 
 ### Phase 4: Targeted Fix & Verification
-1. Apply the single code change addressing the highest-ranked hypothesis.
-2. Re-run the reproduction command and record the passing output (GREEN).
-3. Run repository verification: execute the project's configured verification command (e.g. `just verify` or test runner).
+1. Apply the single code change addressing the highest-ranked un-falsified hypothesis.
+2. Re-run the reproduction command. If the reproduction continues to fail or causes regressions, revert the change and test the next ranked hypothesis in sequence.
+3. Record the passing output (GREEN) once the defect is resolved.
+4. Run repository verification: execute the project's configured verification command (e.g. `just verify` or test runner).
 *Exit Gate*: Reproduction test and project verification both exit with code 0.
 *Output Envelope*:
 ```text

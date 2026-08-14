@@ -139,7 +139,8 @@ def validate_skill_spec(skill_dir: Path) -> None:
         fail(f"{rel(skill_file)} must define a non-empty description")
     if len(description) > 1024:
         fail(f"{rel(skill_file)} description exceeds 1024 characters")
-    if not description.startswith("Use when"):
+    is_user_invoked = frontmatter.get("disable-model-invocation") in (True, "true", "True")
+    if not is_user_invoked and not description.startswith("Use when"):
         fail(f"{rel(skill_file)} description must begin with 'Use when...': '{description[:30]}...'")
 
     validate_markdown_links(skill_file)

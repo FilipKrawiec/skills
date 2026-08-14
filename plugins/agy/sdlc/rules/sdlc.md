@@ -59,8 +59,8 @@ During `COLLECT / VERIFY` and `REVIEW`, when a verifier or reviewer persona reje
 ## 5. GitHub Pull Request & Interactive Merge Approval (`UNDER REVIEW` & `DONE`)
 
 Once all DAG slices pass deterministic verification and persona reviews:
-- Create GitHub Pull Request (`gh pr create --issue <id>`) linking `Closes #<id>`. Set GitHub Project column to **Review**.
-- Submit formal GitHub PR Reviews (`gh pr review <pr-number> --approve` / `--comment`) from each persona (`quality-engineer`, `solution-architect`, `security-auditor`) attaching `walkthrough.md` evidence.
+- Create GitHub Pull Request (`gh pr create`) linking `Closes #<id>`. Set GitHub Project column to **Review**.
+- Submit formal GitHub PR Reviews (`gh pr review <pr-number> --comment`) from each persona (`quality-engineer`, `solution-architect`, `security-auditor`) attaching `walkthrough.md` evidence.
 - Present native IDE `ReviewRequest` with `RequestFeedback: true` to the Product Owner linking the GitHub PR and Issue.
 - Provide interactive merge prompt instructions:
   > **Delivery Ready for Merge:**

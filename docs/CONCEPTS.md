@@ -87,8 +87,8 @@ Delivery is managed through the provider-neutral `deliver` workflow, which guide
 
 ### The 7 Delivery Stages & Native Artifact Tracking
 
-1. **DEFINE**: Capture business goals, non-goals, constraints, and scope boundaries. Record findings in `implementation_plan.md`.
-2. **SPECIFY / GRILL**: Challenge requirements against existing code and repository context. Resolve contradictions early and update `implementation_plan.md`.
+1. **DEFINE**: Capture business goals, non-goals, constraints, and scope boundaries. Record findings by creating the tracker item (`gh issue create`) on the Backlog.
+2. **SPECIFY / GRILL**: Challenge requirements against existing code and repository context. Resolve contradictions early and update the tracker item with acceptance criteria.
 3. **PLAN**: Break work down into minimal, cohesive delivery slices, prepare task packets (`version: 2`), and present `implementation_plan.md` with interactive feedback request (`RequestFeedback: true`). Wait for user **Proceed** approval.
 4. **DISPATCH**: Create dedicated Git worktrees and short-lived task branches (`task/<name>`) for each slice, routing execution to suitable harnesses.
 5. **COLLECT / VERIFY**: Gather evidence, test results, and change summaries from executors into `walkthrough.md`. Run deterministic verification gates.

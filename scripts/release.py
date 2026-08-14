@@ -14,7 +14,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-COMMON_PACKAGES = ("core", "workflow", "sdlc", "authoring")
 RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 
 
@@ -90,8 +89,19 @@ def compute_next_version(current: tuple[int, int, int], bump: str) -> str:
     fail(f"unknown bump type '{bump}', expected 'major', 'minor', 'patch', or 'auto'")
 
 
+def discover_common_package_names(root: Path = ROOT) -> list[str]:
+    common_dir = root / "plugins" / "common"
+    if not common_dir.is_dir():
+        return []
+    return sorted(
+        pkg.name
+        for pkg in common_dir.iterdir()
+        if pkg.is_dir() and not pkg.name.startswith(".")
+    )
+
+
 def bump_package_metadata(root: Path, new_version: str) -> None:
-    for pkg in COMMON_PACKAGES:
+    for pkg in discover_common_package_names(root):
         meta_path = root / "plugins" / "common" / pkg / "package-metadata.json"
         if meta_path.is_file():
             data = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -108,6 +118,27 @@ def sync_all_manifests(root: Path) -> None:
     module.sync_manifests(root)
 
 
+def get_manifest_paths(root: Path) -> list[str]:
+    manifest_paths: list[str] = []
+    for pkg in discover_common_package_names(root):
+        pkg_dir = root / "plugins" / "common" / pkg
+        for p in (
+            pkg_dir / "package-metadata.json",
+            pkg_dir / "plugin.json",
+            pkg_dir / ".claude-plugin" / "plugin.json",
+            pkg_dir / ".codex-plugin" / "plugin.json",
+        ):
+            if p.is_file():
+                manifest_paths.append(str(p.relative_to(root)))
+
+    agy_dir = root / "plugins" / "agy"
+    if agy_dir.is_dir():
+        for p in sorted(agy_dir.glob("*/plugin.json")):
+            if p.is_file():
+                manifest_paths.append(str(p.relative_to(root)))
+    return manifest_paths
+
+
 def refresh_environments(root: Path) -> None:
     """Synchronize plugins into local Antigravity IDE and CLI caches."""
     if os.environ.get("CI") == "true":
@@ -118,6 +149,18 @@ def refresh_environments(root: Path) -> None:
         target_dir = Path.home() / ".gemini" / "config" / "plugins"
 
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    # 0. Legacy Package Cleanup
+    legacy_pkgs = ("orchestration",)
+    for legacy in legacy_pkgs:
+        for legacy_name in (f"filipkrawiec-{legacy}", f"filipkrawiec-agy-{legacy}"):
+            dest = target_dir / legacy_name
+            if dest.exists():
+                subprocess.run(["rm", "-rf", str(dest)], check=False)
+        if shutil.which("codex") is not None:
+            subprocess.run(["codex", "plugin", "remove", f"filipkrawiec-{legacy}@filipkrawiec"], capture_output=True, check=False)
+        if shutil.which("claude") is not None:
+            subprocess.run(["claude", "plugin", "remove", f"filipkrawiec-{legacy}@filipkrawiec"], capture_output=True, check=False)
 
     # 1. Antigravity IDE
     for dir_path in (root / "plugins" / "common").glob("*"):
@@ -149,6 +192,8 @@ def refresh_environments(root: Path) -> None:
         for dir_path in (root / "plugins" / "common").glob("*"):
             if dir_path.is_dir():
                 pkg = f"filipkrawiec-{dir_path.name}"
+                subprocess.run(["claude", "plugin", "remove", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
+                subprocess.run(["claude", "plugin", "add", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
                 subprocess.run(["claude", "plugin", "update", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
 
 
@@ -176,14 +221,20 @@ def perform_release(
         print(f"[dry-run] Would bump version to {next_version} and create tag {tag_name}")
         return next_version
 
+    # Ensure working tree is clean before modifying files
+    initial_status = git("status", "--porcelain", cwd=root)
+    if initial_status:
+        fail(f"cannot release with dirty working tree:\n{initial_status}")
+
     # 1. Update package metadata & sync manifests
     bump_package_metadata(root, next_version)
     sync_all_manifests(root)
 
-    # 2. Commit version bump
+    # 2. Commit version bump (stage only updated manifests)
+    manifest_paths = get_manifest_paths(root)
     status = git("status", "--porcelain", cwd=root)
     if status:
-        git("add", "-A", cwd=root)
+        git("add", *manifest_paths, cwd=root)
         git("commit", "-m", f"chore(release): bump version to {next_version}", cwd=root)
 
     # 3. Create annotated tag

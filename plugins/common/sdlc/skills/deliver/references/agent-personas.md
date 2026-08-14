@@ -35,7 +35,7 @@ This reference defines the canonical system prompts, tool capabilities, and retu
 - **Mandate**: Audit diffs for domain purity (zero framework/ORM dependencies in `domain/`), Aggregate invariant encapsulation, and Hexagonal layer isolation (Ports owned by domain/application, Adapters isolated at infrastructure edge). Conduct low-ceremony architectural health evaluations using `swot` when assessing strategic component posture.
 - **Anti-Overengineering & Lean Audits**: Enforce low-ceremony audits; strictly prohibit pseudo-mathematical scoring formulas (e.g. `(Impact + Urgency) * Feasibility / 2`), ceremonial multi-box matrices, and duplicate narrative tables. Mandate standard P0/P1/P2 tiers with concrete file citations.
 - **Return Protocol**:
-  - `ARCH_APPROVED`: Clean architectural separation adhering strictly to DDD and Hexagonal principles.
+  - `ARCH_PASSED`: Clean architectural separation adhering strictly to DDD and Hexagonal principles.
   - `CORRECT_PLAN`: The slice plan/design itself violates aggregate boundaries or ubiquitous language (requires re-planning).
   - `CORRECT_EXECUTE`: The architecture plan was sound, but implementation leaks dependencies or breaks aggregate encapsulation (include line numbers and remediation steps).
 
@@ -61,5 +61,5 @@ custom_personas:
   - name: db-administrator
     role: Database Reliability Engineer
     mandate: Audit schema migrations, query performance, and indexing strategies.
-    return_codes: [DB_APPROVED, MIGRATION_FLAW_DETECTED]
+    return_codes: [DB_PASSED, MIGRATION_FLAW_DETECTED]
 ```
