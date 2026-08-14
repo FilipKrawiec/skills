@@ -1,6 +1,7 @@
 ---
 name: swot
 description: Use when performing a SWOT analysis (Strengths, Weaknesses, Opportunities, Threats), strategic audit, or architectural health evaluation of a codebase, skill, framework, or technical component.
+disable-model-invocation: true
 ---
 
 # SWOT Analysis (Strategic Evaluation Skill)

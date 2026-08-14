@@ -122,13 +122,13 @@ gh project item-edit --id "$ITEM_ID" --project-id <project-id> --field-id <field
 - **CLI Commands**:
   ```bash
   # 1. Open PR linked to issue
-  gh pr create --issue <issue-number> --title "<type>(<scope>): <summary>" --body "Closes #<issue-number>\n\n### Summary\n<summary>\n\n### Verification Evidence\n<logs/tests>"
+  gh pr create --title "<type>(<scope>): <summary>" --body "Closes #<issue-number>\n\n### Summary\n<summary>\n\n### Verification Evidence\n<logs/tests>"
 
   # 2. Update Project Board to 05 Review
   gh project item-edit --id <item-id> --project-id <project-id> --field-id <status-field-id> --single-select-option-id <review-option-id>
   
   # 3. Submit formal persona reviews
-  gh pr review <pr-number> --approve --body "### Quality Engineer Review\n- TDD Assertion Strength: PASSED"
+  gh pr review <pr-number> --comment --body "### Quality Engineer Review\n- TDD Assertion Strength: PASSED"
   ```
 
 ### Stage 7: SHIP / RETURN (Merge Authorization, Improve & Done)

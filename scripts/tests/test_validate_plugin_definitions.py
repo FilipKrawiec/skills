@@ -120,6 +120,10 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
             ref_file.write_text("\n".join(f"line {i}" for i in range(250)) + "\n", encoding="utf-8")
             v.validate_skill_spec(skill_dir)
 
+            # Accepts human summary when disable-model-invocation is true
+            skill_file.write_text("---\nname: sample-skill\ndescription: Human summary description.\ndisable-model-invocation: true\n---\n", encoding="utf-8")
+            v.validate_skill_spec(skill_dir)
+
     def test_validate_skill_spec_rejects_legacy_resources_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

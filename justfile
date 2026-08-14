@@ -37,6 +37,7 @@ install-agy:
     set -euo pipefail
     target_dir="${AGY_IDE_PLUGIN_DIR:-"$HOME/.gemini/config/plugins"}"
     mkdir -p "${target_dir}"
+    rm -rf "${target_dir}/filipkrawiec-orchestration" "${target_dir}/filipkrawiec-agy-orchestration"
     for dir in plugins/common/*; do
       [ -d "$dir" ] || continue
       pkg="filipkrawiec-$(basename "$dir")"
@@ -58,6 +59,7 @@ link-agy:
     repo_root="$(pwd -P)"
     target_dir="${AGY_IDE_PLUGIN_DIR:-"$HOME/.gemini/config/plugins"}"
     mkdir -p "${target_dir}"
+    rm -rf "${target_dir}/filipkrawiec-orchestration" "${target_dir}/filipkrawiec-agy-orchestration"
     for dir in plugins/common/*; do
       [ -d "$dir" ] || continue
       pkg="filipkrawiec-$(basename "$dir")"
@@ -76,6 +78,7 @@ link-agy:
 refresh: install-agy
     #!/usr/bin/env bash
     if command -v codex >/dev/null 2>&1; then
+      codex plugin remove "filipkrawiec-orchestration@filipkrawiec" >/dev/null 2>&1 || true
       for dir in plugins/common/*; do
         [ -d "$dir" ] || continue
         pkg="filipkrawiec-$(basename "$dir")"
@@ -84,9 +87,12 @@ refresh: install-agy
       done
     fi
     if command -v claude >/dev/null 2>&1; then
+      claude plugin remove "filipkrawiec-orchestration@filipkrawiec" >/dev/null 2>&1 || true
       for dir in plugins/common/*; do
         [ -d "$dir" ] || continue
         pkg="filipkrawiec-$(basename "$dir")"
+        claude plugin remove "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
+        claude plugin add "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
         claude plugin update "${pkg}@filipkrawiec" || true
       done
     fi

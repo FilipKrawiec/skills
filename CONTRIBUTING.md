@@ -97,7 +97,7 @@ just release-check     # or: python3 scripts/validate-release-version.py
 Configure local Git hooks to automatically run pre-push tag and version checks:
 
 ```bash
-just setup-hooks       # or: ./scripts/setup-git-hooks.sh
+just setup-hooks
 ```
 
 ---
@@ -106,23 +106,18 @@ just setup-hooks       # or: ./scripts/setup-git-hooks.sh
 
 Every common package and agent overlay shares a unified repository-wide release version defined by an annotated Git tag (`v<semver>`).
 
-### Release Workflow
+### Automated Semantic Release
 
-1. **Pre-merge**:
-   * Update version strings across all `plugin.json` manifests on `main`.
-   * Run the verification suite (`python3 scripts/project-verify.py unit && python3 scripts/project-verify.py verify`).
-   * Submit a Review Request carrying the task evidence.
+Releases are automated from conventional commits via GitHub Actions or locally via `just release`:
 
-2. **Post-merge**:
-   * Once the user merges to `main`, create an annotated Git tag matching the manifest version:
+1. **Automated CI Release**:
+   * Pushes to `main` with conventional commits (`feat:`, `fix:`, `feat!:`, `BREAKING CHANGE:`) automatically trigger `.github/workflows/release.yml`.
+   * The workflow runs tests, calculates the semver bump, synchronizes plugin manifests, commits the version bump, creates an annotated tag, and publishes a GitHub Release.
+
+2. **Local Release Execution**:
+   * Maintainers can trigger a local semantic release:
      ```bash
-     git tag -a v1.1.0 -m "v1.1.0 release"
+     just release           # Automated semver bump based on conventional commits
+     # or: just release minor / just release patch / just release major
      ```
-   * Run the release validator:
-     ```bash
-     python3 scripts/validate-release-version.py
-     ```
-   * Push tag and commits:
-     ```bash
-     git push --follow-tags
-     ```
+   * The release script verifies a clean working tree, updates package metadata, synchronizes manifests, tags the commit, and refreshes installed plugins.

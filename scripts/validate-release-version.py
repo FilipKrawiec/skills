@@ -12,7 +12,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-COMMON_PACKAGES = ("core", "workflow", "sdlc", "authoring")
 RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 INITIAL_RELEASE_VERSION = "8.3.0"
 
@@ -38,9 +37,20 @@ def release_version(tag: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups())
 
 
+def discover_common_package_names(root: Path = ROOT) -> list[str]:
+    common_dir = root / "plugins" / "common"
+    if not common_dir.is_dir():
+        return []
+    return sorted(
+        pkg.name
+        for pkg in common_dir.iterdir()
+        if pkg.is_dir() and not pkg.name.startswith(".")
+    )
+
+
 def version_paths() -> list[Path]:
     paths: list[Path] = []
-    for package in COMMON_PACKAGES:
+    for package in discover_common_package_names(ROOT):
         package_root = ROOT / "plugins" / "common" / package
         paths.extend(
             (

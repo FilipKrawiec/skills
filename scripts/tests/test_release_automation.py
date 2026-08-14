@@ -69,6 +69,40 @@ class ReleaseAutomationTests(unittest.TestCase):
         finally:
             sys.path.pop(0)
 
+    def test_discover_common_package_names(self) -> None:
+        sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
+        try:
+            import release
+            packages = release.discover_common_package_names(REPOSITORY_ROOT)
+            self.assertIn("core", packages)
+            self.assertIn("sdlc", packages)
+            self.assertIn("workflow", packages)
+            self.assertIn("authoring", packages)
+        finally:
+            sys.path.pop(0)
+
+    def test_perform_release_aborts_on_dirty_worktree(self) -> None:
+        sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
+        try:
+            import release
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                root = Path(tmp_dir)
+                subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True)
+                subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+                subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=root, check=True)
+                (root / "file.txt").write_text("initial", encoding="utf-8")
+                subprocess.run(["git", "add", "."], cwd=root, check=True)
+                subprocess.run(["git", "commit", "-m", "chore: initial"], cwd=root, check=True)
+                subprocess.run(["git", "tag", "-a", "v8.3.0", "-m", "v8.3.0"], cwd=root, check=True)
+
+                # Make worktree dirty
+                (root / "unrelated.txt").write_text("dirty content", encoding="utf-8")
+
+                with self.assertRaises(SystemExit):
+                    release.perform_release("patch", root=root)
+        finally:
+            sys.path.pop(0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 ---
 name: scaffold-monorepo
 description: Use when initializing or scaffolding a new Trunk-Based Development monorepository with justfile, .devcontainer, co-located Helm and Ansible infrastructure, and AGENTS.md rules.
+disable-model-invocation: true
 ---
 
 # Scaffold Monorepo
