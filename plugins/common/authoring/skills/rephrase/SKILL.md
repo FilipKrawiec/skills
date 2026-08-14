@@ -21,8 +21,7 @@ Reset the active conversation and state the core technical proposal or blocker i
 
 ## Output Envelope
 
-```text
-💡 Core Intent: <1-2 sentences explaining the proposal in plain English without jargon>
-⚖️ Key Trade-off: <1 sentence summarizing the primary pro/con>
-❓ Decision Needed: <Single, unambiguous choice question with recommended option>
-```
+Structure the restatement within strict size limits (<= 6 lines total) defining three semantic dimensions:
+- **Core Intent**: 1-2 sentences explaining the proposal in plain English without jargon.
+- **Key Trade-off**: 1 sentence summarizing the primary pro/con.
+- **Decision Needed**: Exactly one unambiguous choice question with recommended option.

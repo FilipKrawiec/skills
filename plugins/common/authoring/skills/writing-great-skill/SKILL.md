@@ -39,9 +39,12 @@ Structure skills as **unidirectional affirmative state machines**:
 - State only the single desired affirmative action in each phase. Omit negative phrasing ("Don't do X", "Never do Y") to prevent negative prompt priming.
 - Pair each phase with a concrete **Exit Gate** (test output, command exit code 0, or file diff).
 
-## Explicit Output Envelopes
+## Size & Semantic Payload Output Envelopes
 
-Output tokens are significantly more expensive and slower than input tokens. Define an **Explicit Output Envelope** (compact Markdown template) for each phase or turn to eliminate unsolicited narrative essays and token bloat.
+Output tokens are significantly more expensive and slower than input tokens. Define an **Explicit Output Envelope** for each phase or turn to eliminate unsolicited narrative essays and token bloat:
+- **Size & Brevity Limits**: Enforce strict upper bounds on line count and token budget (e.g. <= 5 lines per interaction round, zero conversational preamble).
+- **Semantic Payload Boundaries**: Specify required dimensions (facts, trade-offs, recommendations, exit criteria) rather than prescribing rigid literal text framing.
+- **Native Host Interaction**: Frame envelopes so host environments can fulfill them using native affordances (such as interactive tool modals like `ask_question`, artifact review panes, or high-density CLI output).
 
 ## Diagramming Standard
 

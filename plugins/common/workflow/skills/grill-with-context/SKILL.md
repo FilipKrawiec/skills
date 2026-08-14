@@ -17,11 +17,7 @@ Challenge proposed changes against active project context and architectural reco
 
 ### Phase 2: Grilling in Rounds
 1. Ask one sharp decision question at a time covering scope boundaries, trade-offs, and edge cases.
-2. Output questions in structured round envelopes with recommended answers:
-   ```text
-   ❓ Q1 - <Question Title>: <Description and trade-offs>
-   ➡️ Recommended: <Specific choice and rationale>
-   ```
+2. Structure each question round with concise size limits (<= 5 lines) defining the question title, trade-offs, and recommended choice with rationale, enabling the host environment to present it natively (e.g. interactive tool modal or high-density text).
 3. Wait for user decision on the active round before advancing the frontier.
 *Exit Gate*: All branches of the design tree are resolved.
 
