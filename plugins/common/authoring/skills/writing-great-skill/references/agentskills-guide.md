@@ -196,12 +196,21 @@ skill-name/
 ### Frontmatter Fields in `SKILL.md`
 * **`name`**: Required. Max 64 chars. Lowercase alphanumeric and hyphens only. Must match parent directory.
 * **`description`**: Required. Max 1024 chars. Context-triggering text.
+* **`allowed-tools`**: Required. Space-delimited string declaring pre-approved tools (e.g. `Skill Read Edit Bash(git:*)`). Declare `Skill` to enable downstream skill calling.
+* **`disable-model-invocation`**: Optional. Boolean (`true`/`false`). When `true`, hides skill from autonomous model discovery for explicit human triggering.
 * **`license`**: Optional. Name or reference to a bundled license file.
 * **`compatibility`**: Optional. Max 500 chars. System packages/runtime requirements.
 * **`metadata`**: Optional. Key-value string map for custom settings.
 
+### Cross-Skill Invocation & Tool Allowance
+When composing modular workflows, declare tool capabilities and adhere to execution patterns:
+* **Tool Boundaries**: Restrict tool privileges with command filters (e.g. `Bash(pytest:*,just:*)`).
+* **Inline Chaining**: Caller borrows domain rules directly into the active prompt turn (e.g. `tdd` invoking `ddd`).
+* **Subagent Delegation**: Orchestrator dispatches an isolated executor with a dedicated active skill bundle (e.g. `deliver` dispatching `developer`).
+* **Graph Invariants**: Dependencies must form a Directed Acyclic Graph (DAG) with max depth <= 2. Recursive calls are forbidden.
+
 ### Progressive Disclosure Rules
 Skills should be structured to take advantage of progressive disclosure:
-1. **Metadata** (\~100 tokens): loaded at startup.
-2. **Instructions** (\< 5000 tokens): `SKILL.md` body is loaded when skill is activated.
+1. **Metadata** (~100 tokens): loaded at startup.
+2. **Instructions** (< 5000 tokens): `SKILL.md` body is loaded when skill is activated.
 3. **Resources**: files in `scripts/`, `references/`, or `assets/` loaded on demand via relative path links.

@@ -1,6 +1,7 @@
 ---
 name: triage
 description: Use when diagnosing, troubleshooting, reproducing, or fixing a bug, broken test, error log, regression, or unexpected runtime behavior.
+allowed-tools: Read Edit Bash
 ---
 
 # Scientific Triage & Root-Cause Debugging

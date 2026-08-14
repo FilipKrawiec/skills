@@ -2,6 +2,7 @@
 name: specify
 description: Use when refining, grilling, and detailing a Backlog GitHub Issue before delivery execution.
 disable-model-invocation: true
+allowed-tools: Skill Bash(gh:*) Read
 ---
 
 # Backlog Item Specification & Grilling

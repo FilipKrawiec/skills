@@ -1,6 +1,7 @@
 ---
 name: hexagonal-architecture
 description: Use when designing, implementing, or refactoring codebase layers with Ports and Adapters, including API, application, domain, infrastructure, and dependency-boundary decisions.
+allowed-tools: Read
 ---
 
 # Hexagonal Architecture (Ports & Adapters)

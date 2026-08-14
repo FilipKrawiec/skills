@@ -2,6 +2,7 @@
 name: teach
 description: Use when generating an interactive learning guide to explain technical components, review best practices, and compare trade-offs.
 disable-model-invocation: true
+allowed-tools: Read Edit
 ---
 
 # Teach (Interactive Learning Skill)

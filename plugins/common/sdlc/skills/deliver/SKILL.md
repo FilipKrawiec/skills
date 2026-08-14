@@ -2,6 +2,7 @@
 name: deliver
 description: Use when an orchestrator coordinates a bounded project change from business intent through GitHub ticket definition, specification refinement, task dispatch, persona review, and ship decisions.
 disable-model-invocation: true
+allowed-tools: Skill Bash(gh:*,git:*,just:*) Read Edit
 ---
 
 # Provider-Neutral Delivery Orchestration

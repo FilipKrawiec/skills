@@ -1,6 +1,7 @@
 ---
 name: review
 description: Use when auditing a git diff, branch, pull request, or staged changes against architectural doctrines, Fowler code smells, and specification requirements.
+allowed-tools: Read Bash(git:*)
 ---
 
 # 2-Axis Code Review & Architectural Audit

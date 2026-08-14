@@ -2,6 +2,7 @@
 name: rephrase
 description: Use when resetting and simplifying the agent's explanation or proposal into concise plain English.
 disable-model-invocation: true
+allowed-tools: Read
 ---
 
 # Plain-Language Clarification & Alignment Reset

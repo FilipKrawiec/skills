@@ -1,6 +1,7 @@
 ---
 name: ddd
 description: Use when defining a business domain's language, contexts and maps, aggregates, entities, value objects, repositories, domain events, or strategic design.
+allowed-tools: Read
 ---
 
 # Domain-Driven Design (DDD)

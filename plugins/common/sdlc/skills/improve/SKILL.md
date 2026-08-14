@@ -1,6 +1,7 @@
 ---
 name: improve
 description: Use when capturing workflow friction, debugging pain points, or agent mistakes in any project to generate sanitized, actionable improvements or report issues upstream to FilipKrawiec/skills.
+allowed-tools: Bash(gh:*,git:*) Read Edit
 ---
 
 # Retrospective Learning & Friction Reporting

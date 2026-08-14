@@ -1,6 +1,7 @@
 ---
 name: tdd
 description: Use when programming, coding, refactoring, implementing features, or fixing bugs through Red-Green-Refactor with explicit failing and passing test evidence.
+allowed-tools: Skill Read Edit Bash(pytest:*,just:*,python3:*)
 ---
 
 # Test-Driven Development (Chicago School)

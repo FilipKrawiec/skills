@@ -63,3 +63,15 @@ Actionable, sequential instructions that the agent must execute directly in `SKI
 ## Reference
 
 Durable vocabulary, language profiles, domain models, or specifications stored in auxiliary markdown files loaded conditionally via context pointers.
+
+## Tool Allowance (allowed-tools)
+
+The mandatory YAML frontmatter declaration specifying the explicit, space-delimited whitelist of tools and execution capabilities granted to a skill.
+
+## Inline Skill Chaining
+
+An invocation pattern where a caller skill incorporates a callee skill's domain rules directly into the current execution turn without creating an isolated subagent.
+
+## Delegated Skill Invocation
+
+An invocation pattern where an orchestrator dispatches an isolated subagent persona configured with a bounded task packet and specific active skills.

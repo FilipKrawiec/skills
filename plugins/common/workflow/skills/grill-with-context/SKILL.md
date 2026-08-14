@@ -1,6 +1,7 @@
 ---
 name: grill-with-context
 description: Use when challenging a proposed change against task-relevant project context, ADRs, glossary, and knowledge sources during provider-neutral SPECIFY/GRILL before planning.
+allowed-tools: Read
 ---
 
 # Grill With Context
