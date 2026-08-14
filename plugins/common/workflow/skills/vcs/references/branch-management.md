@@ -21,3 +21,19 @@ Follow these guidelines to structure and manage git branches:
 
 - Follow repository shipping policy. Use the task branch and its Review Request as the delivery review boundary.
 - Whichever mechanism is used, every finished task—accepted or rejected—must produce exactly one cohesive outcome commit on main/trunk. Use a squash merge locally or in the hosting platform to achieve it.
+
+## 4. Post-Merge Lifecycle & Worktree Cleanup
+
+- **Remote Branch Deletion**: Delete the head branch upon merging the Review Request / Pull Request (e.g. via `gh pr merge --delete-branch` or host automatic branch deletion).
+- **Worktree Removal**: Delete the dedicated task worktree once work is merged or abandoned:
+  ```bash
+  git worktree remove <worktree-path>
+  ```
+- **Local Branch Deletion**: Delete the merged local branch:
+  ```bash
+  git branch -d <branch-name>
+  ```
+- **Remote Reference Pruning**: Prune stale remote tracking branches to maintain a clean reference log:
+  ```bash
+  git remote prune origin
+  ```

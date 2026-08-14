@@ -37,6 +37,12 @@ Follow these steps for all version control and git operations to maintain a clea
 3. Open Review Request linking the Delivery Record identifier.
 *Exit Gate*: Branch is pushed with clean verification pass.
 
+### Phase 5: Post-Merge & Worktree Cleanup
+1. Once merged into main, remove the task worktree: `git worktree remove <worktree-path>`.
+2. Delete the local task branch: `git branch -d <branch-name>`.
+3. Prune deleted remote branch tracking references: `git remote prune origin`.
+*Exit Gate*: Worktree removed, local merged branch deleted, and remote tracking refs pruned.
+
 ---
 
 ## Delivery Authority & Merge Rules

@@ -65,7 +65,5 @@ Once all DAG slices pass deterministic verification and persona reviews:
 - Provide interactive merge prompt instructions:
   > **Delivery Ready for Merge:**
   > - All persona reviews (`quality-engineer`, `solution-architect`, `security-auditor`) passed cleanly.
-  > - Click **Proceed** to authorize `gh pr merge` into `main`.
-- **Merge Guardrail**: Executors must NEVER merge, approve, or force-push protected default branches (`main`). The Product Owner alone retains merge authority. Upon merge, GitHub auto-closes the issue (`Closes #<id>`) and moves the Project item to **Done**.
-
-
+  > - Click **Proceed** to authorize `gh pr merge --squash --delete-branch` into `main`.
+- **Merge Guardrail & Cleanup**: Executors must NEVER merge, approve, or force-push protected default branches (`main`). The Product Owner alone retains merge authority. Upon merge, GitHub auto-closes the issue (`Closes #<id>`), deletes the remote head branch, and moves the Project item to **Done**. Remove the local task worktree (`git worktree remove`) and prune remote tracking references (`git remote prune origin`).
