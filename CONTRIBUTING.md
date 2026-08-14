@@ -92,12 +92,15 @@ just verify            # or: python3 scripts/project-verify.py verify
 just release-check     # or: python3 scripts/validate-release-version.py
 ```
 
-### Git Hooks Setup
-
-Configure local Git hooks to automatically run pre-push tag and version checks:
+### Contributor Setup & Git Hooks
+ 
+Set up local Git hooks and link development plugins into your local Antigravity environment with a single command:
 
 ```bash
-just setup-hooks
+just setup             # Configures scripts/git-hooks and links dev plugins
+# or separately:
+just setup-hooks       # Configure Git pre-push hook only
+just link-agy          # Symlink plugins to ~/.gemini/config/plugins
 ```
 
 ---
