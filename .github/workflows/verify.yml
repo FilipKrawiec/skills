@@ -13,7 +13,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Detect secrets with Gitleaks
-        uses: gitleaks/gitleaks-action@e33b6641ab3e498c0b5f137eb14732aa878065f4 # v2.3.8
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.11"
