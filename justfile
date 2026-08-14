@@ -26,6 +26,9 @@ release bump="auto":
 status:
     python3 scripts/project-verify.py status
 
+# Complete local contributor setup (configures git hooks and links plugins into local Antigravity IDE)
+setup: setup-hooks link-agy
+
 # Install/configure repository git hooks
 setup-hooks:
     git config core.hooksPath scripts/git-hooks

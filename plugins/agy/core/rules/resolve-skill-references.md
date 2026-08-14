@@ -9,12 +9,12 @@ The `agentskills.io` standard requires relative links (e.g., `references/strateg
 When any skill is active (e.g., `ddd` or `hexagonal-architecture`), you MUST resolve and read its local reference files before proceeding with tasks that depend on those concepts:
 
 1. **Locate the Skill's Absolute Path:**
-   - Look at the `Available skills` list in your system prompt to find the absolute path of the active skill's `SKILL.md` file (e.g., `~/.gemini/config/plugins/filipkrawiec/plugins/common/core/skills/ddd/SKILL.md`).
+   - Look at the `Available skills` list in your system prompt to find the absolute path of the active skill's `SKILL.md` file (e.g., `~/.gemini/config/plugins/filipkrawiec-core/skills/ddd/SKILL.md`).
 
 2. **Construct the Reference's Absolute Path:**
    - Combine the parent directory of that `SKILL.md` with the relative path of the reference link.
    - *Example:* If the skill is `ddd` and the reference is `references/strategic-design.md`, the resolved absolute path is:
-     `~/.gemini/config/plugins/filipkrawiec/plugins/common/core/skills/ddd/references/strategic-design.md`
+     `~/.gemini/config/plugins/filipkrawiec-core/skills/ddd/references/strategic-design.md`
 
 3. **Read the Reference:**
    - Call the `view_file` tool with the constructed absolute path.

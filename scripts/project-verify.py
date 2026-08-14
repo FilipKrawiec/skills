@@ -142,8 +142,8 @@ def main():
 
     tasks = tool_cfg.get("lifecycle_tasks", {}) if isinstance(tool_cfg.get("lifecycle_tasks"), dict) else {}
     command = tasks.get(args.task)
-    if not command:
-        print(f"ERROR: Task '{args.task}' not found for tool '{tool_name}'. Available: {list(tasks.keys())}", file=sys.stderr)
+    if not command or not isinstance(command, str) or not command.strip():
+        print(f"ERROR: Task '{args.task}' not found or empty for tool '{tool_name}'. Available: {list(tasks.keys())}", file=sys.stderr)
         sys.exit(1)
 
     print(f"=== Executing [{tool_name}] task '{args.task}' -> '{command}' ===")

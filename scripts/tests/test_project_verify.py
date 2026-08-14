@@ -115,6 +115,26 @@ class CompactProjectVerifyTests(unittest.TestCase):
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("ERROR: Task 'nonexistent_task' not found", res.stderr)
 
+    def test_reports_error_when_task_command_is_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            agents_file = tmp_path / "AGENTS.md"
+            agents_file.write_text(
+                "---\n"
+                "build_tools:\n"
+                "  dummy:\n"
+                "    build_script: build.txt\n"
+                "    lifecycle_tasks:\n"
+                "      empty_task: '   '\n"
+                "---\n",
+                encoding="utf-8",
+            )
+            (tmp_path / "build.txt").write_text("dummy\n", encoding="utf-8")
+
+            res = self.run_cli("--root", str(tmp_path), "empty_task")
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("ERROR: Task 'empty_task' not found or empty", res.stderr)
+
     def test_hierarchical_agents_md_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
