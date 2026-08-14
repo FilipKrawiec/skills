@@ -6,19 +6,24 @@ disable-model-invocation: true
 
 # SWOT Analysis (Strategic Evaluation Skill)
 
-Perform evidence-grounded, low-ceremony strategic audits and architectural health evaluations across technical components, codebases, frameworks, or skills.
+Perform evidence-grounded strategic audits and architectural health evaluations across technical components, codebases, frameworks, or entire solutions.
 
-## Playbook Steps
+## Playbook Modes
 
-1. **Scope & Target**: Define the exact component or codebase boundary under evaluation.
-2. **Gather Evidence**: Inspect files, test suites, and configurations; require concrete file citations for every observation.
-3. **Classify 4-Quadrant Factors**: Map verified findings to Strengths, Weaknesses, Opportunities, and Threats with priority tiers (P0/P1/P2).
-4. **Action Roadmap**: Derive high-leverage engineering actions directly from the quadrant findings.
-5. **Publish Compact Report**: Generate a scannable summary table and prioritized action roadmap.
+### 1. Solo Mode (Bounded Targets)
+1. **Scope & Inspect**: Define the target component and gather grounded evidence across codebase files and configurations.
+2. **Classify Factors**: Map verified findings to Strengths, Weaknesses, Opportunities, and Threats with P0/P1/P2 priority tiers.
+3. **Publish Report**: Generate an executive summary table and prioritized action roadmap.
+
+### 2. Collaborative Multi-Agent Mode (Full Solutions)
+1. **Dispatch Persona Subagents**: Assign domain evaluation lenses to specialized subagents (`solution-architect`, `security-auditor`, `quality-engineer`, `developer`).
+2. **Collect Contributions**: Gather structured findings matrices with grounded line citations from each persona.
+3. **Synthesize Executive Report**: Deduplicate overlapping findings, calibrate priority tiers, and compile the consolidated SWOT matrix and action roadmap.
 
 ---
 
 ## Context Pointers
 
-- Read [swot-methodology.md](references/swot-methodology.md) when classifying factors, applying scoring rubrics, or rendering visual quadrant charts.
-- Read [swot-template.md](references/swot-template.md) when formatting the evaluation report or artifact layout.
+- Read [swot-methodology.md](references/swot-methodology.md) when classifying factors, applying scoring rubrics, or reviewing the visual quadrant matrix.
+- Read [subagent-contributions.md](references/subagent-contributions.md) when dispatching specialized persona subagents or formatting domain contribution envelopes.
+- Read [swot-synthesis.md](references/swot-synthesis.md) when consolidating multi-lens findings into the executive report and action roadmap.
