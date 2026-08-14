@@ -18,7 +18,7 @@ For any task, rebase and verify the task branch first. Then select the repositor
 3. Resolve conflicts in the task worktree, rerun required checks, and keep unrelated changes out of the commit.
 4. Integrate through the configured provider's Review Request process.
 5. Confirm main/trunk contains exactly one cohesive outcome commit for the task, including a rejected task when its outcome must be recorded.
-6. Push or verify the hosting-platform merge, then confirm `main...origin/main` has no ahead or behind count. Do not report shipping before this verification.
+6. Push or verify the hosting-platform merge (ensuring the remote head branch is deleted with `--delete-branch`), remove the local task worktree, and prune remote tracking references. Confirm `main...origin/main` has no ahead or behind count. Do not report shipping before this verification.
 
 ## 2. Squashing Commits
 - Squash intermediate commits (e.g., "fix typo", "wip") into logical, cohesive units before requesting a review or merging.
