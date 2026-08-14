@@ -239,12 +239,25 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
             validate_markdown_links(ref)
 
 
+def discover_all_common_skills(root: Path = ROOT) -> set[str]:
+    all_skills = set()
+    common_pkgs = discover_common_packages(root)
+    for meta_path in common_pkgs:
+        skills_dir = meta_path.parent / "skills"
+        if skills_dir.is_dir():
+            for path in skills_dir.iterdir():
+                if path.is_dir() and (path / "SKILL.md").is_file():
+                    all_skills.add(path.name)
+    return all_skills
+
+
 def validate_agy_plugins(root: Path = ROOT) -> None:
     agy_dir = root / "plugins" / "agy"
     if not agy_dir.is_dir():
         fail("missing plugins/agy directory")
 
     valid_packages = set(discover_common_packages(root).values())
+    valid_skills = discover_all_common_skills(root)
     for plugin_path in sorted(agy_dir.iterdir()):
         if not plugin_path.is_dir():
             continue
@@ -273,17 +286,25 @@ def validate_agy_plugins(root: Path = ROOT) -> None:
 
         rules_dir = plugin_path / "rules"
         if rules_dir.is_dir():
-            for rule_file in rules_dir.glob("*.md"):
+            for rule_file in sorted(rules_dir.glob("*.md")):
                 content = rule_file.read_text(encoding="utf-8")
                 if not content.strip().startswith("# "):
                     fail(f"{rel(rule_file)} rule file must start with a markdown header (#)")
 
         agents_dir = plugin_path / "agents"
         if agents_dir.is_dir():
-            for agent_file in agents_dir.glob("*.md"):
+            for agent_file in sorted(agents_dir.glob("*.md")):
                 content = agent_file.read_text(encoding="utf-8")
                 if not content.strip().startswith("# "):
                     fail(f"{rel(agent_file)} agent file must start with a markdown header (#)")
+                for line in content.splitlines():
+                    skills_match = re.match(r"^-\s+\*\*Skills\*\*:\s*(.+)$", line)
+                    if skills_match:
+                        raw_skills = skills_match.group(1).split(",")
+                        for skill in (s.strip(" `*") for s in raw_skills):
+                            if skill and skill not in valid_skills:
+                                fail(f"{rel(agent_file)} references unknown skill '{skill}'")
+
 
 
 def validate_retired_sdlc_is_absent(root: Path = ROOT) -> None:
