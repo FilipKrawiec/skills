@@ -17,7 +17,26 @@ Classify observations by origin and impact without ceremonial overhead:
 
 ---
 
-## 2. Grounding Rules
+## 2. Visual Quadrant Matrix
+
+```text
+               Helpful                              Harmful
+        ┌───────────────────────────────────┬───────────────────────────────────┐
+        │ STRENGTHS (Internal)              │ WEAKNESSES (Internal)             │
+        │ • Clean domain boundary isolation │ • Tight infrastructure coupling   │
+        │ • 100% aggregate test coverage    │ • Complex conditional dispatch    │
+Internal│ • Immutable Value Objects         │ • Missing mutation test gates     │
+        ├───────────────────────────────────┼───────────────────────────────────┤
+        │ OPPORTUNITIES (External)          │ THREATS (External)                │
+        │ • Reusable shared plugin scripts  │ • Upstream breaking API changes   │
+        │ • Standardized CI/CD workflow     │ • Runtime environment variance    │
+External│ • Open standard adoption          │ • Security CVEs in dependencies   │
+        └───────────────────────────────────┴───────────────────────────────────┘
+```
+
+---
+
+## 3. Grounding Rules
 
 To prevent speculative or ungrounded claims:
 - **Cite Direct Evidence**: Every observation must reference an exact file path, test suite, or config line.
@@ -26,31 +45,10 @@ To prevent speculative or ungrounded claims:
 
 ---
 
-## 3. Practical Prioritization
+## 4. Practical Prioritization
 
 Avoid artificial arithmetic formulas or complex scoring weights. Use standard engineering tiers:
 
-- **P0 (Critical)**: Active blocker, breaking risk, or critical architecture defect.
+- **P0 (Critical)**: Active blocker, breaking risk, or critical architecture/security defect.
 - **P1 (High)**: High-leverage improvement or mitigation for the active milestone.
 - **P2 (Medium/Low)**: Non-blocking polish or backlog item.
-
----
-
-## 4. Optional Visual Chart
-
-When visual summary is helpful and Mermaid is supported:
-
-```mermaid
-quadrantChart
-    title Technical SWOT
-    x-axis "Harmful" --> "Helpful"
-    y-axis "External" --> "Internal"
-    quadrant-1 "Strengths"
-    quadrant-2 "Opportunities"
-    quadrant-3 "Threats"
-    quadrant-4 "Weaknesses"
-    "Clean Boundary": [0.8, 0.8]
-    "Shared Tools": [0.7, 0.3]
-    "API Deprecation": [0.2, 0.3]
-    "Fragile Config": [0.3, 0.7]
-```
