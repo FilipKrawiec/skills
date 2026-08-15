@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-workflow",
   "description": "Workflow skills for provider-neutral delivery orchestration, TDD, VCS, and review critiques.",
-  "version": "9.4.2",
+  "version": "9.4.3",
   "skills": "./skills/"
 }
