@@ -1,69 +1,64 @@
 # Antigravity Native SDLC Rules
 
-Use the portable `deliver` skill for delivery orchestration across bounded project changes, enhanced with Antigravity native harness capabilities (interactive artifacts, subagent delegation, background command management, GitHub CLI synchronization, and native Proceed buttons).
+Enhance the provider-neutral `deliver` workflow with Antigravity native IDE harness capabilities (interactive UI artifacts, subagent persona delegation via `invoke_subagent`, autonomous self-correction loops, and interactive merge approval).
 
 ---
 
-## 1. GitHub CLI Prerequisites & Project Configuration
+## 1. Project Configuration & GitHub Prerequisites
 
-Before executing any orchestration phase:
-1. Verify GitHub CLI authentication via `gh auth status`. Ensure required scopes (`repo`, `read:org`, `project`) are present.
-2. Inspect the target repository root for `.agy/config.json`.
-   - Parse configuration overrides for persona rules, test frameworks, and review behavior:
-     ```json
-     {
-       "orchestration": {
-         "enforce_hexagonal": true,
-         "enforce_ddd": true,
-         "require_security_audit": true,
-         "max_autonomous_retries": 3,
-         "github_projects_enabled": true
-       }
+1. Verify GitHub CLI authentication via `gh auth status` (scopes: `repo`, `read:org`, `project`).
+2. Inspect target repository root for `.agy/config.json` overrides:
+   ```json
+   {
+     "orchestration": {
+       "enforce_hexagonal": true,
+       "enforce_ddd": true,
+       "require_security_audit": true,
+       "max_autonomous_retries": 3,
+       "github_projects_enabled": true
      }
-     ```
-   - Fall back to safe defaults (`enforce_hexagonal: true`, `enforce_ddd: true`, `require_security_audit: true`, `max_autonomous_retries: 3`, `github_projects_enabled: true`).
+   }
+   ```
+   Apply safe defaults if unconfigured (`enforce_hexagonal: true`, `enforce_ddd: true`, `require_security_audit: true`, `max_autonomous_retries: 3`, `github_projects_enabled: true`).
 
 ---
 
-## 2. GitHub Issue & Project Board Synchronization (`DEFINE` & `REFINE`)
+## 2. Interactive Artifact & Planning Protocol
 
-The human operator acts as **Product Owner** during specification refinement.
-- **`DEFINE` Output & Mandatory Completion Gate**: Create a structured GitHub Issue (`gh issue create`) with type labels (`type:feature`, `type:story`, `type:task`, `type:bug`). Move Project item to **Backlog**. `DEFINE` MUST execute `gh issue create` and present the Issue link to the Product Owner as its completion output BEFORE technical `implementation_plan.md` drafting or code execution.
-- **`REFINE` Output**: Conduct specification challenge (`grill-with-context`), update issue description (`gh issue edit`), and post refinement comments (`gh issue comment`). Set Project status to **Backlog** (or **Blocked** if blocked).
-
----
-
-## 3. Implementation Planning & Subagent Persona Delegation (`IMPLEMENT`)
-
-Transition Project column to **In Progress**. Create feature branch `issue-<id>-<slug>` (`gh issue develop`).
-- Construct local technical `implementation_plan.md` (`RequestFeedback: true`, `UserFacing: true`) for technical DAG task breakdown.
-- Antigravity renders the native IDE **Proceed** button and feedback UI.
-- When the user clicks **Proceed**, dispatch persona subagents via `invoke_subagent`:
-  1. **`developer` Subagent** ([agents/developer.md](../agents/developer.md)): Dispatched during `IMPLEMENT` in an isolated Git worktree using TDD.
-  2. **`quality-engineer` Subagent** ([agents/quality-engineer.md](../agents/quality-engineer.md)): Dispatched during `COLLECT / VERIFY` to run deterministic verification (e.g., `AGENTS.md` verification task, `just verify`, or test runner).
-  3. **`solution-architect` Subagent** ([agents/solution-architect.md](../agents/solution-architect.md)): Dispatched during `REVIEW` to audit domain purity and Hexagonal layer isolation.
-  4. **`security-auditor` Subagent** ([agents/security-auditor.md](../agents/security-auditor.md)): Dispatched during `REVIEW` to audit OWASP security risks and secrets.
+- **Implementation Plan Gate**: Generate technical `implementation_plan.md` with `RequestFeedback: true` and `UserFacing: true`. Antigravity renders the native IDE **Proceed** button and feedback UI.
+- **Progress Tracking**: Record execution and review evidence continuously in `walkthrough.md` (`UserFacing: true`).
+- **Wait for User Approval**: Stop execution and wait for the user to click **Proceed** before dispatching task slices.
 
 ---
 
-## 4. Autonomous Self-Correction Rework Loop
+## 3. Subagent Persona Delegation
 
-During `COLLECT / VERIFY` and `REVIEW`, when a verifier or reviewer persona rejects a slice (`VERIFICATION_FAILED`, `CORRECT_EXECUTE`, `CORRECT_PLAN`, or `SECURITY_VULNERABILITY_FOUND`):
-- Increment slice `attempt_count`.
-- If `attempt_count <= max_autonomous_retries` (default 3), automatically re-dispatch the `developer` subagent with the exact failure payload. DO NOT stop or request human input during intermediate retries.
-- Update the native live progress artifact `walkthrough.md` (`UserFacing: true`) showing retry attempt progress.
-- If `attempt_count > max_autonomous_retries`, stop execution, log failure state in `walkthrough.md`, and return decision to the Product Owner.
+When the user approves the plan, dispatch dedicated persona subagents via `invoke_subagent` according to delivery stage:
+
+| Stage | Persona Template | Role & Execution Focus |
+| :--- | :--- | :--- |
+| `DISPATCH` / `IMPLEMENT` | [developer](../agents/developer.md) | Executes TDD implementation inside an isolated Git worktree. |
+| `COLLECT / VERIFY` | [quality-engineer](../agents/quality-engineer.md) | Executes deterministic verification gates and audits test assertions. |
+| `REVIEW` | [solution-architect](../agents/solution-architect.md) | Audits domain purity and Hexagonal layer isolation boundaries. |
+| `REVIEW` | [security-auditor](../agents/security-auditor.md) | Audits OWASP vulnerabilities, shell injections, and secret leaks. |
+| `REVIEW` | [orchestration-reviewer](../agents/orchestration-reviewer.md) | Comprehensive four-eyes code and architecture audit. |
 
 ---
 
-## 5. GitHub Pull Request & Interactive Merge Approval (`UNDER REVIEW` & `DONE`)
+## 4. Autonomous Self-Correction Loop
 
-Once all DAG slices pass deterministic verification and persona reviews:
-- Create GitHub Pull Request (`gh pr create`) linking `Closes #<id>`. Set GitHub Project column to **Review**.
-- Submit formal GitHub PR Reviews (`gh pr review <pr-number> --comment`) from each persona (`quality-engineer`, `solution-architect`, `security-auditor`) attaching `walkthrough.md` evidence.
-- Present native IDE `ReviewRequest` with `RequestFeedback: true` to the Product Owner linking the GitHub PR and Issue.
-- Provide interactive merge prompt instructions:
-  > **Delivery Ready for Merge:**
-  > - All persona reviews (`quality-engineer`, `solution-architect`, `security-auditor`) passed cleanly.
-  > - Click **Proceed** to authorize `gh pr merge --squash --delete-branch` into `main`.
-- **Merge Guardrail & Cleanup**: Executors must NEVER merge, approve, or force-push protected default branches (`main`). The Product Owner alone retains merge authority. Upon merge, GitHub auto-closes the issue (`Closes #<id>`), deletes the remote head branch, and moves the Project item to **Done**. Remove the local task worktree (`git worktree remove`) and prune remote tracking references (`git remote prune origin`).
+When a verifier or reviewer persona rejects a slice (`VERIFICATION_FAILED`, `CORRECT_EXECUTE`, `CORRECT_PLAN`, or `SECURITY_VULNERABILITY_FOUND`):
+1. Increment slice `attempt_count`.
+2. If `attempt_count <= max_autonomous_retries` (default 3), re-dispatch the `developer` subagent with the exact failure payload. Do not prompt the user during intermediate retries.
+3. Update `walkthrough.md` with retry diagnostics.
+4. If retries are exhausted, stop and escalate failure logs to the Product Owner.
+
+---
+
+## 5. Interactive PR Review & Merge Guardrail
+
+1. Create Pull Request (`gh pr create`) linking `Closes #<id>`.
+2. Submit persona PR review comments (`gh pr review <pr-number> --comment`) with `walkthrough.md` evidence.
+3. Present native IDE `ReviewRequest` with `RequestFeedback: true` linking PR and Issue.
+4. **Merge Guardrail**: Executors must NEVER merge, approve, or force-push protected default branches (`main`). Present the interactive merge prompt for user authorization (`gh pr merge --squash --delete-branch`). Upon merge, clean up local worktrees (`git worktree remove`) and prune remote tracking branches (`git remote prune origin`).
+

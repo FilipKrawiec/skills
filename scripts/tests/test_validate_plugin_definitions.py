@@ -241,6 +241,50 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
             self.assertEqual(len(codex_m["plugins"]), 1)
             self.assertEqual(codex_m["plugins"][0]["name"], "filipkrawiec-testpkg")
 
+    def test_validate_agy_plugins_subagent_skill_reference_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            common_pkg = tmp_root / "plugins" / "common" / "testpkg"
+            common_pkg.mkdir(parents=True)
+            meta = {
+                "name": "filipkrawiec-testpkg",
+                "version": "1.0.0",
+                "description": "Test package",
+            }
+            (common_pkg / "package-metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+            (common_pkg / "plugin.json").write_text(json.dumps(meta), encoding="utf-8")
+            (common_pkg / ".claude-plugin").mkdir()
+            (common_pkg / ".claude-plugin" / "plugin.json").write_text(json.dumps({**meta, "skills": "./skills/"}), encoding="utf-8")
+            (common_pkg / ".codex-plugin").mkdir()
+            (common_pkg / ".codex-plugin" / "plugin.json").write_text(json.dumps({**meta, "skills": "./skills/"}), encoding="utf-8")
+            skill_dir = common_pkg / "skills" / "valid-skill"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text("---\nname: valid-skill\ndescription: Use when testing.\nallowed-tools: Read\n---\n", encoding="utf-8")
+
+            agy_pkg = tmp_root / "plugins" / "agy" / "testpkg"
+            agy_pkg.mkdir(parents=True)
+            agy_meta = {
+                "name": "filipkrawiec-agy-testpkg",
+                "version": "1.0.0",
+                "description": "AGY overlay",
+                "dependencies": [{"name": "filipkrawiec-testpkg", "version": "1.0.0"}],
+            }
+            (agy_pkg / "plugin.json").write_text(json.dumps(agy_meta), encoding="utf-8")
+            agents_dir = agy_pkg / "agents"
+            agents_dir.mkdir()
+            agent_file = agents_dir / "custom-agent.md"
+
+            # Valid agent referencing valid-skill
+            agent_file.write_text("# Custom Agent\n\n- **Skills**: valid-skill\n", encoding="utf-8")
+            v.validate_agy_plugins(tmp_root)
+
+            # Invalid agent referencing unknown-skill
+            agent_file.write_text("# Custom Agent\n\n- **Skills**: valid-skill, unknown-skill\n", encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_agy_plugins(tmp_root)
+            self.assertIn("references unknown skill 'unknown-skill'", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
+
