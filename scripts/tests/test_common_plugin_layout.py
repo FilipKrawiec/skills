@@ -344,8 +344,9 @@ class CommonPluginLayoutTests(unittest.TestCase):
         skill_dir = ROOT / "plugins" / "common" / "authoring" / "skills" / "swot"
         self.assertTrue((skill_dir / "SKILL.md").is_file())
         self.assertTrue((skill_dir / "references" / "swot-methodology.md").is_file())
-        self.assertTrue((skill_dir / "references" / "subagent-contributions.md").is_file())
+        self.assertTrue((skill_dir / "references" / "evaluation-lenses.md").is_file())
         self.assertTrue((skill_dir / "references" / "swot-synthesis.md").is_file())
+        self.assertFalse((skill_dir / "references" / "subagent-contributions.md").exists())
         self.assertFalse((skill_dir / "references" / "swot-template.md").exists())
 
         content = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
@@ -354,22 +355,22 @@ class CommonPluginLayoutTests(unittest.TestCase):
             "description: Use when performing a SWOT analysis (Strengths, Weaknesses, Opportunities, Threats), strategic audit, or architectural health evaluation of a codebase, skill, framework, or technical component.",
             content,
         )
+        self.assertIn("[evaluation-lenses.md](references/evaluation-lenses.md)", content)
         self.assertIn("[swot-methodology.md](references/swot-methodology.md)", content)
-        self.assertIn("[subagent-contributions.md](references/subagent-contributions.md)", content)
         self.assertIn("[swot-synthesis.md](references/swot-synthesis.md)", content)
         self.assertLess(len(content.splitlines()), 45)
 
         methodology = (skill_dir / "references" / "swot-methodology.md").read_text(encoding="utf-8")
-        contributions = (skill_dir / "references" / "subagent-contributions.md").read_text(encoding="utf-8")
+        lenses = (skill_dir / "references" / "evaluation-lenses.md").read_text(encoding="utf-8")
         synthesis = (skill_dir / "references" / "swot-synthesis.md").read_text(encoding="utf-8")
         self.assertLess(len(methodology.splitlines()), 300)
-        self.assertLess(len(contributions.splitlines()), 300)
+        self.assertLess(len(lenses.splitlines()), 300)
         self.assertLess(len(synthesis.splitlines()), 300)
         self.assertNotIn("```mermaid", methodology)
-        self.assertIn("solution-architect", contributions)
-        self.assertIn("security-auditor", contributions)
-        self.assertIn("quality-engineer", contributions)
-        self.assertIn("developer", contributions)
+        self.assertIn("solution-architect", lenses)
+        self.assertIn("security-auditor", lenses)
+        self.assertIn("quality-engineer", lenses)
+        self.assertIn("developer", lenses)
         self.assertIn("Executive Summary", synthesis)
         self.assertIn("Prioritized Action Roadmap", synthesis)
 

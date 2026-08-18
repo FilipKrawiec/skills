@@ -11,20 +11,19 @@ Perform evidence-grounded strategic audits and architectural health evaluations 
 
 ## Playbook Modes
 
-### 1. Solo Mode (Bounded Targets)
-1. **Scope & Inspect**: Define the target component and gather grounded evidence across codebase files and configurations.
-2. **Classify Factors**: Map verified findings to Strengths, Weaknesses, Opportunities, and Threats with P0/P1/P2 priority tiers.
-3. **Publish Report**: Generate an executive summary table and prioritized action roadmap.
+### 1. Single-Agent Multi-Lens Mode (Default)
+1. **Scope & Inspect Across Lenses**: Evaluate target codebase/component through the 4 domain lenses (`evaluation-lenses.md`: Architecture & DDD/Hexagonal, Security & Attack Surface, Verification & Test Rigor, Maintainability & DX) in a single pass.
+2. **Classify Factors**: Map verified findings to Strengths, Weaknesses, Opportunities, and Threats with P0/P1/P2 priority tiers (`swot-methodology.md`).
+3. **Publish Report**: Compile the consolidated quadrant matrix and prioritized action roadmap (`swot-synthesis.md`).
 
-### 2. Collaborative Multi-Agent Mode (Full Solutions)
-1. **Dispatch Persona Subagents**: Assign domain evaluation lenses to specialized subagents (`solution-architect`, `security-auditor`, `quality-engineer`, `developer`).
-2. **Collect Contributions**: Gather structured findings matrices with grounded line citations from each persona.
-3. **Synthesize Executive Report**: Deduplicate overlapping findings, calibrate priority tiers, and compile the consolidated SWOT matrix and action roadmap.
+### 2. Collaborative Multi-Agent Mode (Opt-In for Multi-Repo Boundaries)
+1. **Dispatch Persona Subagents**: Spawn dedicated personas (`solution-architect`, `security-auditor`, `quality-engineer`, `developer`) only when evaluating across distinct repository boundaries.
+2. **Collect & Synthesize**: Gather structured findings matrices, deduplicate overlapping factors, and compile the final executive report.
 
 ---
 
 ## Context Pointers
 
-- Read [swot-methodology.md](references/swot-methodology.md) when classifying factors, applying scoring rubrics, or reviewing the visual quadrant matrix.
-- Read [subagent-contributions.md](references/subagent-contributions.md) when dispatching specialized persona subagents or formatting domain contribution envelopes.
-- Read [swot-synthesis.md](references/swot-synthesis.md) when consolidating multi-lens findings into the executive report and action roadmap.
+- Read [evaluation-lenses.md](references/evaluation-lenses.md) when auditing target code across domain lenses or defining custom evaluation criteria.
+- Read [swot-methodology.md](references/swot-methodology.md) when classifying factors, grounding observations in direct file citations, or applying P0/P1/P2 tiers.
+- Read [swot-synthesis.md](references/swot-synthesis.md) when compiling the consolidated quadrant matrix and prioritized action roadmap.
