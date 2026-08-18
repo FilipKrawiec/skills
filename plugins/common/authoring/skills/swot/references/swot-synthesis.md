@@ -20,7 +20,7 @@ When aggregating findings from solo exploration or multiple specialized subagent
 ```markdown
 # Strategic SWOT: <Target Solution / Component>
 
-**Target**: `<path/to/component>` | **Date**: `<YYYY-MM-DD>` | **Mode**: `Solo` | `Collaborative (<Persona List>)`
+**Target**: `<path/to/component>` | **Date**: `<YYYY-MM-DD>` | **Mode**: `Single-Agent Multi-Lens` | `Collaborative (<Persona List>)`
 
 ## Executive Summary
 Brief 1–2 sentence summary of overall architectural health, strategic posture, and primary recommendation.
