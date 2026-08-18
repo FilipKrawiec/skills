@@ -24,7 +24,7 @@ Follow these guidelines to structure and manage git branches:
 
 ## 4. Post-Merge Lifecycle & Worktree Cleanup
 
-- **Remote Branch Deletion**: Delete the head branch upon merging the Review Request / Pull Request (e.g. via `gh pr merge --delete-branch` or host automatic branch deletion).
+- **Remote Branch Deletion**: Delete the head branch upon merging the Review Request / Pull Request (e.g. via host automatic branch deletion or `git push origin --delete <branch-name>`).
 - **Worktree Removal**: Delete the dedicated task worktree once work is merged or abandoned:
   ```bash
   git worktree remove <worktree-path>

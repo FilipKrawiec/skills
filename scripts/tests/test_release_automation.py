@@ -75,7 +75,6 @@ class ReleaseAutomationTests(unittest.TestCase):
             import release
             packages = release.discover_common_package_names(REPOSITORY_ROOT)
             self.assertIn("core", packages)
-            self.assertIn("sdlc", packages)
             self.assertIn("workflow", packages)
             self.assertIn("authoring", packages)
         finally:

@@ -29,18 +29,6 @@
       "category": "Engineering"
     },
     {
-      "name": "filipkrawiec-sdlc",
-      "source": {
-        "source": "local",
-        "path": "./plugins/common/sdlc"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Engineering"
-    },
-    {
       "name": "filipkrawiec-workflow",
       "source": {
         "source": "local",

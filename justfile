@@ -14,9 +14,9 @@ verify: unit
 sync-manifests:
     python3 scripts/validate-plugin-definitions.py --sync
 
-# Check release version alignment across manifests and tags
+# Check release version alignment across manifests and catalogs
 release-check:
-    python3 scripts/validate-release-version.py
+    python3 scripts/validate-plugin-definitions.py
 
 # Perform automated semantic release (bumps version, syncs manifests, commits, and tags)
 release bump="auto":

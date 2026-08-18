@@ -4,16 +4,14 @@ active_skills:
   - hexagonal-architecture
   - tdd
   - vcs
-  - deliver
-  - scaffold-monorepo
-  - define
-  - specify
-  - improve
   - triage
   - review
   - guide
   - rephrase
   - grill-with-context
+  - swot
+  - teach
+  - writing-great-skill
 
 build_tools:
   just:
@@ -33,8 +31,6 @@ build_tools:
 ## Verification Required for Changes
 
 Before making any repository code or configuration change, identify the relevant deterministic verification gate and the evidence it will produce. Run the project's verifier when it is configured, plus proportionate repository checks. Read-only analysis and explicitly requested plan-only work are exempt.
-
-`deliver` is the default provider-neutral, code-free orchestration workflow for bounded project changes.
 
 ## High-Density Output & Token Efficiency Protocol
 
