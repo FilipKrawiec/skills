@@ -89,7 +89,7 @@ just unit              # or: python3 scripts/project-verify.py unit
 just verify            # or: python3 scripts/project-verify.py verify
 
 # 3. Check release version alignment
-just release-check     # or: python3 scripts/validate-release-version.py
+just release-check     # or: python3 scripts/validate-plugin-definitions.py
 ```
 
 ### Contributor Setup & Git Hooks

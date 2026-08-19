@@ -30,6 +30,22 @@ ALLOWED_FRONTMATTER_KEYS = {
 }
 MAX_REFERENCE_LINES = 300
 
+# Canonical cross-repo skills available in the environment
+KNOWN_CORE_SKILLS = {
+    "ddd",
+    "hexagonal-architecture",
+    "tdd",
+    "vcs",
+    "triage",
+    "review",
+    "guide",
+    "rephrase",
+    "grill-with-context",
+    "swot",
+    "teach",
+    "writing-great-skill",
+}
+
 
 class ValidationError(Exception):
     """Raised when validation fails."""
@@ -73,10 +89,14 @@ def parse_skill_frontmatter(path: Path) -> dict:
             fail(f"{rel_path} has invalid YAML frontmatter: {exc}")
     else:
         # Fallback simple line-based key-value parser for basic frontmatter
-        def clean_val(val_list: list[str]) -> str:
+        def clean_val(val_list: list[str]) -> Any:
             val_str = "\n".join(val_list).strip()
             if (val_str.startswith('"') and val_str.endswith('"')) or (val_str.startswith("'") and val_str.endswith("'")):
                 val_str = val_str[1:-1]
+            if val_str.lower() == "true":
+                return True
+            if val_str.lower() == "false":
+                return False
             return val_str
 
         data = {}
@@ -176,16 +196,29 @@ def validate_skill_spec(skill_dir: Path) -> None:
 
 
 def discover_common_packages(root: Path = ROOT) -> dict[Path, str]:
-    common_dir = root / "plugins" / "common"
-    if not common_dir.is_dir():
-        fail("missing plugins/common directory")
-
     packages = {}
-    for pkg_dir in sorted(common_dir.iterdir()):
-        if pkg_dir.is_dir() and not pkg_dir.name.startswith("."):
-            meta_path = pkg_dir / "package-metadata.json"
-            expected_name = f"filipkrawiec-{pkg_dir.name}"
-            packages[meta_path] = expected_name
+    # Structured layout: plugins/common/*
+    common_dir = root / "plugins" / "common"
+    if common_dir.is_dir():
+        for pkg_dir in sorted(common_dir.iterdir()):
+            if pkg_dir.is_dir() and not pkg_dir.name.startswith("."):
+                meta_path = pkg_dir / "package-metadata.json"
+                if meta_path.is_file():
+                    expected_name = f"filipkrawiec-{pkg_dir.name}"
+                    packages[meta_path] = expected_name
+
+    # Flat layout: plugins/* (excluding container dirs common/agy)
+    plugins_dir = root / "plugins"
+    if plugins_dir.is_dir():
+        for pkg_dir in sorted(plugins_dir.iterdir()):
+            if pkg_dir.is_dir() and not pkg_dir.name.startswith(".") and pkg_dir.name not in ("common", "agy"):
+                meta_path = pkg_dir / "package-metadata.json"
+                if meta_path.is_file():
+                    expected_name = f"filipkrawiec-{pkg_dir.name}"
+                    packages[meta_path] = expected_name
+
+    if not packages:
+        fail("missing or empty plugins directory")
     return packages
 
 
@@ -225,7 +258,10 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
         or antigravity.get("version") != metadata["version"]
     ):
         fail(f"{rel(package_root / 'plugin.json')} must match package identity and version")
-    for manifest_path, manifest in ((package_root / ".claude-plugin" / "plugin.json", claude), (package_root / ".codex-plugin" / "plugin.json", codex)):
+    for manifest_path, manifest in (
+        (package_root / ".claude-plugin" / "plugin.json", claude),
+        (package_root / ".codex-plugin" / "plugin.json", codex),
+    ):
         if manifest.get("name") != metadata["name"] or manifest.get("version") != metadata["version"]:
             fail(f"{rel(manifest_path)} must match package name and version")
         if manifest.get("description") != metadata["description"] or manifest.get("skills") != "./skills/":
@@ -236,11 +272,17 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
         for ref in package_references.rglob("*.md"):
             if not REFERENCE_NAME_RE.fullmatch(ref.name):
                 fail(f"package reference file must be lowercase kebab-case.md: {rel(ref)}")
+            ref_text = ref.read_text(encoding="utf-8")
+            ref_lines = len(ref_text.splitlines())
+            if ref_lines > MAX_REFERENCE_LINES:
+                fail(f"package reference file {rel(ref)} exceeds {MAX_REFERENCE_LINES} lines ({ref_lines} lines)")
+            if re.search(r"^##\s+(?:Contents|Table of Contents)", ref_text, re.MULTILINE | re.IGNORECASE):
+                fail(f"package reference file {rel(ref)} must not include a Table of Contents (TOC)")
             validate_markdown_links(ref)
 
 
 def discover_all_common_skills(root: Path = ROOT) -> set[str]:
-    all_skills = set()
+    all_skills = set(KNOWN_CORE_SKILLS)
     common_pkgs = discover_common_packages(root)
     for meta_path in common_pkgs:
         skills_dir = meta_path.parent / "skills"
@@ -251,10 +293,35 @@ def discover_all_common_skills(root: Path = ROOT) -> set[str]:
     return all_skills
 
 
+def validate_agents_and_rules(directory: Path, valid_skills: set[str]) -> None:
+    rules_dir = directory / "rules"
+    if rules_dir.is_dir():
+        for rule_file in sorted(rules_dir.glob("*.md")):
+            content = rule_file.read_text(encoding="utf-8")
+            if not content.strip().startswith("# "):
+                fail(f"{rel(rule_file)} rule file must start with a markdown header (#)")
+            validate_markdown_links(rule_file)
+
+    agents_dir = directory / "agents"
+    if agents_dir.is_dir():
+        for agent_file in sorted(agents_dir.glob("*.md")):
+            content = agent_file.read_text(encoding="utf-8")
+            if not content.strip().startswith("# "):
+                fail(f"{rel(agent_file)} agent file must start with a markdown header (#)")
+            for line in content.splitlines():
+                skills_match = re.match(r"^-\s+\*\*Skills\*\*:\s*(.+)$", line)
+                if skills_match:
+                    raw_skills = skills_match.group(1).split(",")
+                    for skill in (s.strip(" `*") for s in raw_skills):
+                        if skill and skill not in valid_skills:
+                            fail(f"{rel(agent_file)} references unknown skill '{skill}'")
+            validate_markdown_links(agent_file)
+
+
 def validate_agy_plugins(root: Path = ROOT) -> None:
     agy_dir = root / "plugins" / "agy"
     if not agy_dir.is_dir():
-        fail("missing plugins/agy directory")
+        return
 
     valid_packages = set(discover_common_packages(root).values())
     valid_skills = discover_all_common_skills(root)
@@ -284,27 +351,7 @@ def validate_agy_plugins(root: Path = ROOT) -> None:
                 if dep["name"] not in valid_packages:
                     fail(f"{rel(manifest_path)} dependency '{dep['name']}' is not a valid common package")
 
-        rules_dir = plugin_path / "rules"
-        if rules_dir.is_dir():
-            for rule_file in sorted(rules_dir.glob("*.md")):
-                content = rule_file.read_text(encoding="utf-8")
-                if not content.strip().startswith("# "):
-                    fail(f"{rel(rule_file)} rule file must start with a markdown header (#)")
-
-        agents_dir = plugin_path / "agents"
-        if agents_dir.is_dir():
-            for agent_file in sorted(agents_dir.glob("*.md")):
-                content = agent_file.read_text(encoding="utf-8")
-                if not content.strip().startswith("# "):
-                    fail(f"{rel(agent_file)} agent file must start with a markdown header (#)")
-                for line in content.splitlines():
-                    skills_match = re.match(r"^-\s+\*\*Skills\*\*:\s*(.+)$", line)
-                    if skills_match:
-                        raw_skills = skills_match.group(1).split(",")
-                        for skill in (s.strip(" `*") for s in raw_skills):
-                            if skill and skill not in valid_skills:
-                                fail(f"{rel(agent_file)} references unknown skill '{skill}'")
-
+        validate_agents_and_rules(plugin_path, valid_skills)
 
 
 def validate_retired_sdlc_is_absent(root: Path = ROOT) -> None:
@@ -337,11 +384,13 @@ def validate_repository_release_version(root: Path = ROOT) -> None:
                 fail(f"{rel(manifest_path)} must define a semantic release version")
             versions.add(version)
 
-    for manifest_path in (root / "plugins" / "agy").glob("*/plugin.json"):
-        version = load_json(manifest_path).get("version")
-        if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
-            fail(f"{rel(manifest_path)} must define a semantic release version")
-        versions.add(version)
+    agy_dir = root / "plugins" / "agy"
+    if agy_dir.is_dir():
+        for manifest_path in agy_dir.glob("*/plugin.json"):
+            version = load_json(manifest_path).get("version")
+            if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+                fail(f"{rel(manifest_path)} must define a semantic release version")
+            versions.add(version)
 
     if len(versions) != 1:
         fail(f"all plugin definitions must share one release version, found {sorted(versions)}")
@@ -381,7 +430,7 @@ def sync_manifests(root: Path = ROOT) -> None:
         pkg_root = meta_path.parent
         meta_data = load_json(meta_path)
         description = meta_data.get("description", "")
-        pkg_rel_source = f"./plugins/common/{pkg_root.name}"
+        pkg_rel_source = f"./{pkg_root.relative_to(root)}"
 
         # plugin.json
         plugin_json = pkg_root / "plugin.json"
@@ -419,12 +468,13 @@ def sync_manifests(root: Path = ROOT) -> None:
         codex_json.write_text(json.dumps(codex_data, indent=2) + "\n", encoding="utf-8")
         synced_files.append(codex_json)
 
+        repo_url = meta_data.get("repository", "https://github.com/FilipKrawiec/skills")
         claude_plugins.append({
             "name": pkg_name,
             "description": description,
             "category": "development",
             "source": pkg_rel_source,
-            "homepage": "https://github.com/FilipKrawiec/skills",
+            "homepage": repo_url,
         })
 
         codex_plugins.append({
@@ -447,7 +497,7 @@ def sync_manifests(root: Path = ROOT) -> None:
             agy_manifest.write_text(json.dumps(agy_data, indent=2) + "\n", encoding="utf-8")
             synced_files.append(agy_manifest)
 
-    # 3. Sync Marketplace Catalogs
+    # 3. Sync Marketplace Catalogs (if they exist)
     claude_market = root / ".claude-plugin" / "marketplace.json"
     if claude_market.is_file():
         cm_data = load_json(claude_market)
@@ -475,9 +525,11 @@ def main() -> None:
             sync_manifests(ROOT)
 
         packages = discover_common_packages(ROOT)
+        all_skills = discover_all_common_skills(ROOT)
         for path, name in packages.items():
             validate_package_metadata(path, name)
             validate_skill_tree(path.parent / "skills")
+            validate_agents_and_rules(path.parent, all_skills)
 
         validate_agy_plugins(ROOT)
         validate_retired_sdlc_is_absent(ROOT)

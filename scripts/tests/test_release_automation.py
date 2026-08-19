@@ -13,7 +13,6 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_SCRIPT = REPOSITORY_ROOT / "scripts" / "release.py"
 VALIDATE_PLUGIN = REPOSITORY_ROOT / "scripts" / "validate-plugin-definitions.py"
-VALIDATE_RELEASE = REPOSITORY_ROOT / "scripts" / "validate-release-version.py"
 
 
 class ReleaseAutomationTests(unittest.TestCase):
