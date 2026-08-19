@@ -246,13 +246,11 @@ def perform_release(
 
     # 5. Validate release
     import importlib.util
-    rel_spec = importlib.util.spec_from_file_location("rel_validator", root / "scripts" / "validate-release-version.py")
-    assert rel_spec and rel_spec.loader
-    rel_module = importlib.util.module_from_spec(rel_spec)
-    rel_spec.loader.exec_module(rel_module)
-
-    tag = rel_module.tag_at_head()
-    rel_module.validate_manifest_versions(tag)
+    val_spec = importlib.util.spec_from_file_location("val_module", root / "scripts" / "validate-plugin-definitions.py")
+    assert val_spec and val_spec.loader
+    val_module = importlib.util.module_from_spec(val_spec)
+    val_spec.loader.exec_module(val_module)
+    val_module.validate_repository_release_version(root)
 
     print(f"Successfully released and tagged {tag_name}!")
     return next_version
