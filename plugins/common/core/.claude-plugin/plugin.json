@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-core",
   "description": "Core agentic software engineering skills for domain modeling and architecture.",
-  "version": "9.7.1",
+  "version": "9.8.0",
   "skills": "./skills/"
 }
