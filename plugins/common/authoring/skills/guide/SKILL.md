@@ -52,7 +52,7 @@ Select the optimal path across the repository's Dual-Speed Flow Topology based o
 | **New Business Outcome / B2B Epics** | Enterprise Delivery Loop | `define` ➔ `specify` ➔ `deliver` |
 | **Design Domain Aggregates / Language**| Architecture Doctrine | `ddd` |
 | **Design Ports, Adapters, Boundaries**| Architecture Doctrine | `hexagonal-architecture` |
-| **Scaffold Monorepo Infrastructure** | Orchestration Suite | `scaffold-monorepo` |
+| **Scaffold Monorepo Infrastructure** | Orchestration Suite | `init-project` |
 | **Strategic Codebase Health Audit** | Authoring Suite | `swot` |
 | **Recover from Confused Agent State** | Recovery Workflow | `rephrase` |
 

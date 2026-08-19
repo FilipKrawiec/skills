@@ -28,7 +28,7 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  │                            PORTABLE SKILLS                                  │
  │   Core:         ddd, hexagonal-architecture                                 │
  │   Workflow:     tdd, vcs, triage, review, grill-with-context                 │
- │   SDLC:         deliver, scaffold-monorepo, define, specify, improve         │
+ │   SDLC:         deliver, init-project, define, specify, improve              │
  │   Authoring:    writing-great-skill, guide, rephrase, swot, teach           │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -104,7 +104,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | **`filipkrawiec-sdlc`** | [`deliver`](plugins/common/sdlc/skills/deliver/SKILL.md) | User | Delivery Flow: Provider-neutral, code-free task orchestration & worktrees. |
 | | [`define`](plugins/common/sdlc/skills/define/SKILL.md) | User | Intent Definition: Capture outcomes, scope boundaries, and issue tracker payload. |
 | | [`specify`](plugins/common/sdlc/skills/specify/SKILL.md) | User | Backlog Refinement: Interactive grilling and tracker specification refinement. |
-| | [`scaffold-monorepo`](plugins/common/sdlc/skills/scaffold-monorepo/SKILL.md) | User | Repository Scaffolding: Trunk-based monorepo layout with `.devcontainer` and `justfile`. |
+| | [`init-project`](plugins/common/sdlc/skills/init-project/SKILL.md) | User | Project Initialization: Lightweight monorepo baseline using `dev projects init`. |
 | | [`improve`](plugins/common/sdlc/skills/improve/SKILL.md) | Model | Retrospective Learner: Capture friction and log upstream skill improvements. |
 | **`filipkrawiec-authoring`** | [`guide`](plugins/common/authoring/skills/guide/SKILL.md) | User | Workflow Router: Navigate developer intent to the optimal workflow path. |
 | | [`rephrase`](plugins/common/authoring/skills/rephrase/SKILL.md) | User | Alignment Reset: Restate complex proposals in plain Technical English. |
