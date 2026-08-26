@@ -2,9 +2,10 @@
 
 Guidelines for designing and implementing the Domain layer in Hexagonal Architecture, derived from DDD principles.
 
-## 1. Zero External Dependencies
+## 1. Zero External Dependencies & Form Invariance
 - The Domain layer must be written in plain programming language (POJOs/POCOs).
 - It must contain **zero framework or infrastructure dependencies** (no database libraries, Web/REST annotations, JSON serializers, or external utility frameworks).
+- **Domain Form Invariance:** All outer layers (Application, Adapters) can freely consume domain objects, but domain objects must never be shaped by outer layer concerns (no adding ORM decorators, JSON annotations, or UI-convenience fields).
 
 ## 2. Business Invariants & Tactical Models
 - Encapsulate business rules and invariants inside Aggregate Roots, Entities, and Value Objects.

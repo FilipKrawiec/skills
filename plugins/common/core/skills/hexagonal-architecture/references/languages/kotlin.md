@@ -36,11 +36,12 @@ Use this as a Kotlin-specific delta on top of the generic Domain, Application, A
 - Use injected ports such as `UserIds` or `Clock` when IDs or time are sequential, tenant-aware, externally coordinated, database-issued, or need deterministic tests.
 
 ## 5. Application Layer
-
-- Keep transactions, authorization, idempotency, domain event dispatch, and application workflow in this layer.
-- Load aggregates, call domain methods, save through domain ports, then dispatch typed domain events after state is saved.
-- For external publication reliability, use after-commit hooks or a transactional outbox instead of publishing directly from inside aggregates.
-- Return explicit application results (`sealed interface Result`) for expected failures; do not silently return on missing aggregates.
+ 
+ - Keep transactions, authorization, idempotency, domain event dispatch, and application workflow in this layer.
+ - Inbound API adapters (Ktor routes, Spring/Micronaut controllers) must always invoke use cases/handlers (consistency over simplicity); never bypass the application layer to call repositories or query ports directly.
+ - Load aggregates, call domain methods, save through domain ports, then dispatch typed domain events after state is saved.
+ - For external publication reliability, use after-commit hooks or a transactional outbox instead of publishing directly from inside aggregates.
+ - Return explicit application results (`sealed interface Result`) for expected failures; do not silently return on missing aggregates.
 
 ## 6. Query Ports and Read Models
 
@@ -62,7 +63,7 @@ Use this as a Kotlin-specific delta on top of the generic Domain, Application, A
 - DAOs and mapper helpers should be file-private when possible.
 - Make helper types `internal` only when framework wiring must reference them from a visible factory method.
 - Match the host framework already used by the codebase; do not introduce Spring, Quarkus, Ktor, or another framework because of this reference.
-- Put framework wiring in composition root/configuration code, not in Domain.
+- Put framework wiring in composition root/configuration code. Domain has zero framework annotations; Application services may use host-framework transaction or DI annotations (e.g., `@Transactional`, `@Service`, `@ApplicationScoped`) when standard in the codebase.
 - If the existing codebase uses Spring Data, a Spring-specific DAO interface can be used behind the concrete adapter (e.g., `JpaUsers(private val dao: SpringDataUserDao) : Users`).
 
 ## 9. Testing Rules

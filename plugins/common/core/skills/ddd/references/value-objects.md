@@ -7,7 +7,7 @@ Reference constraints for designing Value Objects, derived from Vaughn Vernon's 
 1. **Zero Primitive Leakage in Domain Models**: 
    - **Forbidden in Domain Layer**: Never use raw language primitives (`String`, `Double`, `Int`, `Long`, `UUID`, `Boolean`) directly as attributes in Entities, Aggregate Roots, Domain Events, or Domain Service parameters.
    - **Mandatory Value Objects**: Wrap all domain concepts in explicit Value Objects (e.g., `EmailAddress`, `Money`, `Quantity`, `Percentage`, `OrderId`, `CustomerName`, `AccountStatus`).
-   - **Boundary Isolation**: Raw primitives are permitted strictly at the outer system boundary (REST DTOs, JSON payloads, DB persistence columns). Boundary primitives must be validated and converted into Value Objects via `.of(...)` before crossing into the application or domain layers.
+   - **Boundary Isolation & Form Invariance**: Outer layers (Application, Adapters) may freely consume Domain Value Objects, but must not alter their domain form. Raw primitives are permitted at the outer boundary and in Application Command DTOs, but must be validated and converted into Value Objects via `.of(...)` before crossing into domain models or executing business invariants.
 2. **No Identity**: Value Objects describe, measure, or quantify a domain concept. Two instances are equal if all their attributes are equal.
 3. **Immutability & Replacement**: State cannot be changed after creation. All fields must be read-only. To modify a Value Object, construct and return a new instance (`withXxx(...)` or domain operations).
 4. **Self-Validating & Invariant Protection**: A Value Object can never exist in an invalid state. Validation occurs upon creation inside `.of(...)`.

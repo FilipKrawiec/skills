@@ -37,6 +37,7 @@ Use this as a TypeScript-specific delta on top of the generic Domain, Applicatio
 ## 5. Application Layer
 
 - Maintain transactions, authorization, domain event dispatch, and application orchestrations in this layer.
+- Inbound API adapters (Express/Fastify/NestJS controllers) must always invoke use cases/handlers (consistency over simplicity); never bypass the application layer to call repositories or query ports directly.
 - Use case functions load data via ports, execute pure domain state transition functions, save updated states back through ports, and publish resulting domain events.
 - Return explicit application results using union types (e.g., `{ type: "Success" } | { type: "UserNotFound" } | { type: "Unchanged" }`) for expected failures; do not throw or let database exceptions leak up.
 
@@ -59,7 +60,7 @@ Use this as a TypeScript-specific delta on top of the generic Domain, Applicatio
 - Concrete adapter implementations (functions or classes) are internal to the infrastructure layer; domain/application ports remain public.
 - Helper functions and schema definitions should not be exported outside their infra file or directory.
 - Match the host framework already used by the codebase (e.g., Express, Fastify, NestJS, Awilix).
-- Put framework wiring/injection configuration in composition roots, not in Domain or Application.
+- Put framework wiring and container configuration in composition roots. Domain models must have zero framework/DI decorators; Application use cases may use standard DI decorators (e.g., `@Injectable()`) when established in the host framework, while avoiding concrete infrastructure adapter imports.
 
 ## 9. Testing Rules
 

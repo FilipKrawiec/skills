@@ -2,7 +2,8 @@
 
 Guidelines for usecase orchestration and command/query handling in the Application Layer.
 
-## 1. Orchestration Only (No Business Rules)
+## 1. Mandatory Entry Point & Orchestration (Consistency over Simplicity)
+- The Application Layer is the **mandatory entry point** for all inbound adapters (HTTP controllers, CLI, event consumers). Inbound adapters must always route through Application use cases / handlers and never bypass this layer, even for trivial one-line queries or delegations.
 - The Application Layer contains **no business or domain logic**.
 - It coordinates transactional boundaries, security, loading aggregates, invoking domain methods, and saving changes via repositories.
 
@@ -16,3 +17,8 @@ Guidelines for usecase orchestration and command/query handling in the Applicati
 ## 3. Application Outbound Ports
 - Define interfaces for integration-specific operations that are not part of the core domain logic (e.g., `PaymentProcessor`, `SmsClient`, `StorageClient`) inside the Application layer.
 - This ensures the Domain layer remains completely unaware of these external services.
+
+## 4. Framework & Dependency Boundaries
+- **Consuming Domain Objects:** Application use-cases freely instantiate, invoke, and pass Domain entities, value objects, and events.
+- **Framework Orchestration Permitted:** Application services may use host-framework transaction management (e.g. `@Transactional`), dependency injection metadata (e.g. `@Injectable()`, `@Service`), or security interceptors when standard in the codebase.
+- **No Concrete Adapters:** Application Layer must never import concrete infrastructure adapters (e.g., database drivers, ORM models, DAOs, HTTP controller types). Dependencies on I/O must go through domain or application port interfaces.
