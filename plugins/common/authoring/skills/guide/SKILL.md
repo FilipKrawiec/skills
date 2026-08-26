@@ -49,6 +49,9 @@ Select the optimal path across the repository's Dual-Speed Flow Topology based o
 | **Feature Slice / Pure Code TDD** | Tactical Fast Loop | `tdd` ➔ `review` ➔ `vcs` |
 | **Code Review / PR Diff Audit** | Tactical Fast Loop | `review` |
 | **Commit / Branch / Rebase / Push** | Tactical Fast Loop | `vcs` |
+| **Compact / Transfer Agent Context** | Context Handoff | `handoff` |
+| **Exploratory Prototyping / Feasibility** | Exploratory Spike | `spike` ➔ `specify` ➔ `tdd` |
+| **Deep Technical / API Documentation Research** | Technical Discovery | `research` |
 | **New Business Outcome / B2B Epics** | Enterprise Delivery Loop | `define` ➔ `specify` ➔ `deliver` |
 | **Design Domain Aggregates / Language**| Architecture Doctrine | `ddd` |
 | **Design Ports, Adapters, Boundaries**| Architecture Doctrine | `hexagonal-architecture` |

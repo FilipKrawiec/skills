@@ -12,6 +12,9 @@ active_skills:
   - swot
   - teach
   - writing-great-skill
+  - handoff
+  - research
+  - spike
 
 build_tools:
   just:

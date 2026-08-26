@@ -44,6 +44,9 @@ KNOWN_CORE_SKILLS = {
     "swot",
     "teach",
     "writing-great-skill",
+    "handoff",
+    "research",
+    "spike",
 }
 
 

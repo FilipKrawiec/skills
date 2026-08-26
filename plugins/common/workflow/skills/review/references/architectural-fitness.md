@@ -53,3 +53,16 @@ Prevent architectural bloat and premature complexity:
 | **Rule of Two Adapters** | Do not introduce an interface or abstraction layer unless at least two distinct concrete implementations exist in active code. | If only one database adapter exists, depend on the concrete adapter until a second adapter (e.g. in-memory test stub or alternate vendor) is introduced. |
 | **YAGNI (You Aren't Gonna Need It)** | Implement only the behavior required by active acceptance criteria. | Reject speculative configuration flags, unused extension points, and preemptive plugin hooks. |
 | **DTO Proliferation Ban** | Avoid chains of 1:1 identical data-transfer objects across internal adjacent layers. | Pass domain Value Objects directly where boundary translation is not strictly necessary. |
+
+---
+
+## 5. Presentation Layer & UI Blast Radius Governance
+
+Audit UI, component, and presentation layer changes for visual preservation and regression safety:
+
+| Dimension | Target Invariant | Risk & Regression Anti-Pattern | Architect Remediation |
+| :--- | :--- | :--- | :--- |
+| **DOM & Accessibility Invariance** | Refactoring presentation components preserves semantic tags, ARIA attributes, and keyboard navigability. | Silent breakage of screen reader landmarks or form field labels during component restyling. | Verify accessibility tree and semantic element hierarchy before approving UI refactors. |
+| **Visual Preservation** | Refactoring CSS or presentation adapters maintains layout, responsive breakpoints, and visual styling. | Unintended layout shifts, overlapping flex/grid children, or broken mobile viewports. | Capture pre/post screenshots or component snapshot diffs on refactored views. |
+| **State Separation** | UI components delegate domain actions and business state to application ports or state containers without inline business calculations. | Embedding complex pricing calculations or tax business rules directly inside UI view templates. | Extract business logic into Domain Value Objects or Application Use Cases. |
+

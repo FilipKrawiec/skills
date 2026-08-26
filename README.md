@@ -27,9 +27,9 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │                            PORTABLE SKILLS                                  │
  │   Core:         ddd, hexagonal-architecture                                 │
- │   Workflow:     tdd, vcs, triage, review, grill-with-context                 │
+ │   Workflow:     tdd, vcs, triage, review, grill-with-context, handoff, spike│
  │   SDLC:         deliver, init-project, define, specify, improve              │
- │   Authoring:    writing-great-skill, guide, rephrase, swot, teach           │
+ │   Authoring:    writing-great-skill, guide, rephrase, swot, teach, research │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -101,6 +101,8 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`review`](plugins/common/workflow/skills/review/SKILL.md) | Model | 2-Axis Diff Audit: Fowler code smells, hexagonal boundaries, and spec compliance. |
 | | [`vcs`](plugins/common/workflow/skills/vcs/SKILL.md) | Model | Version Control: Conventional commits, worktree isolation, and PR delivery. |
 | | [`grill-with-context`](plugins/common/workflow/skills/grill-with-context/SKILL.md) | Model | Context Grilling: Ground specifications against ADRs, glossary, and knowledge. |
+| | [`handoff`](plugins/common/workflow/skills/handoff/SKILL.md) | Model | Session Handoff: Compact and serialize state, decisions, and diffs across agents. |
+| | [`spike`](plugins/common/workflow/skills/spike/SKILL.md) | Model | Exploratory Prototyping: Time-boxed feasibility spikes with clean-room promotion gates. |
 | **`filipkrawiec-sdlc`** | [`deliver`](plugins/common/sdlc/skills/deliver/SKILL.md) | User | Delivery Flow: Provider-neutral, code-free task orchestration & worktrees. |
 | | [`define`](plugins/common/sdlc/skills/define/SKILL.md) | User | Intent Definition: Capture outcomes, scope boundaries, and issue tracker payload. |
 | | [`specify`](plugins/common/sdlc/skills/specify/SKILL.md) | User | Backlog Refinement: Interactive grilling and tracker specification refinement. |
@@ -111,6 +113,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring affirmative state machines, output contracts, and token budgets. |
 | | [`swot`](plugins/common/authoring/skills/swot/SKILL.md) | User | Strategic Audit: Evidence-grounded SWOT analysis and architectural health audits. |
 | | [`teach`](plugins/common/authoring/skills/teach/SKILL.md) | User | Education: Interactive learning guides and architectural trade-off walkthroughs. |
+| | [`research`](plugins/common/authoring/skills/research/SKILL.md) | Model | Technical Discovery: Multi-source research producing cited evidence dossiers. |
 
 ---
 

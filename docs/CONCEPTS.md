@@ -56,9 +56,9 @@ Skills are grouped into **plugins** for distribution and host discovery.
 plugins/
 ├── common/                  # Canonical portable plugins (Cross-Agent)
 │   ├── core/                # DDD, Hexagonal Architecture
-│   ├── workflow/            # Triage, TDD, Review, VCS, Grill with Context
+│   ├── workflow/            # Triage, TDD, Review, VCS, Grill with Context, Handoff, Spike
 │   ├── sdlc/                # Delivery Orchestration, Define, Specify, Scaffold Monorepo, Improve
-│   └── authoring/           # Writing Great Skills, Guide, Rephrase, SWOT, Teach
+│   └── authoring/           # Writing Great Skills, Guide, Rephrase, SWOT, Teach, Research
 └── agy/                     # Antigravity-Native Overlay Plugins
     ├── core/                # Interactive UI review overlays
     └── sdlc/                # Artifact UI proceed buttons & state trackers

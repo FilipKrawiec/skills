@@ -17,8 +17,9 @@ Audit diffs against macro-architectural invariants and system qualities:
 1. **Hexagonal & Layer Dependency Direction**: Verify dependencies flow inward toward domain core. `domain/` must never import `application/`, `infrastructure/`, or `api/`.
 2. **Domain Purity & DDD Boundaries**: Verify Aggregates and Value Objects are isolated from framework annotations, ORM models, and serialization schemas. Verify bounded context isolation.
 3. **Module Depth & Blast Radius**: Check for high cohesion, low coupling, and deep modules with small interfaces over shallow passthrough wrappers.
-4. **Anti-Overengineering & YAGNI**: Enforce the Rule of Two Adapters (reject premature interfaces without >= 2 concrete implementations) and reject speculative generality.
-5. **Operational Fitness**: Verify idempotency, explicit state lifecycles, and failure isolation.
+4. **Presentation Layer & UI Blast Radius**: When presentation or UI components are modified, verify DOM/accessibility invariance and visual preservation without regressions.
+5. **Anti-Overengineering & YAGNI**: Enforce the Rule of Two Adapters (reject premature interfaces without >= 2 concrete implementations) and reject speculative generality.
+6. **Operational Fitness**: Verify idempotency, explicit state lifecycles, and failure isolation.
 
 ### Phase 2: Clean Code Craftsmanship & Refactoring Audit
 Audit code quality and prescribe Martin Fowler refactoring patterns:
