@@ -36,11 +36,12 @@ Use this as a Kotlin-specific delta on top of the generic Domain, Application, A
 - Use injected ports such as `UserIds` or `Clock` when IDs or time are sequential, tenant-aware, externally coordinated, database-issued, or need deterministic tests.
 
 ## 5. Application Layer
-
-- Keep transactions, authorization, idempotency, domain event dispatch, and application workflow in this layer.
-- Load aggregates, call domain methods, save through domain ports, then dispatch typed domain events after state is saved.
-- For external publication reliability, use after-commit hooks or a transactional outbox instead of publishing directly from inside aggregates.
-- Return explicit application results (`sealed interface Result`) for expected failures; do not silently return on missing aggregates.
+ 
+ - Keep transactions, authorization, idempotency, domain event dispatch, and application workflow in this layer.
+ - Inbound API adapters (Ktor routes, Spring/Micronaut controllers) must always invoke use cases/handlers (consistency over simplicity); never bypass the application layer to call repositories or query ports directly.
+ - Load aggregates, call domain methods, save through domain ports, then dispatch typed domain events after state is saved.
+ - For external publication reliability, use after-commit hooks or a transactional outbox instead of publishing directly from inside aggregates.
+ - Return explicit application results (`sealed interface Result`) for expected failures; do not silently return on missing aggregates.
 
 ## 6. Query Ports and Read Models
 

@@ -2,7 +2,8 @@
 
 Guidelines for usecase orchestration and command/query handling in the Application Layer.
 
-## 1. Orchestration Only (No Business Rules)
+## 1. Mandatory Entry Point & Orchestration (Consistency over Simplicity)
+- The Application Layer is the **mandatory entry point** for all inbound adapters (HTTP controllers, CLI, event consumers). Inbound adapters must always route through Application use cases / handlers and never bypass this layer, even for trivial one-line queries or delegations.
 - The Application Layer contains **no business or domain logic**.
 - It coordinates transactional boundaries, security, loading aggregates, invoking domain methods, and saving changes via repositories.
 

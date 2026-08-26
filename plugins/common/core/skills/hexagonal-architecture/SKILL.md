@@ -16,7 +16,7 @@ Use these steps to preserve dependency direction and encapsulation.
 4. Apply domain port naming parity: omit `Port`/`Repository` suffixes on domain ports (`Users`, `ApplicationMetadatas`); prepend technology names on adapters (`JpaUsers`, `AgroalApplicationMetadatas`, `PrismaUsers`, `FirestoreUsers`).
 5. Declare outbound ports at the layer that owns the policy: domain-driven ports in Domain; integration-specific ports in Application.
 6. Let Application use cases coordinate transactions, security, and Domain actions without business rules. Application services may use host-framework transaction/DI metadata while remaining free of concrete infrastructure adapters.
-7. Keep adapters at the edge: inbound adapters map requests to commands/queries; outbound adapters map ports to external systems without leaking data models.
+7. Keep adapters at the edge: inbound adapters map requests to commands/queries and invoke application use cases (never bypass the application layer, even for trivial queries); outbound adapters map ports to external systems without leaking data models.
 8. Keep technical reuse layer-scoped. A DDD Shared Kernel is domain-only and jointly owned by its named Bounded Contexts; it is never a cross-layer component library.
 
 ## Context Pointers
