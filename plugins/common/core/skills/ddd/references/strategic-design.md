@@ -14,7 +14,7 @@ External DTOs and contracts from other contexts must never bleed into the Applic
 - **Translation Point:** All translation must occur at the API/Infrastructure boundary:
   - **Inbound Adapters (e.g., HTTP Controllers, Event Consumers):** Map incoming external DTOs to internal application Commands/Queries or Domain Models.
   - **Outbound Adapters (e.g., Database Repositories, External Clients):** Map internal Domain Models to database schemas or external API DTOs.
-- **The Clean Domain Principle:** The Domain Layer never imports, reference, or relies on outer layers (Application, API, or Infrastructure).
+- **The Clean Domain Principle:** The Domain Layer never imports, references, or relies on outer layers (Application, API, or Infrastructure). Outer layers may consume domain objects directly, but must never dictate or influence their shape to satisfy persistence, transport, or framework needs.
 
 ## 3. Integration Patterns
 

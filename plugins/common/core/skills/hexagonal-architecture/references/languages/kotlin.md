@@ -62,7 +62,7 @@ Use this as a Kotlin-specific delta on top of the generic Domain, Application, A
 - DAOs and mapper helpers should be file-private when possible.
 - Make helper types `internal` only when framework wiring must reference them from a visible factory method.
 - Match the host framework already used by the codebase; do not introduce Spring, Quarkus, Ktor, or another framework because of this reference.
-- Put framework wiring in composition root/configuration code, not in Domain.
+- Put framework wiring in composition root/configuration code. Domain has zero framework annotations; Application services may use host-framework transaction or DI annotations (e.g., `@Transactional`, `@Service`, `@ApplicationScoped`) when standard in the codebase.
 - If the existing codebase uses Spring Data, a Spring-specific DAO interface can be used behind the concrete adapter (e.g., `JpaUsers(private val dao: SpringDataUserDao) : Users`).
 
 ## 9. Testing Rules
