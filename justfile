@@ -38,6 +38,7 @@ setup-hooks:
 install-agy:
     #!/usr/bin/env bash
     set -euo pipefail
+    repo_root="$(pwd -P)"
     target_dir="${AGY_IDE_PLUGIN_DIR:-"$HOME/.gemini/config/plugins"}"
     mkdir -p "${target_dir}"
     rm -rf "${target_dir}/filipkrawiec-orchestration" "${target_dir}/filipkrawiec-agy-orchestration"
@@ -52,6 +53,18 @@ install-agy:
       pkg="filipkrawiec-agy-$(basename "$dir")"
       rm -rf "${target_dir}/${pkg}"
       cp -r "$dir" "${target_dir}/${pkg}"
+    done
+    # Implicitly install SDLC and sibling devcontainer plugins if available
+    for devws in "${DEVCONTAINER_ROOT:-}" "${repo_root}/../devcontainer" "$HOME/Developer/github.com/FilipKrawiec/devcontainer" "/projects/github.com/FilipKrawiec/devcontainer"; do
+      if [ -n "$devws" ] && [ -d "$devws/plugins" ]; then
+        for dir in "$devws/plugins/"*; do
+          [ -d "$dir" ] || continue
+          pkg="filipkrawiec-$(basename "$dir")"
+          rm -rf "${target_dir}/${pkg}"
+          cp -r "$dir" "${target_dir}/${pkg}"
+        done
+        break
+      fi
     done
     echo "Installed plugins into ${target_dir}"
 
@@ -75,11 +88,24 @@ link-agy:
       rm -rf "${target_dir}/${pkg}"
       ln -s "${repo_root}/${dir}" "${target_dir}/${pkg}"
     done
+    # Implicitly link SDLC and sibling devcontainer plugins if available
+    for devws in "${DEVCONTAINER_ROOT:-}" "${repo_root}/../devcontainer" "$HOME/Developer/github.com/FilipKrawiec/devcontainer" "/projects/github.com/FilipKrawiec/devcontainer"; do
+      if [ -n "$devws" ] && [ -d "$devws/plugins" ]; then
+        for dir in "$devws/plugins/"*; do
+          [ -d "$dir" ] || continue
+          pkg="filipkrawiec-$(basename "$dir")"
+          rm -rf "${target_dir}/${pkg}"
+          ln -s "$(cd "$dir" && pwd -P)" "${target_dir}/${pkg}"
+        done
+        break
+      fi
+    done
     echo "Linked plugins into ${target_dir}"
 
 # Refresh local plugin installations (Codex, Claude, Antigravity IDE)
 refresh: install-agy
     #!/usr/bin/env bash
+    repo_root="$(pwd -P)"
     if command -v codex >/dev/null 2>&1; then
       codex plugin remove "filipkrawiec-orchestration@filipkrawiec" >/dev/null 2>&1 || true
       for dir in plugins/common/*; do
@@ -95,9 +121,28 @@ refresh: install-agy
         [ -d "$dir" ] || continue
         pkg="filipkrawiec-$(basename "$dir")"
         claude plugin remove "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
-        claude plugin add "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
+        claude plugin install "${pkg}@filipkrawiec" || true
         claude plugin update "${pkg}@filipkrawiec" || true
       done
     fi
+    # Also refresh SDLC plugin for Codex and Claude if devcontainer is present
+    for devws in "${DEVCONTAINER_ROOT:-}" "${repo_root}/../devcontainer" "$HOME/Developer/github.com/FilipKrawiec/devcontainer" "/projects/github.com/FilipKrawiec/devcontainer"; do
+      if [ -n "$devws" ] && [ -d "$devws/plugins" ]; then
+        for dir in "$devws/plugins/"*; do
+          [ -d "$dir" ] || continue
+          pkg="filipkrawiec-$(basename "$dir")"
+          if command -v codex >/dev/null 2>&1; then
+            codex plugin remove "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
+            codex plugin add "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
+          fi
+          if command -v claude >/dev/null 2>&1; then
+            claude plugin remove "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
+            claude plugin install "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
+            claude plugin update "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
+          fi
+        done
+        break
+      fi
+    done
     echo "Refreshed local plugin installations."
 
