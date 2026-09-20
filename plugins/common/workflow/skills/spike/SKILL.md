@@ -16,7 +16,7 @@ Follow three affirmative phases with an explicit promotion or discard exit gate.
 Establish the boundaries of the spike before modifying any code:
 1. Define the single core technical hypothesis to prove or disprove (e.g., "Can Library X parse stream Y under 50ms without buffering in memory?").
 2. Set an explicit exploration timebox (default: 30 minutes or 100 lines of exploratory code).
-3. Create an isolated spike branch or worktree: `git checkout -b spike/<topic-name>`.
+3. Update the original main branch first (`git fetch origin main:main`), then create an isolated spike branch or worktree from updated main: `git checkout -b spike/<topic-name> main`.
 4. Identify 1–2 minimal success criteria that unambiguously validate the hypothesis.
 
 ### Phase 2: Rapid Exploratory Prototyping

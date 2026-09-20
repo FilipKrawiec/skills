@@ -9,6 +9,7 @@ Follow these guidelines to sync, rebase, and merge changes cleanly:
   git fetch origin
   git rebase origin/main
   ```
+- Before creating a new worktree or starting new work, always update the original main branch first (`git fetch origin main:main` or switch to main and pull).
 - Before rebasing, merging, publishing a Review Request, or cleaning up a branch, check branch and worktree state with `git status --short --branch` and preserve unrelated user changes.
 
 For any task, rebase and verify the task branch first. Then select the repository's authorized integration mechanism:

@@ -87,6 +87,6 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 
 ## Shipping
 
-- Implement in an isolated, clean task worktree on a short-lived branch. The declared base must be an ancestor of `HEAD`; committed changes must remain within the packet's affected-path boundary. After verification, an executor may push the task branch and publish or update a Review Request within its packet boundaries; non-AFK work requires that Review Request safety boundary.
+- Whenever a new worktree is created or new work is started, update the original main branch first (`git fetch origin main:main` or pull upstream). Implement in an isolated, clean task worktree on a short-lived branch. The declared base must be an ancestor of `HEAD`; committed changes must remain within the packet's affected-path boundary. After verification, an executor may push the task branch and publish or update a Review Request within its packet boundaries; non-AFK work requires that Review Request safety boundary.
 - Once specification and plan are durable, a published Review Request must carry one Delivery Record reference from the configured tracker. Chat-only, local, and unpushed work does not require one.
 - The user retains merge authority. Do not merge, approve, or force-push a protected/default branch unless the user explicitly authorizes that action.

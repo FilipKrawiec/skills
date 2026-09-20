@@ -97,7 +97,7 @@ Delivery is managed through the provider-neutral `deliver` workflow, which guide
 
 ### Worktree Provenance & Safety
 
-Every orchestrated task slice executes inside an isolated Git worktree branched from a declared base revision. This guarantees that:
+Whenever a new worktree is created or new work is started, the original main branch must be updated first (e.g. `git fetch origin main:main` or pulling latest upstream changes). Every orchestrated task slice executes inside an isolated Git worktree branched from this declared, updated base revision. This guarantees that:
 * Primary checkouts remain protected from unverified edits.
 * Multiple non-overlapping tasks can run concurrently in total isolation.
 * Unintended side effects are caught at packet boundaries.

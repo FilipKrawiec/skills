@@ -6,6 +6,7 @@ Follow these guidelines to structure and manage git branches:
 
 - Start each task in a dedicated Git worktree on a short-lived branch; do not develop in the primary main/trunk worktree.
 - Keep the primary worktree checked out at main/trunk solely for integration and push verification.
+- Whenever creating a new worktree or starting new work, update the original main branch first (e.g. `git fetch origin main:main` or switch to main and pull latest upstream changes) so that all work branches from current trunk state.
 - Feature branches should be short-lived (ideally merged within 1-2 days) to avoid drift and merge conflicts.
 
 ## 2. Branch Naming Conventions

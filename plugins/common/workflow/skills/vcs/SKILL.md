@@ -12,8 +12,9 @@ Follow these steps for all version control and git operations to maintain a clea
 
 ### Phase 1: Preflight & Branch Isolation
 1. Inspect working tree status: `git status --short --branch`.
-2. Create a short-lived task branch or dedicated worktree from main (`git checkout -b <branch-name>` or `git worktree add`).
-*Exit Gate*: Working directory is clean and isolated on the task branch.
+2. Whenever creating a new worktree or starting new work, update the original main branch first: fetch and fast-forward or update main to the latest upstream state (`git fetch origin main:main` or switch to main and pull).
+3. Create a short-lived task branch or dedicated worktree from the updated main (`git worktree add <path> -b <branch-name> main` or `git checkout -b <branch-name> main`).
+*Exit Gate*: Working directory is clean and isolated on the task branch branched from updated main.
 
 ### Phase 2: Atomic Staging & Inspection
 1. Stage only files modified within the active task boundary: `git add <paths>`.
