@@ -8,12 +8,12 @@ Antigravity renders an interactive review pane with an executable **Proceed** bu
 
 ## Protocol for Antigravity Agents
 
-1. **Artifact-First Change Approvals:**
-   - Whenever proposing repository changes, design decisions, or multi-step execution plans, create or update an `implementation_plan.md` artifact.
-   - Set `RequestFeedback: true` and `UserFacing: true` in `ArtifactMetadata`.
+1. **Adaptive Plan Approval Gate:**
+   - **Direct Execution Requests**: When the user directly requests a specific code or file change, bugfix, or optimization, execute it immediately and efficiently. Do NOT generate speculative `implementation_plan.md` artifacts or pause execution waiting for Proceed button confirmation.
+   - **Proposals & Multi-Step Architecture**: Create or update an `implementation_plan.md` artifact with `RequestFeedback: true` and `UserFacing: true` ONLY when proposing large multi-slice architectural changes, breaking interface refactors, or when the user explicitly requests a plan or design review first.
 
 2. **Native UI Controls:**
-   - Do NOT ask for manual confirmation via plain chat text (e.g. asking the user to type "go" or "yes").
+   - When an interactive plan artifact is warranted, do NOT ask for manual confirmation via plain chat text (e.g. asking the user to type "go" or "yes").
    - Allow the user to review the plan in the native Antigravity Artifact pane, leave inline feedback comments, and click **Proceed**.
 
 3. **Human Operator Micro-Copy Guidance:**

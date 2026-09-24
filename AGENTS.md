@@ -31,9 +31,14 @@ build_tools:
 
 # Agent Guidance
 
-## Verification Required for Changes
+## Deterministic & Proportionate Verification Protocol
 
-Before making any repository code or configuration change, identify the relevant deterministic verification gate and the evidence it will produce. Run the project's verifier when it is configured, plus proportionate repository checks. Read-only analysis and explicitly requested plan-only work are exempt.
+Verification must be deterministic, proportionate, and strictly deduplicated:
+
+- **Targeted Feedback During Iteration**: Identify the relevant verification gate before modifying code. Run focused, proportionate checks (e.g. specific test case, targeted validator, or single component suite) during implementation. Do NOT execute full project-wide verification suites before starting work unless reproducing an existing bug or establishing a diagnostic baseline.
+- **Completion Gate & Deduplication**: Run the project's configured verifier (`scripts/project-verify.py` or configured task) once upon completing the change to guarantee zero regressions. Never re-run identical full verification suites if code has not changed since the last passing run.
+- **Direct Execution Efficiency**: When the user requests a change or fix directly in chat, execute it directly in place with focused testing. Do not trigger multi-agent dispatch cascades, redundant tracker tickets, or speculative planning artifacts unless explicitly requested or handling complex multi-slice architectural work.
+- **Exemptions**: Read-only analysis, documentation edits without runnable scripts, and explicitly requested plan-only work are exempt from running verification gates.
 
 ## High-Density Output & Token Efficiency Protocol
 

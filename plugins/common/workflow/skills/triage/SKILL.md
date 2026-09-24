@@ -37,19 +37,18 @@ Execute these five affirmative phases in strict linear sequence to isolate and r
 3. When the user requests diagnosis or investigation only, emit the root cause analysis and ranked hypotheses and stop here without modifying code.
 *Exit Gate*: Three falsifiable predictions ranked by probability.
 
-### Phase 4: Targeted Fix & Verification
+### Phase 4: Targeted Fix & Reproduction Check
 1. Apply the single code change addressing the highest-ranked un-falsified hypothesis.
 2. Re-run the reproduction command. If the reproduction continues to fail or causes regressions, revert the change and test the next ranked hypothesis in sequence.
 3. Record the passing output (GREEN) once the defect is resolved.
-4. Run repository verification: execute the project's configured verification command (e.g. `just verify` or test runner).
-*Exit Gate*: Reproduction test and project verification both exit with code 0.
+*Exit Gate*: Reproduction test exits with code 0.
 *Output Envelope*:
 ```text
 🟢 Fix Applied: [symbol_or_function](file:///path/to/file#L10-L20)
-🟢 Verification Output: `<test-summary-and-exit-0>`
+🟢 Reproduction Output: `<test-summary-and-exit-0>`
 ```
 
-### Phase 5: Regression Lock
+### Phase 5: Regression Lock & Verification
 1. Move the reproduction test into the permanent repository test suite (`tests/`).
-2. Run full test suite: execute the project test runner (e.g. `pytest`, `npm test`, `cargo test`, or `just test`).
-*Exit Gate*: Regression test runs and passes as part of the standard test suite.
+2. Run repository verification: execute the project's configured verification command (e.g. `just verify` or test runner) once to lock in the regression fix.
+*Exit Gate*: Regression test runs as part of the test suite and project verification exits with code 0.

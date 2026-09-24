@@ -37,9 +37,10 @@ Execute the Red-Green-Refactor loop in strict linear sequence for each observabl
 2. Re-run the test suite to verify no regressions.
 *Exit Gate*: Code is clean; all tests pass without behavior drift.
 
-### Phase 4: **VERIFY** (Deterministic Gate)
-1. Run repository verification: execute the project's configured verification command (e.g. `just verify` or test runner).
-*Exit Gate*: Project verification passes with exit code 0.
+### Phase 4: **VERIFY** (Targeted & Completion Gate)
+1. Run the targeted test suite or module verification for the changed slice to confirm clean execution.
+2. Run full repository verification (`just verify` or `scripts/project-verify.py`) once at the final task-completion boundary, avoiding redundant full-suite runs across intermediate TDD slices.
+*Exit Gate*: Targeted test suite and final project verification pass with exit code 0.
 
 ---
 
