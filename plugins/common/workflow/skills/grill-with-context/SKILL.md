@@ -11,7 +11,7 @@ Challenge proposed changes against active project context and architectural reco
 ## Workflow Phases
 
 ### Phase 1: Context Discovery
-1. Inspect task-relevant project files, `docs/adr/`, selected technology profiles, Central Knowledge index entries, and Project Knowledge overrides.
+1. Inspect the sources that exist in this project: task-relevant code, agent rules (`AGENTS.md`, `CLAUDE.md`), project skills, ADRs, and the glossary. Stop reading once the decision frontier is clear.
 2. Record verified facts with their direct file sources.
 *Exit Gate*: Verified facts are separated from open user decisions.
 
@@ -30,7 +30,6 @@ Challenge proposed changes against active project context and architectural reco
    User decisions: <settled choices>
    Open decisions or risks: <only blockers or material follow-up>
    Acceptance and verification: <observable conditions and deterministic gate>
-   Relevant knowledge: <profile/entry ids and project overrides>
    Plan context: <scope, dependencies, and constraints for bounded slices>
    ```
 *Exit Gate*: Handoff block is emitted and ready for planning.
