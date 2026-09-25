@@ -10,7 +10,11 @@ Conduct rigorous, authoritative code reviews on active diffs (`git diff HEAD~1` 
 
 ## Review Protocol
 
-Evaluate the changes across four orthogonal audit axes. Enforce a **Strict Zero-Defect & Craftsmanship Policy**: any unhandled edge case, runtime defect, architectural boundary breach, Fowler code smell, or hollow test mandates a `REQUEST_CHANGES` decision with actionable refactoring instructions.
+Evaluate the changes across four orthogonal audit axes. Apply a **Proportionate Severity Policy**:
+- **Blocker** (runtime defect, unhandled edge case, architectural boundary breach, hollow or failing test) → `REQUEST_CHANGES`.
+- **Major** (smell or design issue likely to cause a defect or rework in this area soon) → `REQUEST_CHANGES` only when the diff introduces it.
+- **Minor** (style, naming, optional refactoring) → listed as suggestions; the decision stays `APPROVED`.
+Report only what the project's automated gates leave unchecked; skip findings a linter, formatter, or quality gate already enforces.
 
 ### Phase 1: Architectural Fitness & Boundary Governance
 Audit diffs against macro-architectural invariants and system qualities:
@@ -44,29 +48,17 @@ Audit test additions against acceptance criteria and verification depth:
 
 ### Phase 5: Solution Architect Verdict & Actionable Remediation
 Synthesize findings into an authoritative review verdict:
-1. Output unambiguous decision (`APPROVED` or `REQUEST_CHANGES`).
-2. Provide concrete, high-leverage Tech Lead remediation instructions specifying the exact Fowler refactoring pattern or architectural adjustment required.
+1. Output unambiguous decision (`APPROVED` or `REQUEST_CHANGES`) derived from the severity policy.
+2. For each Blocker and Major, give one concrete remediation (the Fowler refactoring or architectural adjustment).
 
 ## Output Envelope
 
-Emit review findings using this structured compact envelope:
+Emit issues only, ranked most severe first; axes with nothing to report stay silent. Target ≤ 15 lines total.
 
 ```text
-### Axis 1: Architectural Fitness & Boundaries
-- [PASS | ISSUE]: [file:line link](file:///path/to/file#L10) — <terse finding & architectural rationale>
-
-### Axis 2: Clean Code & Refactoring Prescriptions
-- [PASS | ISSUE]: [file:line link](file:///path/to/file#L25) — <smell / principle>: <prescribed Fowler refactoring recipe & target structure>
-
-### Axis 3: Runtime Defect Hunting & Resilience
-- [PASS | ISSUE]: [file:line link](file:///path/to/file#L40) — <edge case / defect & failure scenario>
-
-### Axis 4: Specification Compliance & Test Rigor
-- [PASS | ISSUE]: <acceptance criteria & Chicago-style state verification status>
-- Scope Assessment: [Clean Boundary | Scope Creep Flagged]
-
-### Decision
-[APPROVED | REQUEST_CHANGES: <actionable Tech Lead remediation summary with prescribed refactoring pattern>]
+Decision: APPROVED | REQUEST_CHANGES
+- [Blocker|Major|Minor] <file:line> — <defect or smell & failure scenario> → <remedy>
+Scope: clean | creep: <files>
 ```
 
 ---
