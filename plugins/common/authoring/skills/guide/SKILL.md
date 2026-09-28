@@ -50,6 +50,7 @@ Select the optimal path across the repository's Dual-Speed Flow Topology based o
 | **Code Review / PR Diff Audit** | Tactical Fast Loop | `review` |
 | **Commit / Branch / Rebase / Push** | Tactical Fast Loop | `vcs` |
 | **Compact / Transfer Agent Context** | Context Handoff | `handoff` |
+| **Owner-approved GitHub queue on a local worker** | Bounded Local Factory | `issue-factory` |
 | **Exploratory Prototyping / Feasibility** | Exploratory Spike | `spike` ➔ `specify` ➔ `tdd` |
 | **Deep Technical / API Documentation Research** | Technical Discovery | `research` |
 | **New Business Outcome / B2B Epics** | Enterprise Delivery Loop | `define` ➔ `specify` ➔ `deliver` |
