@@ -26,6 +26,10 @@ release bump="auto":
 status:
     python3 scripts/project-verify.py status
 
+# Inspect an owner-approved private GitHub issue queue (read-only by default)
+factory repo checkout state *options:
+    python3 plugins/common/workflow/skills/issue-factory/scripts/issue_factory.py --repo {{quote(repo)}} --checkout {{quote(checkout)}} --state-dir {{quote(state)}} {{options}}
+
 # Complete local contributor setup (configures git hooks and links plugins into local Antigravity IDE)
 setup: setup-hooks link-agy
 
@@ -145,4 +149,3 @@ refresh: install-agy
       fi
     done
     echo "Refreshed local plugin installations."
-
