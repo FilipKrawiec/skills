@@ -27,8 +27,9 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │                            PORTABLE SKILLS                                  │
  │   Core:         ddd, hexagonal-architecture                                 │
- │   Workflow:     tdd, vcs, triage, review, grill-with-context, handoff, spike│
- │   SDLC:         deliver, init-project, define, specify, improve              │
+ │   Workflow:     tdd, vcs, triage, review, grill-with-context, handoff,      │
+ │                 spike, issue-lanes, afk                                     │
+ │   SDLC:         deliver, define, specify (FilipKrawiec/devcontainer)        │
  │   Authoring:    writing-great-skill, guide, rephrase, swot, teach, research │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -85,7 +86,8 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 * **Affirmative State Machines**: Skills are structured as unidirectional linear phases with explicit affirmative actions and concrete exit gates, eliminating negative prompt priming ("Do vs Don't" contradictions).
 * **Zero-Waste Output Economics**: Every skill phase defines explicit output envelopes, high-density token efficiency, and code anti-overengineering (Rule of Two Adapters).
 * **Provider-Neutral & Sovereign Git-Native**: Pure Git clone/submodule distribution across harnesses (Claude Code, Codex, Antigravity) without SaaS registry dependencies.
-* **Delivery Orchestration**: The `deliver` workflow coordinates bounded project changes across isolated Git worktrees.
+* **Issue Lanes & AFK Delivery**: `issue-lanes` gives every GitHub issue one lane (`lane:afk`, `lane:proposed`, `lane:owner`); `afk` delivers owner-approved issues unattended, one at a time, behind a guard hook that keeps merges, releases and settings with the owner.
+* **Delivery Orchestration**: The `deliver` workflow (in the `filipkrawiec-sdlc` package of [FilipKrawiec/devcontainer](https://github.com/FilipKrawiec/devcontainer)) coordinates bounded project changes across isolated Git worktrees.
 * **Deterministic Verification**: `scripts/project-verify.py` acts as a zero-dependency, deterministic gate for code verification and git hygiene.
 
 ---
@@ -100,14 +102,11 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`tdd`](plugins/common/workflow/skills/tdd/SKILL.md) | Model | Test-Driven Development: Chicago-school Red-Green-Refactor with doctrine chaining. |
 | | [`review`](plugins/common/workflow/skills/review/SKILL.md) | Model | 2-Axis Diff Audit: Fowler code smells, hexagonal boundaries, and spec compliance. |
 | | [`vcs`](plugins/common/workflow/skills/vcs/SKILL.md) | Model | Version Control: Conventional commits, worktree isolation, and PR delivery. |
+| | [`issue-lanes`](plugins/common/workflow/skills/issue-lanes/SKILL.md) | Model | Issue Lanes: Create and triage issues into AFK, proposed or owner lanes; ask the owner at creation. |
+| | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | Model | Unattended Delivery: One approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
 | | [`grill-with-context`](plugins/common/workflow/skills/grill-with-context/SKILL.md) | Model | Context Grilling: Ground specifications against ADRs, glossary, and knowledge. |
 | | [`handoff`](plugins/common/workflow/skills/handoff/SKILL.md) | Model | Session Handoff: Compact and serialize state, decisions, and diffs across agents. |
 | | [`spike`](plugins/common/workflow/skills/spike/SKILL.md) | Model | Exploratory Prototyping: Time-boxed feasibility spikes with clean-room promotion gates. |
-| **`filipkrawiec-sdlc`** | [`deliver`](plugins/common/sdlc/skills/deliver/SKILL.md) | User | Delivery Flow: Provider-neutral, code-free task orchestration & worktrees. |
-| | [`define`](plugins/common/sdlc/skills/define/SKILL.md) | User | Intent Definition: Capture outcomes, scope boundaries, and issue tracker payload. |
-| | [`specify`](plugins/common/sdlc/skills/specify/SKILL.md) | User | Backlog Refinement: Interactive grilling and tracker specification refinement. |
-| | [`init-project`](plugins/common/sdlc/skills/init-project/SKILL.md) | User | Project Initialization: Lightweight monorepo baseline using `dev projects init`. |
-| | [`improve`](plugins/common/sdlc/skills/improve/SKILL.md) | Model | Retrospective Learner: Capture friction and log upstream skill improvements. |
 | **`filipkrawiec-authoring`** | [`guide`](plugins/common/authoring/skills/guide/SKILL.md) | User | Workflow Router: Navigate developer intent to the optimal workflow path. |
 | | [`rephrase`](plugins/common/authoring/skills/rephrase/SKILL.md) | User | Alignment Reset: Restate complex proposals in plain Technical English. |
 | | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring affirmative state machines, output contracts, and token budgets. |
@@ -121,13 +120,21 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 
 ### Claude Code
 
-Run Claude Code with common plugin packages directly:
+Install released versions from GitHub, so every machine and scheduled run uses the same tagged release:
+
+```bash
+claude plugin marketplace add FilipKrawiec/skills
+claude plugin install filipkrawiec-core@filipkrawiec
+claude plugin install filipkrawiec-workflow@filipkrawiec
+claude plugin install filipkrawiec-authoring@filipkrawiec
+```
+
+While developing the skills themselves, run Claude Code with the checkout's packages directly:
 
 ```bash
 claude \
   --plugin-dir plugins/common/core \
   --plugin-dir plugins/common/workflow \
-  --plugin-dir plugins/common/sdlc \
   --plugin-dir plugins/common/authoring
 ```
 
@@ -141,7 +148,6 @@ Register the repository checkout as a local marketplace:
 codex plugin marketplace add .
 codex plugin add filipkrawiec-core@filipkrawiec
 codex plugin add filipkrawiec-workflow@filipkrawiec
-codex plugin add filipkrawiec-sdlc@filipkrawiec
 codex plugin add filipkrawiec-authoring@filipkrawiec
 ```
 
