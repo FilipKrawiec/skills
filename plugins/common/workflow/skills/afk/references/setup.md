@@ -47,7 +47,8 @@ A scheduled Claude desktop task (or any scheduler that starts an agent session i
 ```text
 Preflight, stop and report on any failure:
 1. The working directory is inside <owner>/<repo>.
-2. `git fetch origin main` succeeds.
+2. The main checkout is on `main` with no tracked changes; `git pull --ff-only`
+   succeeds (project settings and the guard load from it at session start).
 3. `gh pr merge --help` is refused by the issue-lanes guard; if it prints help,
    the guard is not loaded, so stop.
 Then use the `afk` skill. The owner is away: park instead of asking.
