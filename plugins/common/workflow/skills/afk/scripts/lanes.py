@@ -8,8 +8,8 @@ issues. A repository opts in with `.github/lanes.json` (see references/setup.md)
 
 Usage: lanes.py next                 # next AFK issue; in flight, skipped, untriaged
        lanes.py claim N              # claim N, create its worktree from origin/<base>, mark it Running
-       lanes.py start N              # mark N Running for a person-led (non-AFK) session
-       lanes.py release N            # clear N's claim or start when work stops without a PR
+       lanes.py start N              # mark N Running while a session works on it outside an AFK build
+       lanes.py release N            # clear N's claim or start when the work pauses or is handed off
        lanes.py scope N              # changed files outside N's scope packet
        lanes.py park N MESSAGE       # hand N back to the owner with one question
        lanes.py automerge PR         # squash auto-merge PR on green checks if it is a chore
@@ -38,7 +38,7 @@ LANE_LABELS = {
     PROPOSED: ('8250df', 'An agent recommends AFK; the owner decides'),
     OWNER_LANE: ('d93f0b', 'Needs the owner: a decision, credentials, settings or a device'),
     CLAIMED: ('fbca04', 'An AFK run is working on it now'),
-    STARTED: ('fef2c0', 'A person-led session is working on it now'),
+    STARTED: ('fef2c0', 'A session is working on it now (outside an AFK build)'),
     PARKED: ('d93f0b', 'An AFK run handed it back with a question for the owner'),
     OWNER_REVIEW: ('e99695', 'PR: agent review is done; it waits for the owner'),
     EPIC: ('3e4b9e', 'Umbrella outcome with sub-issues'),
@@ -226,10 +226,10 @@ def status(issue, pr_labels, agent_review=False):
     labels = names(issue)
     if issue['state'] == 'CLOSED':
         return 'Done'
-    if pr_labels is not None:
-        return 'Agent review' if agent_review and OWNER_REVIEW not in pr_labels else 'Review'
     if labels & {CLAIMED, STARTED}:
         return 'Running'
+    if pr_labels is not None:
+        return 'Agent review' if agent_review and OWNER_REVIEW not in pr_labels else 'Review'
     if PROPOSED in labels or PARKED in labels:
         return 'Decide'
     if labels & {AFK, OWNER_LANE, EPIC}:

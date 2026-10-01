@@ -36,10 +36,10 @@ Minimal example:
 | Step | Command or setting |
 | --- | --- |
 | Labels | `lanes.py labels`, review, then `--apply` (creates `lane:*`, `state:claimed`, `state:started`, `type:epic` plus yours). |
-| Board | Optional; `lanes.py board --apply` rewrites the Status options to the lifecycle below. Lanes stay visible as labels on each card. |
+| Board | Optional; `lanes.py board --apply` rewrites the Status options to the lifecycle below. Lanes stay as labels; show them on cards once in the board view's field settings (the API cannot change views). |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
-| Rules | Add to the project's agent rules: "Before creating an issue, ask the owner whether it is AFK", "Starting on an issue outside an AFK run: `lanes.py start N`; stopping without a PR: `lanes.py release N`" and a link to the project's workflow page. |
+| Rules | Add to the project's agent rules: "Before creating an issue, ask the owner whether it is AFK", "Starting on an issue outside an AFK build: `lanes.py start N`; pausing or handing off: `lanes.py release N`" and a link to the project's workflow page. |
 
 ## Board lifecycle
 
@@ -48,7 +48,7 @@ Minimal example:
 | Triage | No lane yet. |
 | Backlog | `lane:afk`, `lane:owner` or an epic, not started. |
 | Decide | Waits on an owner decision: `lane:proposed`, or `state:parked` after an AFK run handed it back. |
-| Running | `state:claimed` (an AFK run) or `state:started` (a person-led session), no PR yet. |
+| Running | `state:claimed` (an AFK build) or `state:started` (any other session working on it, including fixes on an open PR). Takes precedence over the PR columns. |
 | Agent review | An open PR closes it and, with `agentReview`, the automated reviewer has not handed it over. |
 | Review | An open PR waits for the owner: `review:owner` on the PR, or any open PR without `agentReview`. |
 | Done | Closed. |

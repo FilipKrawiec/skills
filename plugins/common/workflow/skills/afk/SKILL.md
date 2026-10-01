@@ -14,7 +14,7 @@ Read [setup.md](references/setup.md) when the repository has no `.github/lanes.j
 
 ## 1. Tend
 
-For each open PR on a branch starting with lanes.json's `branchPrefix`, in its worktree (recreate it from the branch when tidied):
+For each open PR on a branch starting with lanes.json's `branchPrefix` that needs work below, run `LANES start <issue>` first and `LANES release <issue>` after its push, working in its worktree (recreate it from the branch when tidied):
 
 1. A merge conflict → merge the base branch in and resolve it.
 2. Failing checks → reproduce, fix and push.

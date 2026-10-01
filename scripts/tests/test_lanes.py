@@ -185,6 +185,12 @@ class BoardAndTidyTests(unittest.TestCase):
                 self.assertEqual(lanes.status(candidate, pr_labels), want)
                 self.assertIn(want, lanes.STATUSES)
 
+    def test_work_in_progress_shows_as_running_even_with_an_open_pr(self) -> None:
+        for label in ("state:claimed", "state:started"):
+            with self.subTest(label=label):
+                self.assertEqual(lanes.status(issue(labels=("lane:afk", label)), {"review:owner"},
+                                              agent_review=True), "Running")
+
     def test_agent_review_holds_prs_until_handed_to_the_owner(self) -> None:
         self.assertEqual(lanes.status(issue(), set(), agent_review=True), "Agent review")
         self.assertEqual(lanes.status(issue(), {"review:owner"}, agent_review=True), "Review")
