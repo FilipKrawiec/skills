@@ -4,17 +4,9 @@ active_skills:
   - hexagonal-architecture
   - tdd
   - vcs
-  - triage
   - review
-  - guide
-  - rephrase
   - grill-with-context
-  - swot
-  - teach
   - writing-great-skill
-  - handoff
-  - research
-  - spike
   - issue-lanes
   - afk
 

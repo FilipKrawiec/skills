@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Use when programming, coding, refactoring, implementing features, or fixing bugs through Red-Green-Refactor with explicit failing and passing test evidence.
+description: Use when programming, coding, refactoring, implementing features, or diagnosing and fixing a bug, broken test, or regression through Red-Green-Refactor with explicit failing and passing test evidence.
 allowed-tools: Skill Read Edit Bash
 ---
 
@@ -11,6 +11,14 @@ Execute the Red-Green-Refactor loop in strict linear sequence for each observabl
 ## Project Precedence
 
 Project instructions (`AGENTS.md` or the host's equivalent, project skills, `justfile`) take precedence over this skill and its references for commands, test layout, runners, and coverage policy. Before Phase 1, identify the project's targeted fast test command (e.g. `just quick <target>`) and its completion gate (e.g. `just verify`); use them in every phase.
+
+## Bug Fixes
+
+When the task is a bug, broken test, or regression, the reproduction is the RED test:
+1. Reproduce the reported failure as a test, then cut setup and parameters one at a time until only what triggers it remains.
+2. Before editing production code, rank up to three falsifiable hypotheses: "If <cause>, then <change> makes the reproduction pass." When the user asked for diagnosis only, report the hypotheses and stop.
+3. In GREEN, apply one change per hypothesis, highest-ranked first; revert it when the reproduction still fails.
+4. Keep the reproduction in the suite as the regression test.
 
 ## Execution Phases
 

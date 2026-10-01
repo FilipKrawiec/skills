@@ -13,7 +13,6 @@ A skill should make agent behavior more predictable. Bold terms are defined in `
 - **Frontmatter Tool Allowance (`allowed-tools`)**: Every skill MUST declare its permitted tool capabilities as a space-delimited string in YAML frontmatter (e.g. `allowed-tools: Skill Read Edit Bash(git:*)`). Declare `Skill` when the workflow invokes downstream skills.
 - **Model Invocation**: Use when the agent must discover the skill autonomously.
 - **User Invocation**: Use when the human triggers the workflow explicitly. Set `disable-model-invocation: true` in YAML frontmatter and keep the description as a terse human-facing label.
-- **Router Skill**: Provide a dedicated router skill (`guide`) to help users and models select the optimal workflow path.
 - **Dual Invocation Modes**:
   - **Inline Chaining**: Caller borrows domain rules directly into the active turn context (e.g. `tdd` invoking `ddd` or `hexagonal-architecture`). Phrase as: "When designing domain models, invoke `ddd`."
   - **Delegated Subagent Invocation**: Orchestrator dispatches an isolated subagent with a dedicated task packet and active skill bundle (e.g. `deliver` dispatching `developer`).

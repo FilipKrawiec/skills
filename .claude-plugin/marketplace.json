@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "filipkrawiec-authoring",
-      "description": "Skill authoring and learning-guide helpers.",
+      "description": "Skill authoring guidance for writing and validating agent skills.",
       "category": "development",
       "source": "./plugins/common/authoring",
       "homepage": "https://github.com/FilipKrawiec/skills"
