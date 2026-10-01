@@ -141,6 +141,13 @@ class AutomergeTests(unittest.TestCase):
         notes = "Updates `react` from 19.1.0 to 19.2.0\n\n## Release notes\nMigrated from 1.0 to 2.0 internally"
         self.assertIsNone(bump("chore(deps): bump the npm-minor group", notes))
 
+    def test_approved_chores_merge_now_update_or_queue(self) -> None:
+        self.assertEqual(lanes.merge_step("CLEAN"), "merge")
+        self.assertEqual(lanes.merge_step("HAS_HOOKS"), "merge")
+        self.assertEqual(lanes.merge_step("BEHIND"), "update")
+        for state in ("BLOCKED", "UNSTABLE", "UNKNOWN", "DIRTY"):
+            self.assertEqual(lanes.merge_step(state), "queue", state)
+
     def test_owner_prs_are_not_read_as_version_bumps(self) -> None:
         self.assertIsNone(lanes.automerge_refusal(pr(["docs/a.md"], title="docs: move from 1.0 to 2.0 terms"), CONFIG))
 
