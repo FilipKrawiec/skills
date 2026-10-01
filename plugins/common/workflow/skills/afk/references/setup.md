@@ -34,11 +34,11 @@ Minimal example:
 
 | Step | Command or setting |
 | --- | --- |
-| Labels | `lanes.py labels`, review, then `--apply` (creates `lane:*`, `state:claimed`, `type:epic` plus yours). |
+| Labels | `lanes.py labels`, review, then `--apply` (creates `lane:*`, `state:claimed`, `state:started`, `type:epic` plus yours). |
 | Board | Optional; `lanes.py board --apply` rewrites the Status options to Triage, Proposed, Owner, AFK, Running, Review, Done. |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
-| Rules | Add to the project's agent rules: "Before creating an issue, ask the owner whether it is AFK" and a link to the project's workflow page. |
+| Rules | Add to the project's agent rules: "Before creating an issue, ask the owner whether it is AFK", "Starting on an issue outside an AFK run: `lanes.py start N`; stopping without a PR: `lanes.py release N`" and a link to the project's workflow page. |
 
 ## Unattended runs
 

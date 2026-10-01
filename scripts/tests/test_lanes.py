@@ -87,6 +87,7 @@ class EligibilityTests(unittest.TestCase):
             (issue(labels=("lane:proposed",)), "not lane:afk"),
             (issue(labels=("lane:afk", "type:epic")), "epic"),
             (issue(labels=("lane:afk", "state:claimed")), "claimed"),
+            (issue(labels=("lane:afk", "state:started")), "started in another session"),
             (issue(body='```scope\n{"paths": ["docs/"]}\n```'), "no acceptance criteria"),
             (issue(body="## Acceptance criteria\n- x"), "no scope packet"),
         ]
@@ -171,6 +172,7 @@ class BoardAndTidyTests(unittest.TestCase):
         expected = [
             (issue(state="CLOSED"), True, "Done"), (issue(), True, "Review"),
             (issue(labels=("lane:afk", "state:claimed")), False, "Running"), (issue(), False, "AFK"),
+            (issue(labels=("lane:owner", "state:started")), False, "Running"),
             (issue(labels=("lane:proposed",)), False, "Proposed"),
             (issue(labels=("lane:owner",)), False, "Owner"), (issue(labels=("type:epic",)), False, "Owner"),
             (issue(labels=()), False, "Triage"),
@@ -178,6 +180,13 @@ class BoardAndTidyTests(unittest.TestCase):
         for candidate, pr_open, want in expected:
             self.assertEqual(lanes.status(candidate, pr_open), want)
             self.assertIn(want, lanes.STATUSES)
+
+    def test_only_afk_claims_hold_the_one_at_a_time_queue(self) -> None:
+        issues = [issue(3, ("lane:owner", "state:started")), issue(4, ("lane:afk",))]
+        self.assertEqual(lanes.afk_in_flight(issues, set()), [])
+        issues.append(issue(5, ("lane:afk", "state:claimed")))
+        self.assertEqual([i["number"] for i in lanes.afk_in_flight(issues, set())], [5])
+        self.assertEqual(lanes.afk_in_flight(issues, {5}), [])
 
     def test_priority_comes_from_its_label(self) -> None:
         self.assertEqual(lanes.priority(issue(labels=("priority:P1",))), "P1")
@@ -211,7 +220,7 @@ class LabelTests(unittest.TestCase):
         self.assertIn(("rename", "bug"), steps)
         self.assertNotIn(("create", "type:bug"), steps)
         self.assertIn(("delete", "wontfix"), steps)
-        for name in (lanes.AFK, lanes.PROPOSED, lanes.OWNER_LANE, lanes.CLAIMED, lanes.EPIC):
+        for name in (lanes.AFK, lanes.PROPOSED, lanes.OWNER_LANE, lanes.CLAIMED, lanes.STARTED, lanes.EPIC):
             self.assertIn(("create", name), steps)
 
 

@@ -7,7 +7,9 @@ recommends AFK) or `lane:owner`. The optional Project board is derived from
 issues. A repository opts in with `.github/lanes.json` (see references/setup.md).
 
 Usage: lanes.py next                 # next AFK issue; in flight, skipped, untriaged
-       lanes.py claim N              # claim N and create its worktree from origin/<base>
+       lanes.py claim N              # claim N, create its worktree from origin/<base>, mark it Running
+       lanes.py start N              # mark N Running for a person-led (non-AFK) session
+       lanes.py release N            # clear N's claim or start when work stops without a PR
        lanes.py scope N              # changed files outside N's scope packet
        lanes.py park N MESSAGE       # hand N back to the owner with one question
        lanes.py automerge PR         # squash auto-merge PR on green checks if it is a chore
@@ -25,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 AFK, PROPOSED, OWNER_LANE, CLAIMED = 'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed'
+STARTED = 'state:started'
 EPIC = 'type:epic'
 PRIORITIES = ('priority:P0', 'priority:P1', 'priority:P2')
 STATUSES = ('Triage', 'Proposed', 'Owner', 'AFK', 'Running', 'Review', 'Done')
@@ -35,6 +38,7 @@ LANE_LABELS = {
     PROPOSED: ('8250df', 'An agent recommends AFK; the owner decides'),
     OWNER_LANE: ('d93f0b', 'Needs the owner: a decision, credentials, settings or a device'),
     CLAIMED: ('fbca04', 'An AFK run is working on it now'),
+    STARTED: ('fef2c0', 'A person-led session is working on it now'),
     EPIC: ('3e4b9e', 'Umbrella outcome with sub-issues'),
 }
 DEPENDABOT = {'app/dependabot', 'dependabot[bot]'}
@@ -116,6 +120,8 @@ def ineligible(issue, completed, pr_open, tracked, config):
         return 'has an open PR'
     if CLAIMED in labels:
         return 'claimed'
+    if STARTED in labels:
+        return 'started in another session'
     if not ACCEPTANCE.search(issue.get('body') or ''):
         return 'no acceptance criteria'
     scope = packet(issue.get('body'))
@@ -215,12 +221,17 @@ def status(issue, pr_open):
         return 'Done'
     if pr_open:
         return 'Review'
-    if CLAIMED in labels:
+    if labels & {CLAIMED, STARTED}:
         return 'Running'
     for label, name in ((AFK, 'AFK'), (PROPOSED, 'Proposed'), (OWNER_LANE, 'Owner'), (EPIC, 'Owner')):
         if label in labels:
             return name
     return 'Triage'
+
+
+def afk_in_flight(issues, with_pr):
+    """AFK claims still being built; person-led starts never hold the queue."""
+    return [i for i in issues if CLAIMED in names(i) and i['number'] not in with_pr]
 
 
 def priority(issue):
@@ -301,7 +312,7 @@ def cmd_next(repo, _args):
     completed = {i['number'] for i in repo.closed_issues() if i['stateReason'] == 'COMPLETED'}
     tracked = repo.tracked()
     stale_after = timedelta(hours=repo.config['staleClaimHours'])
-    in_flight = [i for i in issues if CLAIMED in names(i) and i['number'] not in with_pr]
+    in_flight = afk_in_flight(issues, with_pr)
     for issue in in_flight:
         since = repo.claimed_at(issue['number'])
         stale = since and datetime.now(timezone.utc) - since > stale_after
@@ -332,7 +343,7 @@ def cmd_claim(repo, args):
                         repo.tracked(), repo.config)
     if reason:
         sys.exit(f'#{number} cannot be claimed: {reason}')
-    if any(CLAIMED in names(i) for i in repo.open_issues()):
+    if afk_in_flight(repo.open_issues(), repo.issues_with_open_prs()):
         sys.exit('Another AFK issue is in flight; run one at a time.')
     root, base = repo.main_checkout(), repo.config['base']
     branch = f"{repo.config['branchPrefix']}{number}-{slug(issue['title'])}"
@@ -342,7 +353,22 @@ def cmd_claim(repo, args):
     run('gh', 'issue', 'edit', str(number), '-R', repo.name, '--add-label', CLAIMED)
     run('gh', 'issue', 'comment', str(number), '-R', repo.name, '--body',
         f'Claimed by an AFK run on `{socket.gethostname()}`. Branch `{branch}`.')
+    refresh_board(repo)
     print(f'worktree: {worktree}\nbranch: {branch}')
+
+
+def cmd_start(repo, args):
+    number = args[0]
+    run('gh', 'issue', 'edit', number, '-R', repo.name, '--add-label', STARTED)
+    refresh_board(repo)
+    print(f'#{number}: Running')
+
+
+def cmd_release(repo, args):
+    number = args[0]
+    run('gh', 'issue', 'edit', number, '-R', repo.name, '--remove-label', f'{CLAIMED},{STARTED}')
+    refresh_board(repo)
+    print(f'#{number}: released')
 
 
 def cmd_scope(repo, args):
@@ -459,6 +485,12 @@ def cmd_board(repo, args):
     print(f'{changes} board changes' + ('' if apply else ' (dry run; --apply to write)'))
 
 
+def refresh_board(repo):
+    """Applies board status at once when lanes.json names a project."""
+    if repo.config.get('project'):
+        cmd_board(repo, ['--apply'])
+
+
 def cmd_labels(repo, args):
     apply = '--apply' in args
     current = {l['name']: l for l in gh_json('label', 'list', '-R', repo.name, '-L', '500',
@@ -537,7 +569,8 @@ def cmd_tidy(repo, args):
         print('(dry run; --apply to remove)')
 
 
-COMMANDS = {'next': cmd_next, 'claim': cmd_claim, 'scope': cmd_scope, 'park': cmd_park,
+COMMANDS = {'next': cmd_next, 'claim': cmd_claim, 'start': cmd_start, 'release': cmd_release,
+            'scope': cmd_scope, 'park': cmd_park,
             'automerge': cmd_automerge, 'board': cmd_board, 'labels': cmd_labels, 'tidy': cmd_tidy}
 
 if __name__ == '__main__':

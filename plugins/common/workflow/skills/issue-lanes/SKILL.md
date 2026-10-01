@@ -18,7 +18,7 @@ An issue is AFK-ready when all five hold:
 | Bounded | A ```` ```scope ```` packet lists `paths` it may change and every issue it builds on in `dependencies`, including ones only named in prose. |
 | Decided | No open product, design or model question; new UI has a mockup or names an existing pattern. |
 | Unprivileged | Nothing protected by the project's lanes.json: automation, agent instructions, infrastructure, credentials, settings, releases, deploys. |
-| Single | Not an epic; no open PR or `state:claimed`. |
+| Single | Not an epic; no open PR, `state:claimed` or `state:started`. |
 
 Scope packet format: ```` ```scope ```` then `{"paths": ["src/feature/", "tests/feature/"], "dependencies": [12]}`; a trailing `/` allows a subtree.
 
