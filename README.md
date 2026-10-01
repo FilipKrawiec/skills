@@ -27,10 +27,9 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │                            PORTABLE SKILLS                                  │
  │   Core:         ddd, hexagonal-architecture                                 │
- │   Workflow:     tdd, vcs, triage, review, grill-with-context, handoff,      │
- │                 spike, issue-lanes, afk                                     │
+ │   Workflow:     tdd, review, vcs, grill-with-context, issue-lanes, afk      │
  │   SDLC:         deliver, define, specify (FilipKrawiec/devcontainer)        │
- │   Authoring:    writing-great-skill, guide, rephrase, swot, teach, research │
+ │   Authoring:    writing-great-skill                                         │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -52,19 +51,15 @@ This library supports two complementary execution loops depending on the scope o
                          │   INCOMING TASK / PROBLEM    │
                          └──────────────┬───────────────┘
                                         │
-                               ┌────────▼────────┐
-                               │  guide (Router) │
-                               └────────┬────────┘
-                                        │
              ┌──────────────────────────┴──────────────────────────┐
              │                                                     │
              ▼ (Fast Tactical Loop)                                ▼ (Enterprise Delivery Loop)
   ┌──────────────────────────────┐                      ┌──────────────────────────────┐
-  │ 1. triage (Red signal & cut) │                      │ 1. define (Outcomes & Scope) │
-  │ 2. tdd (Chicago Red-Green)   │                      │ 2. specify/grill-with-context│
-  │ 3. review (Smell & Spec)     │                      │ 3. deliver                   │
-  │ 4. vcs (Atomic commit)       │                      │    (Worktree multi-agent)    │
-  └──────────────┬───────────────┘                      │ 4. project-verify.py (Gates) │
+  │ 1. tdd (Repro & Red-Green)   │                      │ 1. define (Outcomes & Scope) │
+  │ 2. review (Smell & Spec)     │                      │ 2. specify/grill-with-context│
+  │ 3. vcs (Atomic commit)       │                      │ 3. deliver                   │
+  └──────────────┬───────────────┘                      │    (Worktree multi-agent)    │
+                 │                                      │ 4. project-verify.py (Gates) │
                  │                                      │ 5. Review Request & Ship     │
                  │                                      └──────────────┬───────────────┘
                  │                                                     │
@@ -98,21 +93,13 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | :--- | :--- | :--- | :--- |
 | **`filipkrawiec-core`** | [`ddd`](plugins/common/core/skills/ddd/SKILL.md) | Model | Domain-Driven Design: Ubiquitous language, strategic mapping, and aggregates. |
 | | [`hexagonal-architecture`](plugins/common/core/skills/hexagonal-architecture/SKILL.md) | Model | Ports & Adapters: 4-layer architecture (API, App, Domain, Infra) & encapsulation. |
-| **`filipkrawiec-workflow`** | [`triage`](plugins/common/workflow/skills/triage/SKILL.md) | Model | Root-Cause Debugging: 5-phase scientific defect reproduction and verification loop. |
-| | [`tdd`](plugins/common/workflow/skills/tdd/SKILL.md) | Model | Test-Driven Development: Chicago-school Red-Green-Refactor with doctrine chaining. |
-| | [`review`](plugins/common/workflow/skills/review/SKILL.md) | Model | 2-Axis Diff Audit: Fowler code smells, hexagonal boundaries, and spec compliance. |
+| **`filipkrawiec-workflow`** | [`tdd`](plugins/common/workflow/skills/tdd/SKILL.md) | Model | Test-Driven Development: Chicago-school Red-Green-Refactor, bug reproduction first, doctrine chaining. |
+| | [`review`](plugins/common/workflow/skills/review/SKILL.md) | Model | Diff Audit: Boundary breaches, runtime defects, design smells, and test rigor. |
 | | [`vcs`](plugins/common/workflow/skills/vcs/SKILL.md) | Model | Version Control: Conventional commits, worktree isolation, and PR delivery. |
 | | [`issue-lanes`](plugins/common/workflow/skills/issue-lanes/SKILL.md) | Model | Issue Lanes: Create and triage issues into AFK, proposed or owner lanes; ask the owner at creation. |
 | | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | Model | Unattended Delivery: One approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
 | | [`grill-with-context`](plugins/common/workflow/skills/grill-with-context/SKILL.md) | Model | Context Grilling: Ground specifications against ADRs, glossary, and knowledge. |
-| | [`handoff`](plugins/common/workflow/skills/handoff/SKILL.md) | Model | Session Handoff: Compact and serialize state, decisions, and diffs across agents. |
-| | [`spike`](plugins/common/workflow/skills/spike/SKILL.md) | Model | Exploratory Prototyping: Time-boxed feasibility spikes with clean-room promotion gates. |
-| **`filipkrawiec-authoring`** | [`guide`](plugins/common/authoring/skills/guide/SKILL.md) | User | Workflow Router: Navigate developer intent to the optimal workflow path. |
-| | [`rephrase`](plugins/common/authoring/skills/rephrase/SKILL.md) | User | Alignment Reset: Restate complex proposals in plain Technical English. |
-| | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring affirmative state machines, output contracts, and token budgets. |
-| | [`swot`](plugins/common/authoring/skills/swot/SKILL.md) | User | Strategic Audit: Evidence-grounded SWOT analysis and architectural health audits. |
-| | [`teach`](plugins/common/authoring/skills/teach/SKILL.md) | User | Education: Interactive learning guides and architectural trade-off walkthroughs. |
-| | [`research`](plugins/common/authoring/skills/research/SKILL.md) | Model | Technical Discovery: Multi-source research producing cited evidence dossiers. |
+| **`filipkrawiec-authoring`** | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring affirmative state machines, output contracts, and token budgets. |
 
 ---
 

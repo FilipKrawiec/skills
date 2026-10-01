@@ -43,17 +43,9 @@ KNOWN_CORE_SKILLS = {
     "hexagonal-architecture",
     "tdd",
     "vcs",
-    "triage",
     "review",
-    "guide",
-    "rephrase",
     "grill-with-context",
-    "swot",
-    "teach",
     "writing-great-skill",
-    "handoff",
-    "research",
-    "spike",
 }
 
 

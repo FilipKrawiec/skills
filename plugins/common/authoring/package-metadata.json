@@ -1,7 +1,7 @@
 {
   "name": "filipkrawiec-authoring",
   "version": "9.18.0",
-  "description": "Skill authoring and learning-guide helpers.",
+  "description": "Skill authoring guidance for writing and validating agent skills.",
   "author": {
     "name": "Filip Krawiec",
     "email": "contact@filipkrawiec.com",
@@ -12,10 +12,6 @@
   "license": "UNLICENSED",
   "keywords": [
     "skills",
-    "authoring",
-    "learning",
-    "documentation",
-    "swot",
-    "evaluation"
+    "authoring"
   ]
 }

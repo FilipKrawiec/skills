@@ -11,7 +11,7 @@ The `skills` repository is designed around six foundational principles:
 1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
 2. **Affirmative State Machines**: Skills structure instructions as unidirectional linear phases with positive actions and concrete exit gates. Negative "Do/Don't" phrasing is eliminated to prevent negative prompt priming.
 3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
-4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`triage` ➔ `tdd` ➔ `review` ➔ `vcs`) for immediate defect resolution alongside the Enterprise Delivery Loop (`define` ➔ `specify` ➔ `deliver`) for multi-agent worktrees.
+4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for immediate defect resolution alongside the Enterprise Delivery Loop (`define` ➔ `specify` ➔ `deliver`) for multi-agent worktrees.
 5. **Deterministic Verification**: AI agents validate all work against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
 6. **Hierarchical Overlay Architecture**: Base capabilities are defined in common, provider-neutral plugins (`plugins/common/*`), while agent-specific enhancements (such as Antigravity interactive artifacts) are layered on top via native overlays (`plugins/agy/*`).
 
@@ -56,13 +56,13 @@ Skills are grouped into **plugins** for distribution and host discovery.
 plugins/
 ├── common/                  # Canonical portable plugins (Cross-Agent)
 │   ├── core/                # DDD, Hexagonal Architecture
-│   ├── workflow/            # Triage, TDD, Review, VCS, Grill with Context, Handoff, Spike
-│   ├── sdlc/                # Delivery Orchestration, Define, Specify, Scaffold Monorepo, Improve
-│   └── authoring/           # Writing Great Skills, Guide, Rephrase, SWOT, Teach, Research
+│   ├── workflow/            # TDD, Review, VCS, Grill with Context, Issue Lanes, AFK
+│   └── authoring/           # Writing Great Skill
 └── agy/                     # Antigravity-Native Overlay Plugins
-    ├── core/                # Interactive UI review overlays
-    └── sdlc/                # Artifact UI proceed buttons & state trackers
+    └── core/                # Reference resolution & interactive artifact review rules
 ```
+
+The SDLC skills (`define`, `specify`, `deliver`) ship in the `filipkrawiec-sdlc` package of FilipKrawiec/devcontainer.
 
 ### Common vs. Overlay Plugins
 
