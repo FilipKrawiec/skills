@@ -128,6 +128,22 @@ class AutomergeTests(unittest.TestCase):
         self.assertIsNone(lanes.automerge_refusal(pr(files, author="app/dependabot"), CONFIG))
         self.assertIn("more than docs", lanes.automerge_refusal(pr(files), CONFIG))
 
+    def test_dependabot_major_versions_wait_for_the_owner(self) -> None:
+        files = ["web/package.json", "web/package-lock.json"]
+        def bump(title, body=""):
+            return lanes.automerge_refusal(pr(files, author="app/dependabot", title=title, body=body), CONFIG)
+        self.assertIn("6.1", bump("chore(deps): bump lints from 5.1.1 to 6.1.0 in /libs/music"))
+        self.assertIn("0.4", bump("Bump left-pad from 0.3.2 to 0.4.0"))
+        self.assertIsNone(bump("chore(deps): bump lints from 5.1.1 to 5.2.0"))
+        self.assertIsNone(bump("Bump left-pad from 0.3.2 to 0.3.9"))
+        grouped = "Bumps the npm-minor group with 2 updates.\nUpdates `next` from 15.1.0 to 16.0.1\nUpdates `react` from 19.1.0 to 19.2.0"
+        self.assertIn("15.1 → 16.0", bump("chore(deps): bump the npm-minor group", grouped))
+        notes = "Updates `react` from 19.1.0 to 19.2.0\n\n## Release notes\nMigrated from 1.0 to 2.0 internally"
+        self.assertIsNone(bump("chore(deps): bump the npm-minor group", notes))
+
+    def test_owner_prs_are_not_read_as_version_bumps(self) -> None:
+        self.assertIsNone(lanes.automerge_refusal(pr(["docs/a.md"], title="docs: move from 1.0 to 2.0 terms"), CONFIG))
+
     def test_product_automation_and_instructions_wait_for_the_owner(self) -> None:
         for path in ["src/main.py", ".github/workflows/ci.yml", ".github/README.md", "AGENTS.md",
                      ".agents/skills/x/SKILL.md", ".vscode/settings.json", "tools/gate.py",
