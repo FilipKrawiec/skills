@@ -13,7 +13,7 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `protected` | no | Regexes for paths agents may not change in AFK work (adds to every top-level dot-directory, `AGENTS.md`, justfile and Makefile). Add the host's own instruction file here when it has one besides `AGENTS.md`. |
 | `alwaysInScope` | no | Path prefixes every AFK change may touch, e.g. the user guide the project rules require updating. |
 | `chores` | no | Regexes of paths that auto-merge on green checks (adds to `^docs/`, `\.md$`, test directories). |
-| `dependencyFiles` | no | Regexes of manifests and lockfiles that auto-merge when Dependabot changed them. |
+| `dependencyFiles` | no | Regexes of manifests and lockfiles that auto-merge when Dependabot changed them, unless the PR crosses a major version (or a minor one below 1.0): those stay open for the owner. |
 | `worktrees`, `branchPrefix`, `staleClaimHours` | no | Defaults `.worktrees`, `agent/afk-`, `3`. |
 | `labels`, `renames` | no | Extra labels `{"name": {"color", "description"}}` and renames `{"old": "new"}`; `labels` deletes everything else. |
 | `guard` | no | Extra blocked commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. |

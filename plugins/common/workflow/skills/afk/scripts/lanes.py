@@ -158,6 +158,21 @@ def chore(path, author, config):
             or (author in DEPENDABOT and matches(config['dependencyFiles'], path)))
 
 
+BUMP = re.compile(r'\bfrom v?(\d+)\.(\d+)\S* to v?(\d+)\.(\d+)')
+
+
+def major_bumps(pr):
+    """Version changes in a Dependabot PR that cross a breaking boundary.
+
+    Reads the title and the body's own "Bumps"/"Updates" lines (not release
+    notes). Below 1.0 a minor change counts as breaking, as semver allows.
+    """
+    lines = [pr.get('title', '')] + [l for l in (pr.get('body') or '').splitlines()
+                                     if l.startswith(('Bumps ', 'Updates '))]
+    return [f'{a}.{b} → {c}.{d}' for line in lines for a, b, c, d in BUMP.findall(line)
+            if a != c or (a == '0' and b != d)]
+
+
 def automerge_refusal(pr, config):
     """Why a PR must wait for the owner, or None when it may auto-merge."""
     author = pr['author']['login']
@@ -167,6 +182,9 @@ def automerge_refusal(pr, config):
         return f"not a branch of this repository into {config['base']}"
     if author != config['owner'] and author not in DEPENDABOT:
         return f'author {author} is neither the owner nor Dependabot'
+    breaking = major_bumps(pr) if author in DEPENDABOT else []
+    if breaking:
+        return 'major version update, a migration to plan: ' + ', '.join(breaking)
     files = [f['path'] for f in pr['files']]
     if not files or len(files) >= 100:
         return 'file list is empty or truncated'
@@ -353,7 +371,7 @@ def cmd_park(repo, args):
 def cmd_automerge(repo, args):
     number = args[0]
     pr = gh_json('pr', 'view', number, '-R', repo.name, '--json',
-                 'state,isDraft,baseRefName,headRepositoryOwner,author,files')
+                 'state,isDraft,baseRefName,headRepositoryOwner,author,files,title,body')
     reason = automerge_refusal(pr, repo.config)
     if reason:
         print(f'#{number} waits for the owner: {reason}')
