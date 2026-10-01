@@ -39,7 +39,7 @@ Park with `LANES park <N> "<one question, the options, a recommendation>"` (push
 1. Commit, then `git push -u origin HEAD`.
 2. `gh pr create --title "<type>(<area>): <outcome>" --body-file <file>` following the project's PR template, with `Closes #<N>`; ready for review.
 3. `gh issue edit <N> --remove-label state:claimed`.
-4. `LANES automerge <pr>` unless the issue asks for owner review before merge. It enables auto-merge only for docs, tests and Dependabot minor or patch dependency changes and prints why anything else, including a major version update, waits.
+4. `LANES automerge <pr>` unless the issue asks for owner review before merge. It merges (or queues, updating a branch that fell behind) only docs, tests and Dependabot minor or patch dependency changes and prints why anything else, including a major version update, waits.
 
 **Exit gate:** a PR URL and its auto-merge verdict.
 

@@ -173,6 +173,11 @@ def major_bumps(pr):
             if a != c or (a == '0' and b != d)]
 
 
+def merge_step(merge_state):
+    """How an approved chore lands: 'merge' now, 'update' its branch first, or 'queue'."""
+    return {'CLEAN': 'merge', 'HAS_HOOKS': 'merge', 'BEHIND': 'update'}.get(merge_state, 'queue')
+
+
 def automerge_refusal(pr, config):
     """Why a PR must wait for the owner, or None when it may auto-merge."""
     author = pr['author']['login']
@@ -371,13 +376,22 @@ def cmd_park(repo, args):
 def cmd_automerge(repo, args):
     number = args[0]
     pr = gh_json('pr', 'view', number, '-R', repo.name, '--json',
-                 'state,isDraft,baseRefName,headRepositoryOwner,author,files,title,body')
+                 'state,isDraft,baseRefName,headRepositoryOwner,author,files,title,body,mergeStateStatus')
     reason = automerge_refusal(pr, repo.config)
     if reason:
         print(f'#{number} waits for the owner: {reason}')
         return
+    step = merge_step(pr['mergeStateStatus'])
+    if step == 'merge':
+        run('gh', 'pr', 'merge', number, '-R', repo.name, '--squash')
+        print(f'#{number} merged: green and up to date')
+        return
+    if step == 'update':
+        # Auto-merge never updates a branch that fell behind; do it so it can land.
+        run('gh', 'pr', 'update-branch', number, '-R', repo.name)
     run('gh', 'pr', 'merge', number, '-R', repo.name, '--auto', '--squash')
-    print(f'#{number} will squash-merge when required checks pass')
+    print(f'#{number} will squash-merge when required checks pass'
+          + (' (branch updated)' if step == 'update' else ''))
 
 
 PROJECT_QUERY = '''query($login:String!,$number:Int!){repositoryOwner(login:$login){
