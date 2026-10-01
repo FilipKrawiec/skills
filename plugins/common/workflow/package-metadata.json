@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-workflow",
-  "version": "9.17.0",
+  "version": "9.18.0",
   "description": "Workflow skills for TDD, review, VCS, issue lanes and unattended (AFK) delivery.",
   "author": {
     "name": "Filip Krawiec",
