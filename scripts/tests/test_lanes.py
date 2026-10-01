@@ -160,6 +160,16 @@ class BoardAndTidyTests(unittest.TestCase):
         self.assertEqual(lanes.priority(issue(labels=("priority:P1",))), "P1")
         self.assertIsNone(lanes.priority(issue(labels=())))
 
+    def test_tidy_touches_only_what_afk_runs_created(self) -> None:
+        root = Path("/repo")
+        afk_tree = root / CONFIG["worktrees"] / "afk-12"
+        self.assertTrue(lanes.afk_owned("agent/afk-12-drawer", afk_tree, root, CONFIG))
+        self.assertTrue(lanes.afk_owned("agent/afk-12-drawer", None, root, CONFIG))
+        self.assertFalse(lanes.afk_owned("feature/drawer", None, root, CONFIG))
+        self.assertFalse(lanes.afk_owned("", None, root, CONFIG))
+        self.assertFalse(lanes.afk_owned("agent/afk-12-drawer", root / CONFIG["worktrees"] / "session-a1", root, CONFIG))
+        self.assertFalse(lanes.afk_owned("agent/afk-12-drawer", Path("/elsewhere/afk-12"), root, CONFIG))
+
     def test_only_finished_clean_work_is_removed(self) -> None:
         self.assertEqual(lanes.tidy_action("MERGED", False), "remove")
         self.assertEqual(lanes.tidy_action("CLOSED", False), "remove")

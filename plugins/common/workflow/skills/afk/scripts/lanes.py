@@ -13,7 +13,7 @@ Usage: lanes.py next                 # next AFK issue; in flight, skipped, untri
        lanes.py automerge PR         # squash auto-merge PR on green checks if it is a chore
        lanes.py board [--apply]      # derive Project status and priority from issues
        lanes.py labels [--apply]     # sync labels with the lane set plus lanes.json
-       lanes.py tidy [--apply]       # remove worktrees and branches of finished PRs
+       lanes.py tidy [--apply]       # remove AFK runs' own worktrees and branches once finished
 Standard library only; needs git and an authenticated gh.
 """
 import json
@@ -177,6 +177,14 @@ def automerge_refusal(pr, config):
 
 
 # --- Board and tidy --------------------------------------------------------
+
+def afk_owned(branch, path, root, config):
+    """Whether an AFK run created this branch (and worktree, when a path is given)."""
+    if not branch or not branch.startswith(config['branchPrefix']):
+        return False
+    return path is None or (Path(path).parent == Path(root) / config['worktrees']
+                            and Path(path).name.startswith('afk-'))
+
 
 def status(issue, pr_open):
     labels = names(issue)
@@ -453,7 +461,7 @@ def worktrees(root):
 
 def cmd_tidy(repo, args):
     apply = '--apply' in args
-    root, here, base = repo.main_checkout(), Path.cwd().resolve(), repo.config['base']
+    root, here = repo.main_checkout(), Path.cwd().resolve()
     prs = {}
     for pr in gh_json('pr', 'list', '-R', repo.name, '-s', 'all', '-L', '1000',
                       '--json', 'headRefName,state'):
@@ -463,6 +471,9 @@ def cmd_tidy(repo, args):
     kept = set()
     for wt in worktrees(root)[1:]:
         path, branch = Path(wt['worktree']), wt.get('branch', '').replace('refs/heads/', '')
+        # Only AFK runs' own worktrees: other sessions may still be working in theirs.
+        if not afk_owned(branch, path, root, repo.config):
+            continue
         if wt.get('prunable') or not path.exists():
             print(f'prune missing worktree {path}')
             if apply:
@@ -472,25 +483,21 @@ def cmd_tidy(repo, args):
             kept.add(branch)
             continue
         dirty = bool(run('git', 'status', '--porcelain', cwd=path).strip())
-        if branch:
-            action = tidy_action(prs.get(branch), dirty)
-        else:
-            merged = subprocess.run(['git', 'merge-base', '--is-ancestor', 'HEAD', f'origin/{base}'],
-                                    cwd=path).returncode == 0
-            action = tidy_action('MERGED' if merged else None, dirty)
-        print(f'{action}: worktree {path} ({branch or "detached"})')
+        action = tidy_action(prs.get(branch), dirty)
+        print(f'{action}: worktree {path} ({branch})')
         if action == 'remove' and apply:
             run('git', 'worktree', 'remove', str(path), cwd=root)
         elif action != 'remove':
             kept.add(branch)
     for branch in run('git', 'for-each-ref', '--format=%(refname:short)', 'refs/heads', cwd=root).split():
-        if branch != base and branch not in kept and tidy_action(prs.get(branch), False) == 'remove':
+        if (afk_owned(branch, None, root, repo.config) and branch not in kept
+                and tidy_action(prs.get(branch), False) == 'remove'):
             print(f'remove: branch {branch}')
             if apply:
                 run('git', 'branch', '-D', branch, cwd=root)
     remote = run('git', 'for-each-ref', '--format=%(refname:lstrip=3)', 'refs/remotes/origin', cwd=root)
     for branch in remote.split():
-        if branch not in (base, 'HEAD') and prs.get(branch) in ('MERGED', 'CLOSED'):
+        if afk_owned(branch, None, root, repo.config) and prs.get(branch) in ('MERGED', 'CLOSED'):
             print(f'remove: origin/{branch}')
             if apply:
                 run('git', 'push', '--quiet', 'origin', '--delete', branch, cwd=root)
