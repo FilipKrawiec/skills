@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -28,9 +27,10 @@ ALLOWED = [
     "gh pr create --fill", "gh pr view 12 --json files", "gh issue edit 5 --add-label lane:proposed",
     "gh issue edit 5 --remove-label lane:afk,state:claimed --add-label lane:owner",
     "gh api -X DELETE repos/o/r/issues/5/labels/lane:afk", "gh release view v1.2.0", "gh api repos/o/r",
-    "gh api -X PATCH repos/o/r/issues/5 -f state=closed", "git push -u origin claude/afk-5-x",
+    "gh api -X PATCH repos/o/r/issues/5 -f state=closed", "git push -u origin agent/afk-5-x",
     "python3 lanes.py automerge 12",
 ]
+MERGE = "gh pr " + "merge 1"
 MARKS_AFK = ["gh issue edit 5 --add-label lane:afk", 'gh issue edit 5 --add-label "type:chore,lane:afk"',
              "gh issue create -t x --label lane:afk", "gh issue create -t x -l lane:afk",
              'gh api repos/o/r/issues/5/labels -f "labels[]=lane:afk"']
@@ -72,10 +72,8 @@ class GuardRuleTests(unittest.TestCase):
 
 class GuardHookTests(unittest.TestCase):
     def call(self, project, command):
-        event = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
-        env = {**os.environ, "CLAUDE_PROJECT_DIR": project}
-        return subprocess.run([sys.executable, str(GUARD)], input=event, text=True,
-                              capture_output=True, env=env)
+        event = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": project})
+        return subprocess.run([sys.executable, str(GUARD)], input=event, text=True, capture_output=True)
 
     def test_hook_is_inactive_without_lanes_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -92,8 +90,18 @@ class GuardHookTests(unittest.TestCase):
             self.assertIn("CI deploys.", self.call(tmp, "just deploy web").stderr)
             self.assertEqual(self.call(tmp, "git status").returncode, 0)
 
+    def test_hook_finds_the_repository_from_a_subdirectory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            (Path(tmp) / ".github").mkdir()
+            (Path(tmp) / ".github/lanes.json").write_text(json.dumps({"repo": "o/r"}))
+            (Path(tmp) / "src").mkdir()
+            self.assertEqual(self.call(str(Path(tmp) / "src"), MERGE).returncode, 2)
+
     def test_plugin_wires_the_guard_to_every_shell_command(self) -> None:
-        hooks = json.loads((ROOT / "plugins/common/workflow/hooks/hooks.json").read_text())
+        package = ROOT / "plugins/common/workflow"
+        manifest = json.loads((package / ".claude-plugin/plugin.json").read_text())
+        hooks = json.loads((package / manifest["hooks"]).read_text())
         entry = hooks["hooks"]["PreToolUse"][0]
         self.assertEqual(entry["matcher"], "Bash")
         self.assertIn("skills/afk/scripts/guard.py", entry["hooks"][0]["command"])

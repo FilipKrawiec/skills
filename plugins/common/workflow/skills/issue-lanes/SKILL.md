@@ -1,7 +1,7 @@
 ---
 name: issue-lanes
 description: Use when creating a GitHub issue, sorting or labelling issues into delivery lanes, deciding which issues an agent may deliver unattended (AFK), or reconciling open issues against work already merged.
-allowed-tools: Read AskUserQuestion Bash(gh:*,git:*,python3:*)
+allowed-tools: Read Bash(gh:*,git:*,python3:*)
 ---
 
 # Issue Lanes

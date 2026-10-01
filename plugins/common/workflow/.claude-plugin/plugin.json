@@ -2,5 +2,6 @@
   "name": "filipkrawiec-workflow",
   "description": "Workflow skills for TDD, review, VCS, issue lanes and unattended (AFK) delivery.",
   "version": "9.15.0",
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "hooks": "./.claude-plugin/hooks.json"
 }

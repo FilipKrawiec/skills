@@ -42,11 +42,11 @@ DEPENDABOT = {'app/dependabot', 'dependabot[bot]'}
 # Lists in lanes.json extend these; scalars replace them.
 DEFAULTS = {
     'base': 'main',
-    'worktrees': '.claude/worktrees',
-    'branchPrefix': 'claude/afk-',
+    'worktrees': '.worktrees',
+    'branchPrefix': 'agent/afk-',
     'staleClaimHours': 3,
-    'protected': [r'^\.(github|claude|agents|codex)/', r'(^|/)(AGENTS|CLAUDE)\.md$',
-                  r'(^|/)([Jj]ustfile|Makefile)$'],
+    # Top-level dot-directories hold automation, agent and editor configuration.
+    'protected': [r'^\.[^/]+/', r'(^|/)AGENTS\.md$', r'(^|/)([Jj]ustfile|Makefile)$'],
     'alwaysInScope': [],
     'chores': [r'^docs/', r'\.md$', r'(^|/)tests?/'],
     'dependencyFiles': [r'(^|/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|pubspec\.(yaml|lock)'

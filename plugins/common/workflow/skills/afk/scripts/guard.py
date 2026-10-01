@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse guard for issue lanes: agents build and propose; the owner ships.
+"""Pre-tool-use guard for issue lanes: agents build and propose; the owner ships.
 
 Active only in projects with `.github/lanes.json`. Blocks shell commands that
 merge PRs, publish releases, dispatch workflows, or change secrets, variables
@@ -7,15 +7,16 @@ or repository settings, plus the project's own `guard` rules from lanes.json.
 Chore PRs merge through `lanes.py automerge`. `lane:afk` may be added only in a
 session the owner is in; scheduled runs (and unreadable transcripts) never add it.
 
-Hook input: the Claude Code PreToolUse event as JSON on stdin. Exit 2 blocks.
+Hook input: the host's pre-tool-use event as JSON on stdin (`tool_name`,
+`tool_input.command`, `cwd`, `transcript_path`). Exit 2 blocks.
 """
 import json
-import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
-OWNER_RUNS_IT = 'The owner runs this: ask them, or they type it with a leading `!`.'
+OWNER_RUNS_IT = 'The owner runs this themselves.'
 
 RULES = [
     (r'\bgh\s+pr\s+merge\b', 'Merging is the owner\'s; chore PRs use `lanes.py automerge`.'),
@@ -59,6 +60,16 @@ def is_unattended(transcript_path):
     return True
 
 
+def project_root(cwd):
+    """The repository containing the session's working directory, or the directory itself."""
+    try:
+        top = subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=cwd,
+                             capture_output=True, text=True, check=True).stdout.strip()
+        return Path(top)
+    except (OSError, TypeError, ValueError, subprocess.CalledProcessError):
+        return Path(cwd) if cwd else None
+
+
 def project_rules(project_dir):
     """The project's extra rules, or None when the project hasn't opted in."""
     try:
@@ -72,7 +83,7 @@ def main():
     event = json.load(sys.stdin)
     if event.get('tool_name') != 'Bash':
         return 0
-    extra = project_rules(os.environ.get('CLAUDE_PROJECT_DIR') or event.get('cwd'))
+    extra = project_rules(project_root(event.get('cwd')))
     if extra is None:
         return 0
     reason = refusal(event.get('tool_input', {}).get('command', ''),

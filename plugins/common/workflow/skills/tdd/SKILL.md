@@ -10,7 +10,7 @@ Execute the Red-Green-Refactor loop in strict linear sequence for each observabl
 
 ## Project Precedence
 
-Project instructions (`AGENTS.md`, `CLAUDE.md`, project skills, `justfile`) take precedence over this skill and its references for commands, test layout, runners, and coverage policy. Before Phase 1, identify the project's targeted fast test command (e.g. `just quick <target>`) and its completion gate (e.g. `just verify`); use them in every phase.
+Project instructions (`AGENTS.md` or the host's equivalent, project skills, `justfile`) take precedence over this skill and its references for commands, test layout, runners, and coverage policy. Before Phase 1, identify the project's targeted fast test command (e.g. `just quick <target>`) and its completion gate (e.g. `just verify`); use them in every phase.
 
 ## Execution Phases
 

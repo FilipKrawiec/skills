@@ -50,7 +50,8 @@ class ConfigTests(unittest.TestCase):
         custom = config(base="trunk", chores=["^guide/"])
         self.assertEqual(custom["base"], "trunk")
         self.assertEqual(custom["owner"], OWNER)
-        self.assertIn(r"^\.(github|claude|agents|codex)/", custom["protected"])
+        self.assertIn(r"^\.[^/]+/", custom["protected"])
+        self.assertEqual((custom["worktrees"], custom["branchPrefix"]), (".worktrees", "agent/afk-"))
         self.assertIn("^infra/", custom["protected"])
         self.assertIn("^guide/", custom["chores"])
         self.assertIn(r"^docs/", custom["chores"])
@@ -129,7 +130,8 @@ class AutomergeTests(unittest.TestCase):
 
     def test_product_automation_and_instructions_wait_for_the_owner(self) -> None:
         for path in ["src/main.py", ".github/workflows/ci.yml", ".github/README.md", "AGENTS.md",
-                     ".agents/skills/x/SKILL.md", "tools/gate.py", "infra/README.md", "justfile"]:
+                     ".agents/skills/x/SKILL.md", ".vscode/settings.json", "tools/gate.py",
+                     "infra/README.md", "justfile"]:
             with self.subTest(path=path):
                 self.assertIsNotNone(lanes.automerge_refusal(pr([path]), CONFIG))
 
