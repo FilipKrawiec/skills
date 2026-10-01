@@ -27,18 +27,20 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 AFK, PROPOSED, OWNER_LANE, CLAIMED = 'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed'
-STARTED = 'state:started'
+STARTED, PARKED, OWNER_REVIEW = 'state:started', 'state:parked', 'review:owner'
 EPIC = 'type:epic'
 PRIORITIES = ('priority:P0', 'priority:P1', 'priority:P2')
-STATUSES = ('Triage', 'Proposed', 'Owner', 'AFK', 'Running', 'Review', 'Done')
-STATUS_COLORS = {'Triage': 'GRAY', 'Proposed': 'PURPLE', 'Owner': 'ORANGE', 'AFK': 'BLUE',
-                 'Running': 'YELLOW', 'Review': 'PINK', 'Done': 'GREEN'}
+STATUSES = ('Triage', 'Backlog', 'Decide', 'Running', 'Agent review', 'Review', 'Done')
+STATUS_COLORS = {'Triage': 'GRAY', 'Backlog': 'BLUE', 'Decide': 'ORANGE', 'Running': 'YELLOW',
+                 'Agent review': 'PURPLE', 'Review': 'PINK', 'Done': 'GREEN'}
 LANE_LABELS = {
     AFK: ('1d76db', 'Owner-approved: an agent may deliver this unattended'),
     PROPOSED: ('8250df', 'An agent recommends AFK; the owner decides'),
     OWNER_LANE: ('d93f0b', 'Needs the owner: a decision, credentials, settings or a device'),
     CLAIMED: ('fbca04', 'An AFK run is working on it now'),
     STARTED: ('fef2c0', 'A person-led session is working on it now'),
+    PARKED: ('d93f0b', 'An AFK run handed it back with a question for the owner'),
+    OWNER_REVIEW: ('e99695', 'PR: agent review is done; it waits for the owner'),
     EPIC: ('3e4b9e', 'Umbrella outcome with sub-issues'),
 }
 DEPENDABOT = {'app/dependabot', 'dependabot[bot]'}
@@ -57,6 +59,8 @@ DEFAULTS = {
                         r'|requirements[^/]*\.txt|poetry\.lock|uv\.lock|go\.(mod|sum)|Cargo\.(toml|lock))$'],
     'labels': {},
     'renames': {},
+    # True when an automated reviewer reviews PRs first and hands them over with review:owner.
+    'agentReview': False,
 }
 
 PACKET = re.compile(r'```(?:scope|factory)\s*(\{.*?\})\s*```', re.S)
@@ -215,17 +219,21 @@ def afk_owned(branch, path, root, config):
                             and Path(path).name.startswith('afk-'))
 
 
-def status(issue, pr_open):
+def status(issue, pr_labels, agent_review=False):
+    """Board column from the issue's lifecycle; lanes stay visible as labels.
+
+    pr_labels is None without an open PR, else the labels of its open PRs."""
     labels = names(issue)
     if issue['state'] == 'CLOSED':
         return 'Done'
-    if pr_open:
-        return 'Review'
+    if pr_labels is not None:
+        return 'Agent review' if agent_review and OWNER_REVIEW not in pr_labels else 'Review'
     if labels & {CLAIMED, STARTED}:
         return 'Running'
-    for label, name in ((AFK, 'AFK'), (PROPOSED, 'Proposed'), (OWNER_LANE, 'Owner'), (EPIC, 'Owner')):
-        if label in labels:
-            return name
+    if PROPOSED in labels or PARKED in labels:
+        return 'Decide'
+    if labels & {AFK, OWNER_LANE, EPIC}:
+        return 'Backlog'
     return 'Triage'
 
 
@@ -297,9 +305,14 @@ class Repo:
                        '--json', 'number,labels,state,url,stateReason')
 
     def issues_with_open_prs(self):
+        """Issue number → labels of the open PRs that close it."""
         prs = gh_json('pr', 'list', '-R', self.name, '-s', 'open', '-L', '200',
-                      '--json', 'closingIssuesReferences')
-        return {ref['number'] for pr in prs for ref in pr['closingIssuesReferences']}
+                      '--json', 'closingIssuesReferences,labels')
+        linked = {}
+        for pr in prs:
+            for ref in pr['closingIssuesReferences']:
+                linked.setdefault(ref['number'], set()).update(names(pr))
+        return linked
 
     def claimed_at(self, number):
         times = run('gh', 'api', f'repos/{self.name}/issues/{number}/events', '--paginate', '--jq',
@@ -350,7 +363,8 @@ def cmd_claim(repo, args):
     worktree = root / repo.config['worktrees'] / f'afk-{number}'
     run('git', 'fetch', '--quiet', 'origin', base, cwd=root)
     run('git', 'worktree', 'add', '--quiet', '-b', branch, str(worktree), f'origin/{base}', cwd=root)
-    run('gh', 'issue', 'edit', str(number), '-R', repo.name, '--add-label', CLAIMED)
+    run('gh', 'issue', 'edit', str(number), '-R', repo.name, '--add-label', CLAIMED,
+        '--remove-label', PARKED)
     run('gh', 'issue', 'comment', str(number), '-R', repo.name, '--body',
         f'Claimed by an AFK run on `{socket.gethostname()}`. Branch `{branch}`.')
     refresh_board(repo)
@@ -392,7 +406,7 @@ def cmd_park(repo, args):
     if not message:
         sys.exit('park needs the question for the owner.')
     run('gh', 'issue', 'edit', number, '-R', repo.name, '--remove-label', f'{AFK},{CLAIMED}',
-        '--add-label', OWNER_LANE)
+        '--add-label', f'{OWNER_LANE},{PARKED}')
     run('gh', 'issue', 'comment', number, '-R', repo.name, '--body',
         f'**Parked for the owner by an AFK run.**\n\n{message}\n\n'
         f'Answer here and re-apply `{AFK}` to hand it back.')
@@ -468,7 +482,8 @@ def cmd_board(repo, args):
     changes = 0
     for issue in repo.open_issues() + closed:
         item = on_board.get(issue['url'])
-        want, want_priority = status(issue, issue['number'] in with_pr), priority(issue)
+        want = status(issue, with_pr.get(issue['number']), repo.config['agentReview'])
+        want_priority = priority(issue)
         # Without a priority label, a priority set on the board stays.
         if item and item.get('status') == want and want_priority in (None, item.get('priority')):
             continue

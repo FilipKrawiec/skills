@@ -168,18 +168,27 @@ class AutomergeTests(unittest.TestCase):
 
 
 class BoardAndTidyTests(unittest.TestCase):
-    def test_status_is_derived_from_state_pr_and_lane(self) -> None:
+    def test_status_follows_the_lifecycle_and_lanes_stay_labels(self) -> None:
         expected = [
-            (issue(state="CLOSED"), True, "Done"), (issue(), True, "Review"),
-            (issue(labels=("lane:afk", "state:claimed")), False, "Running"), (issue(), False, "AFK"),
-            (issue(labels=("lane:owner", "state:started")), False, "Running"),
-            (issue(labels=("lane:proposed",)), False, "Proposed"),
-            (issue(labels=("lane:owner",)), False, "Owner"), (issue(labels=("type:epic",)), False, "Owner"),
-            (issue(labels=()), False, "Triage"),
+            (issue(state="CLOSED"), {"x"}, "Done"),
+            (issue(), set(), "Review"),
+            (issue(labels=("lane:afk", "state:claimed")), None, "Running"),
+            (issue(labels=("lane:owner", "state:started")), None, "Running"),
+            (issue(), None, "Backlog"), (issue(labels=("lane:owner",)), None, "Backlog"),
+            (issue(labels=("type:epic",)), None, "Backlog"),
+            (issue(labels=("lane:proposed",)), None, "Decide"),
+            (issue(labels=("lane:owner", "state:parked")), None, "Decide"),
+            (issue(labels=()), None, "Triage"),
         ]
-        for candidate, pr_open, want in expected:
-            self.assertEqual(lanes.status(candidate, pr_open), want)
-            self.assertIn(want, lanes.STATUSES)
+        for candidate, pr_labels, want in expected:
+            with self.subTest(want=want):
+                self.assertEqual(lanes.status(candidate, pr_labels), want)
+                self.assertIn(want, lanes.STATUSES)
+
+    def test_agent_review_holds_prs_until_handed_to_the_owner(self) -> None:
+        self.assertEqual(lanes.status(issue(), set(), agent_review=True), "Agent review")
+        self.assertEqual(lanes.status(issue(), {"review:owner"}, agent_review=True), "Review")
+        self.assertEqual(lanes.status(issue(), {"review:owner"}), "Review")
 
     def test_only_afk_claims_hold_the_one_at_a_time_queue(self) -> None:
         issues = [issue(3, ("lane:owner", "state:started")), issue(4, ("lane:afk",))]
@@ -220,7 +229,8 @@ class LabelTests(unittest.TestCase):
         self.assertIn(("rename", "bug"), steps)
         self.assertNotIn(("create", "type:bug"), steps)
         self.assertIn(("delete", "wontfix"), steps)
-        for name in (lanes.AFK, lanes.PROPOSED, lanes.OWNER_LANE, lanes.CLAIMED, lanes.STARTED, lanes.EPIC):
+        for name in (lanes.AFK, lanes.PROPOSED, lanes.OWNER_LANE, lanes.CLAIMED, lanes.STARTED, lanes.PARKED,
+                     lanes.OWNER_REVIEW, lanes.EPIC):
             self.assertIn(("create", name), steps)
 
 

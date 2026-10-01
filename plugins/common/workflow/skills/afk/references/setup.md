@@ -15,6 +15,7 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `chores` | no | Regexes of paths that auto-merge on green checks (adds to `^docs/`, `\.md$`, test directories). |
 | `dependencyFiles` | no | Regexes of manifests and lockfiles that auto-merge when Dependabot changed them, unless the PR crosses a major version (or a minor one below 1.0): those stay open for the owner. |
 | `worktrees`, `branchPrefix`, `staleClaimHours` | no | Defaults `.worktrees`, `agent/afk-`, `3`. |
+| `agentReview` | no | `true` when an automated reviewer reviews PRs before the owner; open PRs then show as Agent review until the reviewer adds `review:owner`. Default `false`. |
 | `labels`, `renames` | no | Extra labels `{"name": {"color", "description"}}` and renames `{"old": "new"}`; `labels` deletes everything else. |
 | `guard` | no | Extra blocked commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. |
 
@@ -35,10 +36,24 @@ Minimal example:
 | Step | Command or setting |
 | --- | --- |
 | Labels | `lanes.py labels`, review, then `--apply` (creates `lane:*`, `state:claimed`, `state:started`, `type:epic` plus yours). |
-| Board | Optional; `lanes.py board --apply` rewrites the Status options to Triage, Proposed, Owner, AFK, Running, Review, Done. |
+| Board | Optional; `lanes.py board --apply` rewrites the Status options to the lifecycle below. Lanes stay visible as labels on each card. |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
 | Rules | Add to the project's agent rules: "Before creating an issue, ask the owner whether it is AFK", "Starting on an issue outside an AFK run: `lanes.py start N`; stopping without a PR: `lanes.py release N`" and a link to the project's workflow page. |
+
+## Board lifecycle
+
+| Status | When |
+| --- | --- |
+| Triage | No lane yet. |
+| Backlog | `lane:afk`, `lane:owner` or an epic, not started. |
+| Decide | Waits on an owner decision: `lane:proposed`, or `state:parked` after an AFK run handed it back. |
+| Running | `state:claimed` (an AFK run) or `state:started` (a person-led session), no PR yet. |
+| Agent review | An open PR closes it and, with `agentReview`, the automated reviewer has not handed it over. |
+| Review | An open PR waits for the owner: `review:owner` on the PR, or any open PR without `agentReview`. |
+| Done | Closed. |
+
+With `agentReview`, the reviewer adds `review:owner` to a PR when it hands it to the owner (passed but needs the owner, or out of review rounds) and removes it when it asks for fixes again.
 
 ## Unattended runs
 
