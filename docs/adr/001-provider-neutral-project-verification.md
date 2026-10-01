@@ -15,5 +15,5 @@ AFK grants bounded autonomy across one complete slice. Executors may commit veri
 ## Consequences
 
 - `scripts/project-verify.py verify` is the executable deterministic gate reading `AGENTS.md` frontmatter lifecycle tasks.
-- The active portable plugin is `plugins/common/sdlc/`; host adapters and executor control paths remain outside it.
+- The SDLC orchestration package (`filipkrawiec-sdlc`) lives in FilipKrawiec/devcontainer; this repository's `afk` skill is the unattended executor for owner-approved (`lane:afk`) issues, and host adapters remain outside the common packages.
 - The retired Autonomous SDLC implementation and interim baseline records were removed during release-candidate cleanup; Git history retains them if needed.

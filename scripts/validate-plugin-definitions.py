@@ -30,6 +30,13 @@ ALLOWED_FRONTMATTER_KEYS = {
 }
 MAX_REFERENCE_LINES = 300
 
+# Skills stay provider-neutral: they say "agent" or "AI", never a vendor or product.
+# Host manifests (.claude-plugin/, .codex-plugin/) and agent overlays are exempt.
+PROVIDER_TERMS_RE = re.compile(
+    r"\b(claude|anthropic|codex|openai|chatgpt|gpt-?\d|gemini|antigravity|copilot|cursor)\b",
+    re.IGNORECASE,
+)
+
 # Canonical cross-repo skills available in the environment
 KNOWN_CORE_SKILLS = {
     "ddd",
@@ -179,6 +186,12 @@ def validate_skill_spec(skill_dir: Path) -> None:
 
     validate_markdown_links(skill_file)
 
+    for path in sorted(skill_dir.rglob("*")):
+        if path.is_file() and path.suffix in {".md", ".py", ".json", ".yaml", ".yml", ".sh"}:
+            match = PROVIDER_TERMS_RE.search(path.read_text(encoding="utf-8"))
+            if match:
+                fail(f"{rel(path)} names a provider ('{match.group(0)}'); say 'agent' or 'AI' instead")
+
     legacy_resources = skill_dir / "resources"
     if legacy_resources.exists():
         fail(f"{rel(legacy_resources)} must be renamed to assets/")
@@ -269,6 +282,9 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
             fail(f"{rel(manifest_path)} must match package name and version")
         if manifest.get("description") != metadata["description"] or manifest.get("skills") != "./skills/":
             fail(f"{rel(manifest_path)} must match package description and skills path")
+        hooks = manifest.get("hooks")
+        if hooks is not None and not (package_root / hooks).is_file():
+            fail(f"{rel(manifest_path)} references missing hooks file {hooks}")
 
     package_references = package_root / "references"
     if package_references.exists():
@@ -455,6 +471,9 @@ def sync_manifests(root: Path = ROOT) -> None:
             "version": release_version,
             "skills": "./skills/",
         }
+        # Host-specific hook wiring stays inside the host's manifest directory.
+        if (claude_dir / "hooks.json").is_file():
+            claude_data["hooks"] = "./.claude-plugin/hooks.json"
         claude_json.write_text(json.dumps(claude_data, indent=2) + "\n", encoding="utf-8")
         synced_files.append(claude_json)
 

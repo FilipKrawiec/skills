@@ -11,7 +11,7 @@ Challenge proposed changes against active project context and architectural reco
 ## Workflow Phases
 
 ### Phase 1: Context Discovery
-1. Inspect the sources that exist in this project: task-relevant code, agent rules (`AGENTS.md`, `CLAUDE.md`), project skills, ADRs, and the glossary. Stop reading once the decision frontier is clear.
+1. Inspect the sources that exist in this project: task-relevant code, agent rules (`AGENTS.md` or the host's equivalent), project skills, ADRs, and the glossary. Stop reading once the decision frontier is clear.
 2. Record verified facts with their direct file sources.
 *Exit Gate*: Verified facts are separated from open user decisions.
 

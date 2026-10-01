@@ -50,7 +50,8 @@ Select the optimal path across the repository's Dual-Speed Flow Topology based o
 | **Code Review / PR Diff Audit** | Tactical Fast Loop | `review` |
 | **Commit / Branch / Rebase / Push** | Tactical Fast Loop | `vcs` |
 | **Compact / Transfer Agent Context** | Context Handoff | `handoff` |
-| **Owner-approved GitHub queue on a local worker** | Bounded Local Factory | `issue-factory` |
+| **Create / Sort Issues, Decide What Runs Unattended** | Issue Lanes | `issue-lanes` |
+| **Work the Approved Queue While the Owner Is Away** | Unattended Lane | `afk` ➔ `tdd` ➔ `vcs` |
 | **Exploratory Prototyping / Feasibility** | Exploratory Spike | `spike` ➔ `specify` ➔ `tdd` |
 | **Deep Technical / API Documentation Research** | Technical Discovery | `research` |
 | **New Business Outcome / B2B Epics** | Enterprise Delivery Loop | `define` ➔ `specify` ➔ `deliver` |
@@ -60,10 +61,12 @@ Select the optimal path across the repository's Dual-Speed Flow Topology based o
 | **Strategic Codebase Health Audit** | Authoring Suite | `swot` |
 | **Recover from Confused Agent State** | Recovery Workflow | `rephrase` |
 
+`define`, `specify`, `deliver` and `init-project` ship in the `filipkrawiec-sdlc` package of [FilipKrawiec/devcontainer](https://github.com/FilipKrawiec/devcontainer); route to them when it is installed.
+
 ## Output Envelope
 
 ```text
-➡️ Recommended Flow: **[Fast Tactical Loop | Enterprise Delivery Loop | Architecture Doctrine]**
+➡️ Recommended Flow: **[Fast Tactical Loop | Enterprise Delivery Loop | Issue Lanes | Unattended Lane | Architecture Doctrine]**
 ➡️ Entry Skill: `skill-name`
 ➡️ Next Step: <1-sentence actionable command or question>
 ```

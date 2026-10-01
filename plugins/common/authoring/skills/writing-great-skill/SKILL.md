@@ -75,6 +75,10 @@ Use clean standard ASCII / Unicode box-drawing diagrams and structured Markdown 
 - Keep each meaning in one source of truth.
 - Evaluate instruction cost, shared-contract dependency cost, and observed run cost separately; static contract size alone is not a skill-quality failure.
 
+## Provider-Neutral Wording
+
+Name the actor generically: "agent", "AI" or "host". Product and vendor names belong only in host manifest directories and agent overlays (`plugins/<agent>/`); the validator rejects them in skill content.
+
 ## Naming Conventions
 
 - **Skill Directory**: Must use `lowercase-kebab-case` (e.g., `ddd`).

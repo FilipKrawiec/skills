@@ -15,6 +15,8 @@ active_skills:
   - handoff
   - research
   - spike
+  - issue-lanes
+  - afk
 
 build_tools:
   just:

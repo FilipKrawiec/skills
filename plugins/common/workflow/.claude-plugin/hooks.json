@@ -1,0 +1,16 @@
+{
+  "description": "Issue-lanes guard: in projects with .github/lanes.json, blocks agent merges, releases, settings changes and unattended lane:afk.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/afk/scripts/guard.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

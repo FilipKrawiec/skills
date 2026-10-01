@@ -80,6 +80,17 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
                 v.parse_skill_frontmatter(unclosed_fm)
             self.assertIn("must close YAML frontmatter", str(ctx.exception))
 
+    def test_validate_skill_spec_rejects_provider_names(self) -> None:
+        frontmatter = "---\nname: neutral\ndescription: Use when testing.\nallowed-tools: Read\n---\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_dir = Path(tmp) / "neutral"
+            (skill_dir / "scripts").mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(frontmatter + "Ask the agent to run it.\n")
+            v.validate_skill_spec(skill_dir)
+            (skill_dir / "scripts" / "run.py").write_text("# Runs inside Claude Code\n")
+            with self.assertRaises(v.ValidationError):
+                v.validate_skill_spec(skill_dir)
+
     def test_validate_skill_spec_enforces_use_when_and_length_limits(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

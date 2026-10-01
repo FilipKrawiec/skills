@@ -73,7 +73,7 @@ plugins/
 
 ## 4. Delivery Orchestration & Task Packets
 
-Delivery is managed through the provider-neutral `deliver` workflow, which guides changes through a bounded 7-stage lifecycle.
+Attended, multi-slice delivery uses the `deliver` workflow of the `filipkrawiec-sdlc` package (FilipKrawiec/devcontainer), which guides changes through a bounded 7-stage lifecycle. Unattended, single-issue delivery uses issue lanes (next section).
 
 ```
    ┌──────────┐      ┌───────────────┐      ┌──────────┐      ┌────────────┐
@@ -101,6 +101,18 @@ Whenever a new worktree is created or new work is started, the original main bra
 * Primary checkouts remain protected from unverified edits.
 * Multiple non-overlapping tasks can run concurrently in total isolation.
 * Unintended side effects are caught at packet boundaries.
+
+### Issue Lanes & AFK Delivery
+
+`issue-lanes` and `afk` turn a repository's GitHub Issues into one queue that runs while the owner is away. A repository opts in with `.github/lanes.json`.
+
+| Lane | Meaning | Applied by |
+| :--- | :--- | :--- |
+| `lane:afk` | Deliver unattended | The owner, or an agent the owner just said yes to |
+| `lane:proposed` | Agent recommends AFK | `issue-lanes` triage |
+| `lane:owner` | Needs a decision, credentials, settings or a device | Anyone |
+
+An `afk` run delivers at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) in its own worktree, checks its diff against the packet, and opens a PR, or parks the issue back to `lane:owner` with one question. Docs, tests and Dependabot dependency PRs auto-merge on green checks; everything else waits for the owner. The workflow plugin's pre-tool-use guard (`skills/afk/scripts/guard.py`, on hosts that load plugin hooks) blocks agent merges, releases, workflow dispatch and settings changes, and blocks `lane:afk` in scheduled runs.
 
 ---
 

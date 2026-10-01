@@ -1,7 +1,7 @@
 {
   "name": "filipkrawiec-workflow",
   "version": "9.15.0",
-  "description": "Workflow skills for provider-neutral delivery orchestration, TDD, VCS, and review critiques.",
+  "description": "Workflow skills for TDD, review, VCS, issue lanes and unattended (AFK) delivery.",
   "author": {
     "name": "Filip Krawiec",
     "email": "contact@filipkrawiec.com",
@@ -15,6 +15,8 @@
     "workflow",
     "tdd",
     "vcs",
-    "review"
+    "review",
+    "issues",
+    "afk"
   ]
 }
