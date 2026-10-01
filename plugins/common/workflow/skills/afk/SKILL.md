@@ -47,7 +47,7 @@ Park with `LANES park <N> "<one question, the options, a recommendation>"` (push
 
 Run when no issue was delivered this run, each step once:
 
-1. `LANES tidy --apply`: removes worktrees and branches of merged or closed PRs; dirty ones and open PRs stay.
+1. `LANES tidy --apply`: removes AFK runs' own `afk-<N>` worktrees and branches once their PR is merged or closed; other sessions' checkouts, dirty ones and open PRs stay.
 2. For each open Dependabot PR: `LANES automerge <pr>`; when its checks fail, comment the failing excerpt.
 3. Invoke `issue-lanes` for the issues `LANES next` lists as untriaged.
 4. `LANES board --apply` when lanes.json names a project.
