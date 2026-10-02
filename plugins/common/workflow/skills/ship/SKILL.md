@@ -14,7 +14,7 @@ Merge is not the end of delivery. Watch the base branch after merges, fix what i
 
 ## 1. Observe
 
-When the project has a board, tidy the cards that left 05 Review: an issue closed as completed moves to 06 Ship, one closed as not planned to Done, and an open issue whose PR closed unmerged back to 02 Spec (release its claim). Then read the base branch's CI:
+When the project has a board, move back to Todo each open issue in Review whose PR closed unmerged and that has no other open PR, and release its claim; the board moves closed issues to Done itself. Then read the base branch's CI:
 
 ```bash
 git fetch origin <base>
@@ -36,7 +36,7 @@ When an AFK merge broke the base branch and `gh pr list --head <branchPrefix>rev
 
 1. `git worktree add <root>/.worktrees/afk-revert-<short-sha> -b <branchPrefix>revert-<short-sha> origin/<base>` (`<root>` as in board.md); in it run `git revert --no-edit <sha>`, then pass the project's full verification gate (its own command, e.g. `python3 scripts/project-verify.py verify` or `just verify`).
 2. Push and open a PR titled `revert: <subject>` whose body names the failing checks.
-3. Reopen the issue the reverted PR closed (`gh issue reopen`) and park it with the failing checks, the revert PR and a recommendation for the retry: it returns to 03 Plan once the owner re-applies `lane:afk`.
+3. Reopen the issue the reverted PR closed (`gh issue reopen`) and park it with the failing checks, the revert PR and a recommendation for the retry: it is claimed again once the owner re-applies `lane:afk`.
 
 Any other red base branch belongs to the owner: report the failing checks and the culprit or range. A fix forward is new work: name it as a follow-up for the owner.
 
@@ -44,9 +44,9 @@ Any other red base branch belongs to the owner: report the failing checks and th
 
 ## 3. Confirm
 
-The head is green, so every merge up to it shipped: move each card in 06 Ship to 07 Improve.
+The head is green, so every merge up to it shipped. For each recent merge (board.md's Phases) whose merge commit is in the head's history (`git merge-base --is-ancestor <mergeCommit> <head>`), comment on each issue it closed that has no `## Shipped` comment yet: `## Shipped`, then the head commit and its CI run link.
 
-**Exit gate:** the issues moved, or none.
+**Exit gate:** the issues confirmed, or none.
 
 ## Output
 

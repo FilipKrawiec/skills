@@ -8,13 +8,11 @@ allowed-tools: Skill Read Bash(gh:*,git:*)
 
 Close the cycle by making the system learn: remove friction at its source instead of relying on anyone's memory. Lessons are proposals until the owner accepts them.
 
-Card moves follow [board.md](../../references/board.md).
-
 **With the owner:** every phase. **Unattended:** phases 1 and 2, then the `## Lessons` comment; the owner decides on each lesson later.
 
 ## 1. Collect
 
-For the shipped issue (07 Improve on the board) or the current session, gather what slowed the cycle or caused rework: parks and their questions, failed fix attempts, review findings (especially ones raised on two or more PRs), red pipelines after merge, owner corrections, missing commands or docs.
+For the shipped issue (a `## Shipped` comment and no `## Lessons` comment; [board.md](../../references/board.md)'s Phases lists how to find them) or the current session, gather what slowed the cycle or caused rework: parks and their questions, failed fix attempts, review findings (especially ones raised on two or more PRs), red pipelines after merge, owner corrections, missing commands or docs.
 
 **Exit gate:** a list of friction points with their evidence (links or `file:line`), or none.
 
@@ -41,9 +39,9 @@ Post the lessons as one comment on the shipped issue headed `## Lessons` ("no le
 - Unattended: name the lessons in the run's output too; the owner decides later. Lessons from a run's own friction, with no shipped issue to hold them, go in the output only.
 - Attended, or when the owner accepts a lesson from an earlier `## Lessons` comment: ask the owner about each lesson. For each one accepted, invoke `spec` (phase 1) with the target repository (`-R <owner/repo>` for an upstream skill library) to open an issue carrying the target file and the wording, and link it from the `## Lessons` comment. The lesson then runs through the cycle like any other work.
 
-Then move the card to Done: the cycle is closed.
+The `## Lessons` comment closes the cycle; the card is already in Done.
 
-**Exit gate:** the `## Lessons` comment linking an issue for each accepted lesson, and the card in Done when there is a board.
+**Exit gate:** the `## Lessons` comment linking an issue for each accepted lesson.
 
 ## Output
 
