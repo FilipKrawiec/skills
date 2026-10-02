@@ -38,7 +38,7 @@ Minimal example:
 | Board | Optional. Give the Project's Status field one option per column in [board.md](../../../references/board.md), once, in the board's settings. Show the labels on cards in the board view's field settings. |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
-| Rules | Add to the project's agent rules: "New work starts with `define`; `spec` decides its lane", "Work an issue phase by phase with the skill its board column names; pausing or handing off: remove `state:claimed` or `state:started`" and a link to the project's workflow page. |
+| Rules | Add to the project's agent rules: "New work starts with `define`; `spec` decides its lane", "Working on an issue: follow Start here in the workflow plugin's `references/board.md`" and a link to the project's workflow page. |
 
 ## Labels
 

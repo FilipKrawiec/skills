@@ -1,7 +1,7 @@
 ---
 name: improve
 description: Use when a change has shipped (phase 07 Improve), or when friction, rework, a repeated review finding or an owner correction should become a lasting change to skills, agent rules, docs or assets.
-allowed-tools: Skill Read Edit Bash(gh:*,git:*)
+allowed-tools: Skill Read Bash(gh:*,git:*)
 ---
 
 # Improve (07)
@@ -34,13 +34,15 @@ Drop a lesson that would not change future behavior. Before writing it, scrub se
 
 ## 3. Record
 
-- Unattended: post the lessons as one comment on the shipped issue headed `## Lessons` ("no lessons" when there are none), and name them in the run's output. Agent rules, skills and lanes.json are protected; the owner applies them.
-- Attended: post the same `## Lessons` comment, then apply the lessons the owner accepts in a branch (invoke `writing-great-skill` when the target is a skill in its repository), and open a PR; a lesson for an upstream skill library becomes an issue there after the owner's yes.
+Post the lessons as one comment on the shipped issue headed `## Lessons` ("no lessons" when there are none), each with its target file and proposed wording.
+
+- Unattended: name the lessons in the run's output and stop there; the owner decides.
+- Attended: ask the owner about each lesson. For each one accepted, invoke `define` to open an issue carrying the target file and the wording (in the upstream library's repository when the lesson is for its skill), and link it from the `## Lessons` comment. The lesson then runs through the cycle like any other work.
 
 Then move the card to Done: the cycle is closed.
 
-**Exit gate:** the `## Lessons` comment, and the card in Done when there is a board.
+**Exit gate:** the `## Lessons` comment linking an issue for each accepted lesson, and the card in Done when there is a board.
 
 ## Output
 
-One line per lesson: target file and the change in a few words; or "no lessons".
+One line per lesson: target file, the change in a few words and its issue when accepted; or "no lessons".

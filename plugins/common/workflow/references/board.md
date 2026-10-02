@@ -2,6 +2,19 @@
 
 The optional Project board, named by lanes.json's `project`, has one Status column per phase. Without it, skip every card move. The card's column is the issue's phase; the skill that moves an issue into a column also moves its card. Lanes stay labels on the cards.
 
+## Start here
+
+Working on an issue, attended or not:
+
+1. Find its column: its card, or the first row below that matches it.
+2. In 02 Spec with `lane:afk` or the owner's go-ahead, claim or start it (Issue steps below).
+3. Invoke the column's skill and finish its exit gate; that skill moves the card.
+4. Repeat from 1 until the issue waits on someone else: parked, in 05 Review (the owner or `agent-review` merges it), or Done. After a merge, `ship` and `improve` pick it up again.
+
+To pause or hand off, release it.
+
+## Columns
+
 | Column | The issue is here when | Skill that works it |
 | --- | --- | --- |
 | 01 Define | It exists but has no `### Acceptance criteria` yet. | `spec` |
