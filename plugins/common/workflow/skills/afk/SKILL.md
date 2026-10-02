@@ -24,7 +24,7 @@ Invoke `ship` for the base branch.
 
 ## 2. Tend
 
-For each open PR on a branch starting with lanes.json's `branchPrefix` whose issue is not `state:parked` and that needs work below, work in its worktree (recreate it from the branch when tidied):
+For each open PR on a branch starting with lanes.json's `branchPrefix` whose issue is not parked (`state:parked` without `lane:afk`; when the owner re-applied `lane:afk`, remove `state:parked` and tend it) and that needs work below, work in its worktree (recreate it from the branch when tidied):
 
 1. A merge conflict → merge the base branch in and resolve it.
 2. Failing checks → reproduce, fix and push.
@@ -73,7 +73,7 @@ Keep to the queue: new work starts as an issue, not in a run. Name any follow-up
 
 Every run ends with:
 
-1. Invoke `improve` for each card in 07 Improve, and for this run's own friction.
+1. Invoke `improve` for each card in 07 Improve without a `## Lessons` comment, and for this run's own friction.
 2. Tidy AFK runs' own worktrees and branches.
 
 **Exit gate:** the lessons (or "no lessons") and the worktrees removed.

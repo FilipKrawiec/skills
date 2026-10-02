@@ -337,16 +337,23 @@ def cmd_next(repo, _args):
         print(f"next: #{ready['number']} {ready['title']}" if ready else 'next: none')
 
 
+def changed_files(root, base_ref):
+    """Files changed since the merge base with base_ref, untracked ones included.
+
+    --no-renames lists a moved file's old path too, so a move out of a protected path is caught."""
+    merge_base = run('git', 'merge-base', base_ref, 'HEAD', cwd=root).strip()
+    changed = set(run('git', 'diff', '--name-only', '--no-renames', merge_base, cwd=root).split())
+    changed |= set(run('git', 'ls-files', '--others', '--exclude-standard', cwd=root).split())
+    return sorted(changed)
+
+
 def cmd_scope(repo, args):
     number = args[0]
     scope = packet(gh_json('issue', 'view', number, '-R', repo.name, '--json', 'body')['body'])
     if scope is None:
         sys.exit(f'#{number} has no scope packet.')
-    merge_base = run('git', 'merge-base', f"origin/{repo.config['base']}", 'HEAD').strip()
-    # --no-renames lists a moved file's old path too, so a move out of a protected path is caught.
-    changed = set(run('git', 'diff', '--name-only', '--no-renames', merge_base, cwd=repo.root).split())
-    changed |= set(run('git', 'ls-files', '--others', '--exclude-standard', cwd=repo.root).split())
-    outside = out_of_scope(sorted(changed), scope['paths'], repo.config)
+    changed = changed_files(repo.root, f"origin/{repo.config['base']}")
+    outside = out_of_scope(changed, scope['paths'], repo.config)
     for path in outside:
         print(f'outside scope: {path}')
     if outside:

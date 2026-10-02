@@ -23,6 +23,8 @@ BLOCKED = [
     "gh api repos/o/r/rulesets", "gh api -X PATCH repos/o/r -f allow_merge_commit=false",
     "gh api --method DELETE repos/o/r",
     "gh api -X PUT repos/o/r/pulls/3/merge", "gh api repos/o/r/pulls/3/merge -X PUT",
+    "gh api -X PUT repos/o/r/pulls/$N/merge", "gh api -X PUT repos/o/r/pulls/${N}/merge",
+    "gh api -X POST repos/o/r/merges -f base=main -f head=x", "gh api graphql -F query=@m.graphql",
     "gh api graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'",
     "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {}) { clientMutationId } }'",
 ]

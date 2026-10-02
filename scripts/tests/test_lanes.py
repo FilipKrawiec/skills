@@ -247,6 +247,14 @@ class ReviewedMergeTests(unittest.TestCase):
         self.assertIn("renames", self.refusal(moved))
 
 
+    def test_reviews_count_in_time_order(self) -> None:
+        blocked = {"author": {"login": "reviewer"}, "state": "CHANGES_REQUESTED", "body": "No.",
+                   "submittedAt": "2026-10-02T08:00:00Z"}
+        approved = {**blocked, "state": "APPROVED", "submittedAt": "2026-10-02T09:00:00Z"}
+        ready = reviewed_pr()
+        self.assertIsNone(self.refusal({**ready, "reviews": [approved, blocked] + ready["reviews"]}))
+
+
 class BaseBranchTests(unittest.TestCase):
     """Runs read the remote base branch and never depend on the owner's checkout."""
 
@@ -293,6 +301,17 @@ class BaseBranchTests(unittest.TestCase):
             branch = subprocess.run(["git", "branch", "--show-current"], cwd=owner,
                                     capture_output=True, text=True, check=True).stdout.strip()
             self.assertEqual(branch, "owner-work")
+
+    def test_a_move_lists_its_old_path_too(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ident = ["-c", "user.name=t", "-c", "user.email=t@t"]
+            self.git(tmp, "init", "--quiet", "-b", "main")
+            (Path(tmp) / "infra").mkdir()
+            (Path(tmp) / "infra/dns.tf").write_text("dns\n" * 20)
+            self.git(tmp, "add", ".")
+            self.git(tmp, *ident, "commit", "--quiet", "-m", "base")
+            self.git(tmp, "mv", "infra/dns.tf", "dns.tf")
+            self.assertEqual(lanes.changed_files(tmp, "main"), ["dns.tf", "infra/dns.tf"])
 
 
 if __name__ == "__main__":

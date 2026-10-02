@@ -20,7 +20,9 @@ OWNER_RUNS_IT = 'The owner runs this themselves.'
 
 RULES = [
     (r'\bgh\s+pr\s+merge\b', 'Merging is the owner\'s; chore PRs use `lanes.py automerge`.'),
-    (r'\bgh\s+api\b.*(\bpulls/\d+/merge\b|\bmergePullRequest\b|\benablePullRequestAutoMerge\b)',
+    # A query file (-F query=@...) hides its mutation, so it counts as a merge too.
+    (r'\bgh\s+api\b.*(\bpulls/[^/\s]+/merge\b|\brepos/[^/\s]+/[^/\s]+/merges\b|\bmergePullRequest\b'
+     r'|\benablePullRequestAutoMerge\b|\bquery=@)',
      'Merging is the owner\'s; chore PRs use `lanes.py automerge`.'),
     (r'\bgh\s+release\s+(create|edit|delete|upload)\b', 'Releases are the owner\'s. ' + OWNER_RUNS_IT),
     (r'\bgh\s+(secret|variable)\s+(set|delete|remove)\b', 'Secrets and variables are the owner\'s.'),
