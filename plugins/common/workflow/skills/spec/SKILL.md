@@ -8,6 +8,8 @@ allowed-tools: Read Bash(gh:*,git:*,python3:*)
 
 Turn an issue's business wording into implementation requirements another developer or agent can plan from without guessing, then give it one lane. This skill writes no code.
 
+`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. Follow the cycle phase by phase: `LANES phase <N>` names this skill while the issue is in 01 Define or 02 Spec, and the next step once this phase's exit gate holds. Run it before starting and after the last phase below.
+
 Every open issue carries exactly one lane: `lane:afk` (the owner approved unattended delivery), `lane:proposed` (you recommend AFK) or `lane:owner` (needs a decision, credentials, settings, a device, or the owner is steering it). `lane:afk` is the owner's decision: apply it only when the owner says yes in the current session.
 
 ## 1. Ground
@@ -32,7 +34,7 @@ Update the issue so planning reads it rather than this conversation:
 - A scope packet: ```` ```scope ```` then `{"paths": ["src/feature/", "tests/feature/"], "dependencies": [12]}`. A trailing `/` allows a subtree; list every issue it builds on, including ones named only in prose.
 - An ADR only when the outcome is an architectural decision.
 
-**Exit gate:** the issue holds all of the above; the board shows it in 02 Spec.
+**Exit gate:** `LANES phase <N>` prints `phase: 02 Spec` with `missing: nothing` once the lane is set (phase 4).
 
 ## 4. Lane
 

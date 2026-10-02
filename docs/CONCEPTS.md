@@ -89,14 +89,14 @@ Delivery follows seven phases. Each one has a skill, and each is a column on the
 | :--- | :--- | :--- | :--- |
 | 01 Define | `define` | An issue with intent and open questions | Open, no `### Acceptance criteria` |
 | 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane | Acceptance criteria, not started |
-| 03 Plan | `plan` | An `AFK plan` comment on the issue | `state:claimed` or `state:started`, not `state:planned` |
+| 03 Plan | `plan` | A `## Plan` comment on the issue | `state:claimed` or `state:started`, not `state:planned` |
 | 04 Execute | `tdd`, `vcs` | Tested commits on a task branch | Started and `state:planned`, no open PR |
 | 05 Review | `review` (fresh-context worker), `agent-review` | A PR with a verdict | An open PR closes it |
 | 06 Ship | `ship` | A green base branch, a revert PR, or an escalation | Closed with `state:planned` |
-| 07 Improve | `improve` | A `Lessons` comment or a PR to the durable artifacts | Closed with `state:shipped` |
+| 07 Improve | `improve` | A `## Lessons` comment or a PR to the durable artifacts | Closed with `state:shipped` |
 | Done | | | `state:learned`, closed as not planned, or closed without a phase marker |
 
-Lanes stay labels, so a card's labels show who acts next. Phase markers replace each other: `lanes.py mark N planned`, then `lanes.py health --apply` marks `state:shipped` once the base branch is green after the merge, then `lanes.py mark N learned`.
+`lanes.py phase N` prints an issue's phase, the skill to invoke next and the gate that moves it on, so an agent attended or AFK follows the cycle one phase at a time; `lanes.py mark` refuses a marker until its artifact (the plan or lessons comment) exists. Lanes stay labels, so a card's labels show who acts next. Phase markers replace each other: `lanes.py mark N planned`, then `lanes.py health --apply` marks `state:shipped` once the base branch is green after the merge, then `lanes.py mark N learned`.
 
 ### Worktree Provenance & Safety
 

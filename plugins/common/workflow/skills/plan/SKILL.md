@@ -8,17 +8,17 @@ allowed-tools: Read Bash(gh:*,git:*,python3:*)
 
 Prepare a concrete plan, grounded in the actual repository, that execution follows without re-planning the basics. The plan lives on the issue so the next session resumes from facts, not recollection. This skill changes no code.
 
-`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`.
+`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. Follow the cycle phase by phase: `LANES phase <N>` names this skill while the issue is in 03 Plan, and the next step once this phase's exit gate holds. Run it before starting and after the last phase below.
 
 ## 1. Read
 
-Read the issue, its acceptance criteria, scope packet, parent and linked decisions; then the code, tests and contracts near the scope paths, and the project's agent rules. When the issue already has an `AFK plan` comment, read it and the branch to see where work stopped.
+Read the issue, its acceptance criteria, scope packet, parent and linked decisions; then the code, tests and contracts near the scope paths, and the project's agent rules. When the issue already has a `## Plan` comment, read it and the branch to see where work stopped.
 
 **Exit gate:** each acceptance criterion maps to code and tests you have read.
 
 ## 2. Plan
 
-Write the plan as one issue comment headed `AFK plan` (edit the existing one when resuming):
+Write the plan as one issue comment headed `## Plan` (edit the existing one when resuming):
 
 - Files likely to change, inside the scope packet.
 - For each acceptance criterion, the failing test that proves it.
@@ -27,7 +27,7 @@ Write the plan as one issue comment headed `AFK plan` (edit the existing one whe
 
 When the plan needs a path outside the scope packet or a protected path, or an acceptance criterion turns out ambiguous, stop: unattended runs park the issue; attended sessions return to `spec`.
 
-**Exit gate:** the plan comment is posted and `LANES mark <N> planned` moved the issue to 04 Execute.
+**Exit gate:** `LANES mark <N> planned` succeeds (it refuses without the plan comment) and `LANES phase <N>` prints `phase: 04 Execute`.
 
 ## 3. Approve
 

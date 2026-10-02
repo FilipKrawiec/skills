@@ -10,7 +10,7 @@ One run carries the delivery cycle while the owner is away. It checks what alrea
 
 Leave the checkout a run starts in exactly as it is; it may hold the owner's work. Every build and fix happens in a worktree.
 
-`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). Every write command is a dry run without `--apply`.
+`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). Every write command is a dry run without `--apply`. `LANES phase <N>` prints any issue's phase, the skill it needs next and the gate that moves it on; when a step below and that output disagree, park the issue with both.
 
 Read [setup.md](references/setup.md) when the repository has no `.github/lanes.json`, or when scheduling unattended runs.
 
@@ -39,7 +39,7 @@ Run the project's full verification gate before each push. Park the PR's issue w
 While the base branch is red, go to phase 6. Otherwise run `LANES next`.
 
 - `next: #N …` → phase 4.
-- `in flight: … (stale …)` → `LANES park <N> "<where the branch stopped against its AFK plan comment>"`, then phase 6.
+- `in flight: … (stale …)` → `LANES park <N> "<where the branch stopped against its ## Plan comment>"`, then phase 6.
 - `next: none` → phase 6.
 
 **Exit gate:** one issue number, or the decision to do housekeeping.
@@ -47,7 +47,7 @@ While the base branch is red, go to phase 6. Otherwise run `LANES next`.
 ## 4. Build
 
 1. `LANES claim <N>` rechecks eligibility, labels `state:claimed`, moves the issue to 03 Plan and prints a fresh worktree from the base branch. Work only in that worktree.
-2. Invoke `plan`; it posts the `AFK plan` comment and moves the issue to 04 Execute.
+2. Invoke `plan`; `LANES phase <N>` then prints `phase: 04 Execute`.
 3. Invoke `tdd`; iterate with the project's targeted test command.
 4. Update the user-facing docs the project's rules tie to the change, in the same branch.
 5. `LANES scope <N>` passes; then the project's full verification gate passes once.
@@ -60,7 +60,7 @@ Park with `LANES park <N> "<one question, the options, a recommendation>"` (push
 ## 5. Publish
 
 1. `git push -u origin HEAD`.
-2. `gh pr create --title "<type>(<area>): <outcome>" --body-file <file>` following the project's PR template, with `Closes #<N>`, a link to the plan comment and the review's verdict; ready for review. The issue moves to 05 Review.
+2. `gh pr create --title "<type>(<area>): <outcome>" --body-file <file>` following the project's PR template, with `Closes #<N>`, a link to the plan comment and the review's verdict; ready for review. `LANES phase <N>` now prints `phase: 05 Review`.
 3. `LANES release <N>`.
 4. `LANES automerge <pr>` unless the issue asks for owner review before merge. It merges (or queues, updating a branch that fell behind) only docs, tests and Dependabot minor or patch dependency changes and prints why anything else, including a major version update, waits.
 
@@ -81,7 +81,7 @@ Keep to the queue: new work starts as an issue, not in a run. Name any follow-up
 
 Every run ends with:
 
-1. Invoke `improve` for each issue in 07 Improve without a `Lessons` comment, and for this run's own friction.
+1. Invoke `improve` for each issue in 07 Improve without a `## Lessons` comment, and for this run's own friction.
 2. `LANES tidy --apply`: removes AFK runs' own `afk-*` worktrees and branches once their PR is merged or closed; other sessions' checkouts, dirty ones and open PRs stay.
 3. `LANES board --apply` when lanes.json names a project.
 

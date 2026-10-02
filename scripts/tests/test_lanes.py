@@ -301,6 +301,30 @@ class ReviewedMergeTests(unittest.TestCase):
         self.assertIn("requests changes", self.refusal({**ready, "reviews": ready["reviews"] + [blocked]}))
 
 
+class PhaseTests(unittest.TestCase):
+    """An agent can always tell an issue's phase, what to do next and what moves it on."""
+
+    def test_every_column_names_its_next_step(self) -> None:
+        self.assertEqual(set(lanes.NEXT_STEP), set(lanes.STATUSES))
+
+    def test_spec_lists_what_planning_still_needs(self) -> None:
+        self.assertEqual(lanes.spec_gaps(issue()), [])
+        self.assertEqual(lanes.spec_gaps(issue(labels=(), body="An idea.")),
+                         ["acceptance criteria", "scope packet", "a lane"])
+
+    def test_phase_markers_need_their_artifact(self) -> None:
+        plan = [{"body": "## Plan\n\n1. Test first."}]
+        started = issue(labels=("lane:afk", "state:claimed"))
+        self.assertIn("claim", lanes.mark_refusal(issue(), lanes.PLANNED))
+        self.assertIn("Plan", lanes.mark_refusal(started, lanes.PLANNED))
+        self.assertIsNone(lanes.mark_refusal({**started, "comments": plan}, lanes.PLANNED))
+        shipped = {**issue(labels=("state:shipped",), state="CLOSED"), "comments": []}
+        self.assertIn("shipped", lanes.mark_refusal({**shipped, "labels": []}, lanes.LEARNED))
+        self.assertIn("Lessons", lanes.mark_refusal(shipped, lanes.LEARNED))
+        self.assertIsNone(lanes.mark_refusal({**shipped, "comments": [{"body": "## Lessons\n\nno lessons"}]},
+                                             lanes.LEARNED))
+
+
 class HealthTests(unittest.TestCase):
     """After merge, a run finds a red base branch and the merge that turned it red."""
 

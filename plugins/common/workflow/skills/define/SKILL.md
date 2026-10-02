@@ -8,6 +8,8 @@ allowed-tools: Read Bash(gh:*,git:*)
 
 Turn a raw need into one issue: a stable place for the work to evolve. Define captures intent; `spec` makes it buildable. This skill writes no code and no plan.
 
+`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. After creating the issue, run `LANES phase <N>` and follow the step it names.
+
 ## 1. Capture
 
 From the request and the conversation, write down:
@@ -31,7 +33,7 @@ Search open and closed issues for the same intent (`gh issue list -s all --searc
 
 Create the issue with the project's issue template: title `<type>(<area>): <outcome>`, the captured intent as the description, the open questions as a list, a `type:` label, and `priority:` when the owner gave one. Add `lane:owner`: the owner steers it until `spec` decides its lane. Unattended runs create no issues; they name follow-ups for the owner instead.
 
-**Exit gate:** the issue URL; the board shows it in 01 Define.
+**Exit gate:** the issue URL, and `LANES phase <N>` prints `phase: 01 Define`.
 
 ## Output
 

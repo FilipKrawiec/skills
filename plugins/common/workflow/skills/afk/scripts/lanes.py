@@ -6,7 +6,8 @@ GitHub Issues are the only queue. Every open issue carries one lane label:
 recommends AFK) or `lane:owner`. The optional Project board is derived from
 issues, one column per phase of the delivery cycle. A repository opts in with `.github/lanes.json` (see references/setup.md).
 
-Usage: lanes.py next                 # next AFK issue; in flight, skipped, untriaged
+Usage: lanes.py phase N              # N's phase, the skill to invoke next, and the gate that moves it on
+       lanes.py next                 # next AFK issue; in flight, skipped, untriaged
        lanes.py claim N              # claim N, create its worktree from origin/<base>, move it to 03 Plan
        lanes.py start N              # move N to 03 Plan while a session works on it outside an AFK build
        lanes.py release N            # clear N's claim or start when the work pauses or is handed off
@@ -74,6 +75,8 @@ DEFAULTS = {
     'reviewRounds': 3,
 }
 
+PLAN_HEADING = re.compile(r'^\s*#{1,3}\s*Plan\b', re.I)
+LESSONS_HEADING = re.compile(r'^\s*#{1,3}\s*Lessons\b', re.I)
 PACKET = re.compile(r'```(?:scope|factory)\s*(\{.*?\})\s*```', re.S)
 ACCEPTANCE = re.compile(r'^#+\s*Acceptance criteria\s*\n+\s*\S', re.M | re.I)
 
@@ -312,6 +315,54 @@ def base_health(commits):
             return state, failing, culprit
         culprit = (sha, subject)
     return state, failing, None
+
+
+# What each phase needs next: (skill or action, the gate that moves the issue on).
+NEXT_STEP = {
+    '01 Define': ('invoke `spec`', 'the issue has an `### Acceptance criteria` section'),
+    '02 Spec': ('invoke `spec` until nothing is missing; then `claim <N>` (AFK) or `start <N>`',
+                'the issue is claimed or started'),
+    '03 Plan': ('invoke `plan`', 'a comment headed `## Plan` exists and `mark <N> planned` ran'),
+    '04 Execute': ('invoke `tdd`, then `review` in a fresh-context worker, then push and open the PR',
+                   'an open PR with `Closes #<N>` and a review with no open Blocker'),
+    '05 Review': ('fix review findings and failing checks; the owner or `merge-reviewed` merges',
+                  'the PR is merged'),
+    '06 Ship': ('invoke `ship`', '`health --apply` confirms the base branch green after the merge'),
+    '07 Improve': ('invoke `improve`', 'a comment headed `## Lessons` exists and `mark <N> learned` ran'),
+    'Done': ('nothing: the cycle is closed', ''),
+}
+
+
+def has_heading(comments, heading):
+    return any(heading.search(c.get('body') or '') for c in comments)
+
+
+def spec_gaps(issue):
+    """What phase 02 Spec still owes before the issue can be planned."""
+    labels, body = names(issue), issue.get('body') or ''
+    gaps = [] if ACCEPTANCE.search(body) else ['acceptance criteria']
+    scope = packet(body)
+    if scope is None or not scope['paths']:
+        gaps.append('scope packet')
+    if not labels & {AFK, PROPOSED, OWNER_LANE}:
+        gaps.append('a lane')
+    return gaps
+
+
+def mark_refusal(issue, mark):
+    """Why the issue may not take this phase marker yet, or None."""
+    labels, comments = names(issue), issue.get('comments', [])
+    if mark == PLANNED:
+        if not labels & {CLAIMED, STARTED}:
+            return 'not claimed or started; run `claim` or `start` first'
+        if not has_heading(comments, PLAN_HEADING):
+            return 'no comment headed `## Plan`'
+    if mark == LEARNED:
+        if issue['state'] != 'CLOSED' or SHIPPED not in labels:
+            return 'not shipped yet; `health --apply` marks shipped'
+        if not has_heading(comments, LESSONS_HEADING):
+            return 'no comment headed `## Lessons` (write "no lessons" when there are none)'
+    return None
 
 
 def newly_shipped(closed, green_at):
@@ -574,9 +625,30 @@ def cmd_automerge(repo, args):
           + (' (branch updated)' if step == 'update' else ''))
 
 
+def view_issue(repo, number):
+    return gh_json('issue', 'view', str(number), '-R', repo.name,
+                   '--json', 'number,title,body,labels,state,stateReason,comments')
+
+
+def cmd_phase(repo, args):
+    number = args[0]
+    issue = view_issue(repo, number)
+    column = status(issue, int(number) in repo.issues_with_open_prs())
+    action, gate = NEXT_STEP[column]
+    print(f"#{number} {issue['title']}\nphase: {column}\nnext: {action.replace('<N>', number)}")
+    if gate:
+        print(f"leaves when: {gate.replace('<N>', number)}")
+    if column in ('01 Define', '02 Spec'):
+        gaps = spec_gaps(issue)
+        print('missing: ' + (', '.join(gaps) if gaps else 'nothing'))
+
+
 def cmd_mark(repo, args):
     if len(args) != 2 or args[1] not in ('planned', 'learned'):
         sys.exit('mark needs an issue and "planned" or "learned"; `health --apply` marks shipped.')
+    refusal = mark_refusal(view_issue(repo, args[0]), PHASE_MARKS[args[1]])
+    if refusal:
+        sys.exit(f'#{args[0]} cannot be marked {args[1]}: {refusal}')
     set_mark(repo, args[0], PHASE_MARKS[args[1]])
     refresh_board(repo, args[0])
     print(f'#{args[0]}: {PHASE_MARKS[args[1]]}')
@@ -814,8 +886,8 @@ def cmd_tidy(repo, args):
 
 COMMANDS = {'next': cmd_next, 'claim': cmd_claim, 'start': cmd_start, 'release': cmd_release,
             'scope': cmd_scope, 'park': cmd_park, 'automerge': cmd_automerge,
-            'merge-reviewed': cmd_merge_reviewed, 'health': cmd_health, 'mark': cmd_mark, 'board': cmd_board,
-            'labels': cmd_labels, 'tidy': cmd_tidy}
+            'merge-reviewed': cmd_merge_reviewed, 'health': cmd_health, 'phase': cmd_phase,
+            'mark': cmd_mark, 'board': cmd_board, 'labels': cmd_labels, 'tidy': cmd_tidy}
 
 if __name__ == '__main__':
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:

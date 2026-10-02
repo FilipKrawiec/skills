@@ -39,7 +39,7 @@ Minimal example:
 | Board | Optional; `lanes.py board --apply` rewrites the Status options to the phases below. Lanes stay as labels; show them on cards once in the board view's field settings (the API cannot change views). |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
-| Rules | Add to the project's agent rules: "New work starts with `define`; `spec` decides its lane", "Starting on an issue outside an AFK build: `lanes.py start N`, then `plan`; pausing or handing off: `lanes.py release N`" and a link to the project's workflow page. |
+| Rules | Add to the project's agent rules: "New work starts with `define`; `spec` decides its lane", "Working on an issue: run `lanes.py phase N`, do the step it names, and repeat until it names the owner; pausing or handing off: `lanes.py release N`" and a link to the project's workflow page. |
 
 ## Board lifecycle
 
