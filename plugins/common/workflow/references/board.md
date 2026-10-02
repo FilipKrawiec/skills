@@ -1,6 +1,6 @@
 # Delivery Board
 
-The optional Project board has one Status column per phase. The card's column is the issue's phase; the skill that moves an issue into a column also moves its card. Lanes stay labels on the cards.
+The optional Project board, named by lanes.json's `project`, has one Status column per phase. Without it, skip every card move. The card's column is the issue's phase; the skill that moves an issue into a column also moves its card. Lanes stay labels on the cards.
 
 | Column | The issue is here when | Skill that works it |
 | --- | --- | --- |

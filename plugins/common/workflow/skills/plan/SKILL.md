@@ -1,7 +1,7 @@
 ---
 name: plan
 description: Use when planning the implementation of a specified issue from the repository (phase 03 Plan), before any code changes, or when resuming an issue from its posted plan.
-allowed-tools: Read Bash(gh:*,git:*,python3:*)
+allowed-tools: Read Bash(gh:*,git:*)
 ---
 
 # Plan (03)

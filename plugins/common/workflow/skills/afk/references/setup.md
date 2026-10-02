@@ -64,7 +64,7 @@ A scheduler that starts an agent session in the repository's main checkout runs 
 ```text
 Preflight, stop and report on any failure:
 1. The working directory is inside <owner>/<repo>.
-2. `gh pr merge --help` is refused by the issue-lanes guard; if it prints help,
+2. `gh pr merge --help` is refused by the lanes guard; if it prints help,
    the guard is not loaded, so stop.
 Then use the `afk` skill. The owner is away: park instead of asking. Never
 switch, pull, reset or stash this checkout: it may hold the owner's work.

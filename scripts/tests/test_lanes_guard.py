@@ -1,4 +1,4 @@
-"""The issue-lanes guard blocks shipping and self-authorization, only where opted in."""
+"""The lanes guard blocks shipping and self-authorization, only where opted in."""
 
 from __future__ import annotations
 

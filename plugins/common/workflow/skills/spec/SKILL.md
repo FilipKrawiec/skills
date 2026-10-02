@@ -1,7 +1,7 @@
 ---
 name: spec
 description: Use when refining an issue into implementation requirements (phase 02 Spec), grilling a change against project context and ADRs, triaging issues into delivery lanes, deciding what an agent may deliver unattended (AFK), or reconciling issues with merged work.
-allowed-tools: Read Bash(gh:*,git:*,python3:*)
+allowed-tools: Read Bash(gh:*,git:*)
 ---
 
 # Spec (02)

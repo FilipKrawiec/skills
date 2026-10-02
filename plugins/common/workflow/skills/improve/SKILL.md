@@ -1,7 +1,7 @@
 ---
 name: improve
 description: Use when a change has shipped (phase 07 Improve), or when friction, rework, a repeated review finding or an owner correction should become a lasting change to skills, agent rules, docs or assets.
-allowed-tools: Skill Read Edit Bash(gh:*,git:*,python3:*)
+allowed-tools: Skill Read Edit Bash(gh:*,git:*)
 ---
 
 # Improve (07)

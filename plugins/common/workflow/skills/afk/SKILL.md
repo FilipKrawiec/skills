@@ -6,11 +6,11 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*)
 
 # AFK
 
-One run carries the delivery cycle while the owner is away. It checks what already shipped, tends its own open PRs, then takes **at most one** owner-approved issue from 02 Spec through 03 Plan, 04 Execute and 05 Review, or parks it with a question, or does housekeeping. It always leaves the board current. The owner holds merge, release and settings authority; the plugin's guard hook enforces it in projects with `.github/lanes.json`.
+One run carries the delivery cycle while the owner is away. It checks what already shipped, tends its own open PRs, then takes **at most one** owner-approved issue from 02 Spec through 03 Plan, 04 Execute and 05 Review, or parks it with a question, or does housekeeping. The owner holds merge, release and settings authority; the plugin's guard hook enforces it in projects with `.github/lanes.json`.
 
 Leave the checkout a run starts in exactly as it is; it may hold the owner's work. Every build and fix happens in a worktree.
 
-`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). It holds only the gates: `next`, `scope`, `automerge` and `merge-reviewed`. Claim, park, release, tidy and card moves are the plain `gh` and `git` steps in [board.md](../../references/board.md); move the card whenever an issue enters a new phase and lanes.json names a project.
+`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). It holds only the gates: `next`, `scope`, `automerge` and `merge-reviewed`. Claim, park, release, tidy and card moves are the `gh` and `git` steps in [board.md](../../references/board.md).
 
 Read [setup.md](references/setup.md) when the repository has no `.github/lanes.json`, or when scheduling unattended runs.
 
@@ -48,7 +48,7 @@ While the base branch is red, go to phase 5. Otherwise run `LANES next`.
 
 Follow the phases in order; each skill's exit gate is the next step's entry.
 
-1. **Claim.** Run `LANES next` again and stop at phase 5 unless it still prints `next: #<N>`. Claim it (03 Plan). Work only in its worktree; read the issue, its linked decisions and the project's agent rules.
+1. **Claim** the issue phase 3 picked (03 Plan). Work only in its worktree; read the issue, its linked decisions and the project's agent rules.
 2. **03 Plan.** Invoke `plan`. Its `## Plan` comment moves the card to 04 Execute.
 3. **04 Execute.** Invoke `tdd` for each plan step. Update the docs the project's rules tie to the change. Pass `LANES scope <N>` and the full verification gate.
 4. **05 Review.** Invoke `review` with only the issue and the diff; allow two rounds. Open the PR titled `<type>(<area>): <outcome>` per the project's PR template, closing the issue and linking the `## Plan` comment and the review's verdict. Move the card to 05 Review and release the claim.

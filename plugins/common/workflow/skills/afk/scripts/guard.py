@@ -89,7 +89,7 @@ def main():
     reason = refusal(event.get('tool_input', {}).get('command', ''),
                      is_unattended(event.get('transcript_path')), extra)
     if reason:
-        print(f'Blocked by the issue-lanes guard: {reason}', file=sys.stderr)
+        print(f'Blocked by the lanes guard: {reason}', file=sys.stderr)
         return 2
     return 0
 
