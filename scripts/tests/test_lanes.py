@@ -8,6 +8,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -297,6 +298,70 @@ class ReviewedMergeTests(unittest.TestCase):
                    "submittedAt": "2026-10-02T08:00:00Z"}
         ready = reviewed_pr()
         self.assertIn("requests changes", self.refusal({**ready, "reviews": ready["reviews"] + [blocked]}))
+
+
+class HealthTests(unittest.TestCase):
+    """After merge, a run finds a red base branch and the merge that turned it red."""
+
+    def run_(self, name, conclusion, status="completed"):
+        return {"name": name, "status": status, "conclusion": conclusion}
+
+    def test_a_failing_check_or_status_turns_the_commit_red(self) -> None:
+        runs = [self.run_("verify", "failure"), self.run_("lint", "success")]
+        self.assertEqual(lanes.commit_state(runs, []), ("red", ["verify"]))
+        self.assertEqual(lanes.commit_state([], [{"context": "deploy", "state": "error"}]),
+                         ("red", ["deploy"]))
+
+    def test_unfinished_skipped_and_missing_checks_are_not_green(self) -> None:
+        running = [self.run_("verify", None, "in_progress"), self.run_("lint", "success")]
+        self.assertEqual(lanes.commit_state(running, []), ("pending", []))
+        self.assertEqual(lanes.commit_state([self.run_("docs", "skipped")], []), ("none", []))
+        self.assertEqual(lanes.commit_state([], []), ("none", []))
+        self.assertEqual(lanes.commit_state([self.run_("verify", "success")], []), ("green", []))
+
+    def test_the_newest_finished_commit_decides(self) -> None:
+        commits = [("c", "pending", "pending", []), ("b", "feat: b (#2)", "green", [])]
+        self.assertEqual(lanes.base_health(commits), ("green", [], None))
+
+    def test_the_culprit_is_the_oldest_red_after_the_last_green(self) -> None:
+        commits = [("d", "fix: d (#4)", "red", ["verify"]), ("c", "docs: c (#3)", "pending", []),
+                   ("b", "feat: b (#2)", "red", ["lint"]), ("a", "feat: a (#1)", "green", [])]
+        self.assertEqual(lanes.base_health(commits), ("red", ["verify"], ("b", "feat: b (#2)")))
+
+    def test_no_green_in_reach_leaves_the_culprit_unknown(self) -> None:
+        commits = [("b", "feat: b (#2)", "red", ["verify"]), ("a", "feat: a (#1)", "red", ["verify"])]
+        self.assertEqual(lanes.base_health(commits), ("red", ["verify"], None))
+
+    def test_a_run_cancelled_by_a_newer_push_is_not_a_failure(self) -> None:
+        runs = [self.run_("verify", "cancelled"), self.run_("lint", "success")]
+        self.assertEqual(lanes.commit_state(runs, []), ("green", []))
+
+    def test_the_report_names_whether_an_afk_merge_broke_the_base(self) -> None:
+        checks = {"d": "failure", "c": "success"}
+        replies = {
+            "repos/acme/app/commits?sha=main&per_page=10": [
+                {"sha": "d" * 40, "commit": {"message": "feat(stage): d (#4)\n\nbody"}},
+                {"sha": "c" * 40, "commit": {"message": "feat(stage): c (#3)"}}],
+            "pr": {"headRefName": "agent/afk-12-stage-d"}}
+        for sha, conclusion in checks.items():
+            replies[f"repos/acme/app/commits/{sha * 40}/check-runs?per_page=100"] = {
+                "check_runs": [self.run_("verify", conclusion)]}
+            replies[f"repos/acme/app/commits/{sha * 40}/status"] = {"statuses": []}
+        repo = type("FakeRepo", (), {"config": CONFIG, "name": "acme/app"})()
+        printed = []
+        with unittest.mock.patch.object(lanes, "gh_json",
+                                        lambda *args: replies[args[1] if args[0] == "api" else "pr"]), \
+                unittest.mock.patch("builtins.print", printed.append):
+            lanes.cmd_health(repo, [])
+        self.assertEqual(printed, ["base: red (main at ddddddd); failing: verify",
+                                   f"broken by: {'d' * 40} feat(stage): d (#4) (AFK)"])
+
+    def test_reading_stops_at_the_first_green_commit(self) -> None:
+        def commits():
+            yield "b", "feat: b (#2)", "red", ["verify"]
+            yield "a", "feat: a (#1)", "green", []
+            raise AssertionError("read past the last green commit")
+        self.assertEqual(lanes.base_health(commits())[2], ("b", "feat: b (#2)"))
 
 
 class BaseBranchTests(unittest.TestCase):

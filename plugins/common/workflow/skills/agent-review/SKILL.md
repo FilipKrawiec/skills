@@ -53,12 +53,12 @@ For each open PR on lanes.json's `branchPrefix` whose newest agent review says `
 
 Wake the AFK runner once, as the caller describes, with instructions that start "Scheduled AFK run." and name the AFK PRs that need fixes, have failing checks or conflict. When the runner's host is offline, count consecutive offline passes and tell the owner once at three.
 
-When the runner reports during a pass, review the PRs it names with phases 2–4 and fold its parked issues and follow-ups into phase 6.
+When the runner reports during a pass, review the PRs it names with phases 2–4 and fold its parked issues, follow-ups and lessons into phase 6.
 
 **Exit gate:** the runner woke, or the offline count.
 
 ## 6. Report
 
-Send the owner one short message only when something needs them or something shipped, in this order: PRs ready for or needing the owner (linked, with the reason); issues the runner parked (question and recommendation); follow-ups the runner found (each needing the owner's yes to become an issue); one line naming PRs merged since the last report. Repeat an item only when it changed. Remove the scratch worktrees.
+Send the owner one short message only when something needs them or something shipped, in this order: PRs ready for or needing the owner (linked, with the reason); issues the runner parked (question and recommendation); follow-ups the runner found (each needing the owner's yes to become an issue); lessons, each with the file it should change and the proposed wording: the runner's, plus any finding this reviewer raised on two or more PRs, which belongs in a rule rather than another review; one line naming PRs merged since the last report. Repeat an item only when it changed. Remove the scratch worktrees.
 
 **Exit gate:** the message sent, or nothing to report, and no worktree left.

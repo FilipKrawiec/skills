@@ -14,6 +14,7 @@ Usage: lanes.py next                 # next AFK issue; in flight, skipped, untri
        lanes.py park N MESSAGE       # hand N back to the owner with one question
        lanes.py automerge PR         # squash auto-merge PR on green checks if it is a chore
        lanes.py merge-reviewed PR    # squash-merge an AFK PR whose agent review says ready
+       lanes.py health               # CI on the base branch, and the merge that turned it red
        lanes.py board [--apply]      # derive Project status and priority from issues
        lanes.py labels [--apply]     # sync labels with the lane set plus lanes.json
        lanes.py tidy [--apply]       # remove AFK runs' own worktrees and branches once finished
@@ -263,6 +264,46 @@ def reviewed_merge_refusal(pr, config):
     if newer:
         return 'a person commented after the agent review'
     return None
+
+
+# --- Base branch health ---------------------------------------------------
+
+# Cancelled runs are left out: a newer push often cancels the run of the commit before it.
+RED = {'failure', 'timed_out', 'action_required', 'startup_failure', 'error'}
+SQUASH_PR = re.compile(r'\(#(\d+)\)\s*$')
+
+
+def commit_state(check_runs, statuses):
+    """('green' | 'red' | 'pending' | 'none', failing check names) for one commit."""
+    results = [(r['name'], r['conclusion'] or r['status']) for r in check_runs]
+    results += [(s['context'], s['state']) for s in statuses]
+    failing = sorted({name for name, result in results if result in RED})
+    if failing:
+        return 'red', failing
+    if any(result in ('queued', 'in_progress', 'waiting', 'requested', 'pending')
+           for _, result in results):
+        return 'pending', []
+    return ('green' if any(result == 'success' for _, result in results) else 'none'), []
+
+
+def base_health(commits):
+    """(state, failing, culprit) of the base branch from (sha, subject, state, failing), newest first.
+
+    The newest finished commit decides the state. When it is red, the culprit is
+    the oldest red commit after the newest green one, or None when no green
+    commit is in reach. Reads lazily, so callers may pass a generator."""
+    state, failing, culprit = 'none', [], None
+    for sha, subject, commit, names in commits:
+        if commit in ('pending', 'none'):
+            continue
+        if state == 'none':
+            if commit == 'green':
+                return 'green', [], None
+            state, failing = 'red', names
+        if commit == 'green':
+            return state, failing, culprit
+        culprit = (sha, subject)
+    return state, failing, None
 
 
 # --- Board and tidy --------------------------------------------------------
@@ -529,6 +570,34 @@ def cmd_merge_reviewed(repo, args):
     print(f'#{number} merged after agent review')
 
 
+def cmd_health(repo, _args, window=10):
+    base = repo.config['base']
+    listed = gh_json('api', f"repos/{repo.name}/commits?sha={base}&per_page={window}")
+
+    def states():
+        for c in listed:
+            runs = gh_json('api', f"repos/{repo.name}/commits/{c['sha']}/check-runs?per_page=100")
+            status = gh_json('api', f"repos/{repo.name}/commits/{c['sha']}/status")
+            state, names = commit_state(runs['check_runs'], status['statuses'])
+            yield c['sha'], c['commit']['message'].splitlines()[0], state, names
+
+    state, failing, culprit = base_health(states())
+    head = listed[0]['sha'][:7] if listed else '?'
+    if state != 'red':
+        print(f'base: {state} ({base} at {head})')
+        return
+    print(f"base: red ({base} at {head}); failing: {', '.join(failing)}")
+    if culprit is None:
+        print(f'broken by: unknown (no green commit in the last {window})')
+        return
+    sha, subject = culprit
+    number = SQUASH_PR.search(subject)
+    branch = gh_json('pr', 'view', number.group(1), '-R', repo.name,
+                     '--json', 'headRefName')['headRefName'] if number else ''
+    owner = 'AFK' if branch.startswith(repo.config['branchPrefix']) else 'not AFK'
+    print(f'broken by: {sha} {subject} ({owner})')
+
+
 PROJECT_QUERY = '''query($login:String!,$number:Int!){repositoryOwner(login:$login){
   ... on ProjectV2Owner{projectV2(number:$number){id fields(first:50){nodes{
   ... on ProjectV2SingleSelectField{id name options{id name}}}}}}}}'''
@@ -681,7 +750,8 @@ def cmd_tidy(repo, args):
 
 COMMANDS = {'next': cmd_next, 'claim': cmd_claim, 'start': cmd_start, 'release': cmd_release,
             'scope': cmd_scope, 'park': cmd_park, 'automerge': cmd_automerge,
-            'merge-reviewed': cmd_merge_reviewed, 'board': cmd_board, 'labels': cmd_labels, 'tidy': cmd_tidy}
+            'merge-reviewed': cmd_merge_reviewed, 'health': cmd_health, 'board': cmd_board,
+            'labels': cmd_labels, 'tidy': cmd_tidy}
 
 if __name__ == '__main__':
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:

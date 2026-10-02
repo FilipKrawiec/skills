@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*)
 
 # AFK
 
-One run first tends its own open PRs, then delivers **at most one** owner-approved issue, or parks it with a question, or does housekeeping, and always leaves the board current. The owner holds merge, release and settings authority; the plugin's guard hook enforces it in projects with `.github/lanes.json`.
+One run first checks the base branch and tends its own open PRs, then delivers **at most one** owner-approved issue, or parks it with a question, or does housekeeping, and always leaves the board current. The owner holds merge, release and settings authority; the plugin's guard hook enforces it in projects with `.github/lanes.json`.
 
 Leave the checkout a run starts in exactly as it is; it may hold the owner's work. Every build and fix happens in a worktree.
 
@@ -16,6 +16,14 @@ Read [setup.md](references/setup.md) when the repository has no `.github/lanes.j
 
 ## 1. Tend
 
+Run `LANES health`. When it prints `broken by: <sha> <subject> (AFK)` and `gh pr list --head <branchPrefix>revert-<short-sha>` shows no open PR:
+
+1. Make a worktree from the base branch on `<branchPrefix>revert-<short-sha>` in `<worktrees>/afk-revert-<short-sha>`, run `git revert --no-edit <sha>`, then pass the full verification gate.
+2. Push and open a PR titled `revert: <subject>` whose body names the failing checks.
+3. Reopen the issue the reverted PR closed (`gh issue reopen`) and `LANES park` it with the failing checks, the revert PR, and a recommendation for the retry.
+
+Any other red base branch is the owner's: name the failing checks and the culprit in the output.
+
 For each open PR on a branch starting with lanes.json's `branchPrefix` that needs work below, run `LANES start <issue>` first and `LANES release <issue>` after its push, working in its worktree (recreate it from the branch when tidied):
 
 1. A merge conflict → merge the base branch in and resolve it.
@@ -24,14 +32,14 @@ For each open PR on a branch starting with lanes.json's `branchPrefix` that need
 
 Run the project's full verification gate before each push. Park the PR's issue with `LANES park` when a finding needs a product decision or stays red after two honest fix attempts.
 
-**Exit gate:** every own PR is green, conflict-free and has no unanswered blocking review, or its issue is parked.
+**Exit gate:** the base branch is green, reverted by an open PR, or reported; every own PR is green, conflict-free and has no unanswered blocking review, or its issue is parked.
 
 ## 2. Pick
 
-Run `LANES next`.
+While the base branch is red, go to phase 5. Otherwise run `LANES next`.
 
 - `next: #N …` → phase 3.
-- `in flight: … (stale …)` → `LANES park <N> "<where the branch and log stopped>"`, then phase 5.
+- `in flight: … (stale …)` → `LANES park <N> "<where the branch stopped against its AFK plan comment>"`, then phase 5.
 - `next: none` → phase 5.
 
 **Exit gate:** one issue number, or the decision to do housekeeping.
@@ -40,18 +48,20 @@ Run `LANES next`.
 
 1. `LANES claim <N>` rechecks eligibility, labels `state:claimed`, moves the issue to Running on the board and prints a fresh worktree from the base branch. Work only in that worktree.
 2. Read the issue, its parent, linked designs and decisions, and the project's agent rules (AGENTS.md or equivalent).
-3. Invoke `tdd`; iterate with the project's targeted test command.
-4. Update the user-facing docs the project's rules tie to the change, in the same branch.
-5. `LANES scope <N>` passes; then the project's full verification gate passes once.
+3. Plan from the repository, then post the plan as one issue comment headed `AFK plan`: files to change, the failing test that proves each acceptance criterion, ordered steps, and risks. The plan stays inside the scope packet. Edit that comment when the work departs from it, so a later run or the owner resumes from it.
+4. Invoke `tdd`; iterate with the project's targeted test command.
+5. Update the user-facing docs the project's rules tie to the change, in the same branch.
+6. `LANES scope <N>` passes; then the project's full verification gate passes once.
+7. Commit, then run one isolated worker with fresh context that invokes `review` on the branch's diff against the base, given only the issue and its acceptance criteria. Verify each Blocker and Major against the code, fix the real ones through `tdd`, and pass the gate again. Run at most two review rounds.
 
-Park with `LANES park <N> "<one question, the options, a recommendation>"` (pushing the branch when it holds useful work) whenever the issue is ambiguous or contradicts project rules, needs a path outside its scope packet or a protected path, needs an undecided product or model choice, stays red after two honest fix attempts, or needs credentials, settings or a device.
+Park with `LANES park <N> "<one question, the options, a recommendation>"` (pushing the branch when it holds useful work) whenever the issue is ambiguous or contradicts project rules, needs a path outside its scope packet or a protected path, needs an undecided product or model choice, stays red after two honest fix attempts, still has a verified Blocker after the second review round, or needs credentials, settings or a device.
 
-**Exit gate:** green verification and an in-scope diff, or a parked issue.
+**Exit gate:** green verification, an in-scope diff and a review with no open Blocker, or a parked issue.
 
 ## 4. Publish
 
-1. Commit, then `git push -u origin HEAD`.
-2. `gh pr create --title "<type>(<area>): <outcome>" --body-file <file>` following the project's PR template, with `Closes #<N>`; ready for review.
+1. `git push -u origin HEAD`.
+2. `gh pr create --title "<type>(<area>): <outcome>" --body-file <file>` following the project's PR template, with `Closes #<N>`, a link to the plan comment and the review's verdict; ready for review.
 3. `LANES release <N>`.
 4. `LANES automerge <pr>` unless the issue asks for owner review before merge. It merges (or queues, updating a branch that fell behind) only docs, tests and Dependabot minor or patch dependency changes and prints why anything else, including a major version update, waits.
 
@@ -74,9 +84,10 @@ Every run ends with:
 
 1. `LANES tidy --apply`: removes AFK runs' own `afk-<N>` worktrees and branches once their PR is merged or closed; other sessions' checkouts, dirty ones and open PRs stay.
 2. `LANES board --apply` when lanes.json names a project.
+3. Name each lesson: friction this run hit that a durable change would prevent next time (a failed fix attempt, a park, a verified review finding a rule would have caught, a missing command or doc), with the file that should change (a skill, the agent rules, lanes.json, docs or the issue template) and the proposed wording. Unattended runs propose lessons; the owner applies them.
 
-**Exit gate:** both commands' printed result.
+**Exit gate:** both commands' printed result and the lessons, or "no lessons".
 
 ## Output
 
-At most six lines: PRs tended, issue and PR (or "queue empty"), auto-merge verdict, anything parked with its question, follow-ups found, housekeeping counts.
+At most eight lines: base branch health, PRs tended, issue and PR (or "queue empty"), auto-merge verdict, anything parked with its question, follow-ups found, lessons with their target file, housekeeping counts.

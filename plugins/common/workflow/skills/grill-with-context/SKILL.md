@@ -1,7 +1,7 @@
 ---
 name: grill-with-context
 description: Use when challenging a proposed change against task-relevant project context, ADRs, glossary, and knowledge sources during provider-neutral SPECIFY/GRILL before planning.
-allowed-tools: Read
+allowed-tools: Skill Read Bash(gh:*)
 ---
 
 # Grill With Context
@@ -32,4 +32,5 @@ Challenge proposed changes against active project context and architectural reco
    Acceptance and verification: <observable conditions and deterministic gate>
    Plan context: <scope, dependencies, and constraints for bounded slices>
    ```
-*Exit Gate*: Handoff block is emitted and ready for planning.
+3. When the change has an issue, write the handoff into it so planning reads the issue rather than this conversation: the intent and non-goals in its description, an `### Acceptance criteria` list, an estimate (S, M or L, naming the uncertainty behind it), and a ```` ```scope ```` packet when the paths are known. Then invoke `issue-lanes` to run its check on the issue.
+*Exit Gate*: Handoff block is emitted and, when an issue exists, written into it with its lane check result.
