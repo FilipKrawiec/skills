@@ -1,6 +1,7 @@
 ---
 name: agent-review
-description: Use when running the scheduled automated reviewer of a repository whose `.github/lanes.json` turns on `agentReview`, reviewing each open PR once per head commit, handing critical PRs to the owner, merging reviewed AFK PRs and waking the AFK runner.
+description: One scheduled review pass over open PRs where lanes.json turns on agentReview; invoked by name from a scheduled task.
+disable-model-invocation: true
 allowed-tools: Skill Read Bash(python3:*,git:*,gh:*)
 ---
 

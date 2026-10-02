@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Use when a change has merged (phase 06 Ship), for checking base-branch CI, reverting the merge that broke it, escalating deeper failures to planning, or confirming merged issues shipped.
+description: Use when a change has merged (06 Ship), to check base-branch CI, revert the merge that broke it and confirm merged issues shipped.
 allowed-tools: Read Bash(python3:*,git:*,gh:*,just:*)
 ---
 

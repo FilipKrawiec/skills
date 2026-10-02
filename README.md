@@ -98,8 +98,8 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`plan`](plugins/common/workflow/skills/plan/SKILL.md) | Model | 03 Plan: Post a repository-grounded plan on the issue; approval before execution. |
 | | [`ship`](plugins/common/workflow/skills/ship/SKILL.md) | Model | 06 Ship: Base-branch health after merge, revert AFK breakage, confirm shipped issues. |
 | | [`improve`](plugins/common/workflow/skills/improve/SKILL.md) | Model | 07 Improve: Turn friction into lessons for skills, agent rules, docs or assets. |
-| | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | Model | Unattended Delivery: Runs the cycle for one approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
-| | [`agent-review`](plugins/common/workflow/skills/agent-review/SKILL.md) | Model | Agent Review: Review each open PR per head commit, hand critical PRs to the owner, merge reviewed AFK PRs, wake the runner. |
+| | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | User (scheduler invokes by name) | Unattended Delivery: Runs the cycle for one approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
+| | [`agent-review`](plugins/common/workflow/skills/agent-review/SKILL.md) | User (scheduler invokes by name) | Agent Review: Review each open PR per head commit, hand critical PRs to the owner, merge reviewed AFK PRs, wake the runner. |
 | **`filipkrawiec-authoring`** | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring affirmative state machines, output contracts, and token budgets. |
 
 ---

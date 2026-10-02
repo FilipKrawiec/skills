@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Use when a change has shipped (phase 07 Improve), or when friction, rework, a repeated review finding or an owner correction should become a lasting change to skills, agent rules, docs or assets.
+description: Use when a change has shipped (07 Improve) or friction, rework or a repeated review finding should become a lasting change to skills, agent rules or docs.
 allowed-tools: Skill Read Bash(gh:*,git:*)
 ---
 

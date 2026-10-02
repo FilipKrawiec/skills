@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Use when programming, coding, refactoring, implementing features, or diagnosing and fixing a bug, broken test, or regression through Red-Green-Refactor with explicit failing and passing test evidence.
+description: Use when implementing, refactoring or fixing code through Red-Green-Refactor, including reproducing a bug as a failing test first.
 allowed-tools: Skill Read Edit Bash
 ---
 

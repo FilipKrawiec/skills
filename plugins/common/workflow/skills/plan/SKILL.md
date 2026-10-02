@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Use when planning the implementation of a specified issue from the repository (phase 03 Plan), before any code changes, or when resuming an issue from its posted plan.
+description: Use when an issue is specified and needs its implementation plan posted before code changes (03 Plan), or when resuming work from a posted plan.
 allowed-tools: Read Bash(gh:*,git:*)
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: review
-description: Use when auditing a git diff, branch, pull request, or staged changes for runtime defects, architectural boundary breaches, design smells, and test rigor.
+description: Use when auditing a diff, branch, PR or staged changes for architectural boundary breaches, runtime defects, design smells and test rigor.
 allowed-tools: Skill Read Bash(git:*)
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: vcs
-description: Use when performing Git or version control operations, including branching, commits, rebases, squashes, force-with-lease pushes, merges, and file moves.
+description: Use when committing, branching, rebasing, pushing or moving files with Git.
 allowed-tools: Bash(git:*) Read
 ---
 

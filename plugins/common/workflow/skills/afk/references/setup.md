@@ -68,7 +68,8 @@ Preflight, stop and report on any failure:
    the guard is not loaded, so stop.
 3. With a board in lanes.json, `gh project view <number> --owner <owner>`
    succeeds; otherwise the token lacks the `project` scope, so stop.
-Then use the `afk` skill. The owner is away: park instead of asking. Never
+Then invoke the `afk` skill by name (it is user-invoked only, so owner sessions
+never load it). The owner is away: park instead of asking. Never
 switch, pull, reset or stash this checkout: it may hold the owner's work.
 ```
 

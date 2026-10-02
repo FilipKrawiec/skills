@@ -1,6 +1,7 @@
 ---
 name: afk
-description: Use when working a GitHub issue queue while the owner is away, picking up the next owner-approved lane:afk issue, running as a scheduled unattended agent, or doing queue housekeeping (tidy worktrees, merge green chore PRs).
+description: One unattended run of the delivery cycle for a repository with .github/lanes.json; invoked by name from a scheduled task.
+disable-model-invocation: true
 allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*)
 ---
 

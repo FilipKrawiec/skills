@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Use when turning a raw need, idea or bug report into a GitHub issue (phase 01 Define), refining an issue into implementation requirements (phase 02 Spec), grilling a change against project context and ADRs, triaging issues into delivery lanes, deciding what an agent may deliver unattended (AFK), or reconciling issues with merged work.
+description: Use when a need or bug report should become a GitHub issue, an issue needs acceptance criteria, a scope packet and a lane (01 Define, 02 Spec), or issues need triage into lanes.
 allowed-tools: Read Bash(gh:*,git:*)
 ---
 
