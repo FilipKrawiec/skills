@@ -1,5 +1,5 @@
 {
   "name": "filipkrawiec-workflow",
   "description": "Workflow skills for TDD, review, VCS, issue lanes and unattended (AFK) delivery.",
-  "version": "9.19.0"
+  "version": "9.20.0"
 }
