@@ -53,7 +53,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(custom["base"], "trunk")
         self.assertEqual(custom["owner"], OWNER)
         self.assertIn(r"^\.[^/]+/", custom["protected"])
-        self.assertEqual((custom["worktrees"], custom["branchPrefix"]), (".worktrees", "agent/afk-"))
+        self.assertEqual(custom["branchPrefix"], "agent/afk-")
         self.assertIn("^infra/", custom["protected"])
         self.assertIn("^guide/", custom["chores"])
         self.assertIn(r"^docs/", custom["chores"])
@@ -103,10 +103,6 @@ class EligibilityTests(unittest.TestCase):
         issues = [issue(5, ("lane:afk", "priority:P2")), issue(9, ("lane:afk", "priority:P0")),
                   issue(3, ("lane:afk",)), issue(4, ("lane:afk", "priority:P0"))]
         self.assertEqual([i["number"] for i in sorted(issues, key=lanes.rank)], [4, 9, 5, 3])
-
-    def test_branch_slug_drops_the_conventional_prefix(self) -> None:
-        self.assertEqual(lanes.slug("feat(stage): Glass setlist drawer to add, remove"),
-                         "glass-setlist-drawer-to-add")
 
 
 class ScopeTests(unittest.TestCase):
@@ -169,80 +165,13 @@ class AutomergeTests(unittest.TestCase):
             self.assertIsNotNone(lanes.automerge_refusal(candidate, CONFIG))
 
 
-class BoardAndTidyTests(unittest.TestCase):
-    def test_each_issue_sits_in_its_phase_and_lanes_stay_labels(self) -> None:
-        def closed(*labels, reason="COMPLETED"):
-            return {**issue(labels=labels, state="CLOSED"), "stateReason": reason}
-        expected = [
-            (issue(body="An idea."), False, "01 Define"),
-            (issue(labels=(), body="An idea."), False, "01 Define"),
-            (issue(), False, "02 Spec"), (issue(labels=("lane:owner", "state:parked")), False, "02 Spec"),
-            (issue(labels=("lane:afk", "state:claimed")), False, "03 Plan"),
-            (issue(labels=("lane:owner", "state:started", "state:planned")), False, "04 Execute"),
-            (issue(labels=("lane:afk", "state:started", "state:planned")), True, "05 Review"),
-            (closed("state:planned"), False, "06 Ship"),
-            (closed("state:shipped"), False, "07 Improve"),
-            (closed("state:learned"), False, "Done"), (closed(), False, "Done"),
-            (closed("state:planned", reason="NOT_PLANNED"), False, "Done"),
-        ]
-        for candidate, has_pr, want in expected:
-            with self.subTest(want=want):
-                self.assertEqual(lanes.status(candidate, has_pr), want)
-                self.assertIn(want, lanes.STATUSES)
-
-    def test_only_planned_issues_closed_before_the_green_commit_ship(self) -> None:
-        def closed(number, closed_at, *labels, reason="COMPLETED"):
-            return {"number": number, "closedAt": closed_at, "stateReason": reason,
-                    "labels": [{"name": n} for n in labels]}
-        issues = [closed(1, "2026-10-02T10:00:00Z", "state:planned"),
-                  closed(2, "2026-10-02T13:00:00Z", "state:planned"),
-                  closed(3, "2026-10-02T10:00:00Z"),
-                  closed(4, "2026-10-02T10:00:00Z", "state:shipped"),
-                  closed(5, "2026-10-02T10:00:00Z", "state:planned", reason="NOT_PLANNED")]
-        self.assertEqual(lanes.newly_shipped(issues, "2026-10-02T12:00:00Z"), [1])
-
+class QueueTests(unittest.TestCase):
     def test_only_afk_claims_hold_the_one_at_a_time_queue(self) -> None:
         issues = [issue(3, ("lane:owner", "state:started")), issue(4, ("lane:afk",))]
         self.assertEqual(lanes.afk_in_flight(issues, set()), [])
         issues.append(issue(5, ("lane:afk", "state:claimed")))
         self.assertEqual([i["number"] for i in lanes.afk_in_flight(issues, set())], [5])
         self.assertEqual(lanes.afk_in_flight(issues, {5}), [])
-
-    def test_priority_comes_from_its_label(self) -> None:
-        self.assertEqual(lanes.priority(issue(labels=("priority:P1",))), "P1")
-        self.assertIsNone(lanes.priority(issue(labels=())))
-
-    def test_tidy_touches_only_what_afk_runs_created(self) -> None:
-        root = Path("/repo")
-        afk_tree = root / CONFIG["worktrees"] / "afk-12"
-        self.assertTrue(lanes.afk_owned("agent/afk-12-drawer", afk_tree, root, CONFIG))
-        self.assertTrue(lanes.afk_owned("agent/afk-12-drawer", None, root, CONFIG))
-        self.assertFalse(lanes.afk_owned("feature/drawer", None, root, CONFIG))
-        self.assertFalse(lanes.afk_owned("", None, root, CONFIG))
-        self.assertFalse(lanes.afk_owned("agent/afk-12-drawer", root / CONFIG["worktrees"] / "session-a1", root, CONFIG))
-        self.assertFalse(lanes.afk_owned("agent/afk-12-drawer", Path("/elsewhere/afk-12"), root, CONFIG))
-
-    def test_only_finished_clean_work_is_removed(self) -> None:
-        self.assertEqual(lanes.tidy_action("MERGED", False), "remove")
-        self.assertEqual(lanes.tidy_action("CLOSED", False), "remove")
-        self.assertEqual(lanes.tidy_action("MERGED", True), "keep: uncommitted changes")
-        self.assertEqual(lanes.tidy_action("OPEN", False), "keep: open PR")
-        self.assertEqual(lanes.tidy_action(None, False), "keep: no PR yet")
-
-
-class LabelTests(unittest.TestCase):
-    def test_lane_labels_are_created_extras_renamed_and_strays_deleted(self) -> None:
-        custom = config(labels={"type:bug": {"color": "d73a4a", "description": "Broken"}},
-                        renames={"bug": "type:bug"})
-        current = {"bug": {"color": "d73a4a", "description": "Broken"},
-                   "wontfix": {"color": "ffffff", "description": ""}}
-        steps = {(action, name) for action, name, _, _ in lanes.label_plan(current, custom)}
-        self.assertIn(("rename", "bug"), steps)
-        self.assertNotIn(("create", "type:bug"), steps)
-        self.assertIn(("delete", "wontfix"), steps)
-        for name in (lanes.AFK, lanes.PROPOSED, lanes.OWNER_LANE, lanes.CLAIMED, lanes.STARTED, lanes.PARKED,
-                     lanes.OWNER_REVIEW, lanes.EPIC):
-            self.assertIn(("create", name), steps)
 
 
 SHA = "a" * 40
@@ -299,50 +228,6 @@ class ReviewedMergeTests(unittest.TestCase):
                    "submittedAt": "2026-10-02T08:00:00Z"}
         ready = reviewed_pr()
         self.assertIn("requests changes", self.refusal({**ready, "reviews": ready["reviews"] + [blocked]}))
-
-
-class PhaseTests(unittest.TestCase):
-    """An agent can always tell an issue's phase, what to do next and what moves it on."""
-
-    def test_every_column_names_its_next_step(self) -> None:
-        self.assertEqual(set(lanes.NEXT_STEP), set(lanes.STATUSES))
-
-    def test_spec_lists_what_planning_still_needs(self) -> None:
-        self.assertEqual(lanes.spec_gaps(issue()), [])
-        self.assertEqual(lanes.spec_gaps(issue(labels=(), body="An idea.")),
-                         ["acceptance criteria", "scope packet", "a lane"])
-
-    def test_the_plan_and_lessons_comments_move_the_issue_on(self) -> None:
-        plan, lessons = [{"body": "## Plan\n\n1. Test first."}], [{"body": "## Lessons\n\nno lessons"}]
-        self.assertEqual(lanes.earned_mark({**issue(), "comments": plan}, "03 Plan"), lanes.PLANNED)
-        self.assertIsNone(lanes.earned_mark({**issue(), "comments": []}, "03 Plan"))
-        self.assertIsNone(lanes.earned_mark({**issue(), "comments": plan}, "02 Spec"))
-        self.assertEqual(lanes.earned_mark({**issue(), "comments": lessons}, "07 Improve"), lanes.LEARNED)
-
-
-class HealthTests(unittest.TestCase):
-    """After merge, a run finds a red base branch and the merge that turned it red."""
-
-    def run_(self, name, conclusion, status="completed"):
-        return {"name": name, "status": status, "conclusion": conclusion}
-
-    def test_failures_turn_a_commit_red_and_unfinished_checks_are_not_green(self) -> None:
-        self.assertEqual(lanes.commit_state([self.run_("verify", "failure"), self.run_("lint", "success")], []),
-                         ("red", ["verify"]))
-        self.assertEqual(lanes.commit_state([], [{"context": "deploy", "state": "error"}]), ("red", ["deploy"]))
-        self.assertEqual(lanes.commit_state([self.run_("verify", None, "in_progress")], []), ("pending", []))
-        self.assertEqual(lanes.commit_state([self.run_("docs", "skipped")], []), ("none", []))
-
-    def test_a_run_cancelled_by_a_newer_push_is_not_a_failure(self) -> None:
-        runs = [self.run_("verify", "cancelled"), self.run_("lint", "success")]
-        self.assertEqual(lanes.commit_state(runs, []), ("green", []))
-
-    def test_the_culprit_is_the_oldest_red_after_the_last_green(self) -> None:
-        commits = [("d", "fix: d (#4)", "red", ["verify"]), ("c", "docs: c (#3)", "pending", []),
-                   ("b", "feat: b (#2)", "red", ["lint"]), ("a", "feat: a (#1)", "green", [])]
-        self.assertEqual(lanes.base_health(commits), ("red", ["verify"], ("b", "feat: b (#2)")))
-        self.assertEqual(lanes.base_health(commits[:3]), ("red", ["verify"], None))
-        self.assertEqual(lanes.base_health([("c", "x", "pending", [])] + commits[3:]), ("green", [], None))
 
 
 class BaseBranchTests(unittest.TestCase):

@@ -8,7 +8,7 @@ allowed-tools: Read Bash(gh:*,git:*,python3:*)
 
 Prepare a concrete plan, grounded in the actual repository, that execution follows without re-planning the basics. The plan lives on the issue so the next session resumes from facts, not recollection. This skill changes no code.
 
-Run `python3 <the afk skill's directory>/scripts/lanes.py phase <N>` (`LANES phase <N>`) before and after this skill; do the step it prints.
+The issue is claimed or started (03 Plan in [board.md](../../references/board.md)) before this skill runs.
 
 ## 1. Read
 
@@ -34,9 +34,9 @@ When the plan needs a path outside the scope packet or a protected path, or an a
 - Attended: show the draft and wait for the owner to approve or adjust it.
 - Unattended: the owner's `lane:afk` approval of the specified issue stands in.
 
-Post the approved plan as one issue comment headed `## Plan` (edit the existing one when resuming), then run `LANES phase <N>`. Keep the comment current whenever execution departs from it.
+Post the approved plan as one issue comment headed `## Plan` (edit the existing one when resuming), then move the card to 04 Execute. Keep the comment current whenever execution departs from it.
 
-**Exit gate:** `LANES phase <N>` prints `advanced: 03 Plan → 04 Execute`.
+**Exit gate:** the `## Plan` comment link, and the card in 04 Execute when there is a board.
 
 ## Output
 

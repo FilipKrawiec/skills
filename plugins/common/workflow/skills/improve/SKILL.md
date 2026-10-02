@@ -8,7 +8,7 @@ allowed-tools: Skill Read Edit Bash(gh:*,git:*,python3:*)
 
 Close the cycle by making the system learn: remove friction at its source instead of relying on anyone's memory. Lessons are proposals until the owner accepts them.
 
-Run `python3 <the afk skill's directory>/scripts/lanes.py phase <N>` (`LANES phase <N>`) before and after this skill; do the step it prints.
+Card moves follow [board.md](../../references/board.md).
 
 ## 1. Collect
 
@@ -37,9 +37,9 @@ Drop a lesson that would not change future behavior. Before writing it, scrub se
 - Unattended: post the lessons as one comment on the shipped issue headed `## Lessons` ("no lessons" when there are none), and name them in the run's output. Agent rules, skills and lanes.json are protected; the owner applies them.
 - Attended: post the same `## Lessons` comment, then apply the lessons the owner accepts in a branch (invoke `writing-great-skill` when the target is a skill in its repository), and open a PR; a lesson for an upstream skill library becomes an issue there after the owner's yes.
 
-Then `LANES phase <N>` closes the cycle: the `## Lessons` comment moves the issue to Done.
+Then move the card to Done: the cycle is closed.
 
-**Exit gate:** the `## Lessons` comment, and `LANES phase <N>` prints `phase: Done`.
+**Exit gate:** the `## Lessons` comment, and the card in Done when there is a board.
 
 ## Output
 

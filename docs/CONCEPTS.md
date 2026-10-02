@@ -71,7 +71,7 @@ plugins/
 
 ## 4. The Delivery Cycle
 
-Delivery follows seven phases. Each one has a skill, and each is a column on the optional Project board. The board is derived from the issue's state and labels, so it shows which phase every issue is in.
+Delivery follows seven phases. Each one has a skill, and each is a column on the optional Project board. The skill that finishes a phase moves the card, so the board shows which phase every issue is in.
 
 ```
  ┌───────────┐   ┌─────────┐   ┌─────────┐   ┌────────────┐
@@ -85,18 +85,18 @@ Delivery follows seven phases. Each one has a skill, and each is a column on the
  └────────────┘   └──────────┘   └─────────────────────────┘
 ```
 
-| Phase | Skill | Leaves behind | Board column when |
+| Phase | Skill | Leaves behind | The issue is here when |
 | :--- | :--- | :--- | :--- |
-| 01 Define | `define` | An issue with intent and open questions | Open, no `### Acceptance criteria` |
-| 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane | Acceptance criteria, not started |
-| 03 Plan | `plan` | A `## Plan` comment on the issue | `state:claimed` or `state:started`, not `state:planned` |
-| 04 Execute | `tdd`, `vcs` | Tested commits on a task branch | Started and `state:planned`, no open PR |
+| 01 Define | `define` | An issue with intent and open questions | It has no `### Acceptance criteria` yet |
+| 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane | It is specified and not started |
+| 03 Plan | `plan` | A `## Plan` comment on the issue | A session claimed or started it |
+| 04 Execute | `tdd`, `vcs` | Tested commits on a task branch | The `## Plan` comment exists, no PR yet |
 | 05 Review | `review` (fresh-context worker), `agent-review` | A PR with a verdict | An open PR closes it |
-| 06 Ship | `ship` | A green base branch, a revert PR, or an escalation | Closed with `state:planned` |
-| 07 Improve | `improve` | A `## Lessons` comment or a PR to the durable artifacts | Closed with `state:shipped` |
-| Done | | | `state:learned`, closed as not planned, or closed without a phase marker |
+| 06 Ship | `ship` | A green base branch, a revert PR, or an escalation | Its PR merged, base CI not yet confirmed |
+| 07 Improve | `improve` | A `## Lessons` comment or a PR to the durable artifacts | Ship is confirmed |
+| Done | | | The `## Lessons` comment exists, or it closed as not planned |
 
-Lanes stay labels, so a card's labels show who acts next. Agents follow one loop: run `lanes.py phase N`, do the step it prints, repeat. `phase` moves the issue on by itself once the phase's artifact exists (a `## Plan` comment adds `state:planned`, a `## Lessons` comment adds `state:learned`); `lanes.py health --apply` adds `state:shipped` once the base branch is green after the merge.
+The board column is the phase: the skill that finishes a phase moves the card, with the `gh project` commands in `plugins/common/workflow/references/board.md`. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `automerge`, `merge-reviewed`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
 
 ### Worktree Provenance & Safety
 

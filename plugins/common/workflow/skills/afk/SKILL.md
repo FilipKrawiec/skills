@@ -1,6 +1,6 @@
 ---
 name: afk
-description: Use when working a GitHub issue queue while the owner is away, picking up the next owner-approved lane:afk issue, running as a scheduled unattended agent, or doing queue housekeeping (tidy worktrees, merge green chore PRs, refresh the board).
+description: Use when working a GitHub issue queue while the owner is away, picking up the next owner-approved lane:afk issue, running as a scheduled unattended agent, or doing queue housekeeping (tidy worktrees, merge green chore PRs).
 allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*)
 ---
 
@@ -10,7 +10,7 @@ One run carries the delivery cycle while the owner is away. It checks what alrea
 
 Leave the checkout a run starts in exactly as it is; it may hold the owner's work. Every build and fix happens in a worktree.
 
-`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). Every write command is a dry run without `--apply`. `LANES phase <N>` prints any issue's phase, its next step and its exit gate, and moves the issue on once the phase's artifact exists.
+`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). It holds only the gates: `next`, `scope`, `automerge` and `merge-reviewed`. Claim, park, release, tidy and card moves are the plain `gh` and `git` steps in [board.md](../../references/board.md); move the card whenever an issue enters a new phase and lanes.json names a project.
 
 Read [setup.md](references/setup.md) when the repository has no `.github/lanes.json`, or when scheduling unattended runs.
 
@@ -24,13 +24,13 @@ Invoke `ship` for the base branch.
 
 ## 2. Tend
 
-For each open PR on a branch starting with lanes.json's `branchPrefix` that needs work below, run `LANES start <issue>` first and `LANES release <issue>` after its push, working in its worktree (recreate it from the branch when tidied):
+For each open PR on a branch starting with lanes.json's `branchPrefix` that needs work below, work in its worktree (recreate it from the branch when tidied):
 
 1. A merge conflict → merge the base branch in and resolve it.
 2. Failing checks → reproduce, fix and push.
 3. An unanswered review that requests changes (a human's, or an automated reviewer's marked blocking) → fix each finding, reply on its thread, push.
 
-Run the project's full verification gate before each push. Park the PR's issue with `LANES park` when a finding needs a product decision or stays red after two honest fix attempts.
+Run the project's full verification gate before each push. Park the PR's issue when a finding needs a product decision or stays red after two honest fix attempts.
 
 **Exit gate:** every own PR is green, conflict-free and has no unanswered blocking review, or its issue is parked.
 
@@ -39,20 +39,24 @@ Run the project's full verification gate before each push. Park the PR's issue w
 While the base branch is red, go to phase 5. Otherwise run `LANES next`.
 
 - `next: #N …` → phase 4.
-- `in flight: … (stale …)` → `LANES park <N> "<where the branch stopped against its ## Plan comment>"`, then phase 5.
+- `in flight: … (stale …)` → park it with where the branch stopped against its `## Plan` comment, then phase 5.
 - `next: none` → phase 5.
 
 **Exit gate:** one issue number, or the decision to do housekeeping.
 
 ## 4. Deliver
 
-1. `LANES claim <N>` rechecks eligibility, labels `state:claimed` and prints a fresh worktree from the base branch. Work only in that worktree; read the issue, its linked decisions and the project's agent rules.
-2. Repeat `LANES phase <N>` and do the step it prints, until it prints `phase: 05 Review`. In 04 Execute, also: update the docs the project's rules tie to the change; pass `LANES scope <N>` and the full verification gate before the review worker; give that worker only the issue and the diff; allow two review rounds; title the PR `<type>(<area>): <outcome>` following the project's PR template, linking the `## Plan` comment and the review's verdict.
-3. `LANES release <N>`, then `LANES automerge <pr>` unless the issue asks for owner review. It merges (or queues) only docs, tests and Dependabot minor or patch changes and prints why anything else waits.
+Follow the phases in order; each skill's exit gate is the next step's entry.
 
-Park with `LANES park <N> "<one question, the options, a recommendation>"` (pushing the branch when it holds useful work) whenever the issue is ambiguous or contradicts project rules, needs a path outside its scope packet or a protected path, needs an undecided product or model choice, stays red after two honest fix attempts, still has a verified Blocker after the second review round, needs credentials, settings or a device, or `LANES phase <N>` prints something this step does not expect.
+1. **Claim.** Run `LANES next` again and stop at phase 5 unless it still prints `next: #<N>`. Claim it (03 Plan). Work only in its worktree; read the issue, its linked decisions and the project's agent rules.
+2. **03 Plan.** Invoke `plan`. Its `## Plan` comment moves the card to 04 Execute.
+3. **04 Execute.** Invoke `tdd` for each plan step. Update the docs the project's rules tie to the change. Pass `LANES scope <N>` and the full verification gate.
+4. **05 Review.** Invoke `review` with only the issue and the diff; allow two rounds. Open the PR titled `<type>(<area>): <outcome>` per the project's PR template, closing the issue and linking the `## Plan` comment and the review's verdict. Move the card to 05 Review and release the claim.
+5. **Merge gate.** `LANES automerge <pr>` unless the issue asks for owner review. It merges (or queues) only docs, tests and Dependabot minor or patch changes and prints why anything else waits.
 
-**Exit gate:** a PR URL with `phase: 05 Review` and its auto-merge verdict, or a parked issue.
+Park with one question, the options and a recommendation whenever the issue is ambiguous or contradicts project rules, needs a path outside its scope packet or a protected path, needs an undecided product or model choice, stays red after two honest fix attempts, still has a verified Blocker after the second review round, or needs credentials, settings or a device.
+
+**Exit gate:** a PR URL in 05 Review with its auto-merge verdict, or a parked issue.
 
 ## 5. Housekeeping
 
@@ -70,10 +74,9 @@ Keep to the queue: new work starts as an issue, not in a run. Name any follow-up
 Every run ends with:
 
 1. Invoke `improve` for each issue in 07 Improve without a `## Lessons` comment, and for this run's own friction.
-2. `LANES tidy --apply`: removes AFK runs' own `afk-*` worktrees and branches once their PR is merged or closed; other sessions' checkouts, dirty ones and open PRs stay.
-3. `LANES board --apply` when lanes.json names a project.
+2. Tidy AFK runs' own worktrees and branches.
 
-**Exit gate:** the lessons (or "no lessons") and both commands' printed result.
+**Exit gate:** the lessons (or "no lessons") and the worktrees removed.
 
 ## Output
 

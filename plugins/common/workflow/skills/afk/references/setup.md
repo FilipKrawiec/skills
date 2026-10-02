@@ -9,14 +9,13 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `repo` | yes | `owner/name` on GitHub. |
 | `owner` | no | Login whose PRs may auto-merge; defaults to the repository owner. |
 | `base` | no | Base branch; default `main`. |
-| `project` | no | `{"owner": "<login>", "number": <n>}` for `board`. |
+| `project` | no | `{"owner": "<login>", "number": <n>}`: the board whose cards the skills move. |
 | `protected` | no | Regexes for paths agents may not change in AFK work (adds to every top-level dot-directory, `AGENTS.md`, justfile and Makefile). Add the host's own instruction file here when it has one besides `AGENTS.md`. |
 | `alwaysInScope` | no | Path prefixes every AFK change may touch, e.g. the user guide the project rules require updating. |
 | `chores` | no | Regexes of paths that auto-merge on green checks (adds to `^docs/`, `\.md$`, test directories). |
 | `dependencyFiles` | no | Regexes of manifests and lockfiles that auto-merge when Dependabot changed them, unless the PR crosses a major version (or a minor one below 1.0): those stay open for the owner. |
-| `worktrees`, `branchPrefix`, `staleClaimHours` | no | Defaults `.worktrees`, `agent/afk-`, `3`. |
+| `branchPrefix`, `staleClaimHours` | no | Defaults `agent/afk-`, `3`. |
 | `agentReview`, `reviewRounds` | no | `true` when the `agent-review` skill reviews PRs before the owner; it adds `review:owner` to a PR it hands to the owner, and `lanes.py merge-reviewed` may merge AFK PRs it judged ready. `reviewRounds` caps reviews per PR. Defaults `false`, `3`. |
-| `labels`, `renames` | no | Extra labels `{"name": {"color", "description"}}` and renames `{"old": "new"}`; `labels` deletes everything else. |
 | `guard` | no | Extra blocked commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. |
 
 Minimal example:
@@ -35,26 +34,26 @@ Minimal example:
 
 | Step | Command or setting |
 | --- | --- |
-| Labels | `lanes.py labels`, review, then `--apply` (creates `lane:*`, the `state:*` labels, `review:owner`, `type:epic` plus yours). |
-| Board | Optional; `lanes.py board --apply` rewrites the Status options to the phases below. Lanes stay as labels; show them on cards once in the board view's field settings (the API cannot change views). |
+| Labels | `gh label create <name> --color <hex> --description "<text>"` for each label below that the repository lacks. |
+| Board | Optional. Give the Project's Status field one option per column in [board.md](../../../references/board.md), once, in the board's settings. Show the labels on cards in the board view's field settings. |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
-| Rules | Add to the project's agent rules: "New work starts with `define`; `spec` decides its lane", "Working on an issue: run `lanes.py phase N`, do the step it names, and repeat until it names the owner; pausing or handing off: `lanes.py release N`" and a link to the project's workflow page. |
+| Rules | Add to the project's agent rules: "New work starts with `define`; `spec` decides its lane", "Work an issue phase by phase with the skill its board column names; pausing or handing off: remove `state:claimed` or `state:started`" and a link to the project's workflow page. |
 
-## Board lifecycle
+## Labels
 
-One column per phase of the delivery cycle. Lanes stay labels on the cards.
-
-| Status | When |
+| Label | Meaning |
 | --- | --- |
-| 01 Define | Open, no `### Acceptance criteria` section yet. |
-| 02 Spec | Has acceptance criteria and is not started. `lane:afk` waits for a run; `lane:proposed` and `state:parked` wait on the owner (re-applying `lane:afk` hands a parked issue back; the next claim clears `state:parked`). |
-| 03 Plan | `state:claimed` (an AFK build) or `state:started` (any other session), without `state:planned`. |
-| 04 Execute | Started and `state:planned` (`lanes.py phase N` adds it once a `## Plan` comment exists). |
-| 05 Review | An open PR closes it. `review:owner` on the PR means it waits on the owner. Takes precedence over 03 and 04. |
-| 06 Ship | Closed as completed with `state:planned`: merged, base-branch health not yet confirmed. |
-| 07 Improve | `state:shipped` (`lanes.py health --apply` once the base branch is green after the merge): lessons are due. |
-| Done | `state:learned` (`lanes.py phase N` adds it once a `## Lessons` comment exists), closed as not planned, or closed without a phase marker. |
+| `lane:afk` | Owner-approved: an agent may deliver it unattended. |
+| `lane:proposed` | An agent recommends AFK; the owner decides. |
+| `lane:owner` | Needs the owner: a decision, credentials, settings or a device. |
+| `state:claimed` | An AFK run is working on it now. |
+| `state:started` | Another session is working on it now. |
+| `state:parked` | An AFK run handed it back with a question. |
+| `review:owner` | PR: agent review is done; it waits for the owner. |
+| `type:epic` | Umbrella outcome with sub-issues. |
+
+Add the project's `type:` and `priority:P0` to `priority:P2` labels. The board's columns, the commands that move a card and the claim, park and tidy steps are in [board.md](../../../references/board.md).
 
 With `agentReview`, the reviewer adds `review:owner` to a PR when it hands it to the owner (passed but needs the owner, or out of review rounds) and removes it when it asks for fixes again.
 

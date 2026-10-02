@@ -1,64 +1,31 @@
 #!/usr/bin/env python3
-"""Issue lanes: the AFK queue, chore auto-merge, the board, labels and tidy.
+"""Issue lanes gates: what an unattended agent may pick up, touch and merge.
 
-GitHub Issues are the only queue. Every open issue carries one lane label:
-`lane:afk` (the owner approved unattended delivery), `lane:proposed` (an agent
-recommends AFK) or `lane:owner`. The optional Project board is derived from
-issues, one column per phase of the delivery cycle. A repository opts in with `.github/lanes.json` (see references/setup.md).
+Only the decisions an agent must not judge for itself live here; the skills do
+everything else with plain `gh` and `git`. A repository opts in with
+`.github/lanes.json` (see references/setup.md).
 
-Usage: lanes.py phase N              # N's phase, next step and exit gate; moves N on once its artifact exists
-       lanes.py next                 # next AFK issue; in flight, skipped, untriaged
-       lanes.py claim N              # claim N, create its worktree from origin/<base>, move it to 03 Plan
-       lanes.py start N              # move N to 03 Plan while a session works on it outside an AFK build
-       lanes.py release N            # clear N's claim or start when the work pauses or is handed off
-       lanes.py scope N              # changed files outside N's scope packet
-       lanes.py park N MESSAGE       # hand N back to the owner with one question
+Usage: lanes.py next                 # the next eligible AFK issue; in flight, skipped, untriaged
+       lanes.py scope N              # changed files outside N's scope packet (exit 1 when any)
        lanes.py automerge PR         # squash auto-merge PR on green checks if it is a chore
        lanes.py merge-reviewed PR    # squash-merge an AFK PR whose agent review says ready
-       lanes.py health [--apply]     # CI on the base branch, the merge that turned it red; marks shipped
-       lanes.py board [--apply]      # derive Project status and priority from issues
-       lanes.py labels [--apply]     # sync labels with the lane set plus lanes.json
-       lanes.py tidy [--apply]       # remove AFK runs' own worktrees and branches once finished
 Standard library only; needs git and an authenticated gh.
 """
 import json
 import re
-import socket
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 AFK, PROPOSED, OWNER_LANE, CLAIMED = 'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed'
-STARTED, PARKED, OWNER_REVIEW = 'state:started', 'state:parked', 'review:owner'
-# Phase markers: an issue gains one after its plan, its ship check and its lessons.
-PLANNED, SHIPPED, LEARNED = 'state:planned', 'state:shipped', 'state:learned'
-PHASE_MARKS = (PLANNED, SHIPPED, LEARNED)
-EPIC = 'type:epic'
+STARTED, OWNER_REVIEW, EPIC = 'state:started', 'review:owner', 'type:epic'
 PRIORITIES = ('priority:P0', 'priority:P1', 'priority:P2')
-# The board's columns are the delivery cycle's phases.
-STATUSES = ('01 Define', '02 Spec', '03 Plan', '04 Execute', '05 Review', '06 Ship', '07 Improve', 'Done')
-STATUS_COLORS = {'01 Define': 'GRAY', '02 Spec': 'BLUE', '03 Plan': 'ORANGE', '04 Execute': 'YELLOW',
-                 '05 Review': 'PURPLE', '06 Ship': 'PINK', '07 Improve': 'RED', 'Done': 'GREEN'}
-LANE_LABELS = {
-    AFK: ('1d76db', 'Owner-approved: an agent may deliver this unattended'),
-    PROPOSED: ('8250df', 'An agent recommends AFK; the owner decides'),
-    OWNER_LANE: ('d93f0b', 'Needs the owner: a decision, credentials, settings or a device'),
-    CLAIMED: ('fbca04', 'An AFK run is working on it now'),
-    STARTED: ('fef2c0', 'A session is working on it now (outside an AFK build)'),
-    PARKED: ('d93f0b', 'An AFK run handed it back with a question for the owner'),
-    OWNER_REVIEW: ('e99695', 'PR: agent review is done; it waits for the owner'),
-    PLANNED: ('c5def5', 'Its plan is posted; after merge it waits for the ship check'),
-    SHIPPED: ('0e8a16', 'Merged and the base branch stayed green; lessons are due'),
-    LEARNED: ('bfdadc', 'Lessons recorded or applied; the cycle is closed'),
-    EPIC: ('3e4b9e', 'Umbrella outcome with sub-issues'),
-}
 DEPENDABOT = {'app/dependabot', 'dependabot[bot]'}
 
 # Lists in lanes.json extend these; scalars replace them.
 DEFAULTS = {
     'base': 'main',
-    'worktrees': '.worktrees',
     'branchPrefix': 'agent/afk-',
     'staleClaimHours': 3,
     # Top-level dot-directories hold automation, agent and editor configuration.
@@ -67,15 +34,11 @@ DEFAULTS = {
     'chores': [r'^docs/', r'\.md$', r'(^|/)tests?/'],
     'dependencyFiles': [r'(^|/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|pubspec\.(yaml|lock)'
                         r'|requirements[^/]*\.txt|poetry\.lock|uv\.lock|go\.(mod|sum)|Cargo\.(toml|lock))$'],
-    'labels': {},
-    'renames': {},
     # True when an automated reviewer reviews PRs first and hands them over with review:owner.
     'agentReview': False,
     'reviewRounds': 3,
 }
 
-PLAN_HEADING = re.compile(r'^\s*#{1,3}\s*Plan\b', re.I)
-LESSONS_HEADING = re.compile(r'^\s*#{1,3}\s*Lessons\b', re.I)
 PACKET = re.compile(r'```(?:scope|factory)\s*(\{.*?\})\s*```', re.S)
 ACCEPTANCE = re.compile(r'^#+\s*Acceptance criteria\s*\n+\s*\S', re.M | re.I)
 
@@ -168,11 +131,6 @@ def out_of_scope(changed, paths, config):
     allowed = [*paths, *config['alwaysInScope']]
     return [f for f in changed
             if matches(config['protected'], f) or not any(covers(p, f) for p in allowed)]
-
-
-def slug(title):
-    words = re.sub(r'^\w+(\([^)]*\))?:\s*', '', title).lower()
-    return '-'.join(re.findall(r'[a-z0-9]+', words)[:5]) or 'task'
 
 
 # --- Chore auto-merge ------------------------------------------------------
@@ -276,164 +234,9 @@ def reviewed_merge_refusal(pr, config):
     return None
 
 
-# --- Base branch health ---------------------------------------------------
-
-# Cancelled runs are left out: a newer push often cancels the run of the commit before it.
-RED = {'failure', 'timed_out', 'action_required', 'startup_failure', 'error'}
-SQUASH_PR = re.compile(r'\(#(\d+)\)\s*$')
-
-
-def commit_state(check_runs, statuses):
-    """('green' | 'red' | 'pending' | 'none', failing check names) for one commit."""
-    results = [(r['name'], r['conclusion'] or r['status']) for r in check_runs]
-    results += [(s['context'], s['state']) for s in statuses]
-    failing = sorted({name for name, result in results if result in RED})
-    if failing:
-        return 'red', failing
-    if any(result in ('queued', 'in_progress', 'waiting', 'requested', 'pending')
-           for _, result in results):
-        return 'pending', []
-    return ('green' if any(result == 'success' for _, result in results) else 'none'), []
-
-
-def base_health(commits):
-    """(state, failing, culprit) of the base branch from (sha, subject, state, failing), newest first.
-
-    The newest finished commit decides the state. When it is red, the culprit is
-    the oldest red commit after the newest green one, or None when no green
-    commit is in reach. Reads lazily, so callers may pass a generator."""
-    state, failing, culprit = 'none', [], None
-    for sha, subject, commit, names in commits:
-        if commit in ('pending', 'none'):
-            continue
-        if state == 'none':
-            if commit == 'green':
-                return 'green', [], None
-            state, failing = 'red', names
-        if commit == 'green':
-            return state, failing, culprit
-        culprit = (sha, subject)
-    return state, failing, None
-
-
-# Each phase: (what to do next, the gate that moves the issue on). `phase` prints them.
-NEXT_STEP = {
-    '01 Define': ('invoke `spec`', 'the issue has an `### Acceptance criteria` section'),
-    '02 Spec': ('invoke `spec` until nothing is missing; then `claim <N>` (AFK) or `start <N>`',
-                'the issue is claimed or started'),
-    '03 Plan': ('invoke `plan`', 'a comment headed `## Plan` exists'),
-    '04 Execute': ('invoke `tdd`; commit; run `review` in a fresh-context worker and fix its Blockers; '
-                   'push and open a PR with `Closes #<N>`', 'the PR is open'),
-    '05 Review': ('fix review findings and failing checks on the PR; the owner merges', 'the PR is merged'),
-    '06 Ship': ('invoke `ship`', 'the base branch is green after the merge'),
-    '07 Improve': ('invoke `improve`', 'a comment headed `## Lessons` exists'),
-    'Done': ('nothing: the cycle is closed', ''),
-}
-
-
-def has_heading(comments, heading):
-    return any(heading.search(c.get('body') or '') for c in comments)
-
-
-def spec_gaps(issue):
-    """What phase 02 Spec still owes before the issue can be planned."""
-    labels, body = names(issue), issue.get('body') or ''
-    gaps = [] if ACCEPTANCE.search(body) else ['acceptance criteria']
-    scope = packet(body)
-    if scope is None or not scope['paths']:
-        gaps.append('scope packet')
-    if not labels & {AFK, PROPOSED, OWNER_LANE}:
-        gaps.append('a lane')
-    return gaps
-
-
-def earned_mark(issue, column):
-    """The phase marker the issue's own artifacts have earned, or None.
-
-    A `## Plan` comment ends 03 Plan; a `## Lessons` comment ends 07 Improve."""
-    comments = issue.get('comments', [])
-    if column == '03 Plan' and has_heading(comments, PLAN_HEADING):
-        return PLANNED
-    if column == '07 Improve' and has_heading(comments, LESSONS_HEADING):
-        return LEARNED
-    return None
-
-
-def newly_shipped(closed, green_at):
-    """Planned issues closed as completed before the base branch's newest green commit."""
-    return [i['number'] for i in closed
-            if i['stateReason'] == 'COMPLETED' and i['closedAt'] <= green_at
-            and PLANNED in names(i) and not names(i) & {SHIPPED, LEARNED}]
-
-
-def set_mark(repo, number, mark):
-    """Gives the issue one phase marker, replacing the earlier one."""
-    current = names(gh_json('issue', 'view', str(number), '-R', repo.name, '--json', 'labels'))
-    others = sorted(current & set(PHASE_MARKS) - {mark})
-    run('gh', 'issue', 'edit', str(number), '-R', repo.name, '--add-label', mark,
-        *(['--remove-label', ','.join(others)] if others else []))
-
-
-# --- Board and tidy --------------------------------------------------------
-
-def afk_owned(branch, path, root, config):
-    """Whether an AFK run created this branch (and worktree, when a path is given)."""
-    if not branch or not branch.startswith(config['branchPrefix']):
-        return False
-    return path is None or (Path(path).parent == Path(root) / config['worktrees']
-                            and Path(path).name.startswith('afk-'))
-
-
-def status(issue, has_pr):
-    """Board column: the issue's phase in the delivery cycle. Lanes stay visible as labels.
-
-    A closed issue without a phase marker predates the cycle or skipped it: Done."""
-    labels = names(issue)
-    if issue['state'] == 'CLOSED':
-        if issue.get('stateReason', 'COMPLETED') != 'COMPLETED' or LEARNED in labels:
-            return 'Done'
-        return '07 Improve' if SHIPPED in labels else '06 Ship' if PLANNED in labels else 'Done'
-    if has_pr:
-        return '05 Review'
-    if labels & {CLAIMED, STARTED}:
-        return '04 Execute' if PLANNED in labels else '03 Plan'
-    return '02 Spec' if ACCEPTANCE.search(issue.get('body') or '') else '01 Define'
-
-
 def afk_in_flight(issues, with_pr):
     """AFK claims still being built; person-led starts never hold the queue."""
     return [i for i in issues if CLAIMED in names(i) and i['number'] not in with_pr]
-
-
-def priority(issue):
-    return next((p.split(':')[1] for p in PRIORITIES if p in names(issue)), None)
-
-
-def tidy_action(pr_state, dirty):
-    """'remove' a finished, clean checkout or branch; otherwise why it stays."""
-    if pr_state in ('MERGED', 'CLOSED'):
-        return 'keep: uncommitted changes' if dirty else 'remove'
-    return 'keep: open PR' if pr_state == 'OPEN' else 'keep: no PR yet'
-
-
-def label_plan(current, config):
-    """(action, name, color, description) steps that make GitHub match the lane set."""
-    wanted = {name: {'color': c, 'description': d} for name, (c, d) in LANE_LABELS.items()}
-    wanted.update(config['labels'])
-    current = dict(current)
-    steps = []
-    for old, new in config['renames'].items():
-        if old in current and new not in current:
-            steps.append(('rename', old, new, None))
-            current[new] = current.pop(old)
-    for name, want in wanted.items():
-        have = current.get(name)
-        if not (have and have['color'].lower() == want['color'].lower()
-                and have['description'] == want['description']):
-            steps.append(('update' if have else 'create', name, want['color'], want['description']))
-    for name in sorted(set(current) - set(wanted)):
-        steps.append(('delete', name, None, None))
-    return steps
 
 
 # --- GitHub and Git I/O ----------------------------------------------------
@@ -471,10 +274,6 @@ class Repo:
         except (subprocess.CalledProcessError, ValueError):
             return None
 
-    def main_checkout(self):
-        common = run('git', 'rev-parse', '--path-format=absolute', '--git-common-dir').strip()
-        return Path(common).parent
-
     def tracked(self):
         try:
             return run('git', 'ls-tree', '-r', '--name-only', self.base_ref, cwd=self.root).split()
@@ -487,17 +286,13 @@ class Repo:
 
     def closed_issues(self):
         return gh_json('issue', 'list', '-R', self.name, '-s', 'closed', '-L', '1000',
-                       '--json', 'number,labels,state,url,stateReason,closedAt')
+                       '--json', 'number,stateReason')
 
     def issues_with_open_prs(self):
-        """Issue number → labels of the open PRs that close it."""
+        """Numbers of the issues an open PR closes."""
         prs = gh_json('pr', 'list', '-R', self.name, '-s', 'open', '-L', '200',
-                      '--json', 'closingIssuesReferences,labels')
-        linked = {}
-        for pr in prs:
-            for ref in pr['closingIssuesReferences']:
-                linked.setdefault(ref['number'], set()).update(names(pr))
-        return linked
+                      '--json', 'closingIssuesReferences')
+        return {ref['number'] for pr in prs for ref in pr['closingIssuesReferences']}
 
     def claimed_at(self, number):
         times = run('gh', 'api', f'repos/{self.name}/issues/{number}/events', '--paginate', '--jq',
@@ -532,44 +327,6 @@ def cmd_next(repo, _args):
         print(f"next: #{ready['number']} {ready['title']}" if ready else 'next: none')
 
 
-def cmd_claim(repo, args):
-    number = int(args[0])
-    issue = gh_json('issue', 'view', str(number), '-R', repo.name,
-                    '--json', 'number,title,body,labels,state,url')
-    completed = {i['number'] for i in repo.closed_issues() if i['stateReason'] == 'COMPLETED'}
-    reason = ineligible(issue, completed, number in repo.issues_with_open_prs(),
-                        repo.tracked(), repo.config)
-    if reason:
-        sys.exit(f'#{number} cannot be claimed: {reason}')
-    if afk_in_flight(repo.open_issues(), repo.issues_with_open_prs()):
-        sys.exit('Another AFK issue is in flight; run one at a time.')
-    root, base = repo.main_checkout(), repo.config['base']
-    branch = f"{repo.config['branchPrefix']}{number}-{slug(issue['title'])}"
-    worktree = root / repo.config['worktrees'] / f'afk-{number}'
-    run('git', 'fetch', '--quiet', 'origin', base, cwd=root)
-    run('git', 'worktree', 'add', '--quiet', '-b', branch, str(worktree), f'origin/{base}', cwd=root)
-    run('gh', 'issue', 'edit', str(number), '-R', repo.name, '--add-label', CLAIMED,
-        '--remove-label', PARKED)
-    run('gh', 'issue', 'comment', str(number), '-R', repo.name, '--body',
-        f'Claimed by an AFK run on `{socket.gethostname()}`. Branch `{branch}`.')
-    refresh_board(repo, number)
-    print(f'worktree: {worktree}\nbranch: {branch}')
-
-
-def cmd_start(repo, args):
-    number = args[0]
-    run('gh', 'issue', 'edit', number, '-R', repo.name, '--add-label', STARTED)
-    refresh_board(repo, number)
-    print(f'#{number}: started')
-
-
-def cmd_release(repo, args):
-    number = args[0]
-    run('gh', 'issue', 'edit', number, '-R', repo.name, '--remove-label', f'{CLAIMED},{STARTED}')
-    refresh_board(repo, number)
-    print(f'#{number}: released')
-
-
 def cmd_scope(repo, args):
     number = args[0]
     scope = packet(gh_json('issue', 'view', number, '-R', repo.name, '--json', 'body')['body'])
@@ -584,18 +341,6 @@ def cmd_scope(repo, args):
     if outside:
         sys.exit(1)
     print(f'✓ {len(changed)} changed files within #{number} scope')
-
-
-def cmd_park(repo, args):
-    number, message = args[0], ' '.join(args[1:])
-    if not message:
-        sys.exit('park needs the question for the owner.')
-    run('gh', 'issue', 'edit', number, '-R', repo.name, '--remove-label', f'{AFK},{CLAIMED}',
-        '--add-label', f'{OWNER_LANE},{PARKED}')
-    run('gh', 'issue', 'comment', number, '-R', repo.name, '--body',
-        f'**Parked for the owner by an AFK run.**\n\n{message}\n\n'
-        f'Answer here and re-apply `{AFK}` to hand it back.')
-    print(f'#{number} parked as {OWNER_LANE}')
 
 
 def cmd_automerge(repo, args):
@@ -619,33 +364,6 @@ def cmd_automerge(repo, args):
           + (' (branch updated)' if step == 'update' else ''))
 
 
-def view_issue(repo, number):
-    return gh_json('issue', 'view', str(number), '-R', repo.name,
-                   '--json', 'number,title,body,labels,state,stateReason,comments')
-
-
-def cmd_phase(repo, args):
-    """Prints the issue's phase and next step, first moving it on when its artifact exists."""
-    number = args[0]
-    issue = view_issue(repo, number)
-    has_pr = int(number) in repo.issues_with_open_prs()
-    column = status(issue, has_pr)
-    mark = earned_mark(issue, column)
-    if mark:
-        set_mark(repo, number, mark)
-        refresh_board(repo, number)
-        issue = view_issue(repo, number)
-        print(f'advanced: {column} → {status(issue, has_pr)}')
-        column = status(issue, has_pr)
-    action, gate = NEXT_STEP[column]
-    print(f"#{number} {issue['title']}\nphase: {column}\nnext: {action.replace('<N>', number)}")
-    if gate:
-        print(f"leaves when: {gate.replace('<N>', number)}")
-    if column in ('01 Define', '02 Spec'):
-        gaps = spec_gaps(issue)
-        print('missing: ' + (', '.join(gaps) if gaps else 'nothing'))
-
-
 def cmd_merge_reviewed(repo, args):
     number = args[0]
     pr = gh_json('pr', 'view', number, '-R', repo.name, '--json',
@@ -663,223 +381,8 @@ def cmd_merge_reviewed(repo, args):
     print(f'#{number} merged after agent review')
 
 
-def cmd_health(repo, args, window=10):
-    base = repo.config['base']
-    listed = gh_json('api', f"repos/{repo.name}/commits?sha={base}&per_page={window}")
-    read = []
-
-    def states():
-        for c in listed:
-            runs = gh_json('api', f"repos/{repo.name}/commits/{c['sha']}/check-runs?per_page=100")
-            status = gh_json('api', f"repos/{repo.name}/commits/{c['sha']}/status")
-            state, names = commit_state(runs['check_runs'], status['statuses'])
-            read.append(c)
-            yield c['sha'], c['commit']['message'].splitlines()[0], state, names
-
-    state, failing, culprit = base_health(states())
-    head = listed[0]['sha'][:7] if listed else '?'
-    if state != 'red':
-        print(f'base: {state} ({base} at {head})')
-        if state == 'green':
-            green_at = read[-1]['commit']['committer']['date']
-            for number in newly_shipped(repo.closed_issues(), green_at):
-                print(f'shipped: #{number}')
-                if '--apply' in args:
-                    set_mark(repo, number, SHIPPED)
-                    refresh_board(repo, number)
-        return
-    print(f"base: red ({base} at {head}); failing: {', '.join(failing)}")
-    if culprit is None:
-        print(f'broken by: unknown (no green commit in the last {window})')
-        return
-    sha, subject = culprit
-    number = SQUASH_PR.search(subject)
-    branch = gh_json('pr', 'view', number.group(1), '-R', repo.name,
-                     '--json', 'headRefName')['headRefName'] if number else ''
-    owner = 'AFK' if branch.startswith(repo.config['branchPrefix']) else 'not AFK'
-    print(f'broken by: {sha} {subject} ({owner})')
-
-
-PROJECT_QUERY = '''query($login:String!,$number:Int!){repositoryOwner(login:$login){
-  ... on ProjectV2Owner{projectV2(number:$number){id fields(first:50){nodes{
-  ... on ProjectV2SingleSelectField{id name options{id name}}}}}}}}'''
-OPTIONS_MUTATION = '''mutation($field:ID!,$options:[ProjectV2SingleSelectFieldOptionInput!]){
-  updateProjectV2Field(input:{fieldId:$field,singleSelectOptions:$options}){clientMutationId}}'''
-
-
-def project_fields(project):
-    data = gh_json('api', 'graphql', '-f', f'query={PROJECT_QUERY}',
-                   '-f', f"login={project['owner']}", '-F', f"number={project['number']}")
-    found = data['data']['repositoryOwner']['projectV2']
-    return found['id'], {f['name']: f for f in found['fields']['nodes'] if f}
-
-
-def ensure_status_options(project, field, apply):
-    if [o['name'] for o in field['options']] == list(STATUSES):
-        return field
-    print('status options: ' + ' → '.join(STATUSES))
-    if not apply:
-        return None
-    options = [{'name': s, 'color': STATUS_COLORS[s], 'description': ''} for s in STATUSES]
-    body = {'query': OPTIONS_MUTATION, 'variables': {'field': field['id'], 'options': options}}
-    subprocess.run(['gh', 'api', 'graphql', '--input', '-'], input=json.dumps(body),
-                   check=True, text=True, capture_output=True)
-    return project_fields(project)[1]['Status']
-
-
-def set_option(project_id, item_id, field, name):
-    option = next(o['id'] for o in field['options'] if o['name'] == name)
-    run('gh', 'project', 'item-edit', '--project-id', project_id, '--id', item_id,
-        '--field-id', field['id'], '--single-select-option-id', option)
-
-
-def cmd_board(repo, args):
-    project = repo.config.get('project')
-    if not project:
-        sys.exit('lanes.json has no "project": {"owner": ..., "number": ...}.')
-    apply = '--apply' in args
-    project_id, fields = project_fields(project)
-    status_field = ensure_status_options(project, fields['Status'], apply)
-    items = gh_json('project', 'item-list', str(project['number']), '--owner', project['owner'],
-                    '-L', '1000', '--format', 'json')['items']
-    on_board = {i['content'].get('url'): i for i in items if i.get('content')}
-    with_pr = repo.issues_with_open_prs()
-    closed = [c for c in repo.closed_issues() if c['url'] in on_board]
-    changes = 0
-    for issue in repo.open_issues() + closed:
-        item = on_board.get(issue['url'])
-        want = status(issue, issue['number'] in with_pr)
-        want_priority = priority(issue)
-        # Without a priority label, a priority set on the board stays.
-        if item and item.get('status') == want and want_priority in (None, item.get('priority')):
-            continue
-        changes += 1
-        print(f"#{issue['number']}: {item.get('status') if item else 'not on board'} → {want}")
-        if not apply or status_field is None:
-            continue
-        if item is None:
-            item = gh_json('project', 'item-add', str(project['number']), '--owner', project['owner'],
-                           '--url', issue['url'], '--format', 'json')
-        set_option(project_id, item['id'], status_field, want)
-        if want_priority and 'Priority' in fields:
-            set_option(project_id, item['id'], fields['Priority'], want_priority)
-    print(f'{changes} board changes' + ('' if apply else ' (dry run; --apply to write)'))
-
-
-ISSUE_ITEM_QUERY = '''query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){
-  issue(number:$number){url state stateReason body labels(first:50){nodes{name}}
-  projectItems(first:20){nodes{id project{number owner{... on User{login} ... on Organization{login}}}
-  fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}'''
-
-
-def refresh_board(repo, number):
-    """Moves one issue to its column at once when lanes.json names a project.
-
-    A handful of calls instead of a full `board` sync, which reads every issue and item."""
-    project = repo.config.get('project')
-    if not project:
-        return
-    owner, name = repo.name.split('/')
-    issue = gh_json('api', 'graphql', '-f', f'query={ISSUE_ITEM_QUERY}', '-f', f'owner={owner}',
-                    '-f', f'name={name}', '-F', f'number={number}')['data']['repository']['issue']
-    issue['labels'] = issue['labels']['nodes']
-    want = status(issue, int(number) in repo.issues_with_open_prs())
-    item = next((i for i in issue['projectItems']['nodes']
-                 if i['project']['number'] == project['number']
-                 and i['project']['owner']['login'] == project['owner']), None)
-    if item and (item['fieldValueByName'] or {}).get('name') == want:
-        return
-    project_id, fields = project_fields(project)
-    if [o['name'] for o in fields['Status']['options']] != list(STATUSES):
-        return  # the columns are not set up yet; `board --apply` creates them
-    if item is None:
-        item = gh_json('project', 'item-add', str(project['number']), '--owner', project['owner'],
-                       '--url', issue['url'], '--format', 'json')
-    set_option(project_id, item['id'], fields['Status'], want)
-
-
-def cmd_labels(repo, args):
-    apply = '--apply' in args
-    current = {l['name']: l for l in gh_json('label', 'list', '-R', repo.name, '-L', '500',
-                                              '--json', 'name,color,description')}
-    for action, name, color, description in label_plan(current, repo.config):
-        print(f'{action} {name}' + (f' → {color}' if action == 'rename' else ''))
-        if not apply:
-            continue
-        if action == 'rename':
-            run('gh', 'label', 'edit', name, '-R', repo.name, '--name', color)
-        elif action == 'delete':
-            run('gh', 'label', 'delete', name, '-R', repo.name, '--yes')
-        else:
-            run('gh', 'label', 'create', name, '-R', repo.name, '--force',
-                '--color', color, '--description', description)
-    if not apply:
-        print('(dry run; --apply to write)')
-
-
-def worktrees(root):
-    entries, entry = [], {}
-    for line in run('git', 'worktree', 'list', '--porcelain', cwd=root).splitlines() + ['']:
-        if not line:
-            if entry:
-                entries.append(entry)
-            entry = {}
-            continue
-        key, _, value = line.partition(' ')
-        entry[key] = value or True
-    return entries
-
-
-def cmd_tidy(repo, args):
-    apply = '--apply' in args
-    root, here = repo.main_checkout(), Path.cwd().resolve()
-    prs = {}
-    for pr in gh_json('pr', 'list', '-R', repo.name, '-s', 'all', '-L', '1000',
-                      '--json', 'headRefName,state'):
-        if prs.get(pr['headRefName']) != 'OPEN':
-            prs[pr['headRefName']] = pr['state']
-    run('git', 'fetch', '--quiet', '--prune', 'origin', cwd=root)
-    kept = set()
-    for wt in worktrees(root)[1:]:
-        path, branch = Path(wt['worktree']), wt.get('branch', '').replace('refs/heads/', '')
-        # Only AFK runs' own worktrees: other sessions may still be working in theirs.
-        if not afk_owned(branch, path, root, repo.config):
-            continue
-        if wt.get('prunable') or not path.exists():
-            print(f'prune missing worktree {path}')
-            if apply:
-                run('git', 'worktree', 'prune', cwd=root)
-            continue
-        if here == path or path in here.parents:
-            kept.add(branch)
-            continue
-        dirty = bool(run('git', 'status', '--porcelain', cwd=path).strip())
-        action = tidy_action(prs.get(branch), dirty)
-        print(f'{action}: worktree {path} ({branch})')
-        if action == 'remove' and apply:
-            run('git', 'worktree', 'remove', str(path), cwd=root)
-        elif action != 'remove':
-            kept.add(branch)
-    for branch in run('git', 'for-each-ref', '--format=%(refname:short)', 'refs/heads', cwd=root).split():
-        if (afk_owned(branch, None, root, repo.config) and branch not in kept
-                and tidy_action(prs.get(branch), False) == 'remove'):
-            print(f'remove: branch {branch}')
-            if apply:
-                run('git', 'branch', '-D', branch, cwd=root)
-    remote = run('git', 'for-each-ref', '--format=%(refname:lstrip=3)', 'refs/remotes/origin', cwd=root)
-    for branch in remote.split():
-        if afk_owned(branch, None, root, repo.config) and prs.get(branch) in ('MERGED', 'CLOSED'):
-            print(f'remove: origin/{branch}')
-            if apply:
-                run('git', 'push', '--quiet', 'origin', '--delete', branch, cwd=root)
-    if not apply:
-        print('(dry run; --apply to remove)')
-
-
-COMMANDS = {'next': cmd_next, 'claim': cmd_claim, 'start': cmd_start, 'release': cmd_release,
-            'scope': cmd_scope, 'park': cmd_park, 'automerge': cmd_automerge,
-            'merge-reviewed': cmd_merge_reviewed, 'health': cmd_health, 'phase': cmd_phase,
-            'board': cmd_board, 'labels': cmd_labels, 'tidy': cmd_tidy}
+COMMANDS = {'next': cmd_next, 'scope': cmd_scope, 'automerge': cmd_automerge,
+            'merge-reviewed': cmd_merge_reviewed}
 
 if __name__ == '__main__':
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
