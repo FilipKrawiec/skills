@@ -4,9 +4,9 @@
 
 This is the single active operating-model baseline. The public repository hosts portable skills with encapsulated reference guidance under `plugins/common/`; it contains no proprietary, client, or secret content.
 
-The provider-neutral, code-free orchestrator follows DEFINE → SPECIFY/GRILL → PLAN → DISPATCH → COLLECT/VERIFY → REVIEW → SHIP/RETURN. It plans cohesive delivery slices, not artificial microtasks, and never edits implementation code. Each slice gets one isolated short-lived-branch linked Git worktree from a declared base revision; a named isolated copy is the non-Git fallback. Parallel execution is limited to independent slices with non-overlapping ownership and dependencies.
+Delivery follows the seven-phase cycle of the workflow plugin: 01 Define, 02 Spec, 03 Plan, 04 Execute, 05 Review, 06 Ship, 07 Improve. Each phase has one skill, and the optional Project board has one column per phase (`plugins/common/workflow/references/board.md`). Work is planned as cohesive slices, not artificial microtasks. Each slice gets one isolated short-lived-branch linked Git worktree from a declared base revision; a named isolated copy is the non-Git fallback. Parallel execution is limited to independent slices with non-overlapping ownership and dependencies.
 
-Routing uses local orchestrator configuration, not project-committed profiles. Its configurable ordinary-slice default is currently Antigravity (AG). The orchestrator can select another harness before dispatch when the slice warrants it. If the selected executor fails, is unavailable, or is unsuitable, it returns the slice for review/replanning—no automatic cross-harness retry and no fabricated execution.
+Model and harness routing stays local to each host, not in project-committed profiles. A slice whose executor fails, is unavailable or is unsuitable goes back to planning; there is no automatic cross-harness retry and no fabricated execution.
 
 The shared Python CLI (`scripts/project-verify.py`) is the local and CI verification loop. It discovers `AGENTS.md` frontmatter declarations, executes defined lifecycle tasks, and validates Git worktree hygiene. It does not create worktrees, schedule tasks, manage packages, edit content, or interpret prose. Executors rerun the loop until the gate passes or return the slice.
 
@@ -15,5 +15,5 @@ AFK grants bounded autonomy across one complete slice. Executors may commit veri
 ## Consequences
 
 - `scripts/project-verify.py verify` is the executable deterministic gate reading `AGENTS.md` frontmatter lifecycle tasks.
-- The SDLC orchestration package (`filipkrawiec-sdlc`) lives in FilipKrawiec/devcontainer; this repository's `afk` skill is the unattended executor for owner-approved (`lane:afk`) issues, and host adapters remain outside the common packages.
+- The delivery cycle skills (`define`, `spec`, `plan`, `tdd`, `vcs`, `review`, `ship`, `improve`) and the unattended runner `afk` live in this repository's workflow plugin. FilipKrawiec/devcontainer's `filipkrawiec-sdlc` package keeps only project initialisation; host adapters remain outside the common packages.
 - The retired Autonomous SDLC implementation and interim baseline records were removed during release-candidate cleanup; Git history retains them if needed.

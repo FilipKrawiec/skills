@@ -22,6 +22,9 @@ BLOCKED = [
     "gh workflow run deploy.yml", "gh api -X PUT repos/o/r/branches/main/protection",
     "gh api repos/o/r/rulesets", "gh api -X PATCH repos/o/r -f allow_merge_commit=false",
     "gh api --method DELETE repos/o/r",
+    "gh api -X PUT repos/o/r/pulls/3/merge", "gh api repos/o/r/pulls/3/merge -X PUT",
+    "gh api graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'",
+    "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {}) { clientMutationId } }'",
 ]
 ALLOWED = [
     "gh pr create --fill", "gh pr view 12 --json files", "gh issue edit 5 --add-label lane:proposed",

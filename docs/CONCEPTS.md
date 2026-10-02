@@ -85,18 +85,17 @@ Delivery follows seven phases. Each one has a skill, and each is a column on the
  └────────────┘   └──────────┘   └─────────────────────────┘
 ```
 
-| Phase | Skill | Leaves behind | The issue is here when |
-| :--- | :--- | :--- | :--- |
-| 01 Define | `define` | An issue with intent and open questions | It has no `### Acceptance criteria` yet |
-| 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane | It is specified and not started |
-| 03 Plan | `plan` | A `## Plan` comment on the issue | A session claimed or started it |
-| 04 Execute | `tdd`, `vcs` | Tested commits on a task branch | The `## Plan` comment exists, no PR yet |
-| 05 Review | `review` (fresh-context worker), `agent-review` | A PR with a verdict | An open PR closes it |
-| 06 Ship | `ship` | A green base branch, a revert PR, or an escalation | Its PR merged, base CI not yet confirmed |
-| 07 Improve | `improve` | A `## Lessons` comment or a PR to the durable artifacts | Ship is confirmed |
-| Done | | | The `## Lessons` comment exists, or it closed as not planned |
+| Phase | Skill | Leaves behind |
+| :--- | :--- | :--- |
+| 01 Define | `define` | An issue with intent and open questions |
+| 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane |
+| 03 Plan | `plan` | A `## Plan` comment on the issue |
+| 04 Execute | `tdd`, `vcs` | Tested commits on a task branch |
+| 05 Review | `review` (fresh-context worker), `agent-review` | A PR with a verdict |
+| 06 Ship | `ship` | A green base branch, a revert PR, or an escalation |
+| 07 Improve | `improve` | A `## Lessons` comment and an issue per accepted lesson |
 
-The board column is the phase: the skill that finishes a phase moves the card, with the `gh project` commands in `plugins/common/workflow/references/board.md`. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `automerge`, `merge-reviewed`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
+The board column is the phase. `plugins/common/workflow/references/board.md` is the one source for when an issue is in each column, which skill works it, and the `gh project` commands that move the card. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `automerge`, `merge-reviewed`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
 
 ### Worktree Provenance & Safety
 

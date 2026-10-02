@@ -35,7 +35,7 @@ Minimal example:
 | Step | Command or setting |
 | --- | --- |
 | Labels | `gh label create <name> --color <hex> --description "<text>"` for each label below that the repository lacks. |
-| Board | Optional. Give the Project's Status field one option per column in [board.md](../../../references/board.md), once, in the board's settings. Show the labels on cards in the board view's field settings. |
+| Board | Optional. Give the Project's Status field one option per column in [board.md](../../../references/board.md), once, in the board's settings, and show the labels on cards in the board view's field settings. The token that runs agents needs the `project` scope: `gh auth refresh -s project`. |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
 | Rules | Add to the project's agent rules: "New work starts with `define`; `spec` decides its lane", "Working on an issue: follow Start here in the workflow plugin's `references/board.md`" and a link to the project's workflow page. |
@@ -59,13 +59,15 @@ With `agentReview`, the reviewer adds `review:owner` to a PR when it hands it to
 
 ## Unattended runs
 
-A scheduler that starts an agent session in the repository's main checkout runs this skill. Give its prompt a fail-closed preflight:
+A scheduler that starts an agent session in the repository's main checkout runs this skill. Schedule runs so they never overlap: two runs at once can both claim the issue `next` printed. Give its prompt a fail-closed preflight:
 
 ```text
 Preflight, stop and report on any failure:
 1. The working directory is inside <owner>/<repo>.
 2. `gh pr merge --help` is refused by the lanes guard; if it prints help,
    the guard is not loaded, so stop.
+3. With a board in lanes.json, `gh project view <number> --owner <owner>`
+   succeeds; otherwise the token lacks the `project` scope, so stop.
 Then use the `afk` skill. The owner is away: park instead of asking. Never
 switch, pull, reset or stash this checkout: it may hold the owner's work.
 ```

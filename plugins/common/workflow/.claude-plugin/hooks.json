@@ -1,5 +1,5 @@
 {
-  "description": "Issue-lanes guard: in projects with .github/lanes.json, blocks agent merges, releases, settings changes and unattended lane:afk.",
+  "description": "Lanes guard: in projects with .github/lanes.json, blocks agent merges, releases, settings changes and unattended lane:afk.",
   "hooks": {
     "PreToolUse": [
       {

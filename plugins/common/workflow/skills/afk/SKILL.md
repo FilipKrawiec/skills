@@ -24,7 +24,7 @@ Invoke `ship` for the base branch.
 
 ## 2. Tend
 
-For each open PR on a branch starting with lanes.json's `branchPrefix` that needs work below, work in its worktree (recreate it from the branch when tidied):
+For each open PR on a branch starting with lanes.json's `branchPrefix` whose issue is not `state:parked` and that needs work below, work in its worktree (recreate it from the branch when tidied):
 
 1. A merge conflict → merge the base branch in and resolve it.
 2. Failing checks → reproduce, fix and push.
@@ -51,7 +51,7 @@ Follow the phases in order; each skill's exit gate is the next step's entry.
 1. **Claim** the issue phase 3 picked (03 Plan). Work only in its worktree; read the issue, its linked decisions and the project's agent rules.
 2. **03 Plan.** Invoke `plan`. Its `## Plan` comment moves the card to 04 Execute.
 3. **04 Execute.** Invoke `tdd` for each plan step. Update the docs the project's rules tie to the change. Pass `LANES scope <N>` and the full verification gate.
-4. **05 Review.** Invoke `review` with only the issue and the diff; allow two rounds. Open the PR titled `<type>(<area>): <outcome>` per the project's PR template, closing the issue and linking the `## Plan` comment and the review's verdict. Move the card to 05 Review and release the claim.
+4. **05 Review.** Invoke `review` with only the issue and the diff; allow two rounds. Then the Open PR step, which moves the card to 05 Review and releases the claim.
 5. **Merge gate.** `LANES automerge <pr>` unless the issue asks for owner review. It merges (or queues) only docs, tests and Dependabot minor or patch changes and prints why anything else waits.
 
 Park with one question, the options and a recommendation whenever the issue is ambiguous or contradicts project rules, needs a path outside its scope packet or a protected path, needs an undecided product or model choice, stays red after two honest fix attempts, still has a verified Blocker after the second review round, or needs credentials, settings or a device.
@@ -73,7 +73,7 @@ Keep to the queue: new work starts as an issue, not in a run. Name any follow-up
 
 Every run ends with:
 
-1. Invoke `improve` for each issue in 07 Improve without a `## Lessons` comment, and for this run's own friction.
+1. Invoke `improve` for each card in 07 Improve, and for this run's own friction.
 2. Tidy AFK runs' own worktrees and branches.
 
 **Exit gate:** the lessons (or "no lessons") and the worktrees removed.

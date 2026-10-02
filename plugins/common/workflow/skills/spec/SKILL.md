@@ -6,7 +6,9 @@ allowed-tools: Read Bash(gh:*,git:*)
 
 # Spec (02)
 
-Turn an issue's business wording into implementation requirements another developer or agent can plan from without guessing, then give it one lane. This skill writes no code.
+Turn an issue's business wording into implementation requirements another developer or agent can plan from without guessing, then give it one lane. Its output is the updated issue and its lane.
+
+Unattended runs do phase 4 (triage) only.
 
 When the project has a board, move each specified issue's card to 02 Spec per [board.md](../../references/board.md).
 
@@ -20,7 +22,7 @@ Read the issue, then the sources that exist in this project: task-relevant code 
 
 ## 2. Grill
 
-Ask one sharp decision question at a time: scope boundaries, trade-offs, edge cases, the testable form of each criterion. Each round is at most five lines: the question, the trade-offs, and your recommendation with its reason, so the host can present it natively. Wait for the answer before the next round. Unattended runs skip this phase and triage only (phase 4).
+Ask one sharp decision question at a time: scope boundaries, trade-offs, edge cases, the testable form of each criterion. Each round is at most five lines: the question, the trade-offs, and your recommendation with its reason, so the host can present it natively. Wait for the answer before the next round.
 
 **Exit gate:** every branch of the design tree is decided.
 

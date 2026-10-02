@@ -163,6 +163,11 @@ def merge_step(merge_state):
     return {'CLEAN': 'merge', 'HAS_HOOKS': 'merge', 'BEHIND': 'update'}.get(merge_state, 'queue')
 
 
+def renamed(pr):
+    """Renamed or copied files: their old path is not in the file list, so no gate can check it."""
+    return [f['path'] for f in pr['files'] if f.get('changeType') in ('RENAMED', 'COPIED')]
+
+
 def automerge_refusal(pr, config):
     """Why a PR must wait for the owner, or None when it may auto-merge."""
     author = pr['author']['login']
@@ -178,6 +183,8 @@ def automerge_refusal(pr, config):
     files = [f['path'] for f in pr['files']]
     if not files or len(files) >= 100:
         return 'file list is empty or truncated'
+    if renamed(pr):
+        return 'renames hide their old path: ' + ', '.join(renamed(pr)[:5])
     product = [f for f in files if not chore(f, author, config)]
     if product:
         return 'changes more than docs, tests or dependencies: ' + ', '.join(product[:5])
@@ -215,15 +222,18 @@ def reviewed_merge_refusal(pr, config):
     files = [f['path'] for f in pr['files']]
     if not files or len(files) >= 100:
         return 'file list is empty or truncated'
+    if renamed(pr):
+        return 'renames hide their old path: ' + ', '.join(renamed(pr)[:5])
     protected = [f for f in files if matches(config['protected'], f)]
     if protected:
         return 'touches protected paths: ' + ', '.join(protected[:5])
     review = latest_agent_review(pr)
     if review is None or review[0] != pr['headRefOid'] or review[2] != 'ready':
         return 'no "ready" agent review at the head commit'
-    latest = {}
-    for r in pr['reviews']:
-        latest[r['author']['login']] = r['state']
+    latest = {}  # a person's later comment leaves their approval or change request standing
+    for r in sorted(pr['reviews'], key=lambda r: r.get('submittedAt') or ''):
+        if r['state'] in ('APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'):
+            latest[r['author']['login']] = r['state']
     if 'CHANGES_REQUESTED' in latest.values():
         return 'a review requests changes'
     newer = [c for c in pr['reviews'] + pr['comments']
@@ -333,7 +343,8 @@ def cmd_scope(repo, args):
     if scope is None:
         sys.exit(f'#{number} has no scope packet.')
     merge_base = run('git', 'merge-base', f"origin/{repo.config['base']}", 'HEAD').strip()
-    changed = set(run('git', 'diff', '--name-only', merge_base, cwd=repo.root).split())
+    # --no-renames lists a moved file's old path too, so a move out of a protected path is caught.
+    changed = set(run('git', 'diff', '--name-only', '--no-renames', merge_base, cwd=repo.root).split())
     changed |= set(run('git', 'ls-files', '--others', '--exclude-standard', cwd=repo.root).split())
     outside = out_of_scope(sorted(changed), scope['paths'], repo.config)
     for path in outside:

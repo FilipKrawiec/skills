@@ -6,7 +6,7 @@ allowed-tools: Read Bash(gh:*,git:*)
 
 # Plan (03)
 
-Prepare a concrete plan, grounded in the actual repository, that execution follows without re-planning the basics. The plan lives on the issue so the next session resumes from facts, not recollection. This skill changes no code.
+Prepare a concrete plan, grounded in the actual repository, that execution follows without re-planning the basics. The plan lives on the issue so the next session resumes from facts, not recollection. Its only output is the `## Plan` comment.
 
 The issue is claimed or started (03 Plan in [board.md](../../references/board.md)) before this skill runs.
 
@@ -25,7 +25,7 @@ Draft the plan:
 - Ordered implementation steps, each small and verifiable.
 - Risks, assumptions and anything that could send the work back to `spec`.
 
-When the plan needs a path outside the scope packet or a protected path, or an acceptance criterion turns out ambiguous, stop: unattended runs park the issue; attended sessions return to `spec`.
+When the plan needs a path outside the scope packet or a protected path, or an acceptance criterion turns out ambiguous, stop: unattended runs park the issue; attended sessions release it and return to `spec`.
 
 **Exit gate:** a draft that stays inside the scope packet.
 

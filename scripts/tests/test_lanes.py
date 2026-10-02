@@ -165,6 +165,12 @@ class AutomergeTests(unittest.TestCase):
             self.assertIsNotNone(lanes.automerge_refusal(candidate, CONFIG))
 
 
+    def test_renames_wait_because_the_old_path_is_hidden(self) -> None:
+        moved = pr(["docs/release.yml"])
+        moved["files"][0]["changeType"] = "RENAMED"
+        self.assertIn("renames", lanes.automerge_refusal(moved, CONFIG))
+
+
 class QueueTests(unittest.TestCase):
     def test_only_afk_claims_hold_the_one_at_a_time_queue(self) -> None:
         issues = [issue(3, ("lane:owner", "state:started")), issue(4, ("lane:afk",))]
@@ -228,6 +234,17 @@ class ReviewedMergeTests(unittest.TestCase):
                    "submittedAt": "2026-10-02T08:00:00Z"}
         ready = reviewed_pr()
         self.assertIn("requests changes", self.refusal({**ready, "reviews": ready["reviews"] + [blocked]}))
+        comment = {"author": {"login": "reviewer"}, "state": "COMMENTED", "body": "One more thought.",
+                   "submittedAt": "2026-10-02T09:00:00Z"}
+        still = {**ready, "reviews": [blocked, comment] + ready["reviews"]}
+        self.assertIn("requests changes", self.refusal(still))
+        dismissed = {**blocked, "state": "DISMISSED", "submittedAt": "2026-10-02T09:30:00Z"}
+        self.assertIsNone(self.refusal({**ready, "reviews": [blocked, dismissed] + ready["reviews"]}))
+
+    def test_renames_wait_for_the_owner(self) -> None:
+        moved = reviewed_pr()
+        moved["files"][0]["changeType"] = "RENAMED"
+        self.assertIn("renames", self.refusal(moved))
 
 
 class BaseBranchTests(unittest.TestCase):

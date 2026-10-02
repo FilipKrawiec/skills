@@ -28,7 +28,7 @@ For each friction point, name where the lesson belongs and the proposed wording:
 | An issue arrived unbuildable | The issue template, or the `spec` checks |
 | Users or developers lacked information | Application docs or assets |
 
-Drop a lesson that would not change future behavior. Before writing it, scrub secrets, internal hostnames, client names and local paths.
+Keep only lessons that change future behavior. Before writing it, scrub secrets, internal hostnames, client names and local paths.
 
 **Exit gate:** each lesson has one target file and its proposed change.
 
@@ -36,8 +36,8 @@ Drop a lesson that would not change future behavior. Before writing it, scrub se
 
 Post the lessons as one comment on the shipped issue headed `## Lessons` ("no lessons" when there are none), each with its target file and proposed wording.
 
-- Unattended: name the lessons in the run's output and stop there; the owner decides.
-- Attended: ask the owner about each lesson. For each one accepted, invoke `define` to open an issue carrying the target file and the wording (in the upstream library's repository when the lesson is for its skill), and link it from the `## Lessons` comment. The lesson then runs through the cycle like any other work.
+- Unattended: name the lessons in the run's output too; the owner decides later. Lessons from a run's own friction, with no shipped issue to hold them, go in the output only.
+- Attended, or when the owner accepts a lesson from an earlier `## Lessons` comment: ask the owner about each lesson. For each one accepted, invoke `define` to open an issue carrying the target file and the wording (in the upstream library's repository when the lesson is for its skill), and link it from the `## Lessons` comment. The lesson then runs through the cycle like any other work.
 
 Then move the card to Done: the cycle is closed.
 

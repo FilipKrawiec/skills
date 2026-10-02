@@ -1,7 +1,7 @@
 ---
 name: ship
 description: Use when a change has merged (phase 06 Ship), for checking base-branch CI, reverting the merge that broke it, escalating deeper failures to planning, or confirming merged issues shipped.
-allowed-tools: Read Bash(git:*,gh:*,just:*)
+allowed-tools: Read Bash(python3:*,git:*,gh:*,just:*)
 ---
 
 # Ship (06)
@@ -12,36 +12,37 @@ Merge is not the end of delivery. Watch the base branch after merges, fix what i
 
 ## 1. Observe
 
-When the project has a board, move each card still in 05 Review whose issue closed as completed to 06 Ship. Then read the base branch's CI:
+When the project has a board, tidy the cards that left 05 Review: an issue closed as completed moves to 06 Ship, one closed as not planned to Done, and an open issue whose PR closed unmerged back to 02 Spec (release its claim). Then read the base branch's CI:
 
 ```bash
-gh run list --branch <base> --event push --limit 20 \
+git fetch origin <base>
+gh run list --branch <base> --event push --limit 50 \
   --json headSha,displayTitle,conclusion,status,workflowName
 ```
 
-Ignore cancelled runs. Group the rest by `headSha`, newest first; a commit is red when any of its runs failed, pending while any is not completed, and green otherwise.
+Ignore cancelled runs. Group the rest by `headSha`; a commit is red when any of its runs failed, pending while any is not completed, and green otherwise. Read the state of `origin/<base>`'s head commit.
 
-- Newest commit green → phase 3.
-- Newest commit pending, or no runs → nothing to confirm yet; report it.
-- Newest commit red → the culprit is the oldest red commit after the newest green one (`unknown` when no green commit is in range). `gh pr list --state merged --search <sha> --json number,headRefName,closingIssuesReferences` finds its PR; it is an AFK merge when `headRefName` starts with `<branchPrefix>`. Then phase 2.
+- Head green → phase 3.
+- Head pending, or no runs for it → nothing to confirm yet; report it.
+- Head red → find the newest green commit G and the oldest red commit R after it. The culprit is known only when `git log --first-parent --format=%H <G>..<R>` lists exactly R; otherwise report it as ambiguous with that range. `gh pr list --state merged --search <sha> --json number,headRefName,closingIssuesReferences` finds the culprit's PR; it is an AFK merge when `headRefName` starts with `<branchPrefix>`. Then phase 2.
 
-**Exit gate:** the base state, and for red the failing checks and the culprit.
+**Exit gate:** the base state at its head, and for red the failing checks and the culprit or the ambiguous range.
 
 ## 2. Respond
 
 When an AFK merge broke the base branch and `gh pr list --head <branchPrefix>revert-<short-sha>` shows no open PR:
 
-1. `git fetch origin <base>` and `git worktree add .worktrees/afk-revert-<short-sha> -b <branchPrefix>revert-<short-sha> origin/<base>`; in it run `git revert --no-edit <sha>`, then pass the full verification gate.
+1. `git worktree add <root>/.worktrees/afk-revert-<short-sha> -b <branchPrefix>revert-<short-sha> origin/<base>` (`<root>` as in board.md); in it run `git revert --no-edit <sha>`, then pass the full verification gate.
 2. Push and open a PR titled `revert: <subject>` whose body names the failing checks.
 3. Reopen the issue the reverted PR closed (`gh issue reopen`) and park it with the failing checks, the revert PR and a recommendation for the retry: it returns to 03 Plan once the owner re-applies `lane:afk`.
 
-Any other red base branch belongs to the owner: report the failing checks and the culprit. Attended sessions may fix it forward through `tdd` when the cause is bounded and the owner agrees.
+Any other red base branch belongs to the owner: report the failing checks and the culprit or range. A fix forward is new work: name it as a follow-up for the owner.
 
 **Exit gate:** a revert PR, or a report naming the failing checks and the culprit.
 
 ## 3. Confirm
 
-On a green base branch every merge before it shipped: move each card in 06 Ship to 07 Improve.
+`origin/<base>`'s head is green, so every merge up to it shipped: move each card in 06 Ship to 07 Improve.
 
 **Exit gate:** the issues moved, or none.
 
