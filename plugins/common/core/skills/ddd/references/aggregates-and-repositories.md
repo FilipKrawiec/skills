@@ -25,10 +25,10 @@ Reference constraints derived from Vaughn Vernon's *Implementing Domain-Driven D
 - **Root-Only Access:** Provide Repositories only for Aggregate Roots. Local Entities have no Repository (e.g., query `Comment` through the `Threads` collection).
 - **Save/Load Whole:** Repositories must save and load the Aggregate in its entirety to ensure the Aggregate Root can validate invariants.
 - **Creation vs. Persistence Hydration (ACL Concern):**
-  - Initial creation of new domain aggregates is handled exclusively by domain [factories.md](factories.md) (`AggregateFactory`).
+  - Initial creation of new domain aggregates goes through the aggregate's one creation entry ([factories.md](factories.md)).
   - Loading existing state from persistence (database/ORM) is strictly an **Anti-Corruption Layer (ACL) / Infrastructure Adapter** concern. Keep ORM mapping, data hydration, and reflection inside the infrastructure adapter.
   - Do NOT add public `reconstitute(...)` methods or persistence constructors to Aggregate Roots. State hydration is not part of the domain model or Ubiquitous Language.
-- **Lightweight Query Methods (Count, Existence, and Summaries):** Avoid loading full entities or collections just to perform existence checks, counts, or basic calculations. Expose explicit query methods directly on the collection port interface (e.g., `exists(id): boolean` or `countUnresolved(parentId): number`). The concrete implementation (e.g., `JPAThreads`) must execute lightweight database queries (e.g., `EXISTS` or `SELECT COUNT(*)`) rather than rehydrating domain objects into memory.
+- **Lightweight Query Methods (Count, Existence, and Summaries):** Avoid loading full entities or collections just to perform existence checks, counts, or basic calculations. Expose explicit query methods directly on the collection port interface (e.g., `exists(id): boolean` or `countUnresolved(parentId): number`). The concrete implementation (e.g., `SqlThreads`) must execute lightweight database queries (e.g., `EXISTS` or `SELECT COUNT(*)`) rather than rehydrating domain objects into memory.
 
 ---
 
@@ -64,5 +64,5 @@ If the parent Aggregate has invariants that depend on the state of the collectio
 To query complex projections, dashboards, or tabular reports without overloading the write-side Repository or loading entire Aggregates (performance cost):
 
 1. **Bypass the Domain Write Model:** Define a dedicated Query Port (e.g., `ThreadQueries`) in the Domain layer.
-2. **Return Domain Value Objects:** The Query Port must return immutable **Value Objects** (e.g., `ThreadSummary`) defined in the Domain layer using `.of(...)`. This preserves domain-level schema ownership and enables attaching business behavior directly to the returned objects (e.g., `ThreadSummary.isResolved()`).
-3. **Use a Private DAO in Infrastructure:** The implementation adapter (e.g., `JPAThreadQueries` in Infrastructure) executes optimized database queries (raw SQL or projections) via a private `ThreadsDao`, mapping tabular rows directly into the Domain's `ThreadSummary` Value Objects via `.of(...)`.
+2. **Return Domain Value Objects:** The Query Port returns immutable **Value Objects** (e.g., `ThreadSummary`) defined in the Domain layer. This preserves domain-level schema ownership and enables attaching business behavior directly to the returned objects (e.g., `ThreadSummary.isResolved()`).
+3. **Use a Private DAO in Infrastructure:** The implementation adapter (e.g., `SqlThreadQueries` in Infrastructure) executes optimized database queries (raw SQL or projections) via a private `ThreadsDao`, mapping rows into the Domain's `ThreadSummary` Value Objects through their creation entry.

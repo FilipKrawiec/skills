@@ -9,4 +9,4 @@
 
 ## 3. Telemetry Verification
 - When a feature introduces new metrics, traces, or log outputs, verify these telemetry signals using a component test.
-- Ideally, run a local containerized OpenTelemetry (OTel) collector or use framework-provided telemetry verification tools (e.g., Spring/Micrometer test utilities, mock Otel exporters) in the component test suite to assert that the correct signals, counters, attributes, and span contexts are emitted by the application under test.
+- Ideally, run a local containerized OpenTelemetry (OTel) collector or use framework-provided telemetry verification tools (the host framework's telemetry test utilities, mock OTel exporters) in the component test suite to assert that the correct signals, counters, attributes, and span contexts are emitted by the application under test.

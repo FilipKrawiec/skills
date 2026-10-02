@@ -1,21 +1,21 @@
-# Aggregate Factories
+# Aggregate Creation and Factories
 
-Reference constraints for Aggregate Factories, derived from Vaughn Vernon's *Implementing Domain-Driven Design*.
+Reference constraints for creating Aggregates, derived from Vaughn Vernon's *Implementing Domain-Driven Design* and expressed in the idiom each language profile prescribes.
 
-## 1. Role of an Aggregate Factory
+## 1. One Creation Entry per Aggregate
 
-An **`AggregateFactory`** encapsulates the creation of complex Aggregate Roots and their child entities. A factory ensures that:
-- Aggregates are instantiated in a **fully valid state** with all initial invariants met.
-- Initial identity generation and domain creation events (e.g. `OrderPlacedEvent`) are properly orchestrated.
-- External domain dependencies (e.g. identity generators, domain calculation policies) are encapsulated without leaking infrastructure or service references into the Aggregate entity itself.
+Every Aggregate has exactly one creation entry in the Domain layer. It:
+- Yields an Aggregate in a **fully valid state** with every creation invariant met, or reports the violation in the domain's failure form.
+- Assigns the initial identity and records the creation Domain Event (e.g. `OrderPlaced`).
+- Receives Value Objects, never raw primitives: the caller (application service or inbound adapter) converts boundary input through each Value Object's creation entry before calling it.
 
----
+Where the entry lives follows the language profile in `hexagonal-architecture/references/languages/`: a static or companion `create` on the root, a factory constructor, or a pure `createOrder(...)` function beside the aggregate. The profiles agree on the rule and differ only in the encoding.
 
-## 2. Structural Rules
+## 2. When a Separate Factory Is Justified
 
-1. **Use Standalone `AggregateFactory` Classes**: Encapsulate complex aggregate creation in a dedicated domain factory class (e.g., `OrderFactory`, `CustomerFactory`).
-2. **Do Not Add `Aggregate.create(...)` Static Methods**: Static `create(...)` methods on Aggregate Roots lead to bloated aggregate classes and awkward dependency passing. Aggregate Root constructors should remain package-private or private, accessible only to their designated `AggregateFactory`.
-3. **No Reconstitution / Hydration in Domain Factories**: 
-   - **Domain Creation** (handled by `AggregateFactory`) creates a *new* aggregate, assigns a new ID, enforces creation rules, and registers initial domain creation events.
-   - **Persistence Reconstitution** (hydrating existing aggregates from a database or ORM) is strictly an **Anti-Corruption Layer (ACL) / Infrastructure Adapter** responsibility. Do NOT put `reconstitute(...)` methods or persistence mapping logic inside `AggregateFactory` or core domain models.
-4. **Boundary Translation to Value Objects**: An `AggregateFactory` translates boundary inputs (primitives from commands or DTOs) into strict Value Objects via `.of(...)` before passing them to entity constructors. Raw primitives must never leak past the factory into domain models.
+Move creation into a dedicated domain factory (e.g. `OrderFactory`) only when creation needs collaborators the root must not hold: injected identity or clock ports, domain policies, or checks against other domain objects. A separate factory exposes one `create` and keeps the root's constructor private to the domain.
+
+## 3. Creation Is Not Reconstitution
+
+- **Creation** makes a *new* aggregate: new identity, creation rules, creation events.
+- **Reconstitution** rebuilds an existing aggregate from storage. It is an Infrastructure adapter concern: keep persistence mapping and hydration inside the repository implementation, and add no `reconstitute(...)` or persistence constructor to the domain model.
