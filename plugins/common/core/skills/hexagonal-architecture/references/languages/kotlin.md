@@ -1,12 +1,12 @@
 # Kotlin Hexagonal Architecture
 
-Use this as a Kotlin-specific delta on top of the generic Domain, Application, API, and Infrastructure references.
+Use this as a Kotlin-specific delta on top of the generic Domain, Application, API, and Infrastructure references. It prescribes no framework: match the one the codebase already uses.
 
 ## 1. Package and Module Boundaries
 
 - Use feature-first packages with layer suffixes: `users.domain`, `users.app`, `users.api`, `users.infra`.
 - Separate reuse by intent. A `shared-domain` module is a DDD Shared Kernel only when named contexts jointly own its business language. A context-neutral `platform-domain` module may contain pure technical primitives, but must not import or expose Application, API, Infrastructure, or framework types; do not call it a Shared Kernel.
-- Domain packages must not depend on `app`, `api`, `infra`, web frameworks, JPA, serialization, or database libraries.
+- Domain packages must not depend on `app`, `api`, `infra`, web frameworks, persistence, serialization, or database libraries.
 - Kotlin `internal` is module-wide, not package-private. In a single Gradle module, enforce boundaries with architecture tests such as Konsist, ArchUnit, or project-specific import rules.
 - If the project has multiple Gradle modules, Domain must not depend on Application, API, Infrastructure, or framework modules.
 
@@ -23,7 +23,7 @@ Use this as a Kotlin-specific delta on top of the generic Domain, Application, A
 - Entities own their identity semantics. An optional pure `platform.domain.BaseEntity<ID>` is acceptable when it does not impose business policy; never make it the universal base class.
 - Do not use Kotlin `data class` for mutable Entities or Aggregate Roots; generated `copy`, structural equality, and destructuring can bypass invariants.
 - Use Kotlin value classes (`@JvmInline value class UserId(val value: String)`) for small identity and value types when they preserve domain meaning.
-- Model expected business failures as sealed domain errors or sealed domain outcomes (`sealed interface Outcome`), not framework exceptions.
+- Model expected business failures as sealed domain errors or sealed domain outcomes (`sealed interface Outcome`), not exceptions; the whole domain uses one form.
 - Use nullable types only when absence is part of the domain language; otherwise enforce construction through value objects, factories, or aggregate methods.
 - Domain methods should usually be synchronous and free of IO. Put `suspend` on application, port, or adapter functions only when IO requires it.
 
@@ -33,12 +33,12 @@ Use this as a Kotlin-specific delta on top of the generic Domain, Application, A
 - Use a separate aggregate factory only when creation needs injected collaborators, external components, clocks, randomness, or domain ports.
 - Separate factories should usually expose a single `create` method.
 - `UserId.new()` is acceptable only for local, pure, uncoordinated ID generation.
-- Use injected ports such as `UserIds` or `Clock` when IDs or time are sequential, tenant-aware, externally coordinated, database-issued, or need deterministic tests.
+- Inject ports such as `UserIds` or `Clock` when IDs or time must be deterministic in tests or are coordinated externally.
 
 ## 5. Application Layer
  
  - Keep transactions, authorization, idempotency, domain event dispatch, and application workflow in this layer.
- - Inbound API adapters (Ktor routes, Spring/Micronaut controllers) must always invoke use cases/handlers (consistency over simplicity); never bypass the application layer to call repositories or query ports directly.
+ - Inbound API adapters (routes, controllers, consumers) must always invoke use cases/handlers (consistency over simplicity); never bypass the application layer to call repositories or query ports directly.
  - Load aggregates, call domain methods, save through domain ports, then dispatch typed domain events after state is saved.
  - For external publication reliability, use after-commit hooks or a transactional outbox instead of publishing directly from inside aggregates.
  - Return explicit application results (`sealed interface Result`) for expected failures; do not silently return on missing aggregates.
@@ -53,7 +53,7 @@ Use this as a Kotlin-specific delta on top of the generic Domain, Application, A
 ## 7. API and Infrastructure Models
 
 - API packages own request and response DTOs. DTOs may carry OpenAPI, JSON, validation, or serialization annotations.
-- Infrastructure packages own persistence records, DAOs, mappers, and external client models. Persistence records may carry JPA or ORM annotations.
+- Infrastructure packages own persistence records, DAOs, mappers, and external client models. Persistence records may carry ORM annotations.
 - Never expose Domain models as API DTOs, and never pass ORM entities inward.
 - Persistence shape is not expected to be 1:1 with Domain shape.
 
@@ -62,9 +62,9 @@ Use this as a Kotlin-specific delta on top of the generic Domain, Application, A
 - Concrete adapters are usually `internal`; domain/application ports remain public.
 - DAOs and mapper helpers should be file-private when possible.
 - Make helper types `internal` only when framework wiring must reference them from a visible factory method.
-- Match the host framework already used by the codebase; do not introduce Spring, Quarkus, Ktor, or another framework because of this reference.
-- Put framework wiring in composition root/configuration code. Domain has zero framework annotations; Application services may use host-framework transaction or DI annotations (e.g., `@Transactional`, `@Service`, `@ApplicationScoped`) when standard in the codebase.
-- If the existing codebase uses Spring Data, a Spring-specific DAO interface can be used behind the concrete adapter (e.g., `JpaUsers(private val dao: SpringDataUserDao) : Users`).
+- Match the host framework already used by the codebase; this reference introduces none.
+- Put framework wiring in composition root/configuration code. Domain has zero framework annotations; Application services may use the host framework's transaction or DI annotations when standard in the codebase.
+- A framework-generated DAO may sit behind the concrete adapter (`JpaUsers(private val dao: UserDao) : Users`); it never becomes the port.
 
 ## 9. Testing Rules
 

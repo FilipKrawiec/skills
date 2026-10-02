@@ -9,9 +9,9 @@ This document provides a comprehensive guide to the architectural design, core c
 The `skills` repository is designed around six foundational principles:
 
 1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
-2. **Affirmative State Machines**: Skills structure instructions as unidirectional linear phases with positive actions and concrete exit gates. Negative "Do/Don't" phrasing is eliminated to prevent negative prompt priming.
+2. **Affirmative State Machines**: Skills structure instructions as unidirectional linear phases with positive actions and concrete exit gates. Negative "Do/Don't" phrasing is kept to explicit safety boundaries to limit negative prompt priming.
 3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
-4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for immediate defect resolution alongside the Enterprise Delivery Loop (`define` ➔ `specify` ➔ `deliver`) for multi-agent worktrees.
+4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for direct changes alongside the Delivery Cycle (`spec` ➔ `plan` ➔ `tdd` ➔ `review` ➔ `ship` ➔ `improve`) for tracked work, attended or AFK.
 5. **Deterministic Verification**: AI agents validate all work against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
 6. **Hierarchical Overlay Architecture**: Base capabilities are defined in common, provider-neutral plugins (`plugins/common/*`), while agent-specific enhancements (such as Antigravity interactive artifacts) are layered on top via native overlays (`plugins/agy/*`).
 
@@ -56,13 +56,11 @@ Skills are grouped into **plugins** for distribution and host discovery.
 plugins/
 ├── common/                  # Canonical portable plugins (Cross-Agent)
 │   ├── core/                # DDD, Hexagonal Architecture
-│   ├── workflow/            # TDD, Review, VCS, Grill with Context, Issue Lanes, AFK
+│   ├── workflow/            # The delivery cycle: spec, plan, tdd, vcs, review, ship, improve, afk, agent-review
 │   └── authoring/           # Writing Great Skill
 └── agy/                     # Antigravity-Native Overlay Plugins
     └── core/                # Reference resolution & interactive artifact review rules
 ```
-
-The SDLC skills (`define`, `specify`, `deliver`) ship in the `filipkrawiec-sdlc` package of FilipKrawiec/devcontainer.
 
 ### Common vs. Overlay Plugins
 
@@ -71,48 +69,49 @@ The SDLC skills (`define`, `specify`, `deliver`) ship in the `filipkrawiec-sdlc`
 
 ---
 
-## 4. Delivery Orchestration & Task Packets
+## 4. The Delivery Cycle
 
-Attended, multi-slice delivery uses the `deliver` workflow of the `filipkrawiec-sdlc` package (FilipKrawiec/devcontainer), which guides changes through a bounded 7-stage lifecycle. Unattended, single-issue delivery uses issue lanes (next section).
+Delivery follows seven phases. Each one has a skill, and each is a column on the optional Project board. The skill that finishes a phase moves the card, so the board shows which phase every issue is in.
 
 ```
-   ┌──────────┐      ┌───────────────┐      ┌──────────┐      ┌────────────┐
-   │  DEFINE  │ ───► │ SPECIFY/GRILL │ ───► │   PLAN   │ ───► │  DISPATCH  │
-   └──────────┘      └───────────────┘      └──────────┘      └────────────┘
-                                                                     │
-   ┌─────────────┐      ┌────────────┐      ┌────────────────┐       │
-   │ SHIP/RETURN │ ◄─── │   REVIEW   │ ◄─── │ COLLECT/VERIFY │ ◄─────┘
-   └─────────────┘      └────────────┘      └────────────────┘
+ ┌───────────┐   ┌─────────┐   ┌─────────┐   ┌────────────┐
+ │ 01 Define │──►│ 02 Spec │──►│ 03 Plan │──►│ 04 Execute │
+ │   spec    │   │  spec   │   │  plan   │   │ tdd + vcs  │
+ └───────────┘   └─────────┘   └─────────┘   └─────┬──────┘
+       ▲                                           ▼
+ ┌─────┴──────┐   ┌──────────┐   ┌─────────────────────────┐
+ │ 07 Improve │◄──│ 06 Ship  │◄──│        05 Review        │
+ │  improve   │   │   ship   │   │ review, agent-review    │
+ └────────────┘   └──────────┘   └─────────────────────────┘
 ```
 
-### The 7 Delivery Stages & Native Artifact Tracking
+| Phase | Skill | Leaves behind |
+| :--- | :--- | :--- |
+| 01 Define | `spec` | An issue with intent and open questions |
+| 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane |
+| 03 Plan | `plan` | A `## Plan` comment on the issue |
+| 04 Execute | `tdd`, `vcs`, `review` (fresh-context worker) | Tested commits on a task branch, reviewed, and a PR |
+| 05 Review | `agent-review`, or the owner | A reviewed, mergeable PR |
+| 06 Ship | `ship` | A green base branch, a revert PR, or an escalation |
+| 07 Improve | `improve` | A `## Lessons` comment and an issue per accepted lesson |
 
-1. **DEFINE**: Capture business goals, non-goals, constraints, and scope boundaries. Record findings by creating the tracker item (`gh issue create`) on the Backlog.
-2. **SPECIFY / GRILL**: Challenge requirements against existing code and repository context. Resolve contradictions early and update the tracker item with acceptance criteria.
-3. **PLAN**: Break work down into minimal, cohesive delivery slices, prepare task packets (`version: 2`), and present `implementation_plan.md` with interactive feedback request (`RequestFeedback: true`). Wait for user **Proceed** approval.
-4. **DISPATCH**: Create dedicated Git worktrees and short-lived task branches (`task/<name>`) for each slice, routing execution to suitable harnesses.
-5. **COLLECT / VERIFY**: Gather evidence, test results, and change summaries from executors into `walkthrough.md`. Run deterministic verification gates.
-6. **REVIEW**: Audit outcomes against task acceptance criteria and verification gates, logging findings in `walkthrough.md`.
-7. **SHIP / RETURN**: Link the Delivery Record, publish the **Review Request** artifact on the task branch, and present the work for user merge approval. Never commit directly to or merge protected default branches (`main`).
+The board column is the phase. `plugins/common/workflow/references/board.md` is the one source for when an issue is in each column, which skill works it, and the `gh project` commands that move the card. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `automerge`, `merge-reviewed`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
 
 ### Worktree Provenance & Safety
 
-Whenever a new worktree is created or new work is started, the original main branch must be updated first (e.g. `git fetch origin main:main` or pulling latest upstream changes). Every orchestrated task slice executes inside an isolated Git worktree branched from this declared, updated base revision. This guarantees that:
-* Primary checkouts remain protected from unverified edits.
-* Multiple non-overlapping tasks can run concurrently in total isolation.
-* Unintended side effects are caught at packet boundaries.
+Whenever a new worktree is created or new work is started, the original main branch must be updated first (e.g. `git fetch origin main:main` or pulling latest upstream changes). Every task executes inside an isolated Git worktree branched from this declared, updated base revision, so primary checkouts stay protected from unverified edits and non-overlapping tasks can run concurrently.
 
 ### Issue Lanes & AFK Delivery
 
-`issue-lanes` and `afk` turn a repository's GitHub Issues into one queue that runs while the owner is away. A repository opts in with `.github/lanes.json`.
+GitHub Issues are the only queue. A repository opts in with `.github/lanes.json`.
 
 | Lane | Meaning | Applied by |
 | :--- | :--- | :--- |
 | `lane:afk` | Deliver unattended | The owner, or an agent the owner just said yes to |
-| `lane:proposed` | Agent recommends AFK | `issue-lanes` triage |
+| `lane:proposed` | Agent recommends AFK | `spec` triage |
 | `lane:owner` | Needs a decision, credentials, settings or a device | Anyone |
 
-An `afk` run delivers at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) in its own worktree, checks its diff against the packet, and opens a PR, or parks the issue back to `lane:owner` with one question. Docs, tests and Dependabot dependency PRs auto-merge on green checks; everything else waits for the owner. The workflow plugin's pre-tool-use guard (`skills/afk/scripts/guard.py`, on hosts that load plugin hooks) blocks agent merges, releases, workflow dispatch and settings changes, and blocks `lane:afk` in scheduled runs. Runs never touch the checkout they start in: queue decisions read the fetched base branch.
+An `afk` run carries the cycle while the owner is away. It first invokes `ship`, which checks the base branch, opens a revert PR when an AFK merge turned it red, and confirms shipped issues. Then it tends its own PRs. It takes at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) through `plan`, `tdd` and a fresh-context `review`, and opens a PR, or parks the issue back to `lane:owner` with one question. It ends by invoking `improve`, which proposes lessons. Docs, tests and Dependabot dependency PRs auto-merge on green checks; everything else waits for the owner. The workflow plugin's pre-tool-use guard (`skills/afk/scripts/guard.py`, on hosts that load plugin hooks) blocks agent merges, releases, workflow dispatch and settings changes, and blocks `lane:afk` in scheduled runs. Runs never touch the checkout they start in: queue decisions read the fetched base branch.
 
 With `agentReview` in lanes.json, `agent-review` reviews every open PR once per head commit, the runner fixes its findings for up to `reviewRounds` rounds, and `lanes.py merge-reviewed` merges an AFK PR the reviewer judged ready and not critical; critical PRs go to the owner with `review:owner`.
 

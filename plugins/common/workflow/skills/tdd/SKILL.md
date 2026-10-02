@@ -1,12 +1,12 @@
 ---
 name: tdd
-description: Use when programming, coding, refactoring, implementing features, or diagnosing and fixing a bug, broken test, or regression through Red-Green-Refactor with explicit failing and passing test evidence.
+description: Use when implementing, refactoring or fixing code through Red-Green-Refactor, including reproducing a bug as a failing test first.
 allowed-tools: Skill Read Edit Bash
 ---
 
 # Test-Driven Development (Chicago School)
 
-Execute the Red-Green-Refactor loop in strict linear sequence for each observable behavior slice. TDD does not prescribe delegation, persistence, commits, or shipping workflow.
+Execute the Red-Green-Refactor loop in strict linear sequence for each observable behavior slice; committing and shipping belong to `vcs` and the calling flow.
 
 ## Project Precedence
 

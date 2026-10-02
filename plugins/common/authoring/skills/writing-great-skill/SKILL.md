@@ -15,9 +15,9 @@ A skill should make agent behavior more predictable. Bold terms are defined in `
 - **User Invocation**: Use when the human triggers the workflow explicitly. Set `disable-model-invocation: true` in YAML frontmatter and keep the description as a terse human-facing label.
 - **Dual Invocation Modes**:
   - **Inline Chaining**: Caller borrows domain rules directly into the active turn context (e.g. `tdd` invoking `ddd` or `hexagonal-architecture`). Phrase as: "When designing domain models, invoke `ddd`."
-  - **Delegated Subagent Invocation**: Orchestrator dispatches an isolated subagent with a dedicated task packet and active skill bundle (e.g. `deliver` dispatching `developer`).
+  - **Delegated Subagent Invocation**: Orchestrator dispatches an isolated subagent with a dedicated task packet and active skill bundle (e.g. `agent-review` dispatching an isolated `review` worker per PR).
 - **Composition Invariants**:
-  - **Strict DAG (No Recursion)**: Skill dependency graphs must form a Directed Acyclic Graph with max depth <= 2. Never call skills cyclically.
+  - **Strict DAG**: Skill dependency graphs form a Directed Acyclic Graph with max depth <= 2; every call chain ends.
   - **Deterministic Exit Gates**: Every callee skill must produce a verified exit gate before yielding control back to the caller.
 
 ## Description Craft
@@ -47,11 +47,11 @@ Output tokens are significantly more expensive and slower than input tokens. Def
 
 ## Diagramming Standard
 
-Use clean standard ASCII / Unicode box-drawing diagrams and structured Markdown tables. Do not use Mermaid code blocks (unreliable rendering across terminal pagers and editor viewers).
+Use clean standard ASCII / Unicode box-drawing diagrams and structured Markdown tables; they render in every terminal pager and editor viewer, where Mermaid does not.
 
 ## Code Anti-Overengineering Invariants
 
-- **Rule of Two Adapters**: Never create an interface or abstraction layer unless at least two concrete implementations exist in the active codebase.
+- **Rule of Two Adapters**: Create an interface or abstraction layer once two implementations exist in the active codebase. A hexagonal port's test fake or in-memory adapter counts as its second implementation, so a port with one production adapter qualifies.
 - **YAGNI & Deep Modules**: Favor deep modules with small interfaces over shallow file proliferation. Pass domain types directly rather than creating speculative DTO chains.
 
 ## Information Hierarchy
@@ -60,12 +60,12 @@ Use clean standard ASCII / Unicode box-drawing diagrams and structured Markdown 
 - Move branch-specific reference behind a clear **context pointer**: "Read X when Y."
   - **Path Rule (Local)**: `X` must be a relative link targeting a file inside the skill's own local `references/` directory (e.g., `[glossary.md](references/glossary.md)` or `[subtopic.md](references/category/subtopic.md)`).
   - **Path Rule (Shared Package Authority)**: Skills shipped together in one plugin MAY use a relative link to one package-local authority outside their own directory (e.g., `[shared.md](../../references/shared.md)` from a skill directory). Verify that link from the installed package; do not copy the authority per skill.
-  - **Rule**: Never use absolute local file URLs (e.g., `file:///...`) or reference files outside the installed plugin. Reference other skills textually using backticks (e.g., `` `other-skill` ``) unless using the shared-authority exception.
+  - **Rule**: Links are relative and stay inside the installed plugin. Reference other skills textually using backticks (e.g., `` `other-skill` ``) unless using the shared-authority exception.
 - **Reference Scope & Sizing**:
   - Keep each reference file focused on a single topic, domain model, language profile, or specification.
   - Prioritize scannable reference formats: tables, checklists, and minimal self-contained code examples. Keep reference files under 300 lines (~1,500 tokens).
-  - Do not include a Table of Contents (TOC) or section anchor list in reference files; agents parse markdown headings directly, and TOCs duplicate text without changing behavior.
-  - Do not duplicate procedural steps or execution workflows from `SKILL.md` in reference files.
+  - Let headings carry the structure of a reference file; agents parse them directly, so a table of contents adds text without changing behavior.
+  - Keep procedural steps and execution workflows in `SKILL.md` only; reference files hold the material those steps point to.
 - **Lazy Loading Guardrail**:
   - Write explicit, disjoint trigger conditions for context pointers to prevent eager pre-fetching.
   - Load only the specific reference required for the active branch; do not preload the entire `references/` directory.

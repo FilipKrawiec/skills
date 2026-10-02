@@ -5,9 +5,11 @@ active_skills:
   - tdd
   - vcs
   - review
-  - grill-with-context
+  - spec
+  - plan
+  - ship
+  - improve
   - writing-great-skill
-  - issue-lanes
   - afk
   - agent-review
 
@@ -43,7 +45,7 @@ Output generation tokens are significantly more expensive and slower than input 
 - **Direct Symbol & File Links**: Link to modified paths (e.g. `[filename](file:///path/to/file#L10-L20)`) instead of echoing file bodies in chat.
 - **Evidence-First Output**: Emit compact outputs: exact commands executed, terminal exit code status, and concrete decision points.
 - **Decisive Tool Execution**: Batch tool calls logically; eliminate redundant exploratory roundtrips.
-- **Code Anti-Overengineering**: Enforce the Rule of Two Adapters (no interfaces without >= 2 concrete implementations), YAGNI, and Chicago-style state verification over mock combinatorics.
+- **Code Anti-Overengineering**: Enforce the Rule of Two Adapters (an interface once two implementations exist; a port's test fake counts), YAGNI, and Chicago-style state verification over mock combinatorics.
 
 ## Universal Diagramming & Formatting Standard
 
@@ -58,7 +60,7 @@ When performing implementation or review tasks in specific codebase directories,
 
 ## Mandatory Skill Editing Workflow
 
-CRITICAL: You are strictly forbidden from making any edits to the packaged skill directories until you have read `plugins/common/authoring/skills/writing-great-skill/SKILL.md`. Treat `writing-great-skill` as the local source of truth for invocation, description craft, information hierarchy, output envelopes, and pruning.
+CRITICAL: Read `plugins/common/authoring/skills/writing-great-skill/SKILL.md` before any edit to the packaged skill directories. Treat `writing-great-skill` as the local source of truth for invocation, description craft, information hierarchy, output envelopes, and pruning.
 
 ## Goal
 
@@ -87,6 +89,6 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 
 ## Shipping
 
-- Whenever a new worktree is created or new work is started, update the original main branch first (`git fetch origin main:main` or pull upstream). Implement in an isolated, clean task worktree on a short-lived branch. The declared base must be an ancestor of `HEAD`; committed changes must remain within the packet's affected-path boundary. After verification, an executor may push the task branch and publish or update a Review Request within its packet boundaries; non-AFK work requires that Review Request safety boundary.
-- Once specification and plan are durable, a published Review Request must carry one Delivery Record reference from the configured tracker. Chat-only, local, and unpushed work does not require one.
-- The user retains merge authority. Do not merge, approve, or force-push a protected/default branch unless the user explicitly authorizes that action.
+- Work happens in an isolated worktree on a short-lived branch made from the fetched base branch; the checkout a session starts in stays as it is. The claim, open-PR and tidy steps are in `plugins/common/workflow/references/board.md`.
+- Committed changes stay within the issue's scope packet. After verification, an agent pushes the branch and opens or updates the PR that closes the issue (`Closes #<N>`, linking the `## Plan` comment).
+- The owner retains merge authority: merging, approving and force-pushing a protected or default branch happen only on the owner's explicit word; `lanes.py automerge` and `merge-reviewed` are that word for chores and agent-reviewed AFK PRs.

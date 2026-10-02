@@ -36,11 +36,12 @@ plugins/common/<package>/skills/<skill-name>/
 
 ### Step 2: Crafting `SKILL.md`
 
-1. **YAML Frontmatter**: Keep under 1024 characters total.
+1. **YAML Frontmatter**: `description` starts with "Use when" and stays under 1024 characters; `allowed-tools` is required.
    ```yaml
    ---
    name: example-skill
    description: Use when [describe user intent and trigger conditions].
+   allowed-tools: Read Bash(git:*)
    ---
    ```
 2. **Instruction Wording**: Describe desired behaviors positively. Use prohibitions only for explicit security or safety boundaries.
@@ -48,27 +49,25 @@ plugins/common/<package>/skills/<skill-name>/
    ```markdown
    Read [topic.md](references/topic.md) when configuring X settings.
    ```
-   *Rule*: Always use relative links to files inside the skill's `references/` subdirectory. Do not use absolute `file:///` URLs or link across unrelated packages.
+   *Rule*: Links are relative and point inside the skill's own `references/`, or to the package's shared authority (`../../references/<file>.md`) when the skills of one plugin share it.
 
 ---
 
 ## 3. Plugin Manifests & Overlay Architecture
 
-Plugins group skills together into package manifests (`plugin.json`).
+Each common package describes itself once, in `package-metadata.json`; `just sync-manifests` (`python3 scripts/validate-plugin-definitions.py --sync`) generates `plugin.json`, `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json` and both marketplace catalogs from it, and the validator fails when they drift.
 
-### Manifest Structure (`plugin.json`)
+### Source of truth (`package-metadata.json`)
 
 ```json
 {
   "name": "filipkrawiec-core",
-  "version": "1.0.0",
-  "description": "Core software engineering architecture skills",
-  "skills": [
-    "skills/ddd",
-    "skills/hexagonal-architecture"
-  ]
+  "version": "9.20.0",
+  "description": "Core software engineering architecture skills"
 }
 ```
+
+The host manifests point at the skills directory (`"skills": "./skills/"`); every skill under it is included.
 
 * **Common Packages (`plugins/common/*`)**: Portable base plugins without framework-specific GUI code.
 * **Agent Overlays (`plugins/<agent>/*`)**: Native overlays providing custom host UX (e.g. Antigravity UI proceed buttons in `plugins/agy/`).
@@ -77,7 +76,7 @@ Plugins group skills together into package manifests (`plugin.json`).
 
 ## 4. Local Testing & Verification Matrix
 
-Before committing or submitting a Review Request, run the local verification suite:
+Before committing or opening a pull request, run the local verification suite:
 
 ### Automated Verifiers
 
@@ -85,11 +84,11 @@ Before committing or submitting a Review Request, run the local verification sui
 # 1. Run Python unit tests
 just unit              # or: python3 scripts/project-verify.py unit
 
-# 2. Run plugin definition validator
-just verify            # or: python3 scripts/project-verify.py verify
+# 2. Unit tests plus the plugin definition validator
+just verify            # python3 scripts/project-verify.py verify runs the validator and git hygiene only
 
-# 3. Check release version alignment
-just release-check     # or: python3 scripts/validate-plugin-definitions.py
+# 3. Regenerate manifests after editing package-metadata.json
+just sync-manifests
 ```
 
 ### Contributor Setup & Git Hooks
@@ -99,7 +98,7 @@ Set up local Git hooks and link development plugins into your local Antigravity 
 ```bash
 just setup             # Configures scripts/git-hooks and links dev plugins
 # or separately:
-just setup-hooks       # Configure Git pre-push hook only
+just setup-hooks       # Point core.hooksPath at scripts/git-hooks: pre-push validates; post-commit and post-merge on main run `just refresh`
 just link-agy          # Symlink plugins to ~/.gemini/config/plugins
 ```
 
@@ -123,4 +122,4 @@ Releases are automated from conventional commits via GitHub Actions or locally v
      just release           # Automated semver bump based on conventional commits
      # or: just release minor / just release patch / just release major
      ```
-   * The release script verifies a clean working tree, updates package metadata, synchronizes manifests, tags the commit, and refreshes installed plugins.
+   * The release script verifies a clean working tree, updates package metadata, synchronizes manifests and marketplace catalogs, commits, tags the commit, and refreshes installed plugins. It pushes nothing: follow it with `git push origin main --follow-tags`. CI is the normal path; use the local release only when CI is unavailable, since both acting on the same commit would tag twice.

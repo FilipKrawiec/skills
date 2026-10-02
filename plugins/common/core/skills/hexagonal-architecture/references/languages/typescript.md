@@ -1,12 +1,12 @@
 # TypeScript Hexagonal Architecture
 
-Use this as a TypeScript-specific delta on top of the generic Domain, Application, API, and Infrastructure references.
+Use this as a TypeScript-specific delta on top of the generic Domain, Application, API, and Infrastructure references. It prescribes no framework: match the one the codebase already uses.
 
 ## 1. Package and Module Boundaries
 
 - Use feature-first directories nested under `src/` with layer directories: `src/<bounded-context>/domain/`, `src/<bounded-context>/app/`, `src/<bounded-context>/api/`, and `src/<bounded-context>/infra/` (e.g., `src/users/domain`).
 - Separate reuse by intent. A `src/shared/domain` directory contains shared domain primitives (e.g., base Domain Event types or common Value Objects) only when named contexts jointly own them. Do not place application, API, database, or serialization types there.
-- Domain directories must not import from `app`, `api`, `infra`, web frameworks (Express, NestJS), database ORMs (Prisma, TypeORM, Mongoose), or serialization/validation libraries (like Class-Transformer or Zod).
+- Domain directories must not import from `app`, `api`, `infra`, web frameworks, database ORMs, or serialization/validation libraries.
 - Enforce boundaries with tooling such as [Dependency Cruiser](https://github.com/sverweij/dependency-cruiser), ESLint import restrictions (e.g., `eslint-plugin-import` path rules), or monorepo workspace packages (e.g., `pnpm-workspace.yaml`).
 - If the project uses a monorepo structure, the `@project/users-domain` package must have no dependencies on app, api, infra, or framework packages.
 
@@ -23,21 +23,20 @@ Use this as a TypeScript-specific delta on top of the generic Domain, Applicatio
 - Domain models must use read-only interfaces or types (e.g., `readonly` modifier or `Readonly<T>`) to guarantee immutability.
 - Do not use classes for mutable Entities or Aggregate Roots. Use pure data-oriented interfaces.
 - Protect domain invariants using pure functions that accept the current state and parameters, then return a new state representation along with any generated domain events.
-- Use branded/opaque types (`type UserId = string & { readonly __brand: unique symbol }`) for identity and small value types to prevent primitive obsession and swapping.
-- Model expected business failures as discriminated union outcomes/errors (e.g., `type Outcome = { type: "Unchanged" } | { type: "Changed"; user: User; event: UserEmailChanged }`), not throwing exceptions.
+- Use branded/opaque types (`type UserId = string & { readonly __brand: unique symbol }`) for identity and small value types, each produced by one validating parser function (`userId(raw)`) that is the only place the brand is applied.
+- Model expected business failures as discriminated union outcomes/errors (e.g., `type Outcome = { type: "Unchanged" } | { type: "Changed"; user: User; event: UserEmailChanged }`), not exceptions; the whole domain uses one form.
 - Domain functions should be synchronous and free of IO. Do not return `Promise` values from domain logic functions.
 
 ## 4. Creation, Time, and Randomness
 
 - Aggregate creation should live in the aggregate file as a pure function prefixing the aggregate name (e.g., `createUser(...)`).
-- Keep creation logic simple and direct. Avoid creating separate factory helper functions or clock/identity injection interfaces unless explicitly required by external integration constraints.
-- For timestamps, use standard language primitives like `new Date()` directly within the creation context rather than introducing helper abstractions.
-- For random ID generation, use native `crypto.randomUUID()` directly.
+- Use a separate factory function only when creation needs injected collaborators (identity or clock ports, policies).
+- Inject a `Clock` or `UserIds` port when time or identity must be deterministic in tests or coordinated externally; otherwise pass `new Date()` and `crypto.randomUUID()` in from the use case so domain functions stay pure.
 
 ## 5. Application Layer
 
 - Maintain transactions, authorization, domain event dispatch, and application orchestrations in this layer.
-- Inbound API adapters (Express/Fastify/NestJS controllers) must always invoke use cases/handlers (consistency over simplicity); never bypass the application layer to call repositories or query ports directly.
+- Inbound API adapters (routes, controllers, consumers) must always invoke use cases/handlers (consistency over simplicity); never bypass the application layer to call repositories or query ports directly.
 - Use case functions load data via ports, execute pure domain state transition functions, save updated states back through ports, and publish resulting domain events.
 - Return explicit application results using union types (e.g., `{ type: "Success" } | { type: "UserNotFound" } | { type: "Unchanged" }`) for expected failures; do not throw or let database exceptions leak up.
 
@@ -50,8 +49,8 @@ Use this as a TypeScript-specific delta on top of the generic Domain, Applicatio
 
 ## 7. API and Infrastructure Models
 
-- API packages own request and response DTO types. Validations can be done using schema libraries (e.g., `zod` types or runtime parsers).
-- Infrastructure packages own persistence structures (type definitions matching DB schema, TypeORM `@Entity` metadata, Prisma types), database clients, and mappers.
+- API packages own request and response DTO types and their schema validation.
+- Infrastructure packages own persistence structures (types matching the DB schema, ORM metadata), database clients, and mappers.
 - Never expose Domain types as API DTOs, and never pass ORM-mapped records inward to the Application or Domain layers.
 - Persistence shape is not expected to be 1:1 with Domain shape.
 
@@ -59,8 +58,8 @@ Use this as a TypeScript-specific delta on top of the generic Domain, Applicatio
 
 - Concrete adapter implementations (functions or classes) are internal to the infrastructure layer; domain/application ports remain public.
 - Helper functions and schema definitions should not be exported outside their infra file or directory.
-- Match the host framework already used by the codebase (e.g., Express, Fastify, NestJS, Awilix).
-- Put framework wiring and container configuration in composition roots. Domain models must have zero framework/DI decorators; Application use cases may use standard DI decorators (e.g., `@Injectable()`) when established in the host framework, while avoiding concrete infrastructure adapter imports.
+- Match the host framework already used by the codebase; this reference introduces none.
+- Put framework wiring and container configuration in composition roots. Domain models have zero framework/DI decorators; Application use cases may use the host framework's DI decorators when established, while avoiding concrete infrastructure adapter imports.
 
 ## 9. Testing Rules
 

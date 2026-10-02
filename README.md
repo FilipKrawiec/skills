@@ -27,9 +27,8 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │                            PORTABLE SKILLS                                  │
  │   Core:         ddd, hexagonal-architecture                                 │
- │   Workflow:     tdd, review, vcs, grill-with-context, issue-lanes, afk,     │
+ │   Workflow:     spec, plan, tdd, vcs, review, ship, improve, afk,           │
  │                 agent-review                                                │
- │   SDLC:         deliver, define, specify (FilipKrawiec/devcontainer)        │
  │   Authoring:    writing-great-skill                                         │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -54,14 +53,12 @@ This library supports two complementary execution loops depending on the scope o
                                         │
              ┌──────────────────────────┴──────────────────────────┐
              │                                                     │
-             ▼ (Fast Tactical Loop)                                ▼ (Enterprise Delivery Loop)
+             ▼ (Fast Tactical Loop)                                ▼ (Delivery Cycle)
   ┌──────────────────────────────┐                      ┌──────────────────────────────┐
-  │ 1. tdd (Repro & Red-Green)   │                      │ 1. define (Outcomes & Scope) │
-  │ 2. review (Smell & Spec)     │                      │ 2. specify/grill-with-context│
-  │ 3. vcs (Atomic commit)       │                      │ 3. deliver                   │
-  └──────────────┬───────────────┘                      │    (Worktree multi-agent)    │
-                 │                                      │ 4. project-verify.py (Gates) │
-                 │                                      │ 5. Review Request & Ship     │
+  │ 1. tdd (Repro & Red-Green)   │                      │ 01+02 spec                   │
+  │ 2. review (Smell & Spec)     │                      │ 03 plan     04 tdd + vcs     │
+  │ 3. vcs (Atomic commit)       │                      │ 05 review   06 ship          │
+  └──────────────┬───────────────┘                      │ 07 improve  (afk runs 03-07) │
                  │                                      └──────────────┬───────────────┘
                  │                                                     │
                  └──────────────────────┬──────────────────────────────┘
@@ -79,11 +76,11 @@ This library supports two complementary execution loops depending on the scope o
 
 For full details, read the comprehensive [Concepts & Architecture Guide](docs/CONCEPTS.md).
 
-* **Affirmative State Machines**: Skills are structured as unidirectional linear phases with explicit affirmative actions and concrete exit gates, eliminating negative prompt priming ("Do vs Don't" contradictions).
+* **Affirmative State Machines**: Skills are structured as unidirectional linear phases with explicit affirmative actions and concrete exit gates, with prohibitions kept to safety boundaries.
 * **Zero-Waste Output Economics**: Every skill phase defines explicit output envelopes, high-density token efficiency, and code anti-overengineering (Rule of Two Adapters).
 * **Provider-Neutral & Sovereign Git-Native**: Pure Git clone/submodule distribution across harnesses (Claude Code, Codex, Antigravity) without SaaS registry dependencies.
-* **Issue Lanes & AFK Delivery**: `issue-lanes` gives every GitHub issue one lane (`lane:afk`, `lane:proposed`, `lane:owner`); `afk` delivers owner-approved issues unattended, one at a time, behind a guard hook that keeps merges, releases and settings with the owner.
-* **Delivery Orchestration**: The `deliver` workflow (in the `filipkrawiec-sdlc` package of [FilipKrawiec/devcontainer](https://github.com/FilipKrawiec/devcontainer)) coordinates bounded project changes across isolated Git worktrees.
+* **Delivery Cycle**: Seven phases (01 Define to 07 Improve), one skill each, and one Project board column each, moved by the skill that finishes the phase.
+* **Issue Lanes & AFK Delivery**: `spec` gives every GitHub issue one lane (`lane:afk`, `lane:proposed`, `lane:owner`); `afk` carries owner-approved issues through plan, execute, review, ship and improve unattended, one at a time, behind a guard hook that keeps merges, releases and settings with the owner.
 * **Deterministic Verification**: `scripts/project-verify.py` acts as a zero-dependency, deterministic gate for code verification and git hygiene.
 
 ---
@@ -97,10 +94,12 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | **`filipkrawiec-workflow`** | [`tdd`](plugins/common/workflow/skills/tdd/SKILL.md) | Model | Test-Driven Development: Chicago-school Red-Green-Refactor, bug reproduction first, doctrine chaining. |
 | | [`review`](plugins/common/workflow/skills/review/SKILL.md) | Model | Diff Audit: Boundary breaches, runtime defects, design smells, and test rigor. |
 | | [`vcs`](plugins/common/workflow/skills/vcs/SKILL.md) | Model | Version Control: Conventional commits, worktree isolation, and PR delivery. |
-| | [`issue-lanes`](plugins/common/workflow/skills/issue-lanes/SKILL.md) | Model | Issue Lanes: Create and triage issues into AFK, proposed or owner lanes; ask the owner at creation. |
-| | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | Model | Unattended Delivery: One approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
-| | [`agent-review`](plugins/common/workflow/skills/agent-review/SKILL.md) | Model | Agent Review: Review each open PR per head commit, hand critical PRs to the owner, merge reviewed AFK PRs, wake the runner. |
-| | [`grill-with-context`](plugins/common/workflow/skills/grill-with-context/SKILL.md) | Model | Context Grilling: Ground specifications against ADRs, glossary, and knowledge. |
+| | [`spec`](plugins/common/workflow/skills/spec/SKILL.md) | Model | 01 Define, 02 Spec: Open the issue, grill against project context, write acceptance criteria, estimate and scope packet, decide the lane. |
+| | [`plan`](plugins/common/workflow/skills/plan/SKILL.md) | Model | 03 Plan: Post a repository-grounded plan on the issue; approval before execution. |
+| | [`ship`](plugins/common/workflow/skills/ship/SKILL.md) | Model | 06 Ship: Base-branch health after merge, revert AFK breakage, confirm shipped issues. |
+| | [`improve`](plugins/common/workflow/skills/improve/SKILL.md) | Model | 07 Improve: Turn friction into lessons for skills, agent rules, docs or assets. |
+| | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | User (scheduler invokes by name) | Unattended Delivery: Runs the cycle for one approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
+| | [`agent-review`](plugins/common/workflow/skills/agent-review/SKILL.md) | User (scheduler invokes by name) | Agent Review: Review each open PR per head commit, hand critical PRs to the owner, merge reviewed AFK PRs, wake the runner. |
 | **`filipkrawiec-authoring`** | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring affirmative state machines, output contracts, and token budgets. |
 
 ---
@@ -127,7 +126,7 @@ claude \
   --plugin-dir plugins/common/authoring
 ```
 
-*Tip*: Run `just refresh` to update all local plugin installations (Codex, Claude, and Antigravity IDE).
+*Tip*: `just refresh` reinstalls the released packages from the marketplace (Codex, Claude, and Antigravity IDE); `--plugin-dir` and `just link-agy` are the paths that load this checkout.
 
 ### Codex
 
@@ -161,7 +160,7 @@ Agents and developers execute deterministic project verification tasks defined i
 just unit         # or: python3 scripts/project-verify.py unit
 
 # Run full project verifier & git hygiene checks
-just verify       # or: python3 scripts/project-verify.py verify
+just verify       # unit tests plus the validator; python3 scripts/project-verify.py verify runs the validator and git hygiene only
 
 # Run release version validator
 just release-check
@@ -178,8 +177,8 @@ Want to add a new skill, update plugin manifests, or prepare a release tag? Read
 
 ### Release Procedure Summary
 
-* **Pre-merge**: Run the full repository verification suite (`python3 scripts/project-verify.py unit` and `verify`) and submit a Review Request. This stage does not claim a release tag, published version, or completed release.
-* **Post-merge / Ship**: Once merged to `main`, execute the automated release workflow (`just release` or `python3 scripts/release.py`) which computes the semver bump from conventional commits, synchronizes all plugin manifests, creates the annotated tag (`v<version>`), and pushes with tags (`git push --follow-tags`).
+* **Pre-merge**: Run `just verify` and open a pull request. This stage does not claim a release tag, published version, or completed release.
+* **Post-merge / Ship**: Every push to `main` runs `.github/workflows/release.yml`, which computes the semver bump from conventional commits, synchronizes all plugin manifests, commits, creates the annotated tag (`v<version>`), pushes with `--follow-tags` and publishes the GitHub Release. `just release` does the same locally up to the tag; follow it with `git push origin main --follow-tags` when CI is unavailable.
 
 ---
 

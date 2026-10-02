@@ -196,18 +196,18 @@ skill-name/
 ### Frontmatter Fields in `SKILL.md`
 * **`name`**: Required. Max 64 chars. Lowercase alphanumeric and hyphens only. Must match parent directory.
 * **`description`**: Required. Max 1024 chars. Context-triggering text.
-* **`allowed-tools`**: Required. Space-delimited string declaring pre-approved tools (e.g. `Skill Read Edit Bash(git:*)`). Declare `Skill` to enable downstream skill calling.
+* **`allowed-tools`**: Optional in the public specification, required in this repository. Space-delimited string declaring pre-approved tools (e.g. `Skill Read Edit Bash(git:*)`). Declare `Skill` to enable downstream skill calling.
 * **`disable-model-invocation`**: Optional. Boolean (`true`/`false`). When `true`, hides skill from autonomous model discovery for explicit human triggering.
 * **`license`**: Optional. Name or reference to a bundled license file.
 * **`compatibility`**: Optional. Max 500 chars. System packages/runtime requirements.
 * **`metadata`**: Optional. Key-value string map for custom settings.
 
-### Cross-Skill Invocation & Tool Allowance
-When composing modular workflows, declare tool capabilities and adhere to execution patterns:
+### Cross-Skill Invocation & Tool Allowance (this repository's conventions)
+The public specification defines no composition rules; these are this repository's, kept in `SKILL.md`:
 * **Tool Boundaries**: Restrict tool privileges with command filters (e.g. `Bash(pytest:*,just:*)`).
 * **Inline Chaining**: Caller borrows domain rules directly into the active prompt turn (e.g. `tdd` invoking `ddd`).
-* **Subagent Delegation**: Orchestrator dispatches an isolated executor with a dedicated active skill bundle (e.g. `deliver` dispatching `developer`).
-* **Graph Invariants**: Dependencies must form a Directed Acyclic Graph (DAG) with max depth <= 2. Recursive calls are forbidden.
+* **Subagent Delegation**: Orchestrator dispatches an isolated executor with a dedicated active skill bundle (e.g. `agent-review` dispatching an isolated `review` worker per PR).
+* **Graph Invariants**: Dependencies form a Directed Acyclic Graph (DAG) with max depth <= 2.
 
 ### Progressive Disclosure Rules
 Skills should be structured to take advantage of progressive disclosure:

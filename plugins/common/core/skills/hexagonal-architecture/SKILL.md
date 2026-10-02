@@ -1,6 +1,6 @@
 ---
 name: hexagonal-architecture
-description: Use when designing, implementing, or refactoring codebase layers with Ports and Adapters, including API, application, domain, infrastructure, and dependency-boundary decisions.
+description: Use when designing or placing code across API, application, domain and infrastructure layers, or defining ports and adapters.
 allowed-tools: Read
 ---
 
@@ -10,14 +10,16 @@ Use these steps to preserve dependency direction and encapsulation.
 
 ## Steps
 
-1. Check context pointers to load the specific language reference ([kotlin.md](references/languages/kotlin.md) for Kotlin, [java.md](references/languages/java.md) for Java/Spring, [typescript.md](references/languages/typescript.md) for TypeScript, [dart.md](references/languages/dart.md) for Dart and Flutter) and layer reference (`references/`) relevant to the current task before designing or writing code.
+1. Check context pointers to load the specific language reference ([kotlin.md](references/languages/kotlin.md) for Kotlin, [java.md](references/languages/java.md) for Java, [typescript.md](references/languages/typescript.md) for TypeScript, [dart.md](references/languages/dart.md) for Dart and Flutter) and layer reference (`references/`) relevant to the current task before designing or writing code. **Exit gate:** the language and layer references for the task are loaded.
 2. Keep the Domain layer free of framework and infrastructure dependencies (zero web, database, or serialization imports). All outer layers can use domain objects, but must not influence their form.
-3. Use feature-first package/directory boundaries with layer suffixes (`<feature>.domain`, `<feature>.app`, `<feature>.api`, `<feature>.infra` in Kotlin; `src/<feature>/domain/`, `src/<feature>/infra/`, `src/<feature>/ui/` in TypeScript; `lib/src/<feature>/domain/`, `lib/src/<feature>/application/`, `lib/src/<feature>/infrastructure/`, `lib/src/<feature>/presentation/` in Dart/Flutter).
+3. Use feature-first package/directory boundaries with the layer layout the language profile prescribes.
 4. Apply domain port naming parity: omit `Port`/`Repository` suffixes on domain ports (`Users`, `ApplicationMetadatas`); prepend technology names on adapters (`JpaUsers`, `AgroalApplicationMetadatas`, `PrismaUsers`, `FirestoreUsers`).
 5. Declare outbound ports at the layer that owns the policy: domain-driven ports in Domain; integration-specific ports in Application.
-6. Let Application use cases coordinate transactions, security, and Domain actions without business rules. Application services may use host-framework transaction/DI metadata while remaining free of concrete infrastructure adapters.
-7. Keep adapters at the edge: inbound adapters map requests to commands/queries and invoke application use cases (never bypass the application layer, even for trivial queries); outbound adapters map ports to external systems without leaking data models.
-8. Keep technical reuse layer-scoped. A DDD Shared Kernel is domain-only and jointly owned by its named Bounded Contexts; it is never a cross-layer component library.
+6. Let Application use cases coordinate transactions, security, and Domain actions without business rules. Application services may use the host framework's transaction/DI metadata while remaining free of concrete infrastructure adapters. The profiles prescribe no framework: match the one the codebase uses.
+7. Keep adapters at the edge: inbound adapters map requests to commands/queries and invoke application use cases, trivial queries included; outbound adapters map ports to external systems and keep their data models internal.
+8. Keep technical reuse layer-scoped. A DDD Shared Kernel is domain-only and jointly owned by its named Bounded Contexts; cross-layer component libraries live outside it.
+
+**Exit gate:** the project's import or architecture rule check exits 0 (or, without one, `domain/` imports only the language and the domain itself).
 
 ## Context Pointers
 
@@ -26,6 +28,6 @@ Use these steps to preserve dependency direction and encapsulation.
 - Read [api-layer.md](references/api-layer.md) when writing inbound adapters (like HTTP/gRPC controllers, Kafka event consumers).
 - Read [infrastructure-layer.md](references/infrastructure-layer.md) when writing outbound adapters (like database repositories, API clients) and managing encapsulation.
 - Read [kotlin.md](references/languages/kotlin.md) when applying these boundaries in a Kotlin codebase.
-- Read [java.md](references/languages/java.md) when applying these boundaries in a Java or Spring Boot codebase.
+- Read [java.md](references/languages/java.md) when applying these boundaries in a Java codebase.
 - Read [typescript.md](references/languages/typescript.md) when applying these boundaries in a TypeScript codebase.
 - Read [dart.md](references/languages/dart.md) when applying these boundaries in a Dart or Flutter codebase.

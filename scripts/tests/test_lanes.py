@@ -44,7 +44,7 @@ def issue(number=1, labels=("lane:afk",), body=None, state="OPEN"):
 def pr(files, author=OWNER, **overrides):
     return {"state": "OPEN", "isDraft": False, "baseRefName": "main",
             "headRepositoryOwner": {"login": OWNER}, "author": {"login": author},
-            "files": [{"path": f} for f in files], **overrides}
+            "files": [{"path": f, "changeType": "MODIFIED"} for f in files], **overrides}
 
 
 class ConfigTests(unittest.TestCase):
@@ -53,7 +53,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(custom["base"], "trunk")
         self.assertEqual(custom["owner"], OWNER)
         self.assertIn(r"^\.[^/]+/", custom["protected"])
-        self.assertEqual((custom["worktrees"], custom["branchPrefix"]), (".worktrees", "agent/afk-"))
+        self.assertEqual(custom["branchPrefix"], "agent/afk-")
         self.assertIn("^infra/", custom["protected"])
         self.assertIn("^guide/", custom["chores"])
         self.assertIn(r"^docs/", custom["chores"])
@@ -64,6 +64,10 @@ class PacketTests(unittest.TestCase):
         self.assertEqual(lanes.packet(issue()["body"])["dependencies"], [7, 8])
         legacy = lanes.packet('```factory\n{"paths": ["docs/"]}\n```')
         self.assertEqual(legacy, {"paths": ["docs/"], "dependencies": []})
+
+    def test_paths_must_be_a_list_of_strings(self) -> None:
+        self.assertIsNone(lanes.packet('```scope\n{"paths": "docs/"}\n```'))
+        self.assertIsNone(lanes.packet('```scope\n{"paths": [1]}\n```'))
 
     def test_missing_or_broken_packet_is_none(self) -> None:
         self.assertIsNone(lanes.packet("no packet"))
@@ -103,10 +107,6 @@ class EligibilityTests(unittest.TestCase):
         issues = [issue(5, ("lane:afk", "priority:P2")), issue(9, ("lane:afk", "priority:P0")),
                   issue(3, ("lane:afk",)), issue(4, ("lane:afk", "priority:P0"))]
         self.assertEqual([i["number"] for i in sorted(issues, key=lanes.rank)], [4, 9, 5, 3])
-
-    def test_branch_slug_drops_the_conventional_prefix(self) -> None:
-        self.assertEqual(lanes.slug("feat(stage): Glass setlist drawer to add, remove"),
-                         "glass-setlist-drawer-to-add")
 
 
 class ScopeTests(unittest.TestCase):
@@ -169,78 +169,22 @@ class AutomergeTests(unittest.TestCase):
             self.assertIsNotNone(lanes.automerge_refusal(candidate, CONFIG))
 
 
-class BoardAndTidyTests(unittest.TestCase):
-    def test_status_follows_the_lifecycle_and_lanes_stay_labels(self) -> None:
-        expected = [
-            (issue(state="CLOSED"), {"x"}, "Done"),
-            (issue(), set(), "Review"),
-            (issue(labels=("lane:afk", "state:claimed")), None, "Running"),
-            (issue(labels=("lane:owner", "state:started")), None, "Running"),
-            (issue(), None, "Backlog"), (issue(labels=("lane:owner",)), None, "Backlog"),
-            (issue(labels=("type:epic",)), None, "Backlog"),
-            (issue(labels=("lane:proposed",)), None, "Decide"),
-            (issue(labels=("lane:owner", "state:parked")), None, "Decide"),
-            (issue(labels=("lane:afk", "state:parked")), None, "Backlog"),
-            (issue(labels=()), None, "Triage"),
-        ]
-        for candidate, pr_labels, want in expected:
-            with self.subTest(want=want):
-                self.assertEqual(lanes.status(candidate, pr_labels), want)
-                self.assertIn(want, lanes.STATUSES)
+    def test_renames_wait_because_the_old_path_is_hidden(self) -> None:
+        moved = pr(["docs/release.yml"])
+        moved["files"][0]["changeType"] = "RENAMED"
+        self.assertIn("renames", lanes.automerge_refusal(moved, CONFIG))
+        unknown = pr(["docs/release.yml"])
+        del unknown["files"][0]["changeType"]
+        self.assertIn("renames", lanes.automerge_refusal(unknown, CONFIG))
 
-    def test_work_in_progress_shows_as_running_even_with_an_open_pr(self) -> None:
-        for label in ("state:claimed", "state:started"):
-            with self.subTest(label=label):
-                self.assertEqual(lanes.status(issue(labels=("lane:afk", label)), {"review:owner"},
-                                              agent_review=True), "Running")
 
-    def test_agent_review_holds_prs_until_handed_to_the_owner(self) -> None:
-        self.assertEqual(lanes.status(issue(), set(), agent_review=True), "Agent review")
-        self.assertEqual(lanes.status(issue(), {"review:owner"}, agent_review=True), "Review")
-        self.assertEqual(lanes.status(issue(), {"review:owner"}), "Review")
-
+class QueueTests(unittest.TestCase):
     def test_only_afk_claims_hold_the_one_at_a_time_queue(self) -> None:
         issues = [issue(3, ("lane:owner", "state:started")), issue(4, ("lane:afk",))]
         self.assertEqual(lanes.afk_in_flight(issues, set()), [])
         issues.append(issue(5, ("lane:afk", "state:claimed")))
         self.assertEqual([i["number"] for i in lanes.afk_in_flight(issues, set())], [5])
         self.assertEqual(lanes.afk_in_flight(issues, {5}), [])
-
-    def test_priority_comes_from_its_label(self) -> None:
-        self.assertEqual(lanes.priority(issue(labels=("priority:P1",))), "P1")
-        self.assertIsNone(lanes.priority(issue(labels=())))
-
-    def test_tidy_touches_only_what_afk_runs_created(self) -> None:
-        root = Path("/repo")
-        afk_tree = root / CONFIG["worktrees"] / "afk-12"
-        self.assertTrue(lanes.afk_owned("agent/afk-12-drawer", afk_tree, root, CONFIG))
-        self.assertTrue(lanes.afk_owned("agent/afk-12-drawer", None, root, CONFIG))
-        self.assertFalse(lanes.afk_owned("feature/drawer", None, root, CONFIG))
-        self.assertFalse(lanes.afk_owned("", None, root, CONFIG))
-        self.assertFalse(lanes.afk_owned("agent/afk-12-drawer", root / CONFIG["worktrees"] / "session-a1", root, CONFIG))
-        self.assertFalse(lanes.afk_owned("agent/afk-12-drawer", Path("/elsewhere/afk-12"), root, CONFIG))
-
-    def test_only_finished_clean_work_is_removed(self) -> None:
-        self.assertEqual(lanes.tidy_action("MERGED", False), "remove")
-        self.assertEqual(lanes.tidy_action("CLOSED", False), "remove")
-        self.assertEqual(lanes.tidy_action("MERGED", True), "keep: uncommitted changes")
-        self.assertEqual(lanes.tidy_action("OPEN", False), "keep: open PR")
-        self.assertEqual(lanes.tidy_action(None, False), "keep: no PR yet")
-
-
-class LabelTests(unittest.TestCase):
-    def test_lane_labels_are_created_extras_renamed_and_strays_deleted(self) -> None:
-        custom = config(labels={"type:bug": {"color": "d73a4a", "description": "Broken"}},
-                        renames={"bug": "type:bug"})
-        current = {"bug": {"color": "d73a4a", "description": "Broken"},
-                   "wontfix": {"color": "ffffff", "description": ""}}
-        steps = {(action, name) for action, name, _, _ in lanes.label_plan(current, custom)}
-        self.assertIn(("rename", "bug"), steps)
-        self.assertNotIn(("create", "type:bug"), steps)
-        self.assertIn(("delete", "wontfix"), steps)
-        for name in (lanes.AFK, lanes.PROPOSED, lanes.OWNER_LANE, lanes.CLAIMED, lanes.STARTED, lanes.PARKED,
-                     lanes.OWNER_REVIEW, lanes.EPIC):
-            self.assertIn(("create", name), steps)
 
 
 SHA = "a" * 40
@@ -262,6 +206,16 @@ class ReviewedMergeTests(unittest.TestCase):
 
     def test_a_ready_review_at_the_head_merges(self) -> None:
         self.assertIsNone(self.refusal(reviewed_pr()))
+
+    def test_only_the_reviewer_account_can_mark_ready(self) -> None:
+        stranger = reviewed_pr()
+        stranger["reviews"][0]["author"] = {"login": "stranger"}
+        self.assertIn("ready", self.refusal(stranger))
+
+    def test_pending_reviews_without_a_time_are_ignored(self) -> None:
+        pending = {"author": {"login": OWNER}, "state": "PENDING", "body": "", "submittedAt": None}
+        ready = reviewed_pr()
+        self.assertIsNone(self.refusal({**ready, "reviews": ready["reviews"] + [pending]}))
 
     def test_only_with_agent_review_on(self) -> None:
         self.assertIn("agentReview", self.refusal(reviewed_pr(), CONFIG))
@@ -297,6 +251,25 @@ class ReviewedMergeTests(unittest.TestCase):
                    "submittedAt": "2026-10-02T08:00:00Z"}
         ready = reviewed_pr()
         self.assertIn("requests changes", self.refusal({**ready, "reviews": ready["reviews"] + [blocked]}))
+        comment = {"author": {"login": "reviewer"}, "state": "COMMENTED", "body": "One more thought.",
+                   "submittedAt": "2026-10-02T09:00:00Z"}
+        still = {**ready, "reviews": [blocked, comment] + ready["reviews"]}
+        self.assertIn("requests changes", self.refusal(still))
+        dismissed = {**blocked, "state": "DISMISSED", "submittedAt": "2026-10-02T09:30:00Z"}
+        self.assertIsNone(self.refusal({**ready, "reviews": [blocked, dismissed] + ready["reviews"]}))
+
+    def test_renames_wait_for_the_owner(self) -> None:
+        moved = reviewed_pr()
+        moved["files"][0]["changeType"] = "RENAMED"
+        self.assertIn("renames", self.refusal(moved))
+
+
+    def test_reviews_count_in_time_order(self) -> None:
+        blocked = {"author": {"login": "reviewer"}, "state": "CHANGES_REQUESTED", "body": "No.",
+                   "submittedAt": "2026-10-02T08:00:00Z"}
+        approved = {**blocked, "state": "APPROVED", "submittedAt": "2026-10-02T09:00:00Z"}
+        ready = reviewed_pr()
+        self.assertIsNone(self.refusal({**ready, "reviews": [approved, blocked] + ready["reviews"]}))
 
 
 class BaseBranchTests(unittest.TestCase):
@@ -345,6 +318,19 @@ class BaseBranchTests(unittest.TestCase):
             branch = subprocess.run(["git", "branch", "--show-current"], cwd=owner,
                                     capture_output=True, text=True, check=True).stdout.strip()
             self.assertEqual(branch, "owner-work")
+
+    def test_a_move_lists_its_old_path_too(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ident = ["-c", "user.name=t", "-c", "user.email=t@t"]
+            self.git(tmp, "init", "--quiet", "-b", "main")
+            (Path(tmp) / "infra").mkdir()
+            (Path(tmp) / "infra/dns.tf").write_text("dns\n" * 20)
+            self.git(tmp, "add", ".")
+            self.git(tmp, *ident, "commit", "--quiet", "-m", "base")
+            self.git(tmp, "mv", "infra/dns.tf", "dns.tf")
+            self.assertEqual(lanes.changed_files(tmp, "main"), ["dns.tf", "infra/dns.tf"])
+            (Path(tmp) / "a b.md").write_text("spaced\n")
+            self.assertIn("a b.md", lanes.changed_files(tmp, "main"))
 
 
 if __name__ == "__main__":

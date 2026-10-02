@@ -36,6 +36,7 @@ jobs:
 
       - name: Run Pre-Release Verifications
         run: |
+          python3 -m pip install pyyaml
           python3 -m unittest discover -s scripts/tests
           python3 scripts/validate-plugin-definitions.py
 
@@ -46,4 +47,4 @@ jobs:
           python3 scripts/release.py auto
           git push origin main --follow-tags
           RELEASE_TAG=$(git describe --tags --abbrev=0)
-          gh release create "${RELEASE_TAG}" --generate-notes --title "${RELEASE_TAG}" || true
+          gh release create "${RELEASE_TAG}" --generate-notes --title "${RELEASE_TAG}"

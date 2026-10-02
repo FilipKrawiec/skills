@@ -44,7 +44,6 @@ KNOWN_CORE_SKILLS = {
     "tdd",
     "vcs",
     "review",
-    "grill-with-context",
     "writing-great-skill",
 }
 

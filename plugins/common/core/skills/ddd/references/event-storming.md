@@ -16,7 +16,7 @@ Use EventStorming to discover behavior before designing the model. Its output is
 
 ## Record the coverage
 
-Keep the event timeline and a coverage table in `EVENT-STORMING.md` or an equivalent shared artifact. For each event, record its trigger, owner context, invariant-bearing decision or Aggregate, reacting policy/consumer, integration impact, and open question. The table should make it possible to see that every in-scope event has an accountable owner and that each proposed component exists to cover a responsibility in the flow.
+Keep the event timeline and a coverage table in `docs/event-storming.md`. For each event, record its trigger, owner context, invariant-bearing decision or Aggregate, reacting policy/consumer, integration impact, and open question. The table should make it possible to see that every in-scope event has an accountable owner and that each proposed component exists to cover a responsibility in the flow.
 
 ## Quality checks
 
@@ -25,4 +25,4 @@ Keep the event timeline and a coverage table in `EVENT-STORMING.md` or an equiva
 - Context boundaries follow language and ownership evidence from the flow; they do not mirror teams, services, tables, or queues by default.
 - Do not create one component per event. Keep a responsibility within its Aggregate or application service unless a separate policy, integration, or read model is needed.
 
-After the session, update `CONTEXT.md`, `CONTEXT-MAP.md`, and the relevant aggregate and event models with the decisions that survived challenge.
+After the session, update `docs/context.md`, `docs/context-map.md`, and the relevant aggregate and event models with the decisions that survived challenge.

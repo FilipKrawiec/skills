@@ -20,5 +20,5 @@ Guidelines for usecase orchestration and command/query handling in the Applicati
 
 ## 4. Framework & Dependency Boundaries
 - **Consuming Domain Objects:** Application use-cases freely instantiate, invoke, and pass Domain entities, value objects, and events.
-- **Framework Orchestration Permitted:** Application services may use host-framework transaction management (e.g. `@Transactional`), dependency injection metadata (e.g. `@Injectable()`, `@Service`), or security interceptors when standard in the codebase.
+- **Framework Orchestration Permitted:** Application services may use the host framework's transaction management, dependency-injection metadata, or security interceptors when standard in the codebase.
 - **No Concrete Adapters:** Application Layer must never import concrete infrastructure adapters (e.g., database drivers, ORM models, DAOs, HTTP controller types). Dependencies on I/O must go through domain or application port interfaces.

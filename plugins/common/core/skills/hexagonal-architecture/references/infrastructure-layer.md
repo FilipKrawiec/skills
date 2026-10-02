@@ -13,6 +13,4 @@ Guidelines for implementing outbound adapters and managing encapsulation boundar
 ## 3. Encapsulation & Visibility
 - Concrete adapter classes, persistence models, and infrastructure configurations should use non-public access modifiers where supported by the language (e.g., `internal` in C#/Kotlin, package-private in Java, private modules in Rust/Go) to prevent them from leaking or being imported elsewhere.
 - Only the port interfaces they implement should be public.
-- **Dependency Injection Wiring:** To register these non-public adapters at the application entry point (Composition Root) without exposing them:
-  - In frameworks like Spring, use reflection-based component scanning (components remain package-private).
-  - In other environments, use assembly-scanning (e.g., Scrutor in C#), language-level friend assemblies (`[assembly: InternalsVisibleTo]`), or keep them private to the infrastructure module/package and expose registration via a single public configuration helper.
+- **Dependency Injection Wiring:** Register non-public adapters at the Composition Root without exposing them: through the host framework's component scanning where it has one, otherwise through a single public registration function in the infrastructure module.

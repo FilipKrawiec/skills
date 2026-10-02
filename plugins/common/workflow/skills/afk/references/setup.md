@@ -9,14 +9,13 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `repo` | yes | `owner/name` on GitHub. |
 | `owner` | no | Login whose PRs may auto-merge; defaults to the repository owner. |
 | `base` | no | Base branch; default `main`. |
-| `project` | no | `{"owner": "<login>", "number": <n>}` for `board`. |
+| `project` | no | `{"owner": "<login>", "number": <n>}`: the board whose cards the skills move. |
 | `protected` | no | Regexes for paths agents may not change in AFK work (adds to every top-level dot-directory, `AGENTS.md`, justfile and Makefile). Add the host's own instruction file here when it has one besides `AGENTS.md`. |
 | `alwaysInScope` | no | Path prefixes every AFK change may touch, e.g. the user guide the project rules require updating. |
 | `chores` | no | Regexes of paths that auto-merge on green checks (adds to `^docs/`, `\.md$`, test directories). |
 | `dependencyFiles` | no | Regexes of manifests and lockfiles that auto-merge when Dependabot changed them, unless the PR crosses a major version (or a minor one below 1.0): those stay open for the owner. |
-| `worktrees`, `branchPrefix`, `staleClaimHours` | no | Defaults `.worktrees`, `agent/afk-`, `3`. |
-| `agentReview`, `reviewRounds` | no | `true` when the `agent-review` skill reviews PRs before the owner; open PRs then show as Agent review until it adds `review:owner`, and `lanes.py merge-reviewed` may merge AFK PRs it judged ready. `reviewRounds` caps reviews per PR. Defaults `false`, `3`. |
-| `labels`, `renames` | no | Extra labels `{"name": {"color", "description"}}` and renames `{"old": "new"}`; `labels` deletes everything else. |
+| `branchPrefix`, `staleClaimHours` | no | Defaults `agent/afk-`, `3`. |
+| `agentReview`, `reviewRounds` | no | `true` when the `agent-review` skill reviews PRs before the owner; it adds `review:owner` to a PR it hands to the owner, and `lanes.py merge-reviewed` may merge AFK PRs it judged ready. `reviewRounds` caps reviews per PR. Defaults `false`, `3`. |
 | `guard` | no | Extra blocked commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. |
 
 Minimal example:
@@ -35,36 +34,42 @@ Minimal example:
 
 | Step | Command or setting |
 | --- | --- |
-| Labels | `lanes.py labels`, review, then `--apply` (creates `lane:*`, `state:claimed`, `state:started`, `type:epic` plus yours). |
-| Board | Optional; `lanes.py board --apply` rewrites the Status options to the lifecycle below. Lanes stay as labels; show them on cards once in the board view's field settings (the API cannot change views). |
+| Labels | `gh label create <name> --color <hex> --description "<text>"` for each label below that the repository lacks. |
+| Board | Optional. Give the Project's Status field one option per column in [board.md](../../../references/board.md), once, in the board's settings, and show the labels on cards in the board view's field settings. The token that runs agents needs the `project` scope: `gh auth refresh -s project`. |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
-| Rules | Add to the project's agent rules: "Before creating an issue, ask the owner whether it is AFK", "Starting on an issue outside an AFK build: `lanes.py start N`; pausing or handing off: `lanes.py release N`" and a link to the project's workflow page. |
+| Rules | Add to the project's agent rules: "New work starts with `spec`, which opens the issue and decides its lane", "Working on an issue: follow Start here in the workflow plugin's `references/board.md`" and a link to the project's workflow page. |
 
-## Board lifecycle
+## Labels
 
-| Status | When |
+| Label | Meaning |
 | --- | --- |
-| Triage | No lane yet. |
-| Backlog | `lane:afk`, `lane:owner` or an epic, not started. |
-| Decide | Waits on an owner decision: `lane:proposed`, or `state:parked` after an AFK run handed it back (re-applying `lane:afk` returns it to Backlog; the next claim clears `state:parked`). |
-| Running | `state:claimed` (an AFK build) or `state:started` (any other session working on it, including fixes on an open PR). Takes precedence over the PR columns. |
-| Agent review | An open PR closes it and, with `agentReview`, the automated reviewer has not handed it over. |
-| Review | An open PR waits for the owner: `review:owner` on the PR, or any open PR without `agentReview`. |
-| Done | Closed. |
+| `lane:afk` | Owner-approved: an agent may deliver it unattended. |
+| `lane:proposed` | An agent recommends AFK; the owner decides. |
+| `lane:owner` | Needs the owner: a decision, credentials, settings or a device. |
+| `state:claimed` | An AFK run is working on it now. |
+| `state:started` | Another session is working on it now. |
+| `state:parked` | An AFK run handed it back with a question. |
+| `review:owner` | PR: agent review is done; it waits for the owner. |
+| `type:epic` | Umbrella outcome with sub-issues. |
+
+Add the project's `type:` and `priority:P0` to `priority:P2` labels. The board's columns, the commands that move a card and the claim, park and tidy steps are in [board.md](../../../references/board.md).
 
 With `agentReview`, the reviewer adds `review:owner` to a PR when it hands it to the owner (passed but needs the owner, or out of review rounds) and removes it when it asks for fixes again.
 
 ## Unattended runs
 
-A scheduler that starts an agent session in the repository's main checkout runs this skill. Give its prompt a fail-closed preflight:
+A scheduler that starts an agent session in the repository's main checkout runs this skill. Schedule runs so they never overlap: two runs at once can both claim the issue `next` printed. Give its prompt a fail-closed preflight:
 
 ```text
 Preflight, stop and report on any failure:
 1. The working directory is inside <owner>/<repo>.
-2. `gh pr merge --help` is refused by the issue-lanes guard; if it prints help,
+2. `gh pr merge --help` is refused by the lanes guard; if it prints help,
    the guard is not loaded, so stop.
-Then use the `afk` skill. The owner is away: park instead of asking. Never
+3. With a board in lanes.json, `gh project view <number> --owner <owner>`
+   succeeds; otherwise the token lacks the `project` scope, so stop.
+Then invoke the `afk` skill by name (it is user-invoked only, so owner sessions
+never load it). The owner is away: park instead of asking. Never
 switch, pull, reset or stash this checkout: it may hold the owner's work.
 ```
 

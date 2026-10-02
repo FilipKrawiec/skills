@@ -16,4 +16,6 @@ A critical PR goes to the owner even when nothing blocks it. A PR is critical wh
 | Size | More than about 800 changed lines of non-test code. |
 | Rounds | Findings still open in the last review round. |
 
+A `revert:` PR that cleanly reverts one AFK merge which turned the base branch red is not critical for its Behaviour or Size alone.
+
 When unsure, treat the PR as critical.

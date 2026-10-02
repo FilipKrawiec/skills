@@ -79,7 +79,7 @@ class CommonPluginLayoutTests(unittest.TestCase):
 
         self.assertIn("python3 -m unittest discover -s scripts/tests", workflow)
         self.assertIn("python3 scripts/validate-plugin-definitions.py", workflow)
-        self.assertIn("python3 scripts/project-verify.py status", workflow)
+        self.assertIn("python3 scripts/project-verify.py verify", workflow)
 
     def test_root_ci_defines_automated_release_on_main(self) -> None:
         release_wf = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
