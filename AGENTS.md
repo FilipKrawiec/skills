@@ -9,6 +9,7 @@ active_skills:
   - writing-great-skill
   - issue-lanes
   - afk
+  - agent-review
 
 build_tools:
   just:
