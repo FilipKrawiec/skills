@@ -12,6 +12,19 @@ Turn a raw need into one issue, then turn the issue's business wording into requ
 
 Every open issue carries exactly one lane: `lane:afk` (the owner approved unattended delivery), `lane:proposed` (you recommend AFK) or `lane:owner` (needs a decision, credentials, settings, a device, or the owner is steering it). `lane:afk` is the owner's decision: apply it only when the owner says yes in the current session.
 
+## INVEST
+
+Every issue this skill writes or lanes is checked against these six. Phase 3 grills each failing check until it holds or the owner waives it in the issue.
+
+| Check | Holds when |
+| --- | --- |
+| Independent | No other open issue has to merge in the same PR or release with it, and none of its dependencies depends back on it. |
+| Negotiable | The description states the outcome and its constraints; implementation steps are left to `plan`. |
+| Valuable | Merging it alone gives a user a behaviour or the owner a named benefit (a removed risk, a faster build); a layer that pays off only with another issue fails. |
+| Estimable | It carries an estimate (S, M or L) and one sentence on the main unknown behind it. |
+| Small | The estimate is S or M. An L is split into vertical slices: with the owner, on their yes, create one issue per slice through phases 1 to 3, link each as a sub-issue and label the parent `type:epic`; unattended, propose the slices in the triage comment. |
+| Testable | Each acceptance criterion can be proven by a test or by a render the issue describes. |
+
 ## 1. Define
 
 Skip to phase 2 when the issue exists. Otherwise capture the problem and the outcome that shows it is solved, why it matters now, candidate non-goals, risks, dependencies, and open questions marked as open. Search open and closed issues for the same intent (`gh issue list -s all --search "<keywords>"`, with `-R <owner/repo>` when the caller names another repository; `gh issue create` takes the same flag); when one matches, offer to update it instead. Create the issue with the project's template: title `<type>(<area>): <outcome>`, the intent as the description, the open questions as a list, a `type:` label, `priority:` when the owner gave one, and `lane:owner`. Card: 01 Define.
@@ -26,11 +39,11 @@ Read the issue, then the sources that exist in this project: task-relevant code 
 
 ## 3. Grill
 
-Ask one sharp decision question at a time: scope boundaries, trade-offs, edge cases, the testable form of each criterion. Each round is at most five lines: the question, the trade-offs, and your recommendation with its reason, so the host can present it natively. Wait for the answer before the next round. Then update the issue so planning reads it rather than this conversation:
+Ask one sharp decision question at a time: scope boundaries, trade-offs, edge cases, the testable form of each criterion, and each failing INVEST check. Each round is at most five lines: the question, the trade-offs, and your recommendation with its reason, so the host can present it natively. Wait for the answer before the next round. Then update the issue so planning reads it rather than this conversation:
 
 - Intent and non-goals in the description.
-- `### Acceptance criteria`: each one observable by a test or a render the issue describes.
-- An estimate (S, M or L) naming the uncertainty behind it.
+- `### Acceptance criteria` that pass Testable.
+- An estimate that passes Estimable and Small.
 - A scope packet: ```` ```scope ```` then `{"paths": ["src/feature/", "tests/feature/"], "dependencies": [12]}`. A trailing `/` allows a subtree; list every issue it builds on, including ones named only in prose.
 - An ADR only when the outcome is an architectural decision.
 
@@ -44,11 +57,11 @@ An issue is AFK-ready when all five hold:
 
 | Check | Holds when |
 | --- | --- |
-| Observable | Acceptance criteria can be proven by tests or by renders the issue describes. |
+| INVEST | Each of the six checks above holds or carries the owner's waiver. |
 | Bounded | The scope packet lists the paths it may change and every dependency. |
 | Decided | No open product, design or model question; new UI has a mockup or names an existing pattern. |
 | Unprivileged | Nothing protected by the project's lanes.json: automation, agent instructions, infrastructure, credentials, settings, releases, deploys. |
-| Single | Not an epic; no open PR, `state:claimed` or `state:started`. |
+| Single | Not `type:epic`; no open PR, `state:claimed` or `state:started`. |
 
 - With the owner: offer your check result as a recommendation and ask whether it is AFK. Yes → `lane:afk`; no → `lane:owner`; unsure → `lane:proposed`.
 - Triage (unattended, or issues without a lane from `gh issue list --search "-label:lane:afk -label:lane:proposed -label:lane:owner"`): all checks pass → `lane:proposed`, any fails → `lane:owner`; add missing `type:` and `priority:` labels; comment once with the failing checks and what would fix each, ending a proposal with "Apply `lane:afk` to let an AFK run take it."
