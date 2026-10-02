@@ -96,7 +96,7 @@ Delivery follows seven phases. Each one has a skill, and each is a column on the
 | 07 Improve | `improve` | A `## Lessons` comment or a PR to the durable artifacts | Closed with `state:shipped` |
 | Done | | | `state:learned`, closed as not planned, or closed without a phase marker |
 
-`lanes.py phase N` prints an issue's phase, the skill to invoke next and the gate that moves it on, so an agent attended or AFK follows the cycle one phase at a time; `lanes.py mark` refuses a marker until its artifact (the plan or lessons comment) exists. Lanes stay labels, so a card's labels show who acts next. Phase markers replace each other: `lanes.py mark N planned`, then `lanes.py health --apply` marks `state:shipped` once the base branch is green after the merge, then `lanes.py mark N learned`.
+Lanes stay labels, so a card's labels show who acts next. Agents follow one loop: run `lanes.py phase N`, do the step it prints, repeat. `phase` moves the issue on by itself once the phase's artifact exists (a `## Plan` comment adds `state:planned`, a `## Lessons` comment adds `state:learned`); `lanes.py health --apply` adds `state:shipped` once the base branch is green after the merge.
 
 ### Worktree Provenance & Safety
 

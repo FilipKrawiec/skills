@@ -8,7 +8,7 @@ allowed-tools: Read Bash(gh:*,git:*,python3:*)
 
 Prepare a concrete plan, grounded in the actual repository, that execution follows without re-planning the basics. The plan lives on the issue so the next session resumes from facts, not recollection. This skill changes no code.
 
-`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. Follow the cycle phase by phase: `LANES phase <N>` names this skill while the issue is in 03 Plan, and the next step once this phase's exit gate holds. Run it before starting and after the last phase below.
+Run `python3 <the afk skill's directory>/scripts/lanes.py phase <N>` (`LANES phase <N>`) before and after this skill; do the step it prints.
 
 ## 1. Read
 
@@ -16,9 +16,9 @@ Read the issue, its acceptance criteria, scope packet, parent and linked decisio
 
 **Exit gate:** each acceptance criterion maps to code and tests you have read.
 
-## 2. Plan
+## 2. Draft
 
-Write the plan as one issue comment headed `## Plan` (edit the existing one when resuming):
+Draft the plan:
 
 - Files likely to change, inside the scope packet.
 - For each acceptance criterion, the failing test that proves it.
@@ -27,16 +27,16 @@ Write the plan as one issue comment headed `## Plan` (edit the existing one when
 
 When the plan needs a path outside the scope packet or a protected path, or an acceptance criterion turns out ambiguous, stop: unattended runs park the issue; attended sessions return to `spec`.
 
-**Exit gate:** `LANES mark <N> planned` succeeds (it refuses without the plan comment) and `LANES phase <N>` prints `phase: 04 Execute`.
+**Exit gate:** a draft that stays inside the scope packet.
 
-## 3. Approve
+## 3. Approve and post
 
-- Attended: show the plan and wait for the owner to approve, adjust or reject it before execution.
-- Unattended: the owner's `lane:afk` approval of the specified issue stands in, as long as the plan stays inside the scope packet.
+- Attended: show the draft and wait for the owner to approve or adjust it.
+- Unattended: the owner's `lane:afk` approval of the specified issue stands in.
 
-Keep the comment current during execution whenever reality departs from it.
+Post the approved plan as one issue comment headed `## Plan` (edit the existing one when resuming), then run `LANES phase <N>`. Keep the comment current whenever execution departs from it.
 
-**Exit gate:** an approved plan, or a parked or returned issue.
+**Exit gate:** `LANES phase <N>` prints `advanced: 03 Plan → 04 Execute`.
 
 ## Output
 

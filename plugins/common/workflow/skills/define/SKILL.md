@@ -8,7 +8,7 @@ allowed-tools: Read Bash(gh:*,git:*)
 
 Turn a raw need into one issue: a stable place for the work to evolve. Define captures intent; `spec` makes it buildable. This skill writes no code and no plan.
 
-`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. After creating the issue, run `LANES phase <N>` and follow the step it names.
+After creating it, run `python3 <the afk skill's directory>/scripts/lanes.py phase <N>` (`LANES phase <N>`) and do the step it prints.
 
 ## 1. Capture
 

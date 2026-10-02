@@ -312,17 +312,12 @@ class PhaseTests(unittest.TestCase):
         self.assertEqual(lanes.spec_gaps(issue(labels=(), body="An idea.")),
                          ["acceptance criteria", "scope packet", "a lane"])
 
-    def test_phase_markers_need_their_artifact(self) -> None:
-        plan = [{"body": "## Plan\n\n1. Test first."}]
-        started = issue(labels=("lane:afk", "state:claimed"))
-        self.assertIn("claim", lanes.mark_refusal(issue(), lanes.PLANNED))
-        self.assertIn("Plan", lanes.mark_refusal(started, lanes.PLANNED))
-        self.assertIsNone(lanes.mark_refusal({**started, "comments": plan}, lanes.PLANNED))
-        shipped = {**issue(labels=("state:shipped",), state="CLOSED"), "comments": []}
-        self.assertIn("shipped", lanes.mark_refusal({**shipped, "labels": []}, lanes.LEARNED))
-        self.assertIn("Lessons", lanes.mark_refusal(shipped, lanes.LEARNED))
-        self.assertIsNone(lanes.mark_refusal({**shipped, "comments": [{"body": "## Lessons\n\nno lessons"}]},
-                                             lanes.LEARNED))
+    def test_the_plan_and_lessons_comments_move_the_issue_on(self) -> None:
+        plan, lessons = [{"body": "## Plan\n\n1. Test first."}], [{"body": "## Lessons\n\nno lessons"}]
+        self.assertEqual(lanes.earned_mark({**issue(), "comments": plan}, "03 Plan"), lanes.PLANNED)
+        self.assertIsNone(lanes.earned_mark({**issue(), "comments": []}, "03 Plan"))
+        self.assertIsNone(lanes.earned_mark({**issue(), "comments": plan}, "02 Spec"))
+        self.assertEqual(lanes.earned_mark({**issue(), "comments": lessons}, "07 Improve"), lanes.LEARNED)
 
 
 class HealthTests(unittest.TestCase):

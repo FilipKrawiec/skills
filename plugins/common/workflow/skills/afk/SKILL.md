@@ -10,7 +10,7 @@ One run carries the delivery cycle while the owner is away. It checks what alrea
 
 Leave the checkout a run starts in exactly as it is; it may hold the owner's work. Every build and fix happens in a worktree.
 
-`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). Every write command is a dry run without `--apply`. `LANES phase <N>` prints any issue's phase, the skill it needs next and the gate that moves it on; when a step below and that output disagree, park the issue with both.
+`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). Every write command is a dry run without `--apply`. `LANES phase <N>` prints any issue's phase, its next step and its exit gate, and moves the issue on once the phase's artifact exists.
 
 Read [setup.md](references/setup.md) when the repository has no `.github/lanes.json`, or when scheduling unattended runs.
 
@@ -36,37 +36,25 @@ Run the project's full verification gate before each push. Park the PR's issue w
 
 ## 3. Pick
 
-While the base branch is red, go to phase 6. Otherwise run `LANES next`.
+While the base branch is red, go to phase 5. Otherwise run `LANES next`.
 
 - `next: #N …` → phase 4.
-- `in flight: … (stale …)` → `LANES park <N> "<where the branch stopped against its ## Plan comment>"`, then phase 6.
-- `next: none` → phase 6.
+- `in flight: … (stale …)` → `LANES park <N> "<where the branch stopped against its ## Plan comment>"`, then phase 5.
+- `next: none` → phase 5.
 
 **Exit gate:** one issue number, or the decision to do housekeeping.
 
-## 4. Build
+## 4. Deliver
 
-1. `LANES claim <N>` rechecks eligibility, labels `state:claimed`, moves the issue to 03 Plan and prints a fresh worktree from the base branch. Work only in that worktree.
-2. Invoke `plan`; `LANES phase <N>` then prints `phase: 04 Execute`.
-3. Invoke `tdd`; iterate with the project's targeted test command.
-4. Update the user-facing docs the project's rules tie to the change, in the same branch.
-5. `LANES scope <N>` passes; then the project's full verification gate passes once.
-6. Commit, then run one isolated worker with fresh context that invokes `review` on the branch's diff against the base, given only the issue and its acceptance criteria. Verify each Blocker and Major against the code, fix the real ones through `tdd`, and pass the gate again. Run at most two review rounds.
+1. `LANES claim <N>` rechecks eligibility, labels `state:claimed` and prints a fresh worktree from the base branch. Work only in that worktree; read the issue, its linked decisions and the project's agent rules.
+2. Repeat `LANES phase <N>` and do the step it prints, until it prints `phase: 05 Review`. In 04 Execute, also: update the docs the project's rules tie to the change; pass `LANES scope <N>` and the full verification gate before the review worker; give that worker only the issue and the diff; allow two review rounds; title the PR `<type>(<area>): <outcome>` following the project's PR template, linking the `## Plan` comment and the review's verdict.
+3. `LANES release <N>`, then `LANES automerge <pr>` unless the issue asks for owner review. It merges (or queues) only docs, tests and Dependabot minor or patch changes and prints why anything else waits.
 
-Park with `LANES park <N> "<one question, the options, a recommendation>"` (pushing the branch when it holds useful work) whenever the issue is ambiguous or contradicts project rules, needs a path outside its scope packet or a protected path, needs an undecided product or model choice, stays red after two honest fix attempts, still has a verified Blocker after the second review round, or needs credentials, settings or a device.
+Park with `LANES park <N> "<one question, the options, a recommendation>"` (pushing the branch when it holds useful work) whenever the issue is ambiguous or contradicts project rules, needs a path outside its scope packet or a protected path, needs an undecided product or model choice, stays red after two honest fix attempts, still has a verified Blocker after the second review round, needs credentials, settings or a device, or `LANES phase <N>` prints something this step does not expect.
 
-**Exit gate:** green verification, an in-scope diff and a review with no open Blocker, or a parked issue.
+**Exit gate:** a PR URL with `phase: 05 Review` and its auto-merge verdict, or a parked issue.
 
-## 5. Publish
-
-1. `git push -u origin HEAD`.
-2. `gh pr create --title "<type>(<area>): <outcome>" --body-file <file>` following the project's PR template, with `Closes #<N>`, a link to the plan comment and the review's verdict; ready for review. `LANES phase <N>` now prints `phase: 05 Review`.
-3. `LANES release <N>`.
-4. `LANES automerge <pr>` unless the issue asks for owner review before merge. It merges (or queues, updating a branch that fell behind) only docs, tests and Dependabot minor or patch dependency changes and prints why anything else, including a major version update, waits.
-
-**Exit gate:** a PR URL and its auto-merge verdict.
-
-## 6. Housekeeping
+## 5. Housekeeping
 
 Run when no issue was delivered this run, each step once:
 
@@ -77,7 +65,7 @@ Keep to the queue: new work starts as an issue, not in a run. Name any follow-up
 
 **Exit gate:** each step's printed result.
 
-## 7. Close
+## 6. Close
 
 Every run ends with:
 

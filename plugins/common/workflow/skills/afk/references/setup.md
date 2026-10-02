@@ -50,11 +50,11 @@ One column per phase of the delivery cycle. Lanes stay labels on the cards.
 | 01 Define | Open, no `### Acceptance criteria` section yet. |
 | 02 Spec | Has acceptance criteria and is not started. `lane:afk` waits for a run; `lane:proposed` and `state:parked` wait on the owner (re-applying `lane:afk` hands a parked issue back; the next claim clears `state:parked`). |
 | 03 Plan | `state:claimed` (an AFK build) or `state:started` (any other session), without `state:planned`. |
-| 04 Execute | Started and `state:planned` (`lanes.py mark N planned` after the plan comment). |
+| 04 Execute | Started and `state:planned` (`lanes.py phase N` adds it once a `## Plan` comment exists). |
 | 05 Review | An open PR closes it. `review:owner` on the PR means it waits on the owner. Takes precedence over 03 and 04. |
 | 06 Ship | Closed as completed with `state:planned`: merged, base-branch health not yet confirmed. |
 | 07 Improve | `state:shipped` (`lanes.py health --apply` once the base branch is green after the merge): lessons are due. |
-| Done | `state:learned` (`lanes.py mark N learned`), closed as not planned, or closed without a phase marker. |
+| Done | `state:learned` (`lanes.py phase N` adds it once a `## Lessons` comment exists), closed as not planned, or closed without a phase marker. |
 
 With `agentReview`, the reviewer adds `review:owner` to a PR when it hands it to the owner (passed but needs the owner, or out of review rounds) and removes it when it asks for fixes again.
 

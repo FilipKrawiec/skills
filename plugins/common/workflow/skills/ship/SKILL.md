@@ -8,7 +8,7 @@ allowed-tools: Read Bash(python3:*,git:*,gh:*,just:*)
 
 Merge is not the end of delivery. Watch the base branch after merges, fix what is bounded, and turn the rest into planned work. The owner keeps merge, release and deploy authority.
 
-`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. Every write command is a dry run without `--apply`. `LANES phase <N>` names this skill while a merged issue is in 06 Ship.
+`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. Every write command is a dry run without `--apply`.
 
 ## 1. Observe
 

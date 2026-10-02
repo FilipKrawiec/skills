@@ -8,7 +8,7 @@ allowed-tools: Read Bash(gh:*,git:*,python3:*)
 
 Turn an issue's business wording into implementation requirements another developer or agent can plan from without guessing, then give it one lane. This skill writes no code.
 
-`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. Follow the cycle phase by phase: `LANES phase <N>` names this skill while the issue is in 01 Define or 02 Spec, and the next step once this phase's exit gate holds. Run it before starting and after the last phase below.
+Run `python3 <the afk skill's directory>/scripts/lanes.py phase <N>` (`LANES phase <N>`) before and after this skill; do the step it prints.
 
 Every open issue carries exactly one lane: `lane:afk` (the owner approved unattended delivery), `lane:proposed` (you recommend AFK) or `lane:owner` (needs a decision, credentials, settings, a device, or the owner is steering it). `lane:afk` is the owner's decision: apply it only when the owner says yes in the current session.
 
