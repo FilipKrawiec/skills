@@ -5,7 +5,6 @@ active_skills:
   - tdd
   - vcs
   - review
-  - define
   - spec
   - plan
   - ship

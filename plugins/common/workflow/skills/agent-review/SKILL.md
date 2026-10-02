@@ -22,7 +22,7 @@ List open PRs, drafts included, except Dependabot's. For each, read its reviews 
 
 ## 2. Review
 
-Run one isolated worker per PR, in parallel, at medium reasoning when the host offers a choice. Each checks out the PR head in a scratch worktree, reads the acceptance criteria of the issue the PR closes, invokes `review` on the PR's own diff against its base, and checks that earlier blocking findings are fixed. Workers report a verdict and findings with `file:line` and a failure scenario, post nothing, and quote no copyrighted or personal content from the repository.
+Run one isolated worker per PR, in parallel, at medium reasoning when the host offers a choice. Each checks out the PR head in a scratch worktree, reads the acceptance criteria of the issue the PR closes, runs `review`'s two axes on the PR's own diff against its base, and checks that earlier blocking findings are fixed. Workers report a verdict and findings with `file:line` and a failure scenario, post nothing, and quote no copyrighted or personal content from the repository.
 
 Verify every blocking finding against the code yourself, then re-read the PR's head SHA; a moved head goes back to phase 1 next pass.
 

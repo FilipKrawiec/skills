@@ -11,7 +11,7 @@ The `skills` repository is designed around six foundational principles:
 1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
 2. **Affirmative State Machines**: Skills structure instructions as unidirectional linear phases with positive actions and concrete exit gates. Negative "Do/Don't" phrasing is kept to explicit safety boundaries to limit negative prompt priming.
 3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
-4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for direct changes alongside the Delivery Cycle (`define` ➔ `spec` ➔ `plan` ➔ `tdd` ➔ `review` ➔ `ship` ➔ `improve`) for tracked work, attended or AFK.
+4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for direct changes alongside the Delivery Cycle (`spec` ➔ `plan` ➔ `tdd` ➔ `review` ➔ `ship` ➔ `improve`) for tracked work, attended or AFK.
 5. **Deterministic Verification**: AI agents validate all work against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
 6. **Hierarchical Overlay Architecture**: Base capabilities are defined in common, provider-neutral plugins (`plugins/common/*`), while agent-specific enhancements (such as Antigravity interactive artifacts) are layered on top via native overlays (`plugins/agy/*`).
 
@@ -56,7 +56,7 @@ Skills are grouped into **plugins** for distribution and host discovery.
 plugins/
 ├── common/                  # Canonical portable plugins (Cross-Agent)
 │   ├── core/                # DDD, Hexagonal Architecture
-│   ├── workflow/            # The delivery cycle: define, spec, plan, tdd, vcs, review, ship, improve, afk, agent-review
+│   ├── workflow/            # The delivery cycle: spec, plan, tdd, vcs, review, ship, improve, afk, agent-review
 │   └── authoring/           # Writing Great Skill
 └── agy/                     # Antigravity-Native Overlay Plugins
     └── core/                # Reference resolution & interactive artifact review rules
@@ -76,7 +76,7 @@ Delivery follows seven phases. Each one has a skill, and each is a column on the
 ```
  ┌───────────┐   ┌─────────┐   ┌─────────┐   ┌────────────┐
  │ 01 Define │──►│ 02 Spec │──►│ 03 Plan │──►│ 04 Execute │
- │  define   │   │  spec   │   │  plan   │   │ tdd + vcs  │
+ │   spec    │   │  spec   │   │  plan   │   │ tdd + vcs  │
  └───────────┘   └─────────┘   └─────────┘   └─────┬──────┘
        ▲                                           ▼
  ┌─────┴──────┐   ┌──────────┐   ┌─────────────────────────┐
@@ -87,7 +87,7 @@ Delivery follows seven phases. Each one has a skill, and each is a column on the
 
 | Phase | Skill | Leaves behind |
 | :--- | :--- | :--- |
-| 01 Define | `define` | An issue with intent and open questions |
+| 01 Define | `spec` | An issue with intent and open questions |
 | 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane |
 | 03 Plan | `plan` | A `## Plan` comment on the issue |
 | 04 Execute | `tdd`, `vcs`, `review` (fresh-context worker) | Tested commits on a task branch, reviewed, and a PR |

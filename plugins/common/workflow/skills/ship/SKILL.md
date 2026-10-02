@@ -10,6 +10,8 @@ Merge is not the end of delivery. Watch the base branch after merges, fix what i
 
 `<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main` and `agent/afk-`). Card moves and parking follow [board.md](../../references/board.md).
 
+**With the owner:** every phase; the owner may choose a fix forward over a revert. **Unattended:** the same, reverting AFK merges only.
+
 ## 1. Observe
 
 When the project has a board, tidy the cards that left 05 Review: an issue closed as completed moves to 06 Ship, one closed as not planned to Done, and an open issue whose PR closed unmerged back to 02 Spec (release its claim). Then read the base branch's CI:

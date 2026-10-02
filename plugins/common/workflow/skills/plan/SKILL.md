@@ -10,6 +10,8 @@ Prepare a concrete plan, grounded in the actual repository, that execution follo
 
 The issue is claimed or started (03 Plan in [board.md](../../references/board.md)) before this skill runs.
 
+**With the owner:** every phase. **Unattended:** the same, with `lane:afk` standing in for approval in phase 3 and a park in place of any question.
+
 ## 1. Read
 
 Read the issue, its acceptance criteria, scope packet, parent and linked decisions; then the code, tests and contracts near the scope paths, and the project's agent rules. When the issue already has a `## Plan` comment, read it and the branch to see where work stopped.

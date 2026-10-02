@@ -15,5 +15,5 @@ AFK grants bounded autonomy across one complete slice. Executors may commit veri
 ## Consequences
 
 - `scripts/project-verify.py verify` is the executable deterministic gate reading `AGENTS.md` frontmatter lifecycle tasks.
-- The delivery cycle skills (`define`, `spec`, `plan`, `tdd`, `vcs`, `review`, `ship`, `improve`) and the unattended runner `afk` live in this repository's workflow plugin. FilipKrawiec/devcontainer's `filipkrawiec-sdlc` package keeps only project initialisation; host adapters remain outside the common packages.
+- The delivery cycle skills (`spec`, `plan`, `tdd`, `vcs`, `review`, `ship`, `improve`) and the unattended runner `afk` live in this repository's workflow plugin. FilipKrawiec/devcontainer's `filipkrawiec-sdlc` package keeps only project initialisation; host adapters remain outside the common packages.
 - The retired Autonomous SDLC implementation and interim baseline records were removed during release-candidate cleanup; Git history retains them if needed.

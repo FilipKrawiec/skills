@@ -27,8 +27,8 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │                            PORTABLE SKILLS                                  │
  │   Core:         ddd, hexagonal-architecture                                 │
- │   Workflow:     define, spec, plan, tdd, vcs, review, ship, improve,        │
- │                 afk, agent-review                                           │
+ │   Workflow:     spec, plan, tdd, vcs, review, ship, improve, afk,           │
+ │                 agent-review                                                │
  │   Authoring:    writing-great-skill                                         │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -55,7 +55,7 @@ This library supports two complementary execution loops depending on the scope o
              │                                                     │
              ▼ (Fast Tactical Loop)                                ▼ (Delivery Cycle)
   ┌──────────────────────────────┐                      ┌──────────────────────────────┐
-  │ 1. tdd (Repro & Red-Green)   │                      │ 01 define   02 spec          │
+  │ 1. tdd (Repro & Red-Green)   │                      │ 01+02 spec                   │
   │ 2. review (Smell & Spec)     │                      │ 03 plan     04 tdd + vcs     │
   │ 3. vcs (Atomic commit)       │                      │ 05 review   06 ship          │
   └──────────────┬───────────────┘                      │ 07 improve  (afk runs 03-07) │
@@ -94,8 +94,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | **`filipkrawiec-workflow`** | [`tdd`](plugins/common/workflow/skills/tdd/SKILL.md) | Model | Test-Driven Development: Chicago-school Red-Green-Refactor, bug reproduction first, doctrine chaining. |
 | | [`review`](plugins/common/workflow/skills/review/SKILL.md) | Model | Diff Audit: Boundary breaches, runtime defects, design smells, and test rigor. |
 | | [`vcs`](plugins/common/workflow/skills/vcs/SKILL.md) | Model | Version Control: Conventional commits, worktree isolation, and PR delivery. |
-| | [`define`](plugins/common/workflow/skills/define/SKILL.md) | Model | 01 Define: Turn a raw need into an issue with intent and open questions. |
-| | [`spec`](plugins/common/workflow/skills/spec/SKILL.md) | Model | 02 Spec: Grill against project context, write acceptance criteria, estimate and scope packet, decide the lane. |
+| | [`spec`](plugins/common/workflow/skills/spec/SKILL.md) | Model | 01 Define, 02 Spec: Open the issue, grill against project context, write acceptance criteria, estimate and scope packet, decide the lane. |
 | | [`plan`](plugins/common/workflow/skills/plan/SKILL.md) | Model | 03 Plan: Post a repository-grounded plan on the issue; approval before execution. |
 | | [`ship`](plugins/common/workflow/skills/ship/SKILL.md) | Model | 06 Ship: Base-branch health after merge, revert AFK breakage, confirm shipped issues. |
 | | [`improve`](plugins/common/workflow/skills/improve/SKILL.md) | Model | 07 Improve: Turn friction into lessons for skills, agent rules, docs or assets. |

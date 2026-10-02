@@ -10,6 +10,8 @@ Close the cycle by making the system learn: remove friction at its source instea
 
 Card moves follow [board.md](../../references/board.md).
 
+**With the owner:** every phase. **Unattended:** phases 1 and 2, then the `## Lessons` comment; the owner decides on each lesson later.
+
 ## 1. Collect
 
 For the shipped issue (07 Improve on the board) or the current session, gather what slowed the cycle or caused rework: parks and their questions, failed fix attempts, review findings (especially ones raised on two or more PRs), red pipelines after merge, owner corrections, missing commands or docs.
@@ -37,7 +39,7 @@ Keep only lessons that change future behavior. Before writing it, scrub secrets,
 Post the lessons as one comment on the shipped issue headed `## Lessons` ("no lessons" when there are none), each with its target file and proposed wording.
 
 - Unattended: name the lessons in the run's output too; the owner decides later. Lessons from a run's own friction, with no shipped issue to hold them, go in the output only.
-- Attended, or when the owner accepts a lesson from an earlier `## Lessons` comment: ask the owner about each lesson. For each one accepted, invoke `define` with the target repository (`-R <owner/repo>` for an upstream skill library) to open an issue carrying the target file and the wording, and link it from the `## Lessons` comment. The lesson then runs through the cycle like any other work.
+- Attended, or when the owner accepts a lesson from an earlier `## Lessons` comment: ask the owner about each lesson. For each one accepted, invoke `spec` (phase 1) with the target repository (`-R <owner/repo>` for an upstream skill library) to open an issue carrying the target file and the wording, and link it from the `## Lessons` comment. The lesson then runs through the cycle like any other work.
 
 Then move the card to Done: the cycle is closed.
 
