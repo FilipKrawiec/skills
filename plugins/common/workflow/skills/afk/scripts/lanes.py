@@ -230,7 +230,7 @@ def status(issue, pr_labels, agent_review=False):
         return 'Running'
     if pr_labels is not None:
         return 'Agent review' if agent_review and OWNER_REVIEW not in pr_labels else 'Review'
-    if PROPOSED in labels or PARKED in labels:
+    if PROPOSED in labels or (PARKED in labels and AFK not in labels):
         return 'Decide'
     if labels & {AFK, OWNER_LANE, EPIC}:
         return 'Backlog'

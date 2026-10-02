@@ -178,6 +178,7 @@ class BoardAndTidyTests(unittest.TestCase):
             (issue(labels=("type:epic",)), None, "Backlog"),
             (issue(labels=("lane:proposed",)), None, "Decide"),
             (issue(labels=("lane:owner", "state:parked")), None, "Decide"),
+            (issue(labels=("lane:afk", "state:parked")), None, "Backlog"),
             (issue(labels=()), None, "Triage"),
         ]
         for candidate, pr_labels, want in expected:

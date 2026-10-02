@@ -47,7 +47,7 @@ Minimal example:
 | --- | --- |
 | Triage | No lane yet. |
 | Backlog | `lane:afk`, `lane:owner` or an epic, not started. |
-| Decide | Waits on an owner decision: `lane:proposed`, or `state:parked` after an AFK run handed it back. |
+| Decide | Waits on an owner decision: `lane:proposed`, or `state:parked` after an AFK run handed it back (re-applying `lane:afk` returns it to Backlog; the next claim clears `state:parked`). |
 | Running | `state:claimed` (an AFK build) or `state:started` (any other session working on it, including fixes on an open PR). Takes precedence over the PR columns. |
 | Agent review | An open PR closes it and, with `agentReview`, the automated reviewer has not handed it over. |
 | Review | An open PR waits for the owner: `review:owner` on the PR, or any open PR without `agentReview`. |
