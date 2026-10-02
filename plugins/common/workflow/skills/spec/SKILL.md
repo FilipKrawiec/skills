@@ -51,10 +51,9 @@ An issue is AFK-ready when all five hold:
 - With the owner: offer your check result as a recommendation and ask whether it is AFK. Yes → `lane:afk`; no → `lane:owner`; unsure → `lane:proposed`.
 - Triage (unattended, or issues without a lane from `gh issue list --search "-label:lane:afk -label:lane:proposed -label:lane:owner"`): all checks pass → `lane:proposed`, any fails → `lane:owner`; add missing `type:` and `priority:` labels; comment once with the failing checks and what would fix each, ending a proposal with "Apply `lane:afk` to let an AFK run take it."
 - When merged PRs already meet the acceptance criteria, comment the evidence (one PR link per criterion) and propose closing; the owner closes.
+- With a board, move each issue that now has acceptance criteria, a scope packet and a lane to Todo.
 
-Card: Todo once the issue has acceptance criteria, a scope packet and a lane.
-
-**Exit gate:** each issue has one lane and at most one new comment.
+**Exit gate:** each issue has one lane and at most one new comment, and each specced issue's card is in Todo when there is a board.
 
 ## Output
 

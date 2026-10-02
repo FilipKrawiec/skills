@@ -71,7 +71,7 @@ plugins/
 
 ## 4. The Delivery Cycle
 
-Delivery follows seven phases, each with a skill. The optional Project board doesn't mirror them: its five standard columns (Backlog, Todo, In progress, Review, Done) say what a card waits for, and GitHub's built-in board workflows make most moves.
+Delivery follows seven phases, each with a skill. The optional Project board doesn't mirror them: its standard columns say what a card waits for, and GitHub's built-in board workflows make most moves.
 
 ```
  ┌───────────┐   ┌─────────┐   ┌─────────┐   ┌────────────┐
@@ -85,17 +85,17 @@ Delivery follows seven phases, each with a skill. The optional Project board doe
  └────────────┘   └──────────┘   └─────────────────────────┘
 ```
 
-| Phase | Skill | Leaves behind | Column |
-| :--- | :--- | :--- | :--- |
-| 01 Define | `spec` | An issue with intent and open questions | Backlog |
-| 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane | Backlog, then Todo |
-| 03 Plan | `plan` | A `## Plan` comment on the issue | In progress |
-| 04 Execute | `tdd`, `vcs`, `review` (fresh-context worker) | Tested commits on a task branch, reviewed, and a PR | In progress |
-| 05 Review | `agent-review`, or the owner | A reviewed, mergeable PR | Review |
-| 06 Ship | `ship` | A green base branch and a `## Shipped` comment, a revert PR, or an escalation | Done |
-| 07 Improve | `improve` | A `## Lessons` comment and an issue per accepted lesson | Done |
+| Phase | Skill | Leaves behind |
+| :--- | :--- | :--- |
+| 01 Define | `spec` | An issue with intent and open questions |
+| 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane |
+| 03 Plan | `plan` | A `## Plan` comment on the issue |
+| 04 Execute | `tdd`, `vcs`, `review` (fresh-context worker) | Tested commits on a task branch, reviewed, and a PR |
+| 05 Review | `agent-review`, or the owner | A reviewed, mergeable PR |
+| 06 Ship | `ship` | A green base branch and a `## Shipped` comment, a revert PR, or an escalation |
+| 07 Improve | `improve` | A `## Lessons` comment and an issue per accepted lesson |
 
-06 Ship and 07 Improve run after the merge, so their record is an issue comment rather than a column. `plugins/common/workflow/references/board.md` is the one source for when an issue is in each phase and column, which skill works it, the board workflows to turn on, and the `gh project` commands for the few moves the skills make themselves. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `automerge`, `merge-reviewed`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
+06 Ship and 07 Improve run after the merge, so their record is an issue comment rather than a column. `plugins/common/workflow/references/board.md` is the one source for each issue state and its column, which skill works it, the board workflows to turn on, and the `gh project` commands for the few moves the skills make themselves. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `automerge`, `merge-reviewed`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
 
 ### Worktree Provenance & Safety
 

@@ -74,7 +74,7 @@ Keep to the queue: new work starts as an issue, not in a run. Name any follow-up
 
 Every run ends with:
 
-1. Invoke `improve` for each shipped issue without a `## Lessons` comment, and for this run's own friction.
+1. Invoke `improve` for each issue in 07 Improve, and for this run's own friction.
 2. Tidy AFK runs' own worktrees and branches.
 
 **Exit gate:** the lessons (or "no lessons") and the worktrees removed.

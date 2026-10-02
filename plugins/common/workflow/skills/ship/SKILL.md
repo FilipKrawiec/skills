@@ -14,7 +14,7 @@ Merge is not the end of delivery. Watch the base branch after merges, fix what i
 
 ## 1. Observe
 
-When the project has a board, move back to Todo each open issue in Review whose PR closed unmerged and that has no other open PR, and release its claim; the board moves closed issues to Done itself. Then read the base branch's CI:
+When the project has a board, move to Todo each card in Review whose issue is open with no open PR (its PR closed unmerged). Then read the base branch's CI:
 
 ```bash
 git fetch origin <base>
@@ -28,7 +28,7 @@ Ignore cancelled runs. Group the rest by `headSha`; a commit is red when any of 
 - Head pending, or no runs at all → nothing to confirm yet; report it.
 - Head red → find the newest green commit G and the oldest red commit R after it. The culprit is known only when `git log --first-parent --format=%H <G>..<R>` lists exactly R; otherwise report it as ambiguous with that range. With no green commit among the runs, report the culprit as unknown and stop. `gh pr list --state merged --search <sha> --json number,headRefName,closingIssuesReferences` finds the culprit's PR; it is an AFK merge when `headRefName` starts with `<branchPrefix>`. Then phase 2.
 
-**Exit gate:** the base state at its head, and for red the failing checks and the culprit or the ambiguous range.
+**Exit gate:** the base state at its head, for red the failing checks and the culprit or the ambiguous range, and no card in Review without an open PR.
 
 ## 2. Respond
 
@@ -44,7 +44,7 @@ Any other red base branch belongs to the owner: report the failing checks and th
 
 ## 3. Confirm
 
-The head is green, so every merge up to it shipped. For each recent merge (board.md's Phases) whose merge commit is in the head's history (`git merge-base --is-ancestor <mergeCommit> <head>`), comment on each issue it closed that has no `## Shipped` comment yet: `## Shipped`, then the head commit and its CI run link.
+The head is green, so every merge up to it shipped. For each issue in 06 Ship ([board.md](../../references/board.md)'s States) whose PR #M has its merge commit in the head's history (`git merge-base --is-ancestor <mergeCommit> <head>`) and that is still closed as completed, comment `## Shipped #M`, then the head commit and its CI run link. A reverted merge reopened its issue, so it stays unconfirmed until its retry merges.
 
 **Exit gate:** the issues confirmed, or none.
 

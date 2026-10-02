@@ -8,7 +8,7 @@ allowed-tools: Read Bash(gh:*,git:*)
 
 Prepare a concrete plan, grounded in the actual repository, that execution follows without re-planning the basics. The plan lives on the issue so the next session resumes from facts, not recollection. Its only output is the `## Plan` comment.
 
-The issue is claimed or started (In progress in [board.md](../../references/board.md)) before this skill runs.
+The issue is claimed or started (03 Plan in [board.md](../../references/board.md)) before this skill runs.
 
 **With the owner:** every phase. **Unattended:** the same, with `lane:afk` standing in for approval in phase 3 and a park in place of any question.
 
@@ -27,7 +27,7 @@ Draft the plan:
 - Ordered implementation steps, each small and verifiable.
 - Risks, assumptions and anything that could send the work back to `spec`.
 
-When the plan needs a path outside the scope packet or a protected path, or an acceptance criterion turns out ambiguous, stop: unattended runs park the issue; attended sessions release it, move the card back to Backlog and return to `spec`.
+When the plan needs a path outside the scope packet or a protected path, or an acceptance criterion turns out ambiguous, stop: unattended runs park the issue; attended sessions release it and return to `spec`.
 
 **Exit gate:** a draft that stays inside the scope packet.
 
@@ -36,7 +36,7 @@ When the plan needs a path outside the scope packet or a protected path, or an a
 - Attended: show the draft and wait for the owner to approve or adjust it.
 - Unattended: the owner's `lane:afk` approval of the specified issue stands in.
 
-Post the approved plan as one issue comment headed `## Plan` (edit the existing one when resuming); the card stays in In progress. Keep the comment current whenever execution departs from it.
+Post the approved plan as one issue comment headed `## Plan` (edit the existing one when resuming). Keep the comment current whenever execution departs from it.
 
 **Exit gate:** the `## Plan` comment link.
 
