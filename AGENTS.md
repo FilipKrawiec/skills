@@ -5,9 +5,12 @@ active_skills:
   - tdd
   - vcs
   - review
-  - grill-with-context
+  - define
+  - spec
+  - plan
+  - ship
+  - improve
   - writing-great-skill
-  - issue-lanes
   - afk
   - agent-review
 

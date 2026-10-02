@@ -27,9 +27,8 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │                            PORTABLE SKILLS                                  │
  │   Core:         ddd, hexagonal-architecture                                 │
- │   Workflow:     tdd, review, vcs, grill-with-context, issue-lanes, afk,     │
- │                 agent-review                                                │
- │   SDLC:         deliver, define, specify (FilipKrawiec/devcontainer)        │
+ │   Workflow:     define, spec, plan, tdd, vcs, review, ship, improve,        │
+ │                 afk, agent-review                                           │
  │   Authoring:    writing-great-skill                                         │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -54,14 +53,12 @@ This library supports two complementary execution loops depending on the scope o
                                         │
              ┌──────────────────────────┴──────────────────────────┐
              │                                                     │
-             ▼ (Fast Tactical Loop)                                ▼ (Enterprise Delivery Loop)
+             ▼ (Fast Tactical Loop)                                ▼ (Delivery Cycle)
   ┌──────────────────────────────┐                      ┌──────────────────────────────┐
-  │ 1. tdd (Repro & Red-Green)   │                      │ 1. define (Outcomes & Scope) │
-  │ 2. review (Smell & Spec)     │                      │ 2. specify/grill-with-context│
-  │ 3. vcs (Atomic commit)       │                      │ 3. deliver                   │
-  └──────────────┬───────────────┘                      │    (Worktree multi-agent)    │
-                 │                                      │ 4. project-verify.py (Gates) │
-                 │                                      │ 5. Review Request & Ship     │
+  │ 1. tdd (Repro & Red-Green)   │                      │ 01 define   02 spec          │
+  │ 2. review (Smell & Spec)     │                      │ 03 plan     04 tdd + vcs     │
+  │ 3. vcs (Atomic commit)       │                      │ 05 review   06 ship          │
+  └──────────────┬───────────────┘                      │ 07 improve  (afk runs 03-07) │
                  │                                      └──────────────┬───────────────┘
                  │                                                     │
                  └──────────────────────┬──────────────────────────────┘
@@ -82,8 +79,8 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 * **Affirmative State Machines**: Skills are structured as unidirectional linear phases with explicit affirmative actions and concrete exit gates, eliminating negative prompt priming ("Do vs Don't" contradictions).
 * **Zero-Waste Output Economics**: Every skill phase defines explicit output envelopes, high-density token efficiency, and code anti-overengineering (Rule of Two Adapters).
 * **Provider-Neutral & Sovereign Git-Native**: Pure Git clone/submodule distribution across harnesses (Claude Code, Codex, Antigravity) without SaaS registry dependencies.
-* **Issue Lanes & AFK Delivery**: `issue-lanes` gives every GitHub issue one lane (`lane:afk`, `lane:proposed`, `lane:owner`); `afk` delivers owner-approved issues unattended, one at a time, behind a guard hook that keeps merges, releases and settings with the owner.
-* **Delivery Orchestration**: The `deliver` workflow (in the `filipkrawiec-sdlc` package of [FilipKrawiec/devcontainer](https://github.com/FilipKrawiec/devcontainer)) coordinates bounded project changes across isolated Git worktrees.
+* **Delivery Cycle**: Seven phases (01 Define to 07 Improve), one skill each, and one Project board column each, derived from the issue's state.
+* **Issue Lanes & AFK Delivery**: `spec` gives every GitHub issue one lane (`lane:afk`, `lane:proposed`, `lane:owner`); `afk` carries owner-approved issues through plan, execute, review, ship and improve unattended, one at a time, behind a guard hook that keeps merges, releases and settings with the owner.
 * **Deterministic Verification**: `scripts/project-verify.py` acts as a zero-dependency, deterministic gate for code verification and git hygiene.
 
 ---
@@ -97,10 +94,13 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | **`filipkrawiec-workflow`** | [`tdd`](plugins/common/workflow/skills/tdd/SKILL.md) | Model | Test-Driven Development: Chicago-school Red-Green-Refactor, bug reproduction first, doctrine chaining. |
 | | [`review`](plugins/common/workflow/skills/review/SKILL.md) | Model | Diff Audit: Boundary breaches, runtime defects, design smells, and test rigor. |
 | | [`vcs`](plugins/common/workflow/skills/vcs/SKILL.md) | Model | Version Control: Conventional commits, worktree isolation, and PR delivery. |
-| | [`issue-lanes`](plugins/common/workflow/skills/issue-lanes/SKILL.md) | Model | Issue Lanes: Create and triage issues into AFK, proposed or owner lanes; ask the owner at creation. |
-| | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | Model | Unattended Delivery: One approved issue per run with a posted plan and a fresh-context review, park-with-a-question, chore auto-merge, reverting AFK merges that break the base branch, lessons, housekeeping. |
+| | [`define`](plugins/common/workflow/skills/define/SKILL.md) | Model | 01 Define: Turn a raw need into an issue with intent and open questions. |
+| | [`spec`](plugins/common/workflow/skills/spec/SKILL.md) | Model | 02 Spec: Grill against project context, write acceptance criteria, estimate and scope packet, decide the lane. |
+| | [`plan`](plugins/common/workflow/skills/plan/SKILL.md) | Model | 03 Plan: Post a repository-grounded plan on the issue; approval before execution. |
+| | [`ship`](plugins/common/workflow/skills/ship/SKILL.md) | Model | 06 Ship: Base-branch health after merge, revert AFK breakage, confirm shipped issues. |
+| | [`improve`](plugins/common/workflow/skills/improve/SKILL.md) | Model | 07 Improve: Turn friction into lessons for skills, agent rules, docs or assets. |
+| | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | Model | Unattended Delivery: Runs the cycle for one approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
 | | [`agent-review`](plugins/common/workflow/skills/agent-review/SKILL.md) | Model | Agent Review: Review each open PR per head commit, hand critical PRs to the owner, merge reviewed AFK PRs, wake the runner. |
-| | [`grill-with-context`](plugins/common/workflow/skills/grill-with-context/SKILL.md) | Model | Context Grilling: Ground specifications against ADRs, glossary, and knowledge. |
 | **`filipkrawiec-authoring`** | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring affirmative state machines, output contracts, and token budgets. |
 
 ---

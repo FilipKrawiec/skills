@@ -4,17 +4,18 @@
 GitHub Issues are the only queue. Every open issue carries one lane label:
 `lane:afk` (the owner approved unattended delivery), `lane:proposed` (an agent
 recommends AFK) or `lane:owner`. The optional Project board is derived from
-issues. A repository opts in with `.github/lanes.json` (see references/setup.md).
+issues, one column per phase of the delivery cycle. A repository opts in with `.github/lanes.json` (see references/setup.md).
 
 Usage: lanes.py next                 # next AFK issue; in flight, skipped, untriaged
-       lanes.py claim N              # claim N, create its worktree from origin/<base>, mark it Running
-       lanes.py start N              # mark N Running while a session works on it outside an AFK build
+       lanes.py claim N              # claim N, create its worktree from origin/<base>, move it to 03 Plan
+       lanes.py start N              # move N to 03 Plan while a session works on it outside an AFK build
        lanes.py release N            # clear N's claim or start when the work pauses or is handed off
        lanes.py scope N              # changed files outside N's scope packet
        lanes.py park N MESSAGE       # hand N back to the owner with one question
        lanes.py automerge PR         # squash auto-merge PR on green checks if it is a chore
        lanes.py merge-reviewed PR    # squash-merge an AFK PR whose agent review says ready
-       lanes.py health               # CI on the base branch, and the merge that turned it red
+       lanes.py mark N PHASE         # PHASE planned (plan posted) or learned (lessons done)
+       lanes.py health [--apply]     # CI on the base branch, the merge that turned it red; marks shipped
        lanes.py board [--apply]      # derive Project status and priority from issues
        lanes.py labels [--apply]     # sync labels with the lane set plus lanes.json
        lanes.py tidy [--apply]       # remove AFK runs' own worktrees and branches once finished
@@ -30,11 +31,15 @@ from pathlib import Path
 
 AFK, PROPOSED, OWNER_LANE, CLAIMED = 'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed'
 STARTED, PARKED, OWNER_REVIEW = 'state:started', 'state:parked', 'review:owner'
+# Phase markers: an issue gains one after its plan, its ship check and its lessons.
+PLANNED, SHIPPED, LEARNED = 'state:planned', 'state:shipped', 'state:learned'
+PHASE_MARKS = {'planned': PLANNED, 'shipped': SHIPPED, 'learned': LEARNED}
 EPIC = 'type:epic'
 PRIORITIES = ('priority:P0', 'priority:P1', 'priority:P2')
-STATUSES = ('Triage', 'Backlog', 'Decide', 'Running', 'Agent review', 'Review', 'Done')
-STATUS_COLORS = {'Triage': 'GRAY', 'Backlog': 'BLUE', 'Decide': 'ORANGE', 'Running': 'YELLOW',
-                 'Agent review': 'PURPLE', 'Review': 'PINK', 'Done': 'GREEN'}
+# The board's columns are the delivery cycle's phases.
+STATUSES = ('01 Define', '02 Spec', '03 Plan', '04 Execute', '05 Review', '06 Ship', '07 Improve', 'Done')
+STATUS_COLORS = {'01 Define': 'GRAY', '02 Spec': 'BLUE', '03 Plan': 'ORANGE', '04 Execute': 'YELLOW',
+                 '05 Review': 'PURPLE', '06 Ship': 'PINK', '07 Improve': 'RED', 'Done': 'GREEN'}
 LANE_LABELS = {
     AFK: ('1d76db', 'Owner-approved: an agent may deliver this unattended'),
     PROPOSED: ('8250df', 'An agent recommends AFK; the owner decides'),
@@ -43,6 +48,9 @@ LANE_LABELS = {
     STARTED: ('fef2c0', 'A session is working on it now (outside an AFK build)'),
     PARKED: ('d93f0b', 'An AFK run handed it back with a question for the owner'),
     OWNER_REVIEW: ('e99695', 'PR: agent review is done; it waits for the owner'),
+    PLANNED: ('c5def5', 'Its plan is posted; after merge it waits for the ship check'),
+    SHIPPED: ('0e8a16', 'Merged and the base branch stayed green; lessons are due'),
+    LEARNED: ('bfdadc', 'Lessons recorded or applied; the cycle is closed'),
     EPIC: ('3e4b9e', 'Umbrella outcome with sub-issues'),
 }
 DEPENDABOT = {'app/dependabot', 'dependabot[bot]'}
@@ -306,6 +314,21 @@ def base_health(commits):
     return state, failing, None
 
 
+def newly_shipped(closed, green_at):
+    """Planned issues closed as completed before the base branch's newest green commit."""
+    return [i['number'] for i in closed
+            if i['stateReason'] == 'COMPLETED' and i['closedAt'] <= green_at
+            and PLANNED in names(i) and not names(i) & {SHIPPED, LEARNED}]
+
+
+def set_mark(repo, number, mark):
+    """Gives the issue one phase marker, replacing the earlier one."""
+    current = names(gh_json('issue', 'view', str(number), '-R', repo.name, '--json', 'labels'))
+    others = sorted(current & set(PHASE_MARKS.values()) - {mark})
+    run('gh', 'issue', 'edit', str(number), '-R', repo.name, '--add-label', mark,
+        *(['--remove-label', ','.join(others)] if others else []))
+
+
 # --- Board and tidy --------------------------------------------------------
 
 def afk_owned(branch, path, root, config):
@@ -316,22 +339,20 @@ def afk_owned(branch, path, root, config):
                             and Path(path).name.startswith('afk-'))
 
 
-def status(issue, pr_labels, agent_review=False):
-    """Board column from the issue's lifecycle; lanes stay visible as labels.
+def status(issue, has_pr):
+    """Board column: the issue's phase in the delivery cycle. Lanes stay visible as labels.
 
-    pr_labels is None without an open PR, else the labels of its open PRs."""
+    A closed issue without a phase marker predates the cycle or skipped it: Done."""
     labels = names(issue)
     if issue['state'] == 'CLOSED':
-        return 'Done'
+        if issue.get('stateReason', 'COMPLETED') != 'COMPLETED' or LEARNED in labels:
+            return 'Done'
+        return '07 Improve' if SHIPPED in labels else '06 Ship' if PLANNED in labels else 'Done'
+    if has_pr:
+        return '05 Review'
     if labels & {CLAIMED, STARTED}:
-        return 'Running'
-    if pr_labels is not None:
-        return 'Agent review' if agent_review and OWNER_REVIEW not in pr_labels else 'Review'
-    if PROPOSED in labels or (PARKED in labels and AFK not in labels):
-        return 'Decide'
-    if labels & {AFK, OWNER_LANE, EPIC}:
-        return 'Backlog'
-    return 'Triage'
+        return '04 Execute' if PLANNED in labels else '03 Plan'
+    return '02 Spec' if ACCEPTANCE.search(issue.get('body') or '') else '01 Define'
 
 
 def afk_in_flight(issues, with_pr):
@@ -421,7 +442,7 @@ class Repo:
 
     def closed_issues(self):
         return gh_json('issue', 'list', '-R', self.name, '-s', 'closed', '-L', '1000',
-                       '--json', 'number,labels,state,url,stateReason')
+                       '--json', 'number,labels,state,url,stateReason,closedAt')
 
     def issues_with_open_prs(self):
         """Issue number → labels of the open PRs that close it."""
@@ -494,7 +515,7 @@ def cmd_start(repo, args):
     number = args[0]
     run('gh', 'issue', 'edit', number, '-R', repo.name, '--add-label', STARTED)
     refresh_board(repo)
-    print(f'#{number}: Running')
+    print(f'#{number}: started')
 
 
 def cmd_release(repo, args):
@@ -553,6 +574,14 @@ def cmd_automerge(repo, args):
           + (' (branch updated)' if step == 'update' else ''))
 
 
+def cmd_mark(repo, args):
+    if len(args) != 2 or args[1] not in ('planned', 'learned'):
+        sys.exit('mark needs an issue and "planned" or "learned"; `health --apply` marks shipped.')
+    set_mark(repo, args[0], PHASE_MARKS[args[1]])
+    refresh_board(repo)
+    print(f'#{args[0]}: {PHASE_MARKS[args[1]]}')
+
+
 def cmd_merge_reviewed(repo, args):
     number = args[0]
     pr = gh_json('pr', 'view', number, '-R', repo.name, '--json',
@@ -570,21 +599,31 @@ def cmd_merge_reviewed(repo, args):
     print(f'#{number} merged after agent review')
 
 
-def cmd_health(repo, _args, window=10):
+def cmd_health(repo, args, window=10):
     base = repo.config['base']
     listed = gh_json('api', f"repos/{repo.name}/commits?sha={base}&per_page={window}")
+    read = []
 
     def states():
         for c in listed:
             runs = gh_json('api', f"repos/{repo.name}/commits/{c['sha']}/check-runs?per_page=100")
             status = gh_json('api', f"repos/{repo.name}/commits/{c['sha']}/status")
             state, names = commit_state(runs['check_runs'], status['statuses'])
+            read.append(c)
             yield c['sha'], c['commit']['message'].splitlines()[0], state, names
 
     state, failing, culprit = base_health(states())
     head = listed[0]['sha'][:7] if listed else '?'
     if state != 'red':
         print(f'base: {state} ({base} at {head})')
+        if state == 'green':
+            green_at = read[-1]['commit']['committer']['date']
+            for number in newly_shipped(repo.closed_issues(), green_at):
+                print(f'shipped: #{number}')
+                if '--apply' in args:
+                    set_mark(repo, number, SHIPPED)
+            if '--apply' in args:
+                refresh_board(repo)
         return
     print(f"base: red ({base} at {head}); failing: {', '.join(failing)}")
     if culprit is None:
@@ -646,7 +685,7 @@ def cmd_board(repo, args):
     changes = 0
     for issue in repo.open_issues() + closed:
         item = on_board.get(issue['url'])
-        want = status(issue, with_pr.get(issue['number']), repo.config['agentReview'])
+        want = status(issue, issue['number'] in with_pr)
         want_priority = priority(issue)
         # Without a priority label, a priority set on the board stays.
         if item and item.get('status') == want and want_priority in (None, item.get('priority')):
@@ -750,7 +789,7 @@ def cmd_tidy(repo, args):
 
 COMMANDS = {'next': cmd_next, 'claim': cmd_claim, 'start': cmd_start, 'release': cmd_release,
             'scope': cmd_scope, 'park': cmd_park, 'automerge': cmd_automerge,
-            'merge-reviewed': cmd_merge_reviewed, 'health': cmd_health, 'board': cmd_board,
+            'merge-reviewed': cmd_merge_reviewed, 'health': cmd_health, 'mark': cmd_mark, 'board': cmd_board,
             'labels': cmd_labels, 'tidy': cmd_tidy}
 
 if __name__ == '__main__':
