@@ -9,7 +9,7 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `repo` | yes | `owner/name` on GitHub. |
 | `owner` | no | Login whose PRs may auto-merge; defaults to the repository owner. |
 | `base` | no | Base branch; default `main`. |
-| `project` | no | `{"owner": "<login>", "number": <n>}`: the board whose cards the skills move. |
+| `project` | no | `{"owner": "<login>", "number": <n>}`: the board whose cards the skills and its workflows move. |
 | `protected` | no | Regexes for paths agents may not change in AFK work (adds to every top-level dot-directory, `AGENTS.md`, justfile and Makefile). Add the host's own instruction file here when it has one besides `AGENTS.md`. |
 | `alwaysInScope` | no | Path prefixes every AFK change may touch, e.g. the user guide the project rules require updating. |
 | `chores` | no | Regexes of paths that auto-merge on green checks (adds to `^docs/`, `\.md$`, test directories). |
@@ -35,7 +35,7 @@ Minimal example:
 | Step | Command or setting |
 | --- | --- |
 | Labels | `gh label create <name> --color <hex> --description "<text>"` for each label below that the repository lacks. |
-| Board | Optional. Give the Project's Status field one option per column in [board.md](../../../references/board.md), once, in the board's settings, and show the labels on cards in the board view's field settings. The token that runs agents needs the `project` scope: `gh auth refresh -s project`. |
+| Board | Optional. Give the Project's Status field the columns in [board.md](../../../references/board.md), turn on the workflows it lists, and show the labels on cards in the board view's field settings. On a board with other Status options, add the new ones, move each card to its state's column, then delete the old options, so no card loses its Status. The token that runs agents needs the `project` scope: `gh auth refresh -s project`. |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
 | Rules | Add to the project's agent rules: "New work starts with `spec`, which opens the issue and decides its lane", "Working on an issue: follow Start here in the workflow plugin's `references/board.md`" and a link to the project's workflow page. |

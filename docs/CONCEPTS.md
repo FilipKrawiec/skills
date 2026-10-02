@@ -71,7 +71,7 @@ plugins/
 
 ## 4. The Delivery Cycle
 
-Delivery follows seven phases. Each one has a skill, and each is a column on the optional Project board. The skill that finishes a phase moves the card, so the board shows which phase every issue is in.
+Delivery follows seven phases, each with a skill. The optional Project board doesn't mirror them: its standard columns say what a card waits for, and GitHub's built-in board workflows make most moves.
 
 ```
  ┌───────────┐   ┌─────────┐   ┌─────────┐   ┌────────────┐
@@ -92,10 +92,10 @@ Delivery follows seven phases. Each one has a skill, and each is a column on the
 | 03 Plan | `plan` | A `## Plan` comment on the issue |
 | 04 Execute | `tdd`, `vcs`, `review` (fresh-context worker) | Tested commits on a task branch, reviewed, and a PR |
 | 05 Review | `agent-review`, or the owner | A reviewed, mergeable PR |
-| 06 Ship | `ship` | A green base branch, a revert PR, or an escalation |
+| 06 Ship | `ship` | A green base branch and a `## Shipped` comment, a revert PR, or an escalation |
 | 07 Improve | `improve` | A `## Lessons` comment and an issue per accepted lesson |
 
-The board column is the phase. `plugins/common/workflow/references/board.md` is the one source for when an issue is in each column, which skill works it, and the `gh project` commands that move the card. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `automerge`, `merge-reviewed`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
+06 Ship and 07 Improve run after the merge, so their record is an issue comment rather than a column. `plugins/common/workflow/references/board.md` is the one source for each issue state and its column, which skill works it, the board workflows to turn on, and the `gh project` commands for the few moves the skills make themselves. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `automerge`, `merge-reviewed`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
 
 ### Worktree Provenance & Safety
 

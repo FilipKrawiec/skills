@@ -14,7 +14,7 @@ Merge is not the end of delivery. Watch the base branch after merges, fix what i
 
 ## 1. Observe
 
-When the project has a board, tidy the cards that left 05 Review: an issue closed as completed moves to 06 Ship, one closed as not planned to Done, and an open issue whose PR closed unmerged back to 02 Spec (release its claim). Then read the base branch's CI:
+When the project has a board, move to Todo each card in Review whose issue is open with no open PR (its PR closed unmerged). Then read the base branch's CI:
 
 ```bash
 git fetch origin <base>
@@ -28,7 +28,7 @@ Ignore cancelled runs. Group the rest by `headSha`; a commit is red when any of 
 - Head pending, or no runs at all → nothing to confirm yet; report it.
 - Head red → find the newest green commit G and the oldest red commit R after it. The culprit is known only when `git log --first-parent --format=%H <G>..<R>` lists exactly R; otherwise report it as ambiguous with that range. With no green commit among the runs, report the culprit as unknown and stop. `gh pr list --state merged --search <sha> --json number,headRefName,closingIssuesReferences` finds the culprit's PR; it is an AFK merge when `headRefName` starts with `<branchPrefix>`. Then phase 2.
 
-**Exit gate:** the base state at its head, and for red the failing checks and the culprit or the ambiguous range.
+**Exit gate:** the base state at its head, for red the failing checks and the culprit or the ambiguous range, and no card in Review without an open PR.
 
 ## 2. Respond
 
@@ -36,7 +36,7 @@ When an AFK merge broke the base branch and `gh pr list --head <branchPrefix>rev
 
 1. `git worktree add <root>/.worktrees/afk-revert-<short-sha> -b <branchPrefix>revert-<short-sha> origin/<base>` (`<root>` as in board.md); in it run `git revert --no-edit <sha>`, then pass the project's full verification gate (its own command, e.g. `python3 scripts/project-verify.py verify` or `just verify`).
 2. Push and open a PR titled `revert: <subject>` whose body names the failing checks.
-3. Reopen the issue the reverted PR closed (`gh issue reopen`) and park it with the failing checks, the revert PR and a recommendation for the retry: it returns to 03 Plan once the owner re-applies `lane:afk`.
+3. Reopen the issue the reverted PR closed (`gh issue reopen`) and park it with the failing checks, the revert PR and a recommendation for the retry: it is claimed again once the owner re-applies `lane:afk`.
 
 Any other red base branch belongs to the owner: report the failing checks and the culprit or range. A fix forward is new work: name it as a follow-up for the owner.
 
@@ -44,9 +44,9 @@ Any other red base branch belongs to the owner: report the failing checks and th
 
 ## 3. Confirm
 
-The head is green, so every merge up to it shipped: move each card in 06 Ship to 07 Improve.
+The head is green, so every merge up to it shipped. For each issue in 06 Ship ([board.md](../../references/board.md)'s States) whose PR #M has its merge commit in the head's history (`gh pr view <M> --json mergeCommit`, then `git merge-base --is-ancestor <sha> <head>`), comment `## Shipped #M`, then the head commit and its CI run link. A reverted merge reopened its issue and its retry is the newer PR, so only the retry is ever confirmed.
 
-**Exit gate:** the issues moved, or none.
+**Exit gate:** the issues confirmed, or none.
 
 ## Output
 

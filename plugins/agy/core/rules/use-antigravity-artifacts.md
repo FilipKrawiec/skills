@@ -24,7 +24,7 @@ Antigravity renders an interactive review pane with an executable **Proceed** bu
      > - Click **Proceed** at the top right to approve execution.
 
 4. **Tracked Issues:**
-   - When the plan belongs to a GitHub issue in the delivery cycle, the artifact is the review surface only: after **Proceed**, post the approved plan as the issue's `## Plan` comment and move its card to 04 Execute, as the workflow plugin's `references/board.md` describes.
+   - When the plan belongs to a GitHub issue in the delivery cycle, the artifact is the review surface only: after **Proceed**, post the approved plan as the issue's `## Plan` comment, as the workflow plugin's `references/board.md` describes.
 
 5. **Universal Data Format:**
    - Keep all underlying skill and plugin manifests in `plugins/common` formatted as portable YAML and standard markdown.
