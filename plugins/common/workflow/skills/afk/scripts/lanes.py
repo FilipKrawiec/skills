@@ -507,21 +507,21 @@ def cmd_claim(repo, args):
         '--remove-label', PARKED)
     run('gh', 'issue', 'comment', str(number), '-R', repo.name, '--body',
         f'Claimed by an AFK run on `{socket.gethostname()}`. Branch `{branch}`.')
-    refresh_board(repo)
+    refresh_board(repo, number)
     print(f'worktree: {worktree}\nbranch: {branch}')
 
 
 def cmd_start(repo, args):
     number = args[0]
     run('gh', 'issue', 'edit', number, '-R', repo.name, '--add-label', STARTED)
-    refresh_board(repo)
+    refresh_board(repo, number)
     print(f'#{number}: started')
 
 
 def cmd_release(repo, args):
     number = args[0]
     run('gh', 'issue', 'edit', number, '-R', repo.name, '--remove-label', f'{CLAIMED},{STARTED}')
-    refresh_board(repo)
+    refresh_board(repo, number)
     print(f'#{number}: released')
 
 
@@ -578,7 +578,7 @@ def cmd_mark(repo, args):
     if len(args) != 2 or args[1] not in ('planned', 'learned'):
         sys.exit('mark needs an issue and "planned" or "learned"; `health --apply` marks shipped.')
     set_mark(repo, args[0], PHASE_MARKS[args[1]])
-    refresh_board(repo)
+    refresh_board(repo, args[0])
     print(f'#{args[0]}: {PHASE_MARKS[args[1]]}')
 
 
@@ -622,8 +622,7 @@ def cmd_health(repo, args, window=10):
                 print(f'shipped: #{number}')
                 if '--apply' in args:
                     set_mark(repo, number, SHIPPED)
-            if '--apply' in args:
-                refresh_board(repo)
+                    refresh_board(repo, number)
         return
     print(f"base: red ({base} at {head}); failing: {', '.join(failing)}")
     if culprit is None:
@@ -703,10 +702,36 @@ def cmd_board(repo, args):
     print(f'{changes} board changes' + ('' if apply else ' (dry run; --apply to write)'))
 
 
-def refresh_board(repo):
-    """Applies board status at once when lanes.json names a project."""
-    if repo.config.get('project'):
-        cmd_board(repo, ['--apply'])
+ISSUE_ITEM_QUERY = '''query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){
+  issue(number:$number){url state stateReason body labels(first:50){nodes{name}}
+  projectItems(first:20){nodes{id project{number owner{... on User{login} ... on Organization{login}}}
+  fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}'''
+
+
+def refresh_board(repo, number):
+    """Moves one issue to its column at once when lanes.json names a project.
+
+    A handful of calls instead of a full `board` sync, which reads every issue and item."""
+    project = repo.config.get('project')
+    if not project:
+        return
+    owner, name = repo.name.split('/')
+    issue = gh_json('api', 'graphql', '-f', f'query={ISSUE_ITEM_QUERY}', '-f', f'owner={owner}',
+                    '-f', f'name={name}', '-F', f'number={number}')['data']['repository']['issue']
+    issue['labels'] = issue['labels']['nodes']
+    want = status(issue, int(number) in repo.issues_with_open_prs())
+    item = next((i for i in issue['projectItems']['nodes']
+                 if i['project']['number'] == project['number']
+                 and i['project']['owner']['login'] == project['owner']), None)
+    if item and (item['fieldValueByName'] or {}).get('name') == want:
+        return
+    project_id, fields = project_fields(project)
+    if [o['name'] for o in fields['Status']['options']] != list(STATUSES):
+        return  # the columns are not set up yet; `board --apply` creates them
+    if item is None:
+        item = gh_json('project', 'item-add', str(project['number']), '--owner', project['owner'],
+                       '--url', issue['url'], '--format', 'json')
+    set_option(project_id, item['id'], fields['Status'], want)
 
 
 def cmd_labels(repo, args):

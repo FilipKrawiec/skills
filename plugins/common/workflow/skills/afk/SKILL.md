@@ -14,6 +14,8 @@ Leave the checkout a run starts in exactly as it is; it may hold the owner's wor
 
 Read [setup.md](references/setup.md) when the repository has no `.github/lanes.json`, or when scheduling unattended runs.
 
+Spend reasoning where the risk is. When the host lets a run or worker choose its reasoning level, use high for `spec` triage, medium for `plan`, `review` and `improve`, low for `tdd`, and the lowest for `ship`, tending and housekeeping; raise it for a step only when it fails twice.
+
 ## 1. Ship
 
 Invoke `ship` for the base branch.
