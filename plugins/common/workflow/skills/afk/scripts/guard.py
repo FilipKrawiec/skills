@@ -18,17 +18,20 @@ from pathlib import Path
 
 OWNER_RUNS_IT = 'The owner runs this themselves.'
 
+MERGE_IS_OWNERS = 'Merging is the owner\'s; chore PRs use `lanes.py automerge`.'
 RULES = [
-    (r'\bgh\s+pr\s+merge\b', 'Merging is the owner\'s; chore PRs use `lanes.py automerge`.'),
-    # A query file (-F query=@...) hides its mutation, so it counts as a merge too.
+    (r'\bgh\s+pr\s+merge\b', MERGE_IS_OWNERS),
+    # A query file, --input or shell substitution hides the mutation, so each counts as a merge.
+    (r'\bgh\s+api\b.*(--input\b|\$\(|`)', MERGE_IS_OWNERS),
+    (r'\bgh\s+alias\s+(set|import)\b', 'Aliases hide commands from the guard.'),
     (r'\bgh\s+api\b.*(\bpulls/[^/\s]+/merge\b|\brepos/[^/\s]+/[^/\s]+/merges\b|\bmergePullRequest\b'
-     r'|\benablePullRequestAutoMerge\b|\bquery=@)',
-     'Merging is the owner\'s; chore PRs use `lanes.py automerge`.'),
+     r'|\benablePullRequestAutoMerge\b|\bquery=@)', MERGE_IS_OWNERS),
     (r'\bgh\s+release\s+(create|edit|delete|upload)\b', 'Releases are the owner\'s. ' + OWNER_RUNS_IT),
     (r'\bgh\s+(secret|variable)\s+(set|delete|remove)\b', 'Secrets and variables are the owner\'s.'),
     (r'\bgh\s+repo\s+(edit|delete|rename|archive)\b', 'Repository settings are the owner\'s.'),
     (r'\bgh\s+workflow\s+(run|enable|disable)\b', 'Dispatched workflows can publish. ' + OWNER_RUNS_IT),
-    (r'\bgh\s+api\b.*\b(protection|rulesets|environments|secrets|variables|collaborators|keys|hooks)\b',
+    (r'\bgh\s+api\b.*\brepos/[^/\s]+/[^/\s]+/(branches/[^\s]+/protection|rulesets|environments|actions/(secrets|variables)'
+     r'|dependabot/secrets|codespaces/secrets|collaborators|keys|hooks)\b',
      'Repository security settings are the owner\'s.'),
     (r'\bgh\s+api\b(?=.*(-X|--method)[=\s]*(PATCH|PUT|POST|DELETE)\b).*\brepos/[\w.-]+/[\w.-]+/?(["\'\s]|$)',
      'Repository settings are the owner\'s.'),
@@ -36,18 +39,37 @@ RULES = [
 
 MARKS_AFK = [
     r'\bgh\b.*(--add-label|--label|\s-l)[=\s]+["\']?[^\s"\']*\blane:afk\b',
-    r'\bgh\s+api\b(?!.*-X\s*DELETE).*\blane:afk\b',
+    r'\bgh\b.*(--add-label|--label|\s-l)[=\s]+["\']?\$',  # a variable may hold lane:afk
+    r'\bgh\s+api\b(?!.*-X\s*DELETE).*(/labels\b|labels\[\]=).*\blane:afk\b',
 ]
 UNATTENDED_AFK = 'Unattended runs never mark an issue AFK; the owner approves it in a session.'
 
 
-def refusal(command, unattended=True, extra=()):
+GLOBAL_FLAGS = re.compile(r'\s(?:-R|--repo|--hostname)(?:=|\s+)\S+')
+BLOCKED_TOOLS = {'mcp__github__merge_pull_request', 'mcp__github__enable_pr_auto_merge'}
+CONFIG_FILE = '.github/lanes.json'
+
+
+def refusal(command, unattended=True, extra=(), base='main'):
     """The reason a shell command is blocked, or None."""
-    for pattern, reason in [*RULES, *extra]:
-        if re.search(pattern, command):
+    plain = GLOBAL_FLAGS.sub(' ', command)  # `gh -R o/r pr merge` reads as `gh pr merge`
+    rules = [*RULES, *extra, (rf'\bgit\s+push\b.*(\s|:){re.escape(base)}(\s|$)',
+                              f'Pushing to {base} is the owner\'s; work lands through a PR.')]
+    for pattern, reason in rules:
+        if re.search(pattern, plain):
             return reason
-    if unattended and any(re.search(p, command) for p in MARKS_AFK):
+    if unattended and any(re.search(p, plain) for p in MARKS_AFK):
         return UNATTENDED_AFK
+    return None
+
+
+def tool_refusal(tool_name, tool_input):
+    """Why a non-shell tool call is blocked, or None."""
+    if tool_name in BLOCKED_TOOLS:
+        return MERGE_IS_OWNERS
+    if tool_name in ('Edit', 'Write', 'MultiEdit', 'NotebookEdit') \
+            and str(tool_input.get('file_path', '')).endswith(CONFIG_FILE):
+        return f'{CONFIG_FILE} is the owner\'s.'
     return None
 
 
@@ -74,24 +96,31 @@ def project_root(cwd):
         return Path(cwd) if cwd else None
 
 
-def project_rules(project_dir):
-    """The project's extra rules, or None when the project hasn't opted in."""
+def project_config(project_dir):
+    """(extra rules, base branch), or None when the project hasn't opted in.
+
+    A rule without `pattern` and `reason` strings raises, and main() then fails closed."""
     try:
-        config = json.loads((Path(project_dir) / '.github' / 'lanes.json').read_text())
+        config = json.loads((Path(project_dir) / CONFIG_FILE).read_text())
     except (OSError, TypeError, ValueError):
         return None
-    return [(rule['pattern'], rule['reason']) for rule in config.get('guard', [])]
+    rules = [(rule['pattern'], rule['reason']) for rule in config.get('guard', [])]
+    if not all(isinstance(x, str) for rule in rules for x in rule):
+        raise ValueError('every lanes.json guard rule needs string `pattern` and `reason`')
+    return rules, config.get('base', 'main')
 
 
 def main():
     event = json.load(sys.stdin)
-    if event.get('tool_name') != 'Bash':
+    project = project_config(project_root(event.get('cwd')))
+    if project is None:
         return 0
-    extra = project_rules(project_root(event.get('cwd')))
-    if extra is None:
-        return 0
-    reason = refusal(event.get('tool_input', {}).get('command', ''),
-                     is_unattended(event.get('transcript_path')), extra)
+    extra, base = project
+    tool_input = event.get('tool_input') or {}
+    if event.get('tool_name') == 'Bash':
+        reason = refusal(tool_input.get('command', ''), is_unattended(event.get('transcript_path')), extra, base)
+    else:
+        reason = tool_refusal(event.get('tool_name'), tool_input)
     if reason:
         print(f'Blocked by the lanes guard: {reason}', file=sys.stderr)
         return 2
@@ -99,4 +128,8 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as error:  # fail closed: a guard that cannot decide blocks
+        print(f'Blocked by the lanes guard: it could not run ({error})', file=sys.stderr)
+        sys.exit(2)

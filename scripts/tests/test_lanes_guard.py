@@ -27,6 +27,9 @@ BLOCKED = [
     "gh api -X POST repos/o/r/merges -f base=main -f head=x", "gh api graphql -F query=@m.graphql",
     "gh api graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'",
     "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {}) { clientMutationId } }'",
+    "gh pr -R o/r merge 1", "gh --repo o/r pr merge 1", "gh api graphql --input m.json",
+    'gh api graphql -f query="$(cat m.graphql)"', "gh alias set m 'pr merge'",
+    "git push origin HEAD:main", "git push -f origin main", "git push origin --delete main",
 ]
 ALLOWED = [
     "gh pr create --fill", "gh pr view 12 --json files", "gh issue edit 5 --add-label lane:proposed",
@@ -34,11 +37,15 @@ ALLOWED = [
     "gh api -X DELETE repos/o/r/issues/5/labels/lane:afk", "gh release view v1.2.0", "gh api repos/o/r",
     "gh api -X PATCH repos/o/r/issues/5 -f state=closed", "git push -u origin agent/afk-5-x",
     "python3 lanes.py automerge 12",
+    'gh api repos/o/r/pulls/5/reviews -X POST -f body="missing keys in dict; see hooks.json and secrets handling"',
 ]
 MERGE = "gh pr " + "merge 1"
 MARKS_AFK = ["gh issue edit 5 --add-label lane:afk", 'gh issue edit 5 --add-label "type:chore,lane:afk"',
              "gh issue create -t x --label lane:afk", "gh issue create -t x -l lane:afk",
-             'gh api repos/o/r/issues/5/labels -f "labels[]=lane:afk"']
+             'gh api repos/o/r/issues/5/labels -f "labels[]=lane:afk"',
+             'gh api repos/o/r/issues/5 -X PATCH -f "labels[]=lane:afk"', "gh issue edit 5 --add-label $L"]
+COMMENTS_AFK = ['gh api repos/o/r/issues/5/comments -X POST -f body="Apply lane:afk to let a run take it."',
+                "gh issue comment 5 --body 'Apply `lane:afk` to let an AFK run take it.'"]
 
 
 def transcript(directory, first_message):
@@ -60,6 +67,8 @@ class GuardRuleTests(unittest.TestCase):
     def test_only_attended_sessions_mark_an_issue_afk(self) -> None:
         for command in MARKS_AFK:
             self.assertEqual(guard.refusal(command), guard.UNATTENDED_AFK, command)
+        for command in COMMENTS_AFK:
+            self.assertIsNone(guard.refusal(command), command)
             self.assertIsNone(guard.refusal(command, unattended=False), command)
 
     def test_project_rules_extend_the_built_in_ones(self) -> None:
@@ -73,6 +82,11 @@ class GuardRuleTests(unittest.TestCase):
             self.assertFalse(guard.is_unattended(transcript(tmp, "Create an issue for the drawer")))
         self.assertTrue(guard.is_unattended("/nonexistent/t.jsonl"))
         self.assertTrue(guard.is_unattended(None))
+
+    def test_the_base_branch_comes_from_the_project(self) -> None:
+        self.assertIsNotNone(guard.refusal("git push origin HEAD:develop", False, base="develop"))
+        self.assertIsNone(guard.refusal("git push origin HEAD:main", False, base="develop"))
+        self.assertIsNone(guard.refusal("git push -u origin agent/afk-5-x", False, base="develop"))
 
 
 class GuardHookTests(unittest.TestCase):
@@ -95,6 +109,29 @@ class GuardHookTests(unittest.TestCase):
             self.assertIn("CI deploys.", self.call(tmp, "just deploy web").stderr)
             self.assertEqual(self.call(tmp, "git status").returncode, 0)
 
+    def test_hook_fails_closed_on_broken_input_or_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            (Path(tmp) / ".github").mkdir()
+            (Path(tmp) / ".github/lanes.json").write_text(json.dumps(
+                {"repo": "o/r", "guard": [{"patern": "x"}]}))
+            self.assertEqual(self.call(tmp, "git status").returncode, 2)
+            broken = subprocess.run([sys.executable, str(GUARD)], input="not json", capture_output=True, text=True)
+            self.assertEqual(broken.returncode, 2)
+
+    def test_hook_covers_github_tools_and_the_config_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            (Path(tmp) / ".github").mkdir()
+            (Path(tmp) / ".github/lanes.json").write_text(json.dumps({"repo": "o/r"}))
+            merge = {"tool_name": "mcp__github__merge_pull_request", "tool_input": {"pullNumber": 1}, "cwd": tmp}
+            edit = {"tool_name": "Edit", "tool_input": {"file_path": f"{tmp}/.github/lanes.json"}, "cwd": tmp}
+            read = {"tool_name": "Read", "tool_input": {"file_path": f"{tmp}/.github/lanes.json"}, "cwd": tmp}
+            for event, code in ((merge, 2), (edit, 2), (read, 0)):
+                result = subprocess.run([sys.executable, str(GUARD)], input=json.dumps(event),
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, code, event["tool_name"])
+
     def test_hook_finds_the_repository_from_a_subdirectory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run(["git", "init", "-q", tmp], check=True)
@@ -108,7 +145,8 @@ class GuardHookTests(unittest.TestCase):
         manifest = json.loads((package / ".claude-plugin/plugin.json").read_text())
         hooks = json.loads((package / manifest["hooks"]).read_text())
         entry = hooks["hooks"]["PreToolUse"][0]
-        self.assertEqual(entry["matcher"], "Bash")
+        for tool in ("Bash", "Edit", "Write", "mcp__github__merge_pull_request"):
+            self.assertRegex(tool, entry["matcher"])
         self.assertIn("skills/afk/scripts/guard.py", entry["hooks"][0]["command"])
 
 

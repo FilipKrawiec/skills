@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Bash
 
 # Test-Driven Development (Chicago School)
 
-Execute the Red-Green-Refactor loop in strict linear sequence for each observable behavior slice. TDD does not prescribe delegation, persistence, commits, or shipping workflow.
+Execute the Red-Green-Refactor loop in strict linear sequence for each observable behavior slice; committing and shipping belong to `vcs` and the calling flow.
 
 ## Project Precedence
 

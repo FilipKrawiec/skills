@@ -39,6 +39,17 @@ def parse_semver(tag_or_version: str) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
 
 
+def manifest_version(root: Path = ROOT) -> tuple[int, int, int]:
+    """The version every package-metadata.json carries."""
+    versions = {json.loads(p.read_text())["version"]
+                for p in (root / "plugins" / "common").glob("*/package-metadata.json")}
+    if len(versions) != 1:
+        raise SystemExit(f"package-metadata.json versions disagree: {sorted(versions)}")
+    version = parse_semver(versions.pop())
+    assert version is not None
+    return version
+
+
 def get_latest_release_tag(root: Path = ROOT) -> str | None:
     tags = git("tag", "--list", "v*", cwd=root).splitlines()
     valid_tags: list[tuple[tuple[int, int, int], str]] = []
@@ -65,7 +76,7 @@ def detect_bump_type(since_tag: str | None, root: Path = ROOT) -> str:
         lines = commit.splitlines()
         first_line = lines[0] if lines else ""
 
-        if "BREAKING CHANGE:" in commit or "!:" in first_line:
+        if "BREAKING CHANGE:" in commit or re.match(r"^\w+(\([^)]+\))?!:", first_line):
             has_breaking = True
             break
         if re.match(r"^feat(\([^)]+\))?:", first_line, re.IGNORECASE):
@@ -136,6 +147,10 @@ def get_manifest_paths(root: Path) -> list[str]:
         for p in sorted(agy_dir.glob("*/plugin.json")):
             if p.is_file():
                 manifest_paths.append(str(p.relative_to(root)))
+    # sync_manifests rewrites the marketplace catalogs too; a release commits them with the rest.
+    for p in (root / ".claude-plugin" / "marketplace.json", root / ".agents" / "plugins" / "marketplace.json"):
+        if p.is_file():
+            manifest_paths.append(str(p.relative_to(root)))
     return manifest_paths
 
 
@@ -193,7 +208,7 @@ def refresh_environments(root: Path) -> None:
             if dir_path.is_dir():
                 pkg = f"filipkrawiec-{dir_path.name}"
                 subprocess.run(["claude", "plugin", "remove", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
-                subprocess.run(["claude", "plugin", "add", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
+                subprocess.run(["claude", "plugin", "install", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
                 subprocess.run(["claude", "plugin", "update", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
 
 
@@ -204,7 +219,8 @@ def perform_release(
     root: Path = ROOT,
 ) -> str:
     latest_tag = get_latest_release_tag(root)
-    current_version = parse_semver(latest_tag) if latest_tag else (8, 3, 0)
+    # Without tags (a shallow or fresh clone) the manifests carry the released version.
+    current_version = parse_semver(latest_tag) if latest_tag else manifest_version(root)
     assert current_version is not None
 
     if bump_type == "auto":

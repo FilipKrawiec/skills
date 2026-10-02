@@ -1,4 +1,4 @@
-# ADR-001: Provider-Neutral Orchestration Baseline
+# ADR-001: Provider-Neutral Project Verification Baseline
 
 ## Decision
 

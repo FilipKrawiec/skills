@@ -44,7 +44,7 @@ def issue(number=1, labels=("lane:afk",), body=None, state="OPEN"):
 def pr(files, author=OWNER, **overrides):
     return {"state": "OPEN", "isDraft": False, "baseRefName": "main",
             "headRepositoryOwner": {"login": OWNER}, "author": {"login": author},
-            "files": [{"path": f} for f in files], **overrides}
+            "files": [{"path": f, "changeType": "MODIFIED"} for f in files], **overrides}
 
 
 class ConfigTests(unittest.TestCase):
@@ -64,6 +64,10 @@ class PacketTests(unittest.TestCase):
         self.assertEqual(lanes.packet(issue()["body"])["dependencies"], [7, 8])
         legacy = lanes.packet('```factory\n{"paths": ["docs/"]}\n```')
         self.assertEqual(legacy, {"paths": ["docs/"], "dependencies": []})
+
+    def test_paths_must_be_a_list_of_strings(self) -> None:
+        self.assertIsNone(lanes.packet('```scope\n{"paths": "docs/"}\n```'))
+        self.assertIsNone(lanes.packet('```scope\n{"paths": [1]}\n```'))
 
     def test_missing_or_broken_packet_is_none(self) -> None:
         self.assertIsNone(lanes.packet("no packet"))
@@ -169,6 +173,9 @@ class AutomergeTests(unittest.TestCase):
         moved = pr(["docs/release.yml"])
         moved["files"][0]["changeType"] = "RENAMED"
         self.assertIn("renames", lanes.automerge_refusal(moved, CONFIG))
+        unknown = pr(["docs/release.yml"])
+        del unknown["files"][0]["changeType"]
+        self.assertIn("renames", lanes.automerge_refusal(unknown, CONFIG))
 
 
 class QueueTests(unittest.TestCase):
@@ -199,6 +206,16 @@ class ReviewedMergeTests(unittest.TestCase):
 
     def test_a_ready_review_at_the_head_merges(self) -> None:
         self.assertIsNone(self.refusal(reviewed_pr()))
+
+    def test_only_the_reviewer_account_can_mark_ready(self) -> None:
+        stranger = reviewed_pr()
+        stranger["reviews"][0]["author"] = {"login": "stranger"}
+        self.assertIn("ready", self.refusal(stranger))
+
+    def test_pending_reviews_without_a_time_are_ignored(self) -> None:
+        pending = {"author": {"login": OWNER}, "state": "PENDING", "body": "", "submittedAt": None}
+        ready = reviewed_pr()
+        self.assertIsNone(self.refusal({**ready, "reviews": ready["reviews"] + [pending]}))
 
     def test_only_with_agent_review_on(self) -> None:
         self.assertIn("agentReview", self.refusal(reviewed_pr(), CONFIG))
@@ -312,6 +329,8 @@ class BaseBranchTests(unittest.TestCase):
             self.git(tmp, *ident, "commit", "--quiet", "-m", "base")
             self.git(tmp, "mv", "infra/dns.tf", "dns.tf")
             self.assertEqual(lanes.changed_files(tmp, "main"), ["dns.tf", "infra/dns.tf"])
+            (Path(tmp) / "a b.md").write_text("spaced\n")
+            self.assertIn("a b.md", lanes.changed_files(tmp, "main"))
 
 
 if __name__ == "__main__":

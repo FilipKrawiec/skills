@@ -14,6 +14,8 @@ Review the active diff (`git diff HEAD~1`, the branch against its base, or stage
 - **Major** (smell or design issue likely to cause a defect or rework in this area soon) → `REQUEST_CHANGES` only when the diff introduces it.
 - **Minor** (style, naming, optional refactoring) → listed as suggestions; the decision stays `APPROVED`.
 
+A finding is *blocking* when it maps to `REQUEST_CHANGES`; `afk` and `agent-review` use that word with this meaning.
+
 Report only what the project's automated gates leave unchecked; skip findings a linter, formatter, or quality gate already enforces.
 
 ## Review Phases

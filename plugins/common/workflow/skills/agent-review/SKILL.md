@@ -22,7 +22,7 @@ List open PRs, drafts included, except Dependabot's. For each, read its reviews 
 
 ## 2. Review
 
-Run one isolated worker per PR, in parallel, at medium reasoning when the host offers a choice. Each checks out the PR head in a scratch worktree, invokes `review` on the PR's own diff against its base, and checks that earlier blocking findings are fixed. Workers report a verdict and findings with `file:line` and a failure scenario, post nothing, and quote no copyrighted or personal content from the repository.
+Run one isolated worker per PR, in parallel, at medium reasoning when the host offers a choice. Each checks out the PR head in a scratch worktree, reads the acceptance criteria of the issue the PR closes, invokes `review` on the PR's own diff against its base, and checks that earlier blocking findings are fixed. Workers report a verdict and findings with `file:line` and a failure scenario, post nothing, and quote no copyrighted or personal content from the repository.
 
 Verify every blocking finding against the code yourself, then re-read the PR's head SHA; a moved head goes back to phase 1 next pass.
 
@@ -36,7 +36,7 @@ Decide criticality with [critical.md](references/critical.md). Pick the verdict:
 | --- | --- | --- | --- |
 | Ready to merge | No finding to fix; not critical. | `ready` | removed on an AFK branch, added on any other branch (the owner merges it) |
 | Ready for the owner's review | No blocking finding; critical. Name why. | `owner` | added |
-| Needs fixes first | Blocking findings, round below the last. Say whether it is critical. | `fixes` | removed |
+| Needs fixes first | Blocking findings (`review`'s `REQUEST_CHANGES`), round below the last. Say whether it is critical. | `fixes` | removed |
 | Needs the owner: review rounds used | Blocking findings in the last round. | `rounds` | added |
 
 Post one review with event COMMENT on the head commit: blocking findings as inline comments, and a body of the marker line, the verdict, the findings (blocking first, optional ones marked optional, each with `file:line` and its failure scenario) and the host's attribution footer. Then set the label, writing back the PR's full label set.

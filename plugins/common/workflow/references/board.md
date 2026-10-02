@@ -20,8 +20,8 @@ To pause or hand off, release it.
 | 01 Define | It exists but has no `### Acceptance criteria` yet. | `spec` |
 | 02 Spec | It has acceptance criteria and a scope packet and waits to be started. | `spec`, then a claim or start |
 | 03 Plan | A session claimed or started it and no `## Plan` comment exists. | `plan` |
-| 04 Execute | The `## Plan` comment exists and no PR is open. | `tdd`, `review`, `vcs`, then Open PR |
-| 05 Review | A PR that closes it is open. | `review`, `agent-review` |
+| 04 Execute | The `## Plan` comment exists and no PR is open. | `tdd`, `vcs`, `review`, then Open PR |
+| 05 Review | A PR that closes it is open. | `agent-review`, or the owner |
 | 06 Ship | Its PR merged and the base branch is not yet confirmed green. | `ship` |
 | 07 Improve | Ship is confirmed and no `## Lessons` comment exists. | `improve` |
 | Done | The `## Lessons` comment exists, or it closed as not planned. | |
@@ -49,9 +49,9 @@ Every skill uses these same `gh` and `git` steps. `<base>` and `<branchPrefix>` 
 
 | Step | Commands | Card |
 | --- | --- | --- |
-| Claim (AFK) | `git fetch origin <base>`. Reuse `<root>/.worktrees/afk-<N>` when it exists; else `git worktree add <root>/.worktrees/afk-<N> <branch>` for an existing `origin/<branchPrefix><N>-*` branch; else `git worktree add <root>/.worktrees/afk-<N> -b <branchPrefix><N>-<slug> origin/<base>`. Then `gh issue edit <N> --add-label state:claimed`, removing `state:parked`, and a one-line claim comment. | 03 Plan |
+| Claim (AFK) | `git fetch origin <base>`. Reuse `<root>/.worktrees/afk-<N>` when it exists; else `git worktree add <root>/.worktrees/afk-<N> <branch>` for an existing `origin/<branchPrefix><N>-*` branch; else `git worktree add <root>/.worktrees/afk-<N> -b <branchPrefix><N>-<slug> origin/<base>`. Then `gh issue edit <N> --add-label state:claimed`, removing `state:parked` and `lane:owner`, and a one-line claim comment. | 03 Plan |
 | Start (attended) | `gh issue edit <N> --add-label state:started`, removing `state:parked`. | 03 Plan |
-| Open PR | Push the branch, then `gh pr create` titled `<type>(<area>): <outcome>` per the project's PR template, its body starting `Closes #<N>` and linking the `## Plan` comment and the review's verdict. Then Release. | 05 Review |
+| Open PR | Push the branch, then `gh pr create` titled `<type>(<area>): <outcome>` per the project's PR template, its body starting `Closes #<N>`, linking the `## Plan` comment and quoting the review's verdict and open findings. Then Release. | 05 Review |
 | Release | Remove `state:claimed` or `state:started`. | unchanged |
 | Park | Push the branch when it holds useful work. Remove `lane:afk` and `state:claimed` or `state:started`, add `lane:owner,state:parked`, then one comment: the question, the options and a recommendation. | 02 Spec, or 05 Review while its PR is open |
 | Tidy | For each `<root>/.worktrees/afk-*` worktree other than the current one, whose branch starts with `<branchPrefix>`: when `gh pr list --head <branch> --state all --json state` lists no OPEN PR and at least one MERGED or CLOSED, and `git -C <worktree> status --porcelain` is empty, `git worktree remove <worktree>` and `git branch -D <branch>`. Leave every other checkout. | |

@@ -25,7 +25,7 @@ Ask the owner only what the request leaves out; keep implementation detail out.
 
 ## 2. Check for duplicates
 
-Search open and closed issues for the same intent (`gh issue list -s all --search "<keywords>"`). When one matches, show it and ask whether to update it instead.
+Search open and closed issues for the same intent (`gh issue list -s all --search "<keywords>"`, with `-R <owner/repo>` when the caller names another repository; `gh issue create` takes the same flag). When one matches, show it and ask whether to update it instead.
 
 **Exit gate:** no duplicate, or the owner chose the existing issue.
 

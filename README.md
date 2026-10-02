@@ -76,7 +76,7 @@ This library supports two complementary execution loops depending on the scope o
 
 For full details, read the comprehensive [Concepts & Architecture Guide](docs/CONCEPTS.md).
 
-* **Affirmative State Machines**: Skills are structured as unidirectional linear phases with explicit affirmative actions and concrete exit gates, eliminating negative prompt priming ("Do vs Don't" contradictions).
+* **Affirmative State Machines**: Skills are structured as unidirectional linear phases with explicit affirmative actions and concrete exit gates, with prohibitions kept to safety boundaries.
 * **Zero-Waste Output Economics**: Every skill phase defines explicit output envelopes, high-density token efficiency, and code anti-overengineering (Rule of Two Adapters).
 * **Provider-Neutral & Sovereign Git-Native**: Pure Git clone/submodule distribution across harnesses (Claude Code, Codex, Antigravity) without SaaS registry dependencies.
 * **Delivery Cycle**: Seven phases (01 Define to 07 Improve), one skill each, and one Project board column each, moved by the skill that finishes the phase.
@@ -127,7 +127,7 @@ claude \
   --plugin-dir plugins/common/authoring
 ```
 
-*Tip*: Run `just refresh` to update all local plugin installations (Codex, Claude, and Antigravity IDE).
+*Tip*: `just refresh` reinstalls the released packages from the marketplace (Codex, Claude, and Antigravity IDE); `--plugin-dir` and `just link-agy` are the paths that load this checkout.
 
 ### Codex
 
@@ -161,7 +161,7 @@ Agents and developers execute deterministic project verification tasks defined i
 just unit         # or: python3 scripts/project-verify.py unit
 
 # Run full project verifier & git hygiene checks
-just verify       # or: python3 scripts/project-verify.py verify
+just verify       # unit tests plus the validator; python3 scripts/project-verify.py verify runs the validator and git hygiene only
 
 # Run release version validator
 just release-check
@@ -178,8 +178,8 @@ Want to add a new skill, update plugin manifests, or prepare a release tag? Read
 
 ### Release Procedure Summary
 
-* **Pre-merge**: Run the full repository verification suite (`python3 scripts/project-verify.py unit` and `verify`) and submit a Review Request. This stage does not claim a release tag, published version, or completed release.
-* **Post-merge / Ship**: Once merged to `main`, execute the automated release workflow (`just release` or `python3 scripts/release.py`) which computes the semver bump from conventional commits, synchronizes all plugin manifests, creates the annotated tag (`v<version>`), and pushes with tags (`git push --follow-tags`).
+* **Pre-merge**: Run `just verify` and open a pull request. This stage does not claim a release tag, published version, or completed release.
+* **Post-merge / Ship**: Every push to `main` runs `.github/workflows/release.yml`, which computes the semver bump from conventional commits, synchronizes all plugin manifests, commits, creates the annotated tag (`v<version>`), pushes with `--follow-tags` and publishes the GitHub Release. `just release` does the same locally up to the tag; follow it with `git push origin main --follow-tags` when CI is unavailable.
 
 ---
 

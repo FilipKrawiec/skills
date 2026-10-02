@@ -7,7 +7,7 @@ Use this as a Dart and Flutter-specific delta on top of the generic Domain, Appl
 - Use feature-first directory structures with clear layer boundaries:
   - In a single-package project: `lib/src/<feature>/domain/`, `lib/src/<feature>/application/`, `lib/src/<feature>/infrastructure/`, and `lib/src/<feature>/presentation/` (or `api/` for Dart backend).
   - In a multi-package workspace (using Dart workspaces or Melos):
-    - `packages/<feature>_domain`: Pure Dart package (`sdk: ^3.0.0`), zero dependencies on Flutter SDK, Firebase, HTTP clients, or serialization frameworks.
+    - `packages/<feature>_domain`: Pure Dart package (`sdk: ^3.3.0`), zero dependencies on Flutter SDK, Firebase, HTTP clients, or serialization frameworks.
     - `packages/<feature>_application`: Pure Dart package depending only on `_domain`.
     - `packages/<feature>_infrastructure` (or technology-specific adapters like `packages/<feature>_firebase`): Implements domain outbound ports using Firebase or database drivers.
     - `packages/<feature>_flutter_ui` (or `app/`): Flutter package providing widgets and Riverpod state presentation (inbound adapter).
@@ -80,7 +80,7 @@ When scaffolding new packages or modules, enforce this deterministic dependency 
 
 | Layer / Role | Canonical Packages (`dependencies`) | Tooling & Codegen (`dev_dependencies`) | Constraints |
 |---|---|---|---|
-| **Domain** | *(None or `meta: ^1.12.0` for `@immutable`)* | `test: ^1.25.0`, `lints: ^5.0.0` | Pure Dart `sdk: ^3.0.0`. Zero Flutter, Firebase, or IO imports. |
+| **Domain** | *(None or `meta: ^1.12.0` for `@immutable`)* | `test: ^1.25.0`, `lints: ^5.0.0` | Pure Dart `sdk: ^3.3.0`. Zero Flutter, Firebase, or IO imports. |
 | **Application** | *(Domain package reference)* | `test: ^1.25.0`, `lints: ^5.0.0` | Pure Dart. Depends only on Domain. |
 | **Flutter UI (Inbound)** | `material_ui: ^1.0.0`<br>`flutter_riverpod: ^2.6.0`<br>`riverpod_annotation: ^2.6.0`<br>`go_router: ^14.8.0` | `flutter_test` (SDK)<br>`riverpod_generator: ^2.6.0`<br>`go_router_builder: ^2.8.0`<br>`build_runner: ^2.4.0`<br>`flutter_lints: ^5.0.0` | Imports Application & Domain. Standardizes on Material 3. Never calls Firebase directly. |
 | **Firebase (Outbound)** | `firebase_core: ^3.12.0`<br>`cloud_firestore: ^5.6.0`<br>`firebase_auth: ^5.5.0`<br>`firebase_storage: ^12.4.0` | `test: ^1.25.0`, `lints: ^5.0.0` | Implements Domain ports in `infrastructure/`. SDK types stay internal. |

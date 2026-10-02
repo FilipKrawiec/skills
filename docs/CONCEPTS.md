@@ -9,7 +9,7 @@ This document provides a comprehensive guide to the architectural design, core c
 The `skills` repository is designed around six foundational principles:
 
 1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
-2. **Affirmative State Machines**: Skills structure instructions as unidirectional linear phases with positive actions and concrete exit gates. Negative "Do/Don't" phrasing is eliminated to prevent negative prompt priming.
+2. **Affirmative State Machines**: Skills structure instructions as unidirectional linear phases with positive actions and concrete exit gates. Negative "Do/Don't" phrasing is kept to explicit safety boundaries to limit negative prompt priming.
 3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
 4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for direct changes alongside the Delivery Cycle (`define` ➔ `spec` ➔ `plan` ➔ `tdd` ➔ `review` ➔ `ship` ➔ `improve`) for tracked work, attended or AFK.
 5. **Deterministic Verification**: AI agents validate all work against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
@@ -90,8 +90,8 @@ Delivery follows seven phases. Each one has a skill, and each is a column on the
 | 01 Define | `define` | An issue with intent and open questions |
 | 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane |
 | 03 Plan | `plan` | A `## Plan` comment on the issue |
-| 04 Execute | `tdd`, `vcs` | Tested commits on a task branch |
-| 05 Review | `review` (fresh-context worker), `agent-review` | A PR with a verdict |
+| 04 Execute | `tdd`, `vcs`, `review` (fresh-context worker) | Tested commits on a task branch, reviewed, and a PR |
+| 05 Review | `agent-review`, or the owner | A reviewed, mergeable PR |
 | 06 Ship | `ship` | A green base branch, a revert PR, or an escalation |
 | 07 Improve | `improve` | A `## Lessons` comment and an issue per accepted lesson |
 
