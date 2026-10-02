@@ -8,6 +8,8 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*)
 
 One run first tends its own open PRs, then delivers **at most one** owner-approved issue, or parks it with a question, or does housekeeping, and always leaves the board current. The owner holds merge, release and settings authority; the plugin's guard hook enforces it in projects with `.github/lanes.json`.
 
+Leave the checkout a run starts in exactly as it is; it may hold the owner's work. Every build and fix happens in a worktree.
+
 `LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). Every write command is a dry run without `--apply`.
 
 Read [setup.md](references/setup.md) when the repository has no `.github/lanes.json`, or when scheduling unattended runs.

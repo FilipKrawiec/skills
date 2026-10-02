@@ -112,7 +112,9 @@ Whenever a new worktree is created or new work is started, the original main bra
 | `lane:proposed` | Agent recommends AFK | `issue-lanes` triage |
 | `lane:owner` | Needs a decision, credentials, settings or a device | Anyone |
 
-An `afk` run delivers at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) in its own worktree, checks its diff against the packet, and opens a PR, or parks the issue back to `lane:owner` with one question. Docs, tests and Dependabot dependency PRs auto-merge on green checks; everything else waits for the owner. The workflow plugin's pre-tool-use guard (`skills/afk/scripts/guard.py`, on hosts that load plugin hooks) blocks agent merges, releases, workflow dispatch and settings changes, and blocks `lane:afk` in scheduled runs.
+An `afk` run delivers at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) in its own worktree, checks its diff against the packet, and opens a PR, or parks the issue back to `lane:owner` with one question. Docs, tests and Dependabot dependency PRs auto-merge on green checks; everything else waits for the owner. The workflow plugin's pre-tool-use guard (`skills/afk/scripts/guard.py`, on hosts that load plugin hooks) blocks agent merges, releases, workflow dispatch and settings changes, and blocks `lane:afk` in scheduled runs. Runs never touch the checkout they start in: queue decisions read the fetched base branch.
+
+With `agentReview` in lanes.json, `agent-review` reviews every open PR once per head commit, the runner fixes its findings for up to `reviewRounds` rounds, and `lanes.py merge-reviewed` merges an AFK PR the reviewer judged ready and not critical; critical PRs go to the owner with `review:owner`.
 
 ---
 

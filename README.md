@@ -27,7 +27,8 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │                            PORTABLE SKILLS                                  │
  │   Core:         ddd, hexagonal-architecture                                 │
- │   Workflow:     tdd, review, vcs, grill-with-context, issue-lanes, afk      │
+ │   Workflow:     tdd, review, vcs, grill-with-context, issue-lanes, afk,     │
+ │                 agent-review                                                │
  │   SDLC:         deliver, define, specify (FilipKrawiec/devcontainer)        │
  │   Authoring:    writing-great-skill                                         │
  └─────────────────────────────────────────────────────────────────────────────┘
@@ -98,6 +99,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`vcs`](plugins/common/workflow/skills/vcs/SKILL.md) | Model | Version Control: Conventional commits, worktree isolation, and PR delivery. |
 | | [`issue-lanes`](plugins/common/workflow/skills/issue-lanes/SKILL.md) | Model | Issue Lanes: Create and triage issues into AFK, proposed or owner lanes; ask the owner at creation. |
 | | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | Model | Unattended Delivery: One approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
+| | [`agent-review`](plugins/common/workflow/skills/agent-review/SKILL.md) | Model | Agent Review: Review each open PR per head commit, hand critical PRs to the owner, merge reviewed AFK PRs, wake the runner. |
 | | [`grill-with-context`](plugins/common/workflow/skills/grill-with-context/SKILL.md) | Model | Context Grilling: Ground specifications against ADRs, glossary, and knowledge. |
 | **`filipkrawiec-authoring`** | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring affirmative state machines, output contracts, and token budgets. |
 

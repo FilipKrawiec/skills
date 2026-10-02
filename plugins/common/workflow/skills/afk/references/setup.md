@@ -15,7 +15,7 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `chores` | no | Regexes of paths that auto-merge on green checks (adds to `^docs/`, `\.md$`, test directories). |
 | `dependencyFiles` | no | Regexes of manifests and lockfiles that auto-merge when Dependabot changed them, unless the PR crosses a major version (or a minor one below 1.0): those stay open for the owner. |
 | `worktrees`, `branchPrefix`, `staleClaimHours` | no | Defaults `.worktrees`, `agent/afk-`, `3`. |
-| `agentReview` | no | `true` when an automated reviewer reviews PRs before the owner; open PRs then show as Agent review until the reviewer adds `review:owner`. Default `false`. |
+| `agentReview`, `reviewRounds` | no | `true` when the `agent-review` skill reviews PRs before the owner; open PRs then show as Agent review until it adds `review:owner`, and `lanes.py merge-reviewed` may merge AFK PRs it judged ready. `reviewRounds` caps reviews per PR. Defaults `false`, `3`. |
 | `labels`, `renames` | no | Extra labels `{"name": {"color", "description"}}` and renames `{"old": "new"}`; `labels` deletes everything else. |
 | `guard` | no | Extra blocked commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. |
 
@@ -62,11 +62,18 @@ A scheduler that starts an agent session in the repository's main checkout runs 
 ```text
 Preflight, stop and report on any failure:
 1. The working directory is inside <owner>/<repo>.
-2. The main checkout is on `main` with no tracked changes; `git pull --ff-only`
-   succeeds (project settings and the guard load from it at session start).
-3. `gh pr merge --help` is refused by the issue-lanes guard; if it prints help,
+2. `gh pr merge --help` is refused by the issue-lanes guard; if it prints help,
    the guard is not loaded, so stop.
-Then use the `afk` skill. The owner is away: park instead of asking.
+Then use the `afk` skill. The owner is away: park instead of asking. Never
+switch, pull, reset or stash this checkout: it may hold the owner's work.
 ```
+
+The checkout may be on any branch, dirty or behind. `lanes.py` fetches the base
+branch and reads `lanes.json` and the file list from `origin/<base>`, and every
+build and fix happens in a worktree made from it, so the owner's work and an AFK
+run never meet. The plugin's guard and settings load from the checkout at
+session start; enabling the plugin on `main` is enough.
+
+With `agentReview`, schedule a second task with the `agent-review` skill. Its prompt names the repository, how to wake the runner (or that the runner has its own schedule) and any legacy review marker; the skill holds the rest.
 
 Approve the task's tool prompts on its first run so later runs don't stall. Runs share the owner's OS account and credentials. The guard, lane rules and branch protection bound what they can do; they are not an isolation boundary.
