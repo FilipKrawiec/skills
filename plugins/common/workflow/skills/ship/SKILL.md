@@ -44,7 +44,7 @@ Any other red base branch belongs to the owner: report the failing checks and th
 
 ## 3. Confirm
 
-The head is green, so every merge up to it shipped. For each issue in 06 Ship ([board.md](../../references/board.md)'s States) whose PR #M has its merge commit in the head's history (`git merge-base --is-ancestor <mergeCommit> <head>`) and that is still closed as completed, comment `## Shipped #M`, then the head commit and its CI run link. A reverted merge reopened its issue, so it stays unconfirmed until its retry merges.
+The head is green, so every merge up to it shipped. For each issue in 06 Ship ([board.md](../../references/board.md)'s States) whose PR #M has its merge commit in the head's history (`gh pr view <M> --json mergeCommit`, then `git merge-base --is-ancestor <sha> <head>`), comment `## Shipped #M`, then the head commit and its CI run link. A reverted merge reopened its issue and its retry is the newer PR, so only the retry is ever confirmed.
 
 **Exit gate:** the issues confirmed, or none.
 

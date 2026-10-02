@@ -21,15 +21,15 @@ The seven phases plus Ready and Closed. "Claimed" means the issue has `state:cla
 | --- | --- | --- | --- |
 | 05 Review | It is open and an open PR closes it. | `agent-review`, or the owner | Review |
 | 01 Define | It is open with no `### Acceptance criteria`. | `spec` | Backlog |
-| 02 Spec | It is open with acceptance criteria and no scope packet. | `spec` | Backlog |
+| 02 Spec | It is open with acceptance criteria and no scope packet or no lane. | `spec` | Backlog |
 | 03 Plan | It is open, claimed, and has no `## Plan` comment. | `plan` | In progress |
 | 04 Execute | It is open, claimed, and has a `## Plan` comment. | `tdd`, `vcs`, `review`, then Open PR | In progress |
-| Ready | It is open, unclaimed, with acceptance criteria and a scope packet: specced, parked, or its PR closed unmerged. | a claim or start | Todo |
-| 06 Ship | A merged PR #M closed it as completed and no `## Shipped #M` comment exists. | `ship` | Done |
-| 07 Improve | Its newest `## Shipped` comment is newer than any `## Lessons` comment. | `improve` | Done |
+| Ready | It is open, unclaimed, with acceptance criteria, a scope packet and a lane: specced, parked, or its PR closed unmerged. Without a lane it is still in 02 Spec. | a claim or start | Todo |
+| 06 Ship | It closed as completed, #M is the newest merged PR that closes it, and no `## Shipped #M` comment exists. | `ship` | Done |
+| 07 Improve | It closed as completed and its newest `## Shipped` comment is newer than any `## Lessons` comment. | `improve` | Done |
 | Closed | Any other closed issue: lessons recorded, or closed as not planned. | | Done |
 
-`## Plan`, `## Shipped #<pr>` and `## Lessons` are issue comments whose first line is that heading; `gh issue view <N> --json state,stateReason,labels,comments` shows them with the labels. To find issues in 06 Ship and 07 Improve, read merges newest first with `gh pr list --state merged --base <base> --limit 100 --json number,mergeCommit,closingIssuesReferences` and stop at the first merge whose closed issues all carry its `## Shipped` comment; report it when all 100 lack one.
+`## Plan`, `## Shipped #<pr>` and `## Lessons` are issue comments whose first line is that heading; `gh issue view <N> --json state,stateReason,labels,comments` shows them with the labels. Issues in 06 Ship and 07 Improve are among those closed in the last 30 days: `gh issue list --state closed --search "reason:completed closed:>=<date>" --limit 100 --json number,closedByPullRequestsReferences,comments`. Older issues have left the cycle, so adopting the board never backfills them.
 
 ## Moving a card
 
@@ -43,7 +43,7 @@ GitHub's built-in project workflows make most moves. Turn these on once in the b
 | Item closed | Status Done. |
 | Item reopened | Status Todo. |
 
-The skills move a card only where no workflow does: into Todo when `spec` finishes or a run parks or releases an issue, into In progress on Claim or Start, and wherever Start here's step 1 finds it in the wrong column (a reopened issue without a spec, a PR closed unmerged, a workflow that is off).
+The skills make the remaining moves: the Card column of Issue steps below, `spec`'s move to Todo, and Start here's step 1 wherever a card sits in the wrong column (a reopened issue without a spec, a PR closed unmerged, a workflow that is off).
 
 `<P>` is lanes.json's `project.number` and `<O>` its `project.owner`.
 
@@ -53,7 +53,7 @@ gh project field-list <P> --owner <O> --format json \
   --jq '.fields[] | select(.name=="Status") | {id, options}'                  # field and column ids
 gh project item-list <P> --owner <O> -L 1000 --format json \
   --jq '.items[] | select(.content.type=="Issue" and .content.number==<N> and .content.repository=="<owner/repo>") | .id'  # empty when not on the board
-gh project item-add <P> --owner <O> --url <issue-url> --format json --jq .id  # add it when missing, then re-read its Status until the board sets Backlog
+gh project item-add <P> --owner <O> --url <issue-url> --format json --jq .id  # add it when missing; re-read its Status up to 3 times for the board's Backlog, then set the column (report a workflow that never set it)
 gh project item-edit --project-id <project-id> --id <item-id> \
   --field-id <status-field-id> --single-select-option-id <column-option-id>
 ```
@@ -66,7 +66,7 @@ Every skill uses these same `gh` and `git` steps. `<base>` and `<branchPrefix>` 
 
 | Step | Commands | Card |
 | --- | --- | --- |
-| Claim (AFK) | `git fetch origin <base>`. Reuse `<root>/.worktrees/afk-<N>` when it exists; else `git worktree add <root>/.worktrees/afk-<N> <branch>` for an existing `origin/<branchPrefix><N>-*` branch; else `git worktree add <root>/.worktrees/afk-<N> -b <branchPrefix><N>-<slug> origin/<base>`. Then `gh issue edit <N> --add-label state:claimed`, removing `state:parked` and `lane:owner`, and a one-line claim comment. | In progress |
+| Claim (AFK) | `git fetch origin <base>`. Reuse `<root>/.worktrees/afk-<N>` when it exists; else `git worktree add <root>/.worktrees/afk-<N> <branch>` for an existing `origin/<branchPrefix><N>-*` branch whose PR did not merge; else `git worktree add <root>/.worktrees/afk-<N> -b <branchPrefix><N>-<slug> origin/<base>`. Then `gh issue edit <N> --add-label state:claimed`, removing `state:parked` and `lane:owner`, and a one-line claim comment. | In progress |
 | Start (attended) | `gh issue edit <N> --add-label state:started`, removing `state:parked`. | In progress |
 | Open PR | Push the branch, then `gh pr create` titled `<type>(<area>): <outcome>` per the project's PR template, its body starting `Closes #<N>`, linking the `## Plan` comment and quoting the review's verdict and open findings. Then Release. | Review (workflow) |
 | Release | Remove `state:claimed` or `state:started`. | Todo, or unchanged while its PR is open |
