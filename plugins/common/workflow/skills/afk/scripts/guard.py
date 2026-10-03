@@ -53,7 +53,8 @@ CONFIG_FILE = '.github/lanes.json'
 def refusal(command, unattended=True, extra=(), base='main'):
     """The reason a shell command is blocked, or None."""
     plain = GLOBAL_FLAGS.sub(' ', command)  # `gh -R o/r pr merge` reads as `gh pr merge`
-    rules = [*RULES, *extra, (rf'\bgit\s+push\b.*(\s|:){re.escape(base)}(\s|$)',
+    # The push rule reads only its own command: it stops at `&&`, `||`, `;`, `|` and newlines.
+    rules = [*RULES, *extra, (rf'\bgit\s+push\b[^;&|\n]*(\s|:){re.escape(base)}(\s|$|[;&|])',
                               f'Pushing to {base} is the owner\'s; work lands through a PR.')]
     for pattern, reason in rules:
         if re.search(pattern, plain):
