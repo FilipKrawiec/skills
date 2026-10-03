@@ -88,6 +88,16 @@ class GuardRuleTests(unittest.TestCase):
         self.assertIsNone(guard.refusal("git push origin HEAD:main", False, base="develop"))
         self.assertIsNone(guard.refusal("git push -u origin agent/afk-5-x", False, base="develop"))
 
+    def test_a_push_is_judged_by_its_own_command(self) -> None:
+        for command in ("git push -u origin agent/afk-5-x && gh pr create --base main",
+                        "git push origin agent/afk-5-x; gh pr create --base main",
+                        "git push origin agent/afk-5-x | tee log && echo main",
+                        "git push origin agent/afk-5-x\ngh pr create --base main"):
+            self.assertIsNone(guard.refusal(command, False), command)
+        for command in ("cd x && git push origin main", "git push origin main && echo done",
+                        "git push origin HEAD:main; echo done", "git push -f origin main|cat"):
+            self.assertIsNotNone(guard.refusal(command, False), command)
+
 
 class GuardHookTests(unittest.TestCase):
     def call(self, project, command):
