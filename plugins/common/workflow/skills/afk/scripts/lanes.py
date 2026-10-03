@@ -20,7 +20,7 @@ from pathlib import Path
 
 AFK, PROPOSED, OWNER_LANE, CLAIMED = 'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed'
 STARTED, OWNER_REVIEW, EPIC = 'state:started', 'review:owner', 'type:epic'
-PRIORITIES = ('priority:P0', 'priority:P1', 'priority:P2')
+PRIORITIES = ('P0', 'P1', 'P2')
 DEPENDABOT = {'app/dependabot', 'dependabot[bot]'}
 
 # Lists in lanes.json extend these; scalars replace them.
@@ -123,10 +123,12 @@ def ineligible(issue, completed, pr_open, tracked, config):
     return None
 
 
-def rank(issue):
-    labels = names(issue)
-    priority = next((i for i, p in enumerate(PRIORITIES) if p in labels), len(PRIORITIES))
-    return priority, issue['number']
+def rank(issue, board=None):
+    """Priority, then age. The board's Priority field decides; without a board value, a priority: label."""
+    value = (board or {}).get(issue['number'])
+    if value not in PRIORITIES:
+        value = next((p for p in PRIORITIES if f'priority:{p}' in names(issue)), None)
+    return (PRIORITIES.index(value) if value else len(PRIORITIES)), issue['number']
 
 
 def out_of_scope(changed, paths, config):
@@ -316,6 +318,19 @@ class Repo:
                       '--json', 'closingIssuesReferences')
         return {ref['number'] for pr in prs for ref in pr['closingIssuesReferences']}
 
+    def board_priorities(self):
+        """Issue number -> the board's Priority value; empty without a board."""
+        project = self.config.get('project')
+        if not project:
+            return {}
+        try:
+            items = gh_json('project', 'item-list', str(project['number']), '--owner', project['owner'],
+                            '-L', '1000', '--format', 'json')['items']
+        except (subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+            return {}  # no project scope or no board: labels still rank
+        return {i['content']['number']: i.get('priority') for i in items
+                if i.get('content', {}).get('type') == 'Issue' and i['content'].get('repository') == self.name}
+
     def claimed_at(self, number):
         times = run('gh', 'api', f'repos/{self.name}/issues/{number}/events', '--paginate', '--jq',
                     f'.[] | select(.event == "labeled" and .label.name == "{CLAIMED}") | .created_at').split()
@@ -336,8 +351,8 @@ def cmd_next(repo, _args):
     untriaged = sorted(i['number'] for i in issues if not names(i) & {AFK, PROPOSED, OWNER_LANE})
     if untriaged:
         print('untriaged: ' + ' '.join(f'#{n}' for n in untriaged))
-    ready = None
-    for issue in sorted((i for i in issues if AFK in names(i)), key=rank):
+    ready, board = None, repo.board_priorities()
+    for issue in sorted((i for i in issues if AFK in names(i)), key=lambda i: rank(i, board)):
         reason = ineligible(issue, completed, issue['number'] in with_pr, tracked, repo.config)
         if reason:
             print(f"skipped: #{issue['number']} {reason}")
