@@ -97,7 +97,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`spec`](plugins/common/workflow/skills/spec/SKILL.md) | Model | 01 Define, 02 Spec: Open the issue, grill against project context, write acceptance criteria, estimate and scope packet, decide the lane. |
 | | [`plan`](plugins/common/workflow/skills/plan/SKILL.md) | Model | 03 Plan: Post a repository-grounded plan on the issue; approval before execution. |
 | | [`ship`](plugins/common/workflow/skills/ship/SKILL.md) | Model | 06 Ship: Base-branch health after merge, revert AFK breakage, confirm shipped issues. |
-| | [`improve`](plugins/common/workflow/skills/improve/SKILL.md) | Model | 07 Improve: Turn friction into lessons for skills, agent rules, docs or assets. |
+| | [`improve`](plugins/common/workflow/skills/improve/SKILL.md) | Model | 07 Improve: Turn friction into lesson PRs for skills, agent rules, docs or assets. |
 | | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | User (scheduler invokes by name) | Unattended Delivery: Runs the cycle for one approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
 | | [`agent-review`](plugins/common/workflow/skills/agent-review/SKILL.md) | User (scheduler invokes by name) | Agent Review: Review each open PR per head commit, hand critical PRs to the owner, merge reviewed AFK PRs, wake the runner. |
 | **`filipkrawiec-authoring`** | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring affirmative state machines, output contracts, and token budgets. |
