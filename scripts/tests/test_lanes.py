@@ -92,6 +92,7 @@ class EligibilityTests(unittest.TestCase):
         cases = [
             (issue(labels=("lane:proposed",)), "not lane:afk"),
             (issue(labels=("lane:afk", "type:epic")), "epic"),
+            (issue(labels=("lane:afk", "type:task")), "task"),
             (issue(labels=("lane:afk", "state:claimed")), "claimed"),
             (issue(labels=("lane:afk", "state:started")), "started in another session"),
             (issue(body='```scope\n{"paths": ["docs/"]}\n```'), "no acceptance criteria"),

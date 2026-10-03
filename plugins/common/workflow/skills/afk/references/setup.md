@@ -9,8 +9,7 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `repo` | yes | `owner/name` on GitHub. |
 | `owner` | no | Login whose PRs may auto-merge; defaults to the repository owner. |
 | `base` | no | Base branch; default `main`. |
-| `project` | no | `{"owner": "<login>", "number": <n>}`: the issue board, for stories, tasks and bugs. |
-| `epicProject` | no | Same shape: the epic board, for `type:epic` issues only. |
+| `project` | no | `{"owner": "<login>", "number": <n>}`: the board whose cards the skills and its workflows move, epics included. |
 | `protected` | no | Regexes for paths agents may not change in AFK work (adds to every top-level dot-directory, `AGENTS.md`, justfile and Makefile). Add the host's own instruction file here when it has one besides `AGENTS.md`. |
 | `alwaysInScope` | no | Path prefixes every AFK change may touch, e.g. the user guide the project rules require updating. |
 | `chores` | no | Regexes of paths that auto-merge on green checks (adds to `^docs/`, `\.md$`, test directories). |
@@ -25,7 +24,6 @@ Minimal example:
 {
   "repo": "acme/app",
   "project": {"owner": "acme", "number": 3},
-  "epicProject": {"owner": "acme", "number": 4},
   "protected": ["^infra/"],
   "alwaysInScope": ["docs/"],
   "guard": [{"pattern": "\\bnpm\\s+run\\s+deploy\\b", "reason": "Deploys run from CI."}]
@@ -37,7 +35,7 @@ Minimal example:
 | Step | Command or setting |
 | --- | --- |
 | Labels | `gh label create <name> --color <hex> --description "<text>"` for each label below that the repository lacks. |
-| Boards | Optional. Give each Project's Status field its columns in [board.md](../../../references/board.md) (the issue board five, the epic board three), turn on the workflows listed for it, and show the labels on cards in the board view's field settings. On a board with other Status options, add the new ones, move each card to its state's column, then delete the old options, so no card loses its Status. When epics already sit on the issue board, take their cards off it and add each open epic to the epic board with `gh project item-add`: auto-add only sees issues created or edited after it is on. The token that runs agents needs the `project` scope: `gh auth refresh -s project`. |
+| Board | Optional. Give the Project's Status field the columns in [board.md](../../../references/board.md), turn on the workflows it lists, add its Priority field and create its views (Views there). On a board with other Status options, add the new ones, move each card to its state's column, then delete the old options, so no card loses its Status. The token that runs agents needs the `project` scope: `gh auth refresh -s project`. |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
 | Rules | Add to the project's agent rules: "New work starts with `spec`, which opens the issue and decides its lane", "Working on an issue: follow Start here in the workflow plugin's `references/board.md`" and a link to the project's workflow page. |
@@ -53,9 +51,9 @@ Minimal example:
 | `state:started` | Another session is working on it now. |
 | `state:parked` | An AFK run handed it back with a question. |
 | `review:owner` | PR: it waits for the owner (agent review is done, or it carries a lesson); `lanes.py automerge` and `merge-reviewed` leave it. |
-| `type:epic` | Umbrella outcome with sub-issues. |
+| `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | The issue's type, exactly one per issue; Issue types in [board.md](../../../references/board.md) says which. |
 
-Add the project's `type:` labels. Priority, the board's columns, the commands that move a card and the claim, park and tidy steps are in [board.md](../../../references/board.md).
+Priority, the board's columns, the commands that move a card and the claim, park and tidy steps are in [board.md](../../../references/board.md).
 
 With `agentReview`, the reviewer adds `review:owner` to a PR when it hands it to the owner (passed but needs the owner, or out of review rounds) and removes it when it asks for fixes again.
 
@@ -68,7 +66,7 @@ Preflight, stop and report on any failure:
 1. The working directory is inside <owner>/<repo>.
 2. `gh pr merge --help` is refused by the lanes guard; if it prints help,
    the guard is not loaded, so stop.
-3. For each board in lanes.json, `gh project view <number> --owner <owner>`
+3. With a board in lanes.json, `gh project view <number> --owner <owner>`
    succeeds; otherwise the token lacks the `project` scope, so stop.
 Then invoke the `afk` skill by name (it is user-invoked only, so owner sessions
 never load it). The owner is away: park instead of asking. Never
