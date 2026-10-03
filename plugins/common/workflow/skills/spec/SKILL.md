@@ -22,12 +22,12 @@ Every issue this skill writes or lanes is checked against these six. Phase 3 gri
 | Negotiable | The description states the outcome and its constraints; implementation steps are left to `plan`. |
 | Valuable | Merging it alone gives a user a behaviour or the owner a named benefit (a removed risk, a faster build); a layer that pays off only with another issue fails. |
 | Estimable | It carries an estimate (S, M or L) and one sentence on the main unknown behind it. |
-| Small | The estimate is S or M. An L is split into vertical slices: with the owner, on their yes, create one issue per slice through phases 1 to 3, link each as a sub-issue and label the parent `type:epic`; unattended, propose the slices in the triage comment. |
+| Small | The estimate is S or M. An L is split into vertical slices: with the owner, on their yes, create one issue per slice through phases 1 to 3, link each as a sub-issue and label the parent `type:epic`, then move its card from the issue board to the epic board's In progress (Epic board in [board.md](../../references/board.md)); unattended, propose the slices in the triage comment. |
 | Testable | Each acceptance criterion can be proven by a test or by a render the issue describes. |
 
 ## 1. Define
 
-Skip to phase 2 when the issue exists. Otherwise capture the problem and the outcome that shows it is solved, why it matters now, candidate non-goals, risks, dependencies, and open questions marked as open. Search open and closed issues for the same intent (`gh issue list -s all --search "<keywords>"`, with `-R <owner/repo>` when the caller names another repository; `gh issue create` takes the same flag); when one matches, offer to update it instead. Create the issue with the project's template: title `<type>(<area>): <outcome>`, the intent as the description, the open questions as a list, a `type:` label, a priority when the owner gave one (Priority in [board.md](../../references/board.md)), and `lane:owner`. Card: Backlog (the board adds it there).
+Skip to phase 2 when the issue exists. Otherwise capture the problem and the outcome that shows it is solved, why it matters now, candidate non-goals, risks, dependencies, and open questions marked as open. Search open and closed issues for the same intent (`gh issue list -s all --search "<keywords>"`, with `-R <owner/repo>` when the caller names another repository; `gh issue create` takes the same flag); when one matches, offer to update it instead. Create the issue with the project's template: title `<type>(<area>): <outcome>`, the intent as the description, the open questions as a list, a `type:` label, a priority when the owner gave one (Priority in [board.md](../../references/board.md)), and `lane:owner`. Card: Backlog (its board adds it there: the epic board for `type:epic`, the issue board for the rest).
 
 **Exit gate:** the issue URL, with intent and open questions.
 

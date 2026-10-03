@@ -1,12 +1,12 @@
 # Delivery Board
 
-The optional Project board, named by lanes.json's `project`, has five Status columns that say what a card waits for: Backlog, Todo, In progress, Review and Done. Several phases share a column, and 06 Ship and 07 Improve run after the merge, so they leave issue comments instead. Without a board, skip every card move. Lanes stay labels on the cards.
+Two optional Project boards split the work. The issue board, named by lanes.json's `project`, holds every issue except epics (stories, tasks, bugs) in five Status columns that say what a card waits for: Backlog, Todo, In progress, Review and Done. Several phases share a column, and 06 Ship and 07 Improve run after the merge, so they leave issue comments instead. The epic board, named by `epicProject`, holds only `type:epic` issues (Epic board below). Without a board, skip its card moves. Lanes stay labels on the cards.
 
 ## Start here
 
 Working on an issue, attended or not:
 
-1. Find its state: the first row of States below that matches it. With a board, move its card to that row's column when it sits elsewhere.
+1. Find its state: the first row of States below that matches it. With a board, move its card to that row's column when it sits elsewhere. A `type:epic` issue is never worked here: its column comes from Epic board below.
 2. In Ready: claim it only when `lanes.py next` prints it; with the owner present, start it on their go-ahead (Issue steps below).
 3. Invoke the state's skill and finish its exit gate. 04 Execute ends with the Open PR step.
 4. Repeat from 1 until the issue waits on someone else: Ready with `lane:owner`, in 05 Review (the owner or `agent-review` merges it), or closed. After a merge, `ship` and `improve` pick it up again.
@@ -37,7 +37,7 @@ GitHub's built-in project workflows make most moves. Turn these on once in the b
 
 | Workflow | Setting |
 | --- | --- |
-| Auto-add to project | This repository, filter `is:issue`. |
+| Auto-add to project | This repository, filter `is:issue -label:type:epic`. |
 | Item added to project | Issues only; Status Backlog. |
 | Pull request linked to issue | Status Review (a draft PR counts too). |
 | Item closed | Status Done. |
@@ -45,7 +45,7 @@ GitHub's built-in project workflows make most moves. Turn these on once in the b
 
 The skills make the remaining moves: the Card column of Issue steps below, `spec`'s move to Todo, and Start here's step 1 wherever a card sits in the wrong column (a reopened issue without a spec, a PR closed unmerged, a workflow that is off).
 
-`<P>` is lanes.json's `project.number` and `<O>` its `project.owner`.
+`<P>` is lanes.json's `project.number` and `<O>` its `project.owner`; for an epic, use `epicProject` instead.
 
 ```bash
 gh project view <P> --owner <O> --format json --jq .id                      # project id
@@ -56,9 +56,31 @@ gh project item-list <P> --owner <O> -L 1000 --format json \
 gh project item-add <P> --owner <O> --url <issue-url> --format json --jq .id  # add it when missing; re-read its Status up to 3 times for the board's Backlog, then set the column (report a workflow that never set it)
 gh project item-edit --project-id <project-id> --id <item-id> \
   --field-id <status-field-id> --single-select-option-id <column-option-id>
+gh project item-delete <P> --owner <O> --id <item-id>                         # take a card off a board
 ```
 
 The token needs the `project` scope (`gh auth refresh -s project`). Read the ids once per session and reuse them. When the Status field lacks one of the five columns, report it to the owner, who sets the options once in the board's settings.
+
+## Epic board
+
+The epic board's Status field has three columns, because an epic is never claimed and never gets its own PR: Backlog, In progress and Done. An issue becomes an epic when it gets the `type:epic` label; its slices are its sub-issues (`gh api repos/<owner/repo>/issues/<N>/sub_issues --paginate --jq '.[] | {number, state, state_reason}'`).
+
+| The epic is here when | Column |
+| --- | --- |
+| It is open with no sub-issues. | Backlog |
+| It is open with sub-issues. | In progress |
+| It is closed. | Done |
+
+Turn on these workflows in the epic board's settings:
+
+| Workflow | Setting |
+| --- | --- |
+| Auto-add to project | This repository, filter `is:issue label:type:epic`. |
+| Item added to project | Issues only; Status Backlog. |
+| Item closed | Status Done. |
+| Item reopened | Status In progress (a reopened epic already has sub-issues). |
+
+When an issue gets `type:epic`, `item-delete` its card from the issue board and `item-add` it to the epic board when it is missing there (auto-add may not have run yet). `spec` moves the epic to In progress when it links the first sub-issue, and `ship` closes it once every sub-issue has shipped.
 
 ## Priority
 

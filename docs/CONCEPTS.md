@@ -71,7 +71,7 @@ plugins/
 
 ## 4. The Delivery Cycle
 
-Delivery follows seven phases, each with a skill. The optional Project board doesn't mirror them: its standard columns say what a card waits for, and GitHub's built-in board workflows make most moves.
+Delivery follows seven phases, each with a skill. The optional issue board (stories, tasks, bugs) doesn't mirror them: its standard columns say what a card waits for, and GitHub's built-in board workflows make most moves. Epics live on a separate, optional epic board.
 
 ```
  ┌───────────┐   ┌─────────┐   ┌─────────┐   ┌────────────┐
