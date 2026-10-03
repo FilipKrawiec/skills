@@ -79,7 +79,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 * **Affirmative State Machines**: Skills are structured as unidirectional linear phases with explicit affirmative actions and concrete exit gates, with prohibitions kept to safety boundaries.
 * **Zero-Waste Output Economics**: Every skill phase defines explicit output envelopes, high-density token efficiency, and code anti-overengineering (Rule of Two Adapters).
 * **Provider-Neutral & Sovereign Git-Native**: Pure Git clone/submodule distribution across harnesses (Claude Code, Codex, Antigravity) without SaaS registry dependencies.
-* **Delivery Cycle**: Seven phases (01 Define to 07 Improve), one skill each, on optional Project boards (one for stories, tasks and bugs, one for epics) with standard columns that GitHub's built-in workflows mostly move.
+* **Delivery Cycle**: Seven phases (01 Define to 07 Improve), one skill each, on an optional Project board (epics only in an Epics view, every other issue in a Board view) with standard columns that GitHub's built-in workflows mostly move.
 * **Issue Lanes & AFK Delivery**: `spec` gives every GitHub issue one lane (`lane:afk`, `lane:proposed`, `lane:owner`); `afk` carries owner-approved issues through plan, execute, review, ship and improve unattended, one at a time, behind a guard hook that keeps merges, releases and settings with the owner.
 * **Deterministic Verification**: `scripts/project-verify.py` acts as a zero-dependency, deterministic gate for code verification and git hygiene.
 

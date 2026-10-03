@@ -1,14 +1,14 @@
 # Delivery Board
 
-Two optional Project boards split the work. The issue board, named by lanes.json's `project`, holds every issue except epics (stories, tasks, bugs) in five Status columns that say what a card waits for: Backlog, Todo, In progress, Review and Done. Several phases share a column, and 06 Ship and 07 Improve run after the merge, so they leave issue comments instead. The epic board, named by `epicProject`, holds only `type:epic` issues (Epic board below). Without a board, skip its card moves. Lanes stay labels on the cards.
+The optional board is one GitHub Project, lanes.json's `project`, holding every issue of the repository and nothing else. Its five Status columns say what a card waits for: Backlog, Todo, In progress, Review and Done. Several phases share a column, and 06 Ship and 07 Improve run after the merge, so they leave issue comments instead. Epics share the board and use three of the columns; two views keep them apart from the rest (Views below). Lanes and types stay labels. Without a board, skip every card move.
 
 ## Start here
 
 Working on an issue, attended or not:
 
-1. Find its state: the first row of States below that matches it. With a board, move its card to that row's column when it sits elsewhere. A `type:epic` issue is never worked here: its column comes from Epic board below.
+1. Find its state: the first row of States below that matches it. With a board, move its card to that row's column when it sits elsewhere. A `type:epic` issue is never worked here: its column comes from Epics below.
 2. In Ready: claim it only when `lanes.py next` prints it; with the owner present, start it on their go-ahead (Issue steps below).
-3. Invoke the state's skill and finish its exit gate. 04 Execute ends with the Open PR step.
+3. Invoke the state's skill and finish its exit gate. 04 Execute ends with the Open PR step; for a `type:task` it ends with the finding recorded and the issue closed (Issue types below).
 4. Repeat from 1 until the issue waits on someone else: Ready with `lane:owner`, in 05 Review (the owner or `agent-review` merges it), or closed. After a merge, `ship` and `improve` pick it up again.
 
 To pause or hand off, release it.
@@ -37,15 +37,15 @@ GitHub's built-in project workflows make most moves. Turn these on once in the b
 
 | Workflow | Setting |
 | --- | --- |
-| Auto-add to project | This repository, filter `is:issue -label:type:epic`. |
+| Auto-add to project | This repository, filter `is:issue`. |
 | Item added to project | Issues only; Status Backlog. |
 | Pull request linked to issue | Status Review (a draft PR counts too). |
 | Item closed | Status Done. |
 | Item reopened | Status Todo. |
 
-The skills make the remaining moves: the Card column of Issue steps below, `spec`'s move to Todo, and Start here's step 1 wherever a card sits in the wrong column (a reopened issue without a spec, a PR closed unmerged, a workflow that is off).
+The skills make the remaining moves: the Card column of Issue steps below, `spec`'s move to Todo, and Start here's step 1 wherever a card sits in the wrong column (a reopened issue without a spec, a PR closed unmerged, a workflow that is off). A pull request card is removed from the board (`gh project item-delete <P> --owner <O> --id <item-id>`); the PR itself stays, and its issue's card shows it.
 
-`<P>` is lanes.json's `project.number` and `<O>` its `project.owner`; for an epic, use `epicProject` instead.
+`<P>` is lanes.json's `project.number` and `<O>` its `project.owner`.
 
 ```bash
 gh project view <P> --owner <O> --format json --jq .id                      # project id
@@ -56,14 +56,36 @@ gh project item-list <P> --owner <O> -L 1000 --format json \
 gh project item-add <P> --owner <O> --url <issue-url> --format json --jq .id  # add it when missing; re-read its Status up to 3 times for the board's Backlog, then set the column (report a workflow that never set it)
 gh project item-edit --project-id <project-id> --id <item-id> \
   --field-id <status-field-id> --single-select-option-id <column-option-id>
-gh project item-delete <P> --owner <O> --id <item-id>                         # take a card off a board
 ```
 
 The token needs the `project` scope (`gh auth refresh -s project`). Read the ids once per session and reuse them. When the Status field lacks one of the five columns, report it to the owner, who sets the options once in the board's settings.
 
-## Epic board
+## Views
 
-The epic board's Status field has three columns, because an epic is never claimed and never gets its own PR: Backlog, In progress and Done. An issue becomes an epic when it gets the `type:epic` label; its slices are its sub-issues (`gh api repos/<owner/repo>/issues/<N>/sub_issues --paginate --jq '.[] | {number, state, state_reason}'`).
+A Project's Status options and workflows serve all its items, so epics stay on this board and views, not a second Project, keep them apart. The owner creates the views once, in this order, so the first is the default:
+
+| View | Layout | Filter | Fields shown |
+| --- | --- | --- | --- |
+| Epics | Table | `label:"type:epic" -status:Done` | Title, Status, Priority, Sub-issues progress, Parent issue |
+| Board | Board by Status | `-label:"type:epic"` | Title, Labels, Priority, Parent issue, Linked pull requests |
+
+Clearing `-status:Done` in the filter bar shows finished epics without saving the view.
+
+## Issue types
+
+Every issue carries exactly one type label, and its title starts with that type's title type: `<type>(<area>): <outcome>`. The PR takes the issue's title, so its squash commit is a conventional commit.
+
+| Label | The issue is | Title type | It ends with |
+| --- | --- | --- | --- |
+| `type:story` | New or changed behaviour a user can see. | `feat` | A merged PR. |
+| `type:bug` | A fix for behaviour that differs from what is specified. | `fix` | A merged PR. |
+| `type:chore` | A code change with no new behaviour: docs, tests, dependencies, CI, refactoring or platform. | `chore`, `docs`, `test`, `ci`, `refactor` or `perf` | A merged PR. |
+| `type:task` | Work that ends in a finding or a setting rather than a code change, usually a spike. Never AFK: the owner judges the finding. | `task` | Its finding on the issue (a comment, an ADR or follow-up issues), then closed. |
+| `type:epic` | The parent of the other four. | The title type of most of its slices | Every sub-issue shipped. |
+
+## Epics
+
+Only an epic has sub-issues: an issue that needs slices gets `type:epic`, and every piece of its remaining work is a sub-issue, because `ship` closes it once all of them have shipped. List them with `gh api repos/<owner/repo>/issues/<N>/sub_issues --paginate --jq '.[] | {number, state, state_reason}'`. An epic is never claimed and never gets its own PR, so its card uses three of the columns:
 
 | The epic is here when | Column |
 | --- | --- |
@@ -71,20 +93,23 @@ The epic board's Status field has three columns, because an epic is never claime
 | It is open with sub-issues. | In progress |
 | It is closed. | Done |
 
-Turn on these workflows in the epic board's settings:
-
-| Workflow | Setting |
-| --- | --- |
-| Auto-add to project | This repository, filter `is:issue label:type:epic`. |
-| Item added to project | Issues only; Status Backlog. |
-| Item closed | Status Done. |
-| Item reopened | Status In progress (a reopened epic already has sub-issues). |
-
-When an issue gets `type:epic`, `item-delete` its card from the issue board and `item-add` it to the epic board when it is missing there (auto-add may not have run yet). `spec` moves the epic to In progress when it links the first sub-issue, and `ship` closes it once every sub-issue has shipped.
+`spec` moves the epic to In progress when it links the first sub-issue. Item closed moves it to Done; Item reopened sets Todo, so Start here's step 1 moves a reopened epic back to In progress.
 
 ## Priority
 
-With a board, priority is its single-select Priority field with options P0, P1 and P2, set like Status: read the field with `select(.name=="Priority")` and pass its option id to `gh project item-edit`. `lanes.py next` ranks AFK issues by it, then by age. Without a board, use `priority:P0` to `priority:P2` labels instead. When the board has no Priority field, report it to the owner, who adds it once.
+With a board, every open issue has a value in its single-select Priority field (P0, P1, P2), set like Status: read the field with `select(.name=="Priority")` and pass its option id to `gh project item-edit`. A slice without one takes its epic's. `lanes.py next` ranks AFK issues by it, then by age. Without a board, use `priority:P0` to `priority:P2` labels instead. When the board has no Priority field, report it to the owner, who adds it once.
+
+## Issue form
+
+`spec` brings each issue it touches into this form, making the agent's fixes and reporting the owner's.
+
+| Check | Holds when | Fix |
+| --- | --- | --- |
+| Type | Exactly one type label, and the title as Issue types says, stating what is true afterwards rather than an instruction. | Agent: the label from the issue's content, the title reworded from its own outcome. Owner: a type the content leaves open. |
+| Lane | An open issue has exactly one lane label; a closed one has no `state:` label. | Agent, by Triage in `spec`. |
+| Sections | Acceptance criteria, estimate and scope packet, once written, sit under the headings the project's issue form writes (`### Acceptance criteria`, `### Estimate`, a ```` ```scope ```` block), so the States checks find them; a task's acceptance criteria name its finding. | Agent: rename a heading, content unchanged. Missing content is 02 Spec. |
+| Parent | A slice is a sub-issue of its epic; an issue with sub-issues is an epic. | Owner: whether a parent becomes an epic or its sub-issues move. |
+| Card | With a board: each open issue has one card in its state's column with a Priority, a closed issue's card is in Done, and no pull request has a card. | Agent: add or move a card, remove a pull request card, give a slice its epic's Priority. Owner: any other Priority. |
 
 ## Issue steps
 

@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Use when a need or bug report should become a GitHub issue, an issue needs acceptance criteria, a scope packet and a lane (01 Define, 02 Spec), or issues need triage into lanes.
+description: Use when a need or bug report should become a GitHub issue, an issue needs acceptance criteria, a scope packet and a lane (01 Define, 02 Spec), or issues need triage into lanes or tidying into the standard issue form.
 allowed-tools: Read Bash(gh:*,git:*)
 ---
 
@@ -22,12 +22,12 @@ Every issue this skill writes or lanes is checked against these six. Phase 3 gri
 | Negotiable | The description states the outcome and its constraints; implementation steps are left to `plan`. |
 | Valuable | Merging it alone gives a user a behaviour or the owner a named benefit (a removed risk, a faster build); a layer that pays off only with another issue fails. |
 | Estimable | It carries an estimate (S, M or L) and one sentence on the main unknown behind it. |
-| Small | The estimate is S or M. An L is split into vertical slices: with the owner, on their yes, create one issue per slice through phases 1 to 3, link each as a sub-issue and label the parent `type:epic`, then move its card from the issue board to the epic board's In progress (Epic board in [board.md](../../references/board.md)); unattended, propose the slices in the triage comment. |
+| Small | The estimate is S or M. An L is split into vertical slices: with the owner, on their yes, create one issue per slice through phases 1 to 3, link each as a sub-issue and label the parent `type:epic`, then move its card to In progress (Epics in [board.md](../../references/board.md)); unattended, propose the slices in the triage comment. |
 | Testable | Each acceptance criterion can be proven by a test or by a render the issue describes. |
 
 ## 1. Define
 
-Skip to phase 2 when the issue exists. Otherwise capture the problem and the outcome that shows it is solved, why it matters now, candidate non-goals, risks, dependencies, and open questions marked as open. Search open and closed issues for the same intent (`gh issue list -s all --search "<keywords>"`, with `-R <owner/repo>` when the caller names another repository; `gh issue create` takes the same flag); when one matches, offer to update it instead. Create the issue with the project's template: title `<type>(<area>): <outcome>`, the intent as the description, the open questions as a list, a `type:` label, a priority when the owner gave one (Priority in [board.md](../../references/board.md)), and `lane:owner`. Card: Backlog (its board adds it there: the epic board for `type:epic`, the issue board for the rest).
+Skip to phase 2 when the issue exists. Otherwise capture the problem and the outcome that shows it is solved, why it matters now, candidate non-goals, risks, dependencies, and open questions marked as open. Search open and closed issues for the same intent (`gh issue list -s all --search "<keywords>"`, with `-R <owner/repo>` when the caller names another repository; `gh issue create` takes the same flag); when one matches, offer to update it instead. Create the issue with the project's template: title `<type>(<area>): <outcome>`, the intent as the description, the open questions as a list, one type label (Issue types in [board.md](../../references/board.md)), a priority when the owner gave one (Priority in [board.md](../../references/board.md)), and `lane:owner`. Card: Backlog (the board adds it there).
 
 **Exit gate:** the issue URL, with intent and open questions.
 
@@ -59,10 +59,11 @@ An issue is AFK-ready when all five hold:
 | Bounded | The scope packet lists the paths it may change and every dependency. |
 | Decided | No open product, design or model question; new UI has a mockup or names an existing pattern. |
 | Unprivileged | Nothing protected by the project's lanes.json: automation, agent instructions, infrastructure, credentials, settings, releases, deploys. |
-| Single | Not `type:epic`; no open PR, `state:claimed` or `state:started`. |
+| Single | A story, chore or bug, not `type:epic` or `type:task`; no open PR, `state:claimed` or `state:started`. |
 
 - With the owner: offer your check result as a recommendation and ask whether it is AFK. Yes → `lane:afk`; no → `lane:owner`; unsure → `lane:proposed`.
-- Triage (unattended, or issues without a lane from `gh issue list --search "-label:lane:afk -label:lane:proposed -label:lane:owner"`): all checks pass → `lane:proposed`, any fails → `lane:owner`; add a missing `type:` label and priority; comment once with the failing checks and what would fix each, ending a proposal with "Apply `lane:afk` to let an AFK run take it."
+- Triage (unattended, or issues without a lane from `gh issue list --search "-label:lane:afk -label:lane:proposed -label:lane:owner"`): all checks pass → `lane:proposed`, any fails → `lane:owner`; apply the Issue form in [board.md](../../references/board.md); comment once with the failing checks and what would fix each, ending a proposal with "Apply `lane:afk` to let an AFK run take it."
+- Tidy (when asked): apply the Issue form to every open issue and every card on the board in one pass, listing the owner's fixes in the output instead of commenting.
 - When merged PRs already meet the acceptance criteria, comment the evidence (one PR link per criterion) and propose closing; the owner closes.
 - With a board, move each issue that now has acceptance criteria, a scope packet and a lane to Todo.
 

@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 AFK, PROPOSED, OWNER_LANE, CLAIMED = 'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed'
-STARTED, OWNER_REVIEW, EPIC = 'state:started', 'review:owner', 'type:epic'
+STARTED, OWNER_REVIEW, EPIC, TASK = 'state:started', 'review:owner', 'type:epic', 'type:task'
 PRIORITIES = ('P0', 'P1', 'P2')
 DEPENDABOT = {'app/dependabot', 'dependabot[bot]'}
 
@@ -103,6 +103,8 @@ def ineligible(issue, completed, pr_open, tracked, config):
         return 'not lane:afk'
     if EPIC in labels:
         return 'epic'
+    if TASK in labels:
+        return 'task'
     if pr_open:
         return 'has an open PR'
     if CLAIMED in labels:

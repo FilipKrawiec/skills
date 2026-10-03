@@ -71,7 +71,7 @@ plugins/
 
 ## 4. The Delivery Cycle
 
-Delivery follows seven phases, each with a skill. The optional issue board (stories, tasks, bugs) doesn't mirror them: its standard columns say what a card waits for, and GitHub's built-in board workflows make most moves. Epics live on a separate, optional epic board.
+Delivery follows seven phases, each with a skill. The optional board doesn't mirror them: its standard columns say what a card waits for, and GitHub's built-in board workflows make most moves. Epics sit on the same board and use three of its columns; an Epics view shows only them and the Board view every other card.
 
 ```
  ┌───────────┐   ┌─────────┐   ┌─────────┐   ┌────────────┐
@@ -103,7 +103,7 @@ Whenever a new worktree is created or new work is started, the original main bra
 
 ### Issue Lanes & AFK Delivery
 
-GitHub Issues are the only queue. A repository opts in with `.github/lanes.json`.
+GitHub Issues are the only queue. A repository opts in with `.github/lanes.json`. Every issue carries one type: `type:story` (behaviour a user sees), `type:bug`, `type:chore` (a code change with no new behaviour), `type:task` (a spike or setting that ends in a finding, never AFK) or `type:epic`, the parent of the others.
 
 | Lane | Meaning | Applied by |
 | :--- | :--- | :--- |
