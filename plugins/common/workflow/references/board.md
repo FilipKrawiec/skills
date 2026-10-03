@@ -6,7 +6,7 @@ Two optional Project boards split the work. The issue board, named by lanes.json
 
 Working on an issue, attended or not:
 
-1. Find its state: the first row of States below that matches it. With a board, move its card to that row's column when it sits elsewhere.
+1. Find its state: the first row of States below that matches it. With a board, move its card to that row's column when it sits elsewhere. A `type:epic` issue is never worked here: its column comes from Epic board below.
 2. In Ready: claim it only when `lanes.py next` prints it; with the owner present, start it on their go-ahead (Issue steps below).
 3. Invoke the state's skill and finish its exit gate. 04 Execute ends with the Open PR step.
 4. Repeat from 1 until the issue waits on someone else: Ready with `lane:owner`, in 05 Review (the owner or `agent-review` merges it), or closed. After a merge, `ship` and `improve` pick it up again.
@@ -63,7 +63,7 @@ The token needs the `project` scope (`gh auth refresh -s project`). Read the ids
 
 ## Epic board
 
-The epic board's Status field has three columns, because an epic is never claimed and never gets its own PR: Backlog, In progress and Done. An issue becomes an epic when it gets the `type:epic` label; its slices are its sub-issues (`gh api repos/<owner/repo>/issues/<N>/sub_issues --jq '.[] | {number, state}'`).
+The epic board's Status field has three columns, because an epic is never claimed and never gets its own PR: Backlog, In progress and Done. An issue becomes an epic when it gets the `type:epic` label; its slices are its sub-issues (`gh api repos/<owner/repo>/issues/<N>/sub_issues --paginate --jq '.[] | {number, state, state_reason}'`).
 
 | The epic is here when | Column |
 | --- | --- |
@@ -78,9 +78,9 @@ Turn on these workflows in the epic board's settings:
 | Auto-add to project | This repository, filter `is:issue label:type:epic`. |
 | Item added to project | Issues only; Status Backlog. |
 | Item closed | Status Done. |
-| Item reopened | Status In progress. |
+| Item reopened | Status In progress (a reopened epic already has sub-issues). |
 
-When an issue on the issue board gets `type:epic`, take its card off the issue board; the epic board's auto-add picks it up. `spec` moves the epic to In progress when it links the first sub-issue, and `ship` closes it once every sub-issue has shipped.
+When an issue gets `type:epic`, `item-delete` its card from the issue board and `item-add` it to the epic board when it is missing there (auto-add may not have run yet). `spec` moves the epic to In progress when it links the first sub-issue, and `ship` closes it once every sub-issue has shipped.
 
 ## Priority
 

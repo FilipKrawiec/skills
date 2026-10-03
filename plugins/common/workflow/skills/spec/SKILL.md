@@ -22,7 +22,7 @@ Every issue this skill writes or lanes is checked against these six. Phase 3 gri
 | Negotiable | The description states the outcome and its constraints; implementation steps are left to `plan`. |
 | Valuable | Merging it alone gives a user a behaviour or the owner a named benefit (a removed risk, a faster build); a layer that pays off only with another issue fails. |
 | Estimable | It carries an estimate (S, M or L) and one sentence on the main unknown behind it. |
-| Small | The estimate is S or M. An L is split into vertical slices: with the owner, on their yes, create one issue per slice through phases 1 to 3, link each as a sub-issue and label the parent `type:epic`, then move its card to the epic board's In progress (Epic board in [board.md](../../references/board.md)); unattended, propose the slices in the triage comment. |
+| Small | The estimate is S or M. An L is split into vertical slices: with the owner, on their yes, create one issue per slice through phases 1 to 3, link each as a sub-issue and label the parent `type:epic`, then move its card from the issue board to the epic board's In progress (Epic board in [board.md](../../references/board.md)); unattended, propose the slices in the triage comment. |
 | Testable | Each acceptance criterion can be proven by a test or by a render the issue describes. |
 
 ## 1. Define
