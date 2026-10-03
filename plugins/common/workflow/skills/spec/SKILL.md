@@ -27,7 +27,7 @@ Every issue this skill writes or lanes is checked against these six. Phase 3 gri
 
 ## 1. Define
 
-Skip to phase 2 when the issue exists. Otherwise capture the problem and the outcome that shows it is solved, why it matters now, candidate non-goals, risks, dependencies, and open questions marked as open. Search open and closed issues for the same intent (`gh issue list -s all --search "<keywords>"`, with `-R <owner/repo>` when the caller names another repository; `gh issue create` takes the same flag); when one matches, offer to update it instead. Create the issue with the project's template: title `<type>(<area>): <outcome>`, the intent as the description, the open questions as a list, a `type:` label, `priority:` when the owner gave one, and `lane:owner`. Card: Backlog (the board adds it there).
+Skip to phase 2 when the issue exists. Otherwise capture the problem and the outcome that shows it is solved, why it matters now, candidate non-goals, risks, dependencies, and open questions marked as open. Search open and closed issues for the same intent (`gh issue list -s all --search "<keywords>"`, with `-R <owner/repo>` when the caller names another repository; `gh issue create` takes the same flag); when one matches, offer to update it instead. Create the issue with the project's template: title `<type>(<area>): <outcome>`, the intent as the description, the open questions as a list, a `type:` label, a priority when the owner gave one (Priority in [board.md](../../references/board.md)), and `lane:owner`. Card: Backlog (the board adds it there).
 
 **Exit gate:** the issue URL, with intent and open questions.
 
@@ -62,7 +62,7 @@ An issue is AFK-ready when all five hold:
 | Single | Not `type:epic`; no open PR, `state:claimed` or `state:started`. |
 
 - With the owner: offer your check result as a recommendation and ask whether it is AFK. Yes → `lane:afk`; no → `lane:owner`; unsure → `lane:proposed`.
-- Triage (unattended, or issues without a lane from `gh issue list --search "-label:lane:afk -label:lane:proposed -label:lane:owner"`): all checks pass → `lane:proposed`, any fails → `lane:owner`; add missing `type:` and `priority:` labels; comment once with the failing checks and what would fix each, ending a proposal with "Apply `lane:afk` to let an AFK run take it."
+- Triage (unattended, or issues without a lane from `gh issue list --search "-label:lane:afk -label:lane:proposed -label:lane:owner"`): all checks pass → `lane:proposed`, any fails → `lane:owner`; add a missing `type:` label and priority; comment once with the failing checks and what would fix each, ending a proposal with "Apply `lane:afk` to let an AFK run take it."
 - When merged PRs already meet the acceptance criteria, comment the evidence (one PR link per criterion) and propose closing; the owner closes.
 - With a board, move each issue that now has acceptance criteria, a scope packet and a lane to Todo.
 

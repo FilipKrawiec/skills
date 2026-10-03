@@ -108,6 +108,28 @@ class EligibilityTests(unittest.TestCase):
                   issue(3, ("lane:afk",)), issue(4, ("lane:afk", "priority:P0"))]
         self.assertEqual([i["number"] for i in sorted(issues, key=lanes.rank)], [4, 9, 5, 3])
 
+    def test_the_board_priority_field_outranks_labels(self) -> None:
+        issues = [issue(5, ("lane:afk", "priority:P0")), issue(9, ("lane:afk",)), issue(3, ("lane:afk",))]
+        board = {5: "P2", 9: "P1", 3: None}
+        self.assertEqual([i["number"] for i in sorted(issues, key=lambda i: lanes.rank(i, board))], [9, 5, 3])
+
+    def test_board_priorities_read_this_repositorys_issues_only(self) -> None:
+        repo = object.__new__(lanes.Repo)
+        repo.config, repo.name = config(project={"owner": OWNER, "number": 3}), f"{OWNER}/app"
+        items = {"items": [
+            {"content": {"type": "Issue", "number": 4, "repository": f"{OWNER}/app"}, "priority": "P0"},
+            {"content": {"type": "Issue", "number": 4, "repository": f"{OWNER}/other"}, "priority": "P2"},
+            {"content": {"type": "PullRequest", "number": 6, "repository": f"{OWNER}/app"}, "priority": "P1"},
+            {"content": {"type": "DraftIssue"}},
+        ]}
+        original, lanes.gh_json = lanes.gh_json, lambda *args: items
+        try:
+            self.assertEqual(repo.board_priorities(), {4: "P0"})
+            repo.config = config()
+            self.assertEqual(repo.board_priorities(), {})
+        finally:
+            lanes.gh_json = original
+
 
 class ScopeTests(unittest.TestCase):
     def test_changes_stay_inside_the_packet_plus_always_in_scope(self) -> None:

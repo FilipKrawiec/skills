@@ -60,6 +60,10 @@ gh project item-edit --project-id <project-id> --id <item-id> \
 
 The token needs the `project` scope (`gh auth refresh -s project`). Read the ids once per session and reuse them. When the Status field lacks one of the five columns, report it to the owner, who sets the options once in the board's settings.
 
+## Priority
+
+With a board, priority is its single-select Priority field with options P0, P1 and P2, set like Status: read the field with `select(.name=="Priority")` and pass its option id to `gh project item-edit`. `lanes.py next` ranks AFK issues by it, then by age. Without a board, use `priority:P0` to `priority:P2` labels instead. When the board has no Priority field, report it to the owner, who adds it once.
+
 ## Issue steps
 
 Every skill uses these same `gh` and `git` steps. `<base>` and `<branchPrefix>` come from lanes.json (defaults `main` and `agent/afk-`); `<slug>` is the issue title in a few lowercase hyphenated words. `<root>` is the main checkout, the parent of `git rev-parse --path-format=absolute --git-common-dir`; worktree paths start there whichever directory the agent is in. Remove a label only when the issue has it.

@@ -53,7 +53,7 @@ Minimal example:
 | `review:owner` | PR: agent review is done; it waits for the owner. |
 | `type:epic` | Umbrella outcome with sub-issues. |
 
-Add the project's `type:` and `priority:P0` to `priority:P2` labels. The board's columns, the commands that move a card and the claim, park and tidy steps are in [board.md](../../../references/board.md).
+Add the project's `type:` labels. Priority, the board's columns, the commands that move a card and the claim, park and tidy steps are in [board.md](../../../references/board.md).
 
 With `agentReview`, the reviewer adds `review:owner` to a PR when it hands it to the owner (passed but needs the owner, or out of review rounds) and removes it when it asks for fixes again.
 
