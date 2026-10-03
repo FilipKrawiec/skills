@@ -203,6 +203,10 @@ class AutomergeTests(unittest.TestCase):
         self.assertIn("1 unresolved review thread", lanes.automerge_refusal(pr(["docs/a.md"], unresolvedThreads=1), CONFIG))
         self.assertIsNone(lanes.automerge_refusal(pr(["docs/a.md"], unresolvedThreads=0), CONFIG))
 
+    def test_a_pr_labelled_for_the_owner_waits_for_the_owner(self) -> None:
+        lesson = pr(["docs/a.md"], labels=[{"name": "review:owner"}])
+        self.assertEqual(lanes.automerge_refusal(lesson, CONFIG), "labelled review:owner")
+
 
 class QueueTests(unittest.TestCase):
     def test_only_afk_claims_hold_the_one_at_a_time_queue(self) -> None:

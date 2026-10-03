@@ -74,11 +74,11 @@ Keep to the queue: new work starts as an issue, not in a run. Name any follow-up
 
 Every run ends with:
 
-1. Invoke `improve` for each issue in 07 Improve, and for this run's own friction.
+1. Invoke `improve` for each issue in 07 Improve, and for this run's own friction. It opens each lesson as a PR labelled `review:owner`, which waits for the owner's merge.
 2. Tidy AFK runs' own worktrees and branches.
 
-**Exit gate:** the lessons (or "no lessons") and the worktrees removed.
+**Exit gate:** a PR or the reason it stays a proposal for each lesson (or "no lessons"), and the worktrees removed.
 
 ## Output
 
-At most eight lines: base branch health and issues shipped, PRs tended, issue and PR (or "queue empty"), auto-merge verdict, anything parked with its question, follow-ups found, lessons with their target file, housekeeping counts.
+At most eight lines: base branch health and issues shipped, PRs tended, issue and PR (or "queue empty"), auto-merge verdict, anything parked with its question, follow-ups found, lesson PRs (or proposals) with their target file, housekeeping counts.

@@ -1,14 +1,14 @@
 ---
 name: improve
 description: Use when a change has shipped (07 Improve) or friction, rework or a repeated review finding should become a lasting change to skills, agent rules or docs.
-allowed-tools: Skill Read Bash(gh:*,git:*)
+allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,python3:*,just:*)
 ---
 
 # Improve (07)
 
-Close the cycle by making the system learn: remove friction at its source instead of relying on anyone's memory. Lessons are proposals until the owner accepts them.
+Close the cycle by making the system learn: remove friction at its source instead of relying on anyone's memory. Each lesson arrives as a PR; the owner accepts it by merging and rejects it by closing.
 
-**With the owner:** every phase. **Unattended:** phases 1 and 2, then the `## Lessons` comment; the owner decides on each lesson later.
+**With the owner:** every phase; the owner may drop a lesson before phase 4. **Unattended:** every phase; the owner decides on each lesson's PR later.
 
 ## 1. Collect
 
@@ -34,13 +34,21 @@ Keep only lessons that change future behavior. Before writing it, scrub secrets,
 
 ## 3. Record
 
-Post the lessons as one comment on the shipped issue headed `## Lessons` ("no lessons" when there are none), each with its target file and proposed wording.
+Post the lessons as one comment on the shipped issue headed `## Lessons` ("no lessons" when there are none), each with its target file and proposed wording. Lessons from a run's own friction, with no shipped issue to hold them, go in the run's output.
 
-- Unattended: name the lessons in the run's output too; the owner decides later. Lessons from a run's own friction, with no shipped issue to hold them, go in the output only.
-- Attended, or when the owner accepts a lesson from an earlier `## Lessons` comment: ask the owner about each lesson. For each one accepted, invoke `spec` (phase 1) with the target repository (`-R <owner/repo>` for an upstream skill library) to open an issue carrying the target file and the wording, and link it from the `## Lessons` comment. The lesson then runs through the cycle like any other work.
+**Exit gate:** the `## Lessons` comment link, or the lessons in the output.
 
-**Exit gate:** the `## Lessons` comment linking an issue for each accepted lesson.
+## 4. Propose
+
+Each lesson becomes an issue and a PR, except one that targets `.github/lanes.json` (hand the owner the exact line), needs a product or design decision, or matches an open issue or PR (link that one). For each of the rest:
+
+1. Invoke `spec` (phase 1) with the target repository (`-R <owner/repo>` for an upstream skill library) to open an issue carrying the target file and the wording.
+2. Make a worktree of the target repository from its fetched base branch, on branch `<branchPrefix>lesson-<N>-<slug>` (`<branchPrefix>` from the target's lanes.json, default `agent/afk-`); for another repository, clone it into the host's temporary directory instead. Apply the wording and pass the target's verification gate.
+3. Push, then open a PR labelled `review:owner` (create the label when the repository lacks it), titled `<type>(<area>): <outcome>`, its body starting `Closes #<N>` and linking the `## Lessons` comment. The label keeps it from `lanes.py automerge` and `merge-reviewed`: the owner's merge is the acceptance.
+4. Link the issue and the PR from the `## Lessons` comment (or the run's output), and remove a temporary clone.
+
+**Exit gate:** the `## Lessons` comment (or the run's output) linking an issue and a PR for each lesson, or naming why it stays a proposal.
 
 ## Output
 
-One line per lesson: target file, the change in a few words and its issue when accepted; or "no lessons".
+One line per lesson: target file, the change in a few words and its PR, or why it stays a proposal; or "no lessons".

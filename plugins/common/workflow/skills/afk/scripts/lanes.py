@@ -190,6 +190,8 @@ def automerge_refusal(pr, config):
         return 'not an open, ready PR'
     if open_threads(pr):
         return open_threads(pr)
+    if OWNER_REVIEW in names(pr):
+        return f'labelled {OWNER_REVIEW}'
     if pr['baseRefName'] != config['base'] or pr['headRepositoryOwner']['login'] != config['repo'].split('/')[0]:
         return f"not a branch of this repository into {config['base']}"
     if author != config['owner'] and author not in DEPENDABOT:
@@ -418,7 +420,7 @@ def cmd_scope(repo, args):
 def cmd_automerge(repo, args):
     number = args[0]
     pr = gh_json('pr', 'view', number, '-R', repo.name, '--json',
-                 'state,isDraft,baseRefName,headRepositoryOwner,author,files,title,body,mergeStateStatus')
+                 'state,isDraft,baseRefName,headRepositoryOwner,author,files,title,body,labels,mergeStateStatus')
     pr['unresolvedThreads'] = unresolved_threads(repo.name, number)
     reason = automerge_refusal(pr, repo.config)
     if reason:

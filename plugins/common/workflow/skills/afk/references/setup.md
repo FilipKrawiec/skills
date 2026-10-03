@@ -52,7 +52,7 @@ Minimal example:
 | `state:claimed` | An AFK run is working on it now. |
 | `state:started` | Another session is working on it now. |
 | `state:parked` | An AFK run handed it back with a question. |
-| `review:owner` | PR: agent review is done; it waits for the owner. |
+| `review:owner` | PR: it waits for the owner (agent review is done, or it carries a lesson); `lanes.py automerge` and `merge-reviewed` leave it. |
 | `type:epic` | Umbrella outcome with sub-issues. |
 
 Add the project's `type:` labels. Priority, the board's columns, the commands that move a card and the claim, park and tidy steps are in [board.md](../../../references/board.md).
