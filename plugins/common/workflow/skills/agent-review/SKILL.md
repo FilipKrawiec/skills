@@ -9,11 +9,13 @@ allowed-tools: Skill Read Bash(python3:*,git:*,gh:*)
 
 One pass reviews every open PR at its head commit, hands to the owner what needs the owner, merges the AFK PRs it judged safe, and wakes the AFK runner. The owner keeps merge authority over everything else. The runner (the `afk` skill) fixes findings on its own PRs; each PR gets at most lanes.json's `reviewRounds` reviews (default 3).
 
-`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. GitHub writes are limited to: one review per PR per head commit, the `review:owner` label on PRs, and `LANES merge-reviewed`.
+`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. GitHub writes are limited to: one review per PR per head commit, replies on review threads and resolving the agent-written ones it verified fixed, the `review:owner` label on PRs, and `LANES merge-reviewed`.
+
+A base branch that requires resolved conversations blocks a PR while any review thread is open, even with green checks, and GitHub reports only `BLOCKED`. Fixed findings whose threads stay open hand the owner a PR they can't merge, so every pass settles the threads it can.
 
 ## 1. Collect
 
-List open PRs, drafts included, except Dependabot's. For each, read its reviews and find agent reviews by their first line, `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->` (plus any legacy marker the caller names).
+List open PRs, drafts included, except Dependabot's. For each, read its reviews and find agent reviews by their first line, `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->` (plus any legacy marker the caller names), and read its unresolved review threads (GraphQL `reviewThreads { isResolved }`; `gh pr view` doesn't list them).
 
 - An agent review at the current head → skip to phase 4.
 - The newest agent review used the last round → skip.
@@ -23,7 +25,7 @@ List open PRs, drafts included, except Dependabot's. For each, read its reviews 
 
 ## 2. Review
 
-Run one isolated worker per PR, in parallel, at medium reasoning when the host offers a choice. Each checks out the PR head in a scratch worktree, reads the acceptance criteria of the issue the PR closes, runs `review`'s two axes on the PR's own diff against its base, and checks that earlier blocking findings are fixed. Workers report a verdict and findings with `file:line` and a failure scenario, post nothing, and quote no copyrighted or personal content from the repository.
+Run one isolated worker per PR, in parallel, at medium reasoning when the host offers a choice. Each checks out the PR head in a scratch worktree, reads the acceptance criteria of the issue the PR closes, runs `review`'s two axes on the PR's own diff against its base, and checks every unresolved review thread, whoever opened it (an earlier agent review, another bot, a person): fixed at the head, with the commit that fixed it, or still open, which makes it a blocking finding again. Workers report a verdict and findings with `file:line` and a failure scenario, post nothing, and quote no copyrighted or personal content from the repository.
 
 Verify every blocking finding against the code yourself, then re-read the PR's head SHA; a moved head goes back to phase 1 next pass.
 
@@ -35,14 +37,16 @@ Decide criticality with [critical.md](references/critical.md). Pick the verdict:
 
 | Verdict | When | Marker `verdict=` | `review:owner` |
 | --- | --- | --- | --- |
-| Ready to merge | No finding to fix; not critical. | `ready` | removed on an AFK branch, added on any other branch (the owner merges it) |
+| Ready to merge | No finding to fix and no open thread; not critical. | `ready` | removed on an AFK branch, added on any other branch (the owner merges it) |
 | Ready for the owner's review | No blocking finding; critical. Name why. | `owner` | added |
 | Needs fixes first | Blocking findings (`review`'s `REQUEST_CHANGES`), round below the last. Say whether it is critical. | `fixes` | removed |
 | Needs the owner: review rounds used | Blocking findings in the last round. | `rounds` | added |
 
 Post one review with event COMMENT on the head commit: blocking findings as inline comments, and a body of the marker line, the verdict, the findings (blocking first, optional ones marked optional, each with `file:line` and its failure scenario) and the host's attribution footer. Then set the label, writing back the PR's full label set.
 
-**Exit gate:** each reviewed PR shows the new review and the right label.
+Settle the unresolved threads: reply on each one the head fixes, naming the commit. Resolve it when its first comment is agent-written (it ends with the host's attribution footer); a person's thread stays for that person, and the review body names it. A thread that waits on an owner check (a device, a credential) stays open, and the verdict is `owner`, naming it.
+
+**Exit gate:** each reviewed PR shows the new review and the right label, and every thread still open is named in its review body.
 
 ## 4. Merge
 

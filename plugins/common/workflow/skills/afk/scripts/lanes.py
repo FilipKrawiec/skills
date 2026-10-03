@@ -174,11 +174,22 @@ def renamed(pr):
     return [f['path'] for f in pr['files'] if f.get('changeType', 'RENAMED') in ('RENAMED', 'COPIED')]
 
 
+def open_threads(pr):
+    """Why unresolved review threads hold a PR, or None. A base branch that requires
+    resolved conversations reports such a PR only as BLOCKED, so name the cause."""
+    count = pr.get('unresolvedThreads') or 0
+    if not count:
+        return None
+    return f"{count} unresolved review thread{'s' if count > 1 else ''}: answer, then resolve each"
+
+
 def automerge_refusal(pr, config):
     """Why a PR must wait for the owner, or None when it may auto-merge."""
     author = pr['author']['login']
     if pr['state'] != 'OPEN' or pr['isDraft']:
         return 'not an open, ready PR'
+    if open_threads(pr):
+        return open_threads(pr)
     if pr['baseRefName'] != config['base'] or pr['headRepositoryOwner']['login'] != config['repo'].split('/')[0]:
         return f"not a branch of this repository into {config['base']}"
     if author != config['owner'] and author not in DEPENDABOT:
@@ -217,7 +228,8 @@ def reviewed_merge_refusal(pr, config):
 
     The reviewer judges criticality and records it as its verdict; this gate
     checks everything a script can: the branch, the base, protected paths,
-    the verdict at the current head, and nothing newer from a person."""
+    the verdict at the current head, no open review thread, and nothing
+    newer from a person."""
     if not config['agentReview']:
         return 'agentReview is off in lanes.json'
     if pr['state'] != 'OPEN' or pr['isDraft']:
@@ -245,6 +257,8 @@ def reviewed_merge_refusal(pr, config):
             latest[r['author']['login']] = r['state']
     if 'CHANGES_REQUESTED' in latest.values():
         return 'a review requests changes'
+    if open_threads(pr):
+        return open_threads(pr)
     newer = [c for c in pr['reviews'] + pr['comments']
              if (c.get('submittedAt') or c.get('createdAt') or '') > review[3]
              and not AGENT_FOOTER.search(c.get('body') or '')]
@@ -271,6 +285,19 @@ def paths(nul_separated):
 
 def gh_json(*args):
     return json.loads(run('gh', *args) or 'null')
+
+
+THREADS = ('query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) '
+           '{ pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved } } } } }')
+
+
+def unresolved_threads(repo_name, number):
+    """How many of the PR's review threads are still open; `gh pr view` doesn't report them."""
+    owner, name = repo_name.split('/')
+    data = gh_json('api', 'graphql', '-f', f'query={THREADS}', '-F', f'owner={owner}',
+                   '-F', f'name={name}', '-F', f'number={number}')
+    threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
+    return sum(1 for t in threads if not t['isResolved'])
 
 
 class Repo:
@@ -392,6 +419,7 @@ def cmd_automerge(repo, args):
     number = args[0]
     pr = gh_json('pr', 'view', number, '-R', repo.name, '--json',
                  'state,isDraft,baseRefName,headRepositoryOwner,author,files,title,body,mergeStateStatus')
+    pr['unresolvedThreads'] = unresolved_threads(repo.name, number)
     reason = automerge_refusal(pr, repo.config)
     if reason:
         print(f'#{number} waits for the owner: {reason}')
@@ -414,6 +442,7 @@ def cmd_merge_reviewed(repo, args):
     pr = gh_json('pr', 'view', number, '-R', repo.name, '--json',
                  'state,isDraft,baseRefName,headRefName,headRefOid,headRepositoryOwner,labels,'
                  'files,reviews,comments,mergeStateStatus')
+    pr['unresolvedThreads'] = unresolved_threads(repo.name, number)
     reason = reviewed_merge_refusal(pr, repo.config)
     if reason:
         print(f'#{number} waits for the owner: {reason}')

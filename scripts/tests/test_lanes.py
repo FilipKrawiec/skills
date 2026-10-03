@@ -199,6 +199,10 @@ class AutomergeTests(unittest.TestCase):
         del unknown["files"][0]["changeType"]
         self.assertIn("renames", lanes.automerge_refusal(unknown, CONFIG))
 
+    def test_unresolved_review_threads_wait_for_their_answer(self) -> None:
+        self.assertIn("1 unresolved review thread", lanes.automerge_refusal(pr(["docs/a.md"], unresolvedThreads=1), CONFIG))
+        self.assertIsNone(lanes.automerge_refusal(pr(["docs/a.md"], unresolvedThreads=0), CONFIG))
+
 
 class QueueTests(unittest.TestCase):
     def test_only_afk_claims_hold_the_one_at_a_time_queue(self) -> None:
@@ -279,6 +283,10 @@ class ReviewedMergeTests(unittest.TestCase):
         self.assertIn("requests changes", self.refusal(still))
         dismissed = {**blocked, "state": "DISMISSED", "submittedAt": "2026-10-02T09:30:00Z"}
         self.assertIsNone(self.refusal({**ready, "reviews": [blocked, dismissed] + ready["reviews"]}))
+
+    def test_unresolved_review_threads_hold_the_merge(self) -> None:
+        self.assertIn("2 unresolved review threads", self.refusal(reviewed_pr(unresolvedThreads=2)))
+        self.assertIsNone(self.refusal(reviewed_pr(unresolvedThreads=0)))
 
     def test_renames_wait_for_the_owner(self) -> None:
         moved = reviewed_pr()
