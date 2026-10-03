@@ -91,5 +91,6 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 ## Shipping
 
 - Work happens in an isolated worktree on a short-lived branch made from the fetched base branch; the checkout a session starts in stays as it is. The claim, open-PR and tidy steps are in `plugins/common/workflow/references/board.md`.
+- Before opening a PR, run `review` on the branch as two fresh-context workers (axes A and B), fix every blocking finding, and quote the verdict in the PR body.
 - Committed changes stay within the issue's scope packet. After verification, an agent pushes the branch and opens or updates the PR that closes the issue (`Closes #<N>`, linking the `## Plan` comment).
 - The owner retains merge authority: merging, approving and force-pushing a protected or default branch happen only on the owner's explicit word; `lanes.py automerge` and `merge-reviewed` are that word for chores and agent-reviewed AFK PRs.
