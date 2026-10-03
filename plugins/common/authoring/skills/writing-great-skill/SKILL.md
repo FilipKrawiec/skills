@@ -37,6 +37,7 @@ Structure skills as **unidirectional affirmative state machines**:
 - Divide workflows into sequential numbered phases.
 - State only the single desired affirmative action in each phase. Omit negative phrasing ("Don't do X", "Never do Y") to prevent negative prompt priming.
 - Pair each phase with a concrete **Exit Gate** (test output, command exit code 0, or file diff).
+- Write every condition an agent must detect as a check on data it can read: a label, a comment heading, a PR or CI state, or file content ("the issue has a scope packet", rather than "`spec` finished it").
 
 ## Size & Semantic Payload Output Envelopes
 
