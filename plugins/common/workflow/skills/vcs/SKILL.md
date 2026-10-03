@@ -23,7 +23,7 @@ Follow these steps for all version control and git operations to maintain a clea
 
 ### Phase 3: Conventional Commit Creation
 1. Write an atomic Conventional Commit: `<type>[(<scope>)][!]: <imperative description>`, one per green slice; pair `!` with a `BREAKING CHANGE:` footer; reserve `wip:` for local commits squashed before the PR opens.
-2. When addressing review feedback on an open PR, add a commit; the squash merge lands the PR as one commit.
+2. When addressing review feedback on an open PR, add a commit; the squash merge lands the PR as one commit. Reply on each review thread with the commit that fixes it, and resolve an agent-written thread once the fix is verified at the head; a person's thread waits for them or their word. A base branch that requires resolved conversations stays `BLOCKED`, even with green checks, while any thread is open.
 *Exit Gate*: Commit created with clean git log entry.
 *Output Envelope*:
 ```text

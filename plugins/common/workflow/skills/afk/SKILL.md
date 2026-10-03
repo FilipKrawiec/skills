@@ -29,7 +29,7 @@ For each open PR on a branch starting with lanes.json's `branchPrefix` whose iss
 
 1. A merge conflict → merge the base branch in and resolve it.
 2. Failing checks → reproduce, fix and push.
-3. An unanswered review that requests changes (a human's, or an automated reviewer's marked blocking) → fix each finding, reply on its thread, push.
+3. An unanswered review that requests changes (a human's, or an automated reviewer's marked blocking) → fix each finding, push, then reply on its thread naming the fixing commit. `agent-review` resolves the agent-written threads once it verifies the fix; a person resolves their own.
 
 Run the project's full verification gate before each push. Park the PR's issue when a finding needs a product decision or stays red after two honest fix attempts.
 
