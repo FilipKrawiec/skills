@@ -62,7 +62,7 @@ The token needs the `project` scope (`gh auth refresh -s project`). Read the ids
 
 ## Priority
 
-With a board, priority is its single-select Priority field with options P0, P1 and P2, set like Status: read the field with `select(.name=="Priority")` and pass its option id to `gh project item-edit`. `lanes.py next` ranks AFK issues by it, then by age. Without a board, use `priority:P0` to `priority:P2` labels instead; an issue's board value wins over a label. When the board has no Priority field, report it to the owner, who adds it once.
+With a board, priority is its single-select Priority field with options P0, P1 and P2, set like Status: read the field with `select(.name=="Priority")` and pass its option id to `gh project item-edit`. `lanes.py next` ranks AFK issues by it, then by age. Without a board, use `priority:P0` to `priority:P2` labels instead. When the board has no Priority field, report it to the owner, who adds it once.
 
 ## Issue steps
 
