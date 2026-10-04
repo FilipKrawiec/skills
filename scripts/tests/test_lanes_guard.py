@@ -151,6 +151,31 @@ class GuardHookTests(unittest.TestCase):
                                         capture_output=True, text=True)
                 self.assertEqual(result.returncode, code, event["tool_name"])
 
+    def test_the_owner_approves_a_config_edit_only_in_manual_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            (Path(tmp) / ".github").mkdir()
+            (Path(tmp) / ".github/lanes.json").write_text(json.dumps({"repo": "o/r"}))
+            # transcript() always writes t.jsonl, so the scheduled one moves aside first.
+            scheduled = str(Path(transcript(tmp, '<scheduled-task name="afk">run')).rename(Path(tmp) / "s.jsonl"))
+            attended = transcript(tmp, "Add ownerPaths to lanes.json")
+
+            def edit(mode, transcript_path):
+                event = {"tool_name": "Edit", "tool_input": {"file_path": f"{tmp}/.github/lanes.json"}, "cwd": tmp,
+                         "permission_mode": mode, "transcript_path": transcript_path}
+                return subprocess.run([sys.executable, str(GUARD)], input=json.dumps(event),
+                                      capture_output=True, text=True)
+
+            asked = edit("default", attended)
+            self.assertEqual(asked.returncode, 0)
+            decision = json.loads(asked.stdout)["hookSpecificOutput"]
+            self.assertEqual(decision["permissionDecision"], "ask")
+            for mode, path in (("acceptEdits", attended), ("auto", attended), ("bypassPermissions", attended),
+                               ("default", scheduled), ("default", None), (None, attended)):
+                refused = edit(mode, path)
+                self.assertEqual(refused.returncode, 2, (mode, path))
+                self.assertIn("manual permission mode", refused.stderr)
+
     def test_hook_keeps_edits_and_branch_switches_out_of_the_main_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root, linked = Path(tmp) / "root", Path(tmp) / "root/.worktrees/5-x"
