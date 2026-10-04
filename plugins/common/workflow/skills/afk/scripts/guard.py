@@ -6,6 +6,8 @@ merge PRs, publish releases, dispatch workflows, or change secrets, variables
 or repository settings, plus the project's own `guard` rules from lanes.json.
 PRs merge through `lanes.py merge`, which hands the owner only what an owner rule matches. `lane:afk` may be added only in a
 session the owner is in; scheduled runs (and unreadable transcripts) never add it.
+Each issue works in its own worktree: edits to a file in an opted-in project's
+main checkout, and `git switch` or `git checkout` run there, are blocked.
 
 Hook input: the host's pre-tool-use event as JSON on stdin (`tool_name`,
 `tool_input.command`, `cwd`, `transcript_path`). Exit 2 blocks.
@@ -45,12 +47,28 @@ MARKS_AFK = [
 UNATTENDED_AFK = 'Unattended runs never mark an issue AFK; the owner approves it in a session.'
 
 
+OWN_WORKTREE = ('Each issue works in its own worktree; the main checkout keeps its branch and may hold '
+                'the owner\'s work. Enter the issue\'s worktree first (board.md, Claim or Start).')
+# `git checkout -- <path>` restores files and leaves the branch alone.
+SWITCHES_BRANCH = r'\bgit\s+(switch|checkout)\b(?![^;&|\n]*\s--(\s|$))'
+
 GLOBAL_FLAGS = re.compile(r'\s(?:-R|--repo|--hostname)(?:=|\s+)\S+')
 BLOCKED_TOOLS = {'mcp__github__merge_pull_request', 'mcp__github__enable_pr_auto_merge'}
+EDIT_TOOLS = ('Edit', 'Write', 'MultiEdit', 'NotebookEdit')
 CONFIG_FILE = '.github/lanes.json'
 
 
-def refusal(command, unattended=True, extra=(), base='main'):
+def main_checkout(path):
+    """The main checkout holding `path`, or None in a linked worktree (`.git` is a file) or outside a repository."""
+    path = Path(path).absolute()
+    for directory in (path, *path.parents):
+        marker = directory / '.git'
+        if marker.exists():
+            return directory if marker.is_dir() else None
+    return None
+
+
+def refusal(command, unattended=True, extra=(), base='main', in_main_checkout=False):
     """The reason a shell command is blocked, or None."""
     plain = GLOBAL_FLAGS.sub(' ', command)  # `gh -R o/r pr merge` reads as `gh pr merge`
     # The push rule reads only its own command: it stops at `&&`, `||`, `;`, `|` and newlines.
@@ -59,6 +77,8 @@ def refusal(command, unattended=True, extra=(), base='main'):
     for pattern, reason in rules:
         if re.search(pattern, plain):
             return reason
+    if in_main_checkout and re.search(SWITCHES_BRANCH, plain):
+        return OWN_WORKTREE
     if unattended and any(re.search(p, plain) for p in MARKS_AFK):
         return UNATTENDED_AFK
     return None
@@ -68,9 +88,14 @@ def tool_refusal(tool_name, tool_input):
     """Why a non-shell tool call is blocked, or None."""
     if tool_name in BLOCKED_TOOLS:
         return MERGE_IS_OWNERS
-    if tool_name in ('Edit', 'Write', 'MultiEdit', 'NotebookEdit') \
-            and str(tool_input.get('file_path', '')).endswith(CONFIG_FILE):
+    target = str(tool_input.get('file_path') or tool_input.get('notebook_path') or '')
+    if tool_name not in EDIT_TOOLS or not target:
+        return None
+    if target.endswith(CONFIG_FILE):
         return f'{CONFIG_FILE} is the owner\'s.'
+    checkout = main_checkout(target)
+    if checkout and (checkout / CONFIG_FILE).is_file():
+        return OWN_WORKTREE
     return None
 
 
@@ -119,7 +144,9 @@ def main():
     extra, base = project
     tool_input = event.get('tool_input') or {}
     if event.get('tool_name') == 'Bash':
-        reason = refusal(tool_input.get('command', ''), is_unattended(event.get('transcript_path')), extra, base)
+        in_main = bool(event.get('cwd')) and main_checkout(event['cwd']) is not None
+        reason = refusal(tool_input.get('command', ''), is_unattended(event.get('transcript_path')), extra, base,
+                         in_main)
     else:
         reason = tool_refusal(event.get('tool_name'), tool_input)
     if reason:
