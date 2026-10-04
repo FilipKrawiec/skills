@@ -8,9 +8,12 @@ PRs merge through `lanes.py merge`, which hands the owner only what an owner rul
 session the owner is in; scheduled runs (and unreadable transcripts) never add it.
 Each issue works in its own worktree: edits to a file in an opted-in project's
 main checkout, and `git switch` or `git checkout` run there, are blocked.
+An edit to lanes.json is blocked, except in an attended session in manual
+permission mode, where the host asks the owner to approve it.
 
 Hook input: the host's pre-tool-use event as JSON on stdin (`tool_name`,
-`tool_input.command`, `cwd`, `transcript_path`). Exit 2 blocks.
+`tool_input.command`, `cwd`, `transcript_path`, `permission_mode`). Exit 2
+blocks; a `permissionDecision` of `ask` on stdout hands the call to the owner.
 """
 import json
 import re
@@ -56,6 +59,9 @@ GLOBAL_FLAGS = re.compile(r'\s(?:-R|--repo|--hostname)(?:=|\s+)\S+')
 BLOCKED_TOOLS = {'mcp__github__merge_pull_request', 'mcp__github__enable_pr_auto_merge'}
 EDIT_TOOLS = ('Edit', 'Write', 'MultiEdit', 'NotebookEdit')
 CONFIG_FILE = '.github/lanes.json'
+OWNERS_CONFIG = (f'{CONFIG_FILE} is the owner\'s: the owner edits it, or approves the edit in a session '
+                 'in manual permission mode.')
+ASK_OWNER = f'{CONFIG_FILE} is the owner\'s: approve this edit only if you asked for it.'
 
 
 def main_checkout(path):
@@ -92,7 +98,7 @@ def tool_refusal(tool_name, tool_input):
     if tool_name not in EDIT_TOOLS or not target:
         return None
     if target.endswith(CONFIG_FILE):
-        return f'{CONFIG_FILE} is the owner\'s.'
+        return OWNERS_CONFIG
     checkout = main_checkout(target)
     if checkout and (checkout / CONFIG_FILE).is_file():
         return OWN_WORKTREE
@@ -110,6 +116,11 @@ def is_unattended(transcript_path):
     except (OSError, TypeError, ValueError):
         pass
     return True
+
+
+def owner_approves(event):
+    """An attended session in manual permission mode, where the host asks the owner before each edit."""
+    return event.get('permission_mode') == 'default' and not is_unattended(event.get('transcript_path'))
 
 
 def project_root(cwd):
@@ -149,6 +160,10 @@ def main():
                          in_main)
     else:
         reason = tool_refusal(event.get('tool_name'), tool_input)
+        if reason == OWNERS_CONFIG and owner_approves(event):
+            print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
+                                                     'permissionDecisionReason': ASK_OWNER}}))
+            return 0
     if reason:
         print(f'Blocked by the lanes guard: {reason}', file=sys.stderr)
         return 2

@@ -42,7 +42,7 @@ Post the lessons as one comment on the shipped issue headed `## Lessons` ("no le
 
 ## 4. Propose
 
-Each lesson becomes an issue and a PR, except one that targets `.github/lanes.json` (hand the owner the exact line), needs a product or design decision, or matches an open issue or PR (link that one). For each of the rest:
+Each lesson becomes an issue and a PR, except one that targets `.github/lanes.json` (hand the owner the exact line; in an attended session in manual permission mode the edit itself goes to the owner for approval), needs a product or design decision, or matches an open issue or PR (link that one). For each of the rest:
 
 1. Invoke `spec` (phase 1) with the target repository (`-R <owner/repo>` for an upstream skill library) to open an issue carrying the target file and the wording.
 2. Make a worktree of the target repository from its fetched base branch, on branch `<branchPrefix>lesson-<N>-<slug>` (`<branchPrefix>` from the target's lanes.json, default `agent/afk-`); for another repository, clone it into the host's temporary directory instead. Apply the wording and pass the target's verification gate.
