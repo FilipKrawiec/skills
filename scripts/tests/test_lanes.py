@@ -144,20 +144,20 @@ class ScopeTests(unittest.TestCase):
 class AutomergeTests(unittest.TestCase):
     def test_docs_and_tests_from_the_owner_merge_on_green(self) -> None:
         files = ["docs/guide.md", "tests/stage/test_a.py", "packages/web/README.md"]
-        self.assertIsNone(lanes.automerge_refusal(pr(files), CONFIG))
+        self.assertIsNone(lanes.merge_refusal(pr(files), CONFIG))
 
     def test_project_chores_extend_the_defaults(self) -> None:
-        self.assertIsNone(lanes.automerge_refusal(pr(["guide/perform.mdx"]), config(chores=["^guide/"])))
+        self.assertIsNone(lanes.merge_refusal(pr(["guide/perform.mdx"]), config(chores=["^guide/"])))
 
     def test_dependency_files_merge_only_from_dependabot(self) -> None:
         files = ["web/package.json", "web/package-lock.json"]
-        self.assertIsNone(lanes.automerge_refusal(pr(files, author="app/dependabot"), CONFIG))
-        self.assertIn("more than docs", lanes.automerge_refusal(pr(files), CONFIG))
+        self.assertIsNone(lanes.merge_refusal(pr(files, author="app/dependabot"), CONFIG))
+        self.assertIn("scope packet", lanes.merge_refusal(pr(files), CONFIG))
 
     def test_dependabot_major_versions_wait_for_the_owner(self) -> None:
         files = ["web/package.json", "web/package-lock.json"]
         def bump(title, body=""):
-            return lanes.automerge_refusal(pr(files, author="app/dependabot", title=title, body=body), CONFIG)
+            return lanes.merge_refusal(pr(files, author="app/dependabot", title=title, body=body), CONFIG)
         self.assertIn("6.1", bump("chore(deps): bump lints from 5.1.1 to 6.1.0 in /libs/music"))
         self.assertIn("0.4", bump("Bump left-pad from 0.3.2 to 0.4.0"))
         self.assertIsNone(bump("chore(deps): bump lints from 5.1.1 to 5.2.0"))
@@ -175,38 +175,85 @@ class AutomergeTests(unittest.TestCase):
             self.assertEqual(lanes.merge_step(state), "queue", state)
 
     def test_owner_prs_are_not_read_as_version_bumps(self) -> None:
-        self.assertIsNone(lanes.automerge_refusal(pr(["docs/a.md"], title="docs: move from 1.0 to 2.0 terms"), CONFIG))
+        self.assertIsNone(lanes.merge_refusal(pr(["docs/a.md"], title="docs: move from 1.0 to 2.0 terms"), CONFIG))
 
     def test_product_automation_and_instructions_wait_for_the_owner(self) -> None:
         for path in ["src/main.py", ".github/workflows/ci.yml", ".github/README.md", "AGENTS.md",
                      ".agents/skills/x/SKILL.md", ".vscode/settings.json", "tools/gate.py",
                      "infra/README.md", "justfile"]:
             with self.subTest(path=path):
-                self.assertIsNotNone(lanes.automerge_refusal(pr([path]), CONFIG))
+                self.assertIsNotNone(lanes.merge_refusal(pr([path]), CONFIG))
 
     def test_drafts_forks_strangers_and_truncated_lists_wait(self) -> None:
         for candidate in [pr(["docs/a.md"], isDraft=True), pr(["docs/a.md"], baseRefName="release"),
                           pr(["docs/a.md"], headRepositoryOwner={"login": "fork"}),
                           pr(["docs/a.md"], author="someone"),
                           pr([f"docs/{i}.md" for i in range(100)]), pr([])]:
-            self.assertIsNotNone(lanes.automerge_refusal(candidate, CONFIG))
+            self.assertIsNotNone(lanes.merge_refusal(candidate, CONFIG))
 
 
     def test_renames_wait_because_the_old_path_is_hidden(self) -> None:
         moved = pr(["docs/release.yml"])
         moved["files"][0]["changeType"] = "RENAMED"
-        self.assertIn("renames", lanes.automerge_refusal(moved, CONFIG))
+        self.assertIn("renames", lanes.merge_refusal(moved, CONFIG))
         unknown = pr(["docs/release.yml"])
         del unknown["files"][0]["changeType"]
-        self.assertIn("renames", lanes.automerge_refusal(unknown, CONFIG))
+        self.assertIn("renames", lanes.merge_refusal(unknown, CONFIG))
 
     def test_unresolved_review_threads_wait_for_their_answer(self) -> None:
-        self.assertIn("1 unresolved review thread", lanes.automerge_refusal(pr(["docs/a.md"], unresolvedThreads=1), CONFIG))
-        self.assertIsNone(lanes.automerge_refusal(pr(["docs/a.md"], unresolvedThreads=0), CONFIG))
+        self.assertIn("1 unresolved review thread", lanes.merge_refusal(pr(["docs/a.md"], unresolvedThreads=1), CONFIG))
+        self.assertIsNone(lanes.merge_refusal(pr(["docs/a.md"], unresolvedThreads=0), CONFIG))
 
     def test_a_pr_labelled_for_the_owner_waits_for_the_owner(self) -> None:
         lesson = pr(["docs/a.md"], labels=[{"name": "review:owner"}])
-        self.assertEqual(lanes.automerge_refusal(lesson, CONFIG), "labelled review:owner")
+        self.assertEqual(lanes.merge_refusal(lesson, CONFIG), "for the owner: labelled review:owner")
+
+
+def sized(*files):
+    """A PR whose files carry (path, additions, deletions)."""
+    candidate = pr([])
+    candidate["files"] = [{"path": f, "changeType": "MODIFIED", "additions": a, "deletions": d}
+                          for f, a, d in files]
+    return candidate
+
+
+class TriageTests(unittest.TestCase):
+    CFG = config(agentReview=True, ownerPaths=["/firestore/"], ownerLabels=["release:beta"], ownerLines=50)
+    SCOPE = ["src/stage/"]
+
+    def triage(self, candidate, scope=SCOPE):
+        return lanes.triage(candidate, self.CFG, scope)
+
+    def test_every_owner_rule_names_itself(self) -> None:
+        moved = pr(["src/stage/a.py"])
+        moved["files"][0]["changeType"] = "RENAMED"
+        dependabot = pr(["web/package.json"], author="app/dependabot", title="Bump x from 1.2.0 to 2.0.0")
+        cases = [
+            (pr(["src/stage/a.py"], labels=[{"name": "review:owner"}]), self.SCOPE, "labelled review:owner"),
+            (pr(["src/stage/a.py"], author="someone"), self.SCOPE, "neither the owner"),
+            (pr([]), self.SCOPE, "empty or truncated"),
+            (moved, self.SCOPE, "renames"),
+            (pr(["AGENTS.md"]), self.SCOPE, "owner paths: AGENTS.md"),
+            (pr(["src/data/firestore/codec.py"]), ["src/"], "owner paths"),
+            (pr(["src/stage/a.py"], labels=[{"name": "release:beta"}]), self.SCOPE, "ships on merge: release:beta"),
+            (dependabot, None, "major version"),
+            (sized(("src/stage/a.py", 40, 11)), self.SCOPE, "51 changed lines"),
+            (pr(["src/stage/a.py"]), None, "closes no issue with a scope packet"),
+            (pr(["src/kernel/b.py"]), self.SCOPE, "outside its issue's scope packet: src/kernel/b.py"),
+        ]
+        for candidate, scope, rule in cases:
+            with self.subTest(rule=rule):
+                kind, why = self.triage(candidate, scope)
+                self.assertEqual(kind, "owner")
+                self.assertIn(rule, why)
+
+    def test_a_pr_matching_no_owner_rule_lands_without_the_owner(self) -> None:
+        self.assertEqual(self.triage(pr(["docs/guide.md", "tests/stage/test_a.py"]), None)[0], "chore")
+        self.assertEqual(self.triage(pr(["src/stage/a.py", "tests/stage/test_a.py"]))[0], "reviewed")
+        self.assertEqual(self.triage(sized(("src/stage/a.py", 30, 20)))[0], "reviewed")
+
+    def test_docs_and_tests_count_toward_neither_size_nor_scope(self) -> None:
+        self.assertEqual(self.triage(sized(("docs/huge.md", 900, 0), ("src/stage/a.py", 5, 0)))[0], "reviewed")
 
 
 class QueueTests(unittest.TestCase):
@@ -233,7 +280,7 @@ class ReviewedMergeTests(unittest.TestCase):
     AGENT = config(agentReview=True)
 
     def refusal(self, candidate, cfg=None):
-        return lanes.reviewed_merge_refusal(candidate, cfg or self.AGENT)
+        return lanes.merge_refusal(candidate, cfg or self.AGENT, ["src/stage/"])
 
     def test_a_ready_review_at_the_head_merges(self) -> None:
         self.assertIsNone(self.refusal(reviewed_pr()))
@@ -263,9 +310,9 @@ class ReviewedMergeTests(unittest.TestCase):
                  "body": f"<!-- agent-review sha={SHA} round=2 verdict=fixes -->"}
         self.assertIn("ready", self.refusal(reviewed_pr(reviews=[older, newer])))
 
-    def test_branches_paths_and_handoffs_outside_afk_wait(self) -> None:
-        self.assertIn("AFK branch", self.refusal(reviewed_pr(headRefName="feature/x")))
-        self.assertIn("protected", self.refusal(reviewed_pr(files=["infra/dns.tf"])))
+    def test_any_branch_merges_and_owner_rules_hand_over(self) -> None:
+        self.assertIsNone(self.refusal(reviewed_pr(headRefName="feature/12-thing")))
+        self.assertIn("owner paths", self.refusal(reviewed_pr(files=["infra/dns.tf"])))
         self.assertIn("review:owner", self.refusal(reviewed_pr(labels=[{"name": "review:owner"}])))
         self.assertIn("open, ready", self.refusal(reviewed_pr(isDraft=True)))
 

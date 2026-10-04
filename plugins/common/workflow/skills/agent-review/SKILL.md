@@ -7,9 +7,9 @@ allowed-tools: Skill Read Bash(python3:*,git:*,gh:*)
 
 # Agent Review
 
-One pass reviews every open PR at its head commit, hands to the owner what needs the owner, merges the AFK PRs it judged safe, and wakes the AFK runner. The owner keeps merge authority over everything else. The runner (the `afk` skill) fixes findings on its own PRs; each PR gets at most lanes.json's `reviewRounds` reviews (default 3).
+One pass reviews every open PR at its head commit, hands the owner only the PRs that `LANES triage` or the review rounds send there, merges the rest once they are ready, and wakes the AFK runner. The runner (the `afk` skill) fixes findings on its own PRs; each PR gets at most lanes.json's `reviewRounds` reviews (default 3).
 
-`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. GitHub writes are limited to: one review per PR per head commit, replies on review threads and resolving the agent-written ones it verified fixed, the `review:owner` label on PRs, and `LANES merge-reviewed`.
+`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. GitHub writes are limited to: one review per PR per head commit, replies on review threads and resolving the agent-written ones it verified fixed, the `review:owner` label on PRs, and `LANES merge`.
 
 A base branch that requires resolved conversations blocks a PR while any review thread is open, even with green checks, and GitHub reports only `BLOCKED`. Fixed findings whose threads stay open hand the owner a PR they can't merge, so every pass settles the threads it can.
 
@@ -33,16 +33,16 @@ Verify every blocking finding against the code yourself, then re-read the PR's h
 
 ## 3. Post
 
-Decide criticality with [critical.md](references/critical.md). Pick the verdict:
+Run `LANES triage <pr>`. It prints `owner` with the owner rule the PR matched, `chore` or `reviewed`; the rules are a closed list of checks on the PR's data in [owner-rules.md](references/owner-rules.md), and a PR matching none lands without the owner. Pick the verdict:
 
 | Verdict | When | Marker `verdict=` | `review:owner` |
 | --- | --- | --- | --- |
-| Ready to merge | No finding to fix and no open thread; not critical. | `ready` | removed on an AFK branch, added on any other branch (the owner merges it) |
-| Ready for the owner's review | No blocking finding; critical. Name why. | `owner` | added |
-| Needs fixes first | Blocking findings (`review`'s `REQUEST_CHANGES`), round below the last. Say whether it is critical. | `fixes` | removed |
+| Ready to merge | No finding to fix and no open thread; triage did not print `owner`. | `ready` | removed |
+| Ready for the owner's review | No blocking finding; triage printed `owner`. Quote its rule. | `owner` | added |
+| Needs fixes first | Blocking findings (`review`'s `REQUEST_CHANGES`), round below the last. | `fixes` | removed |
 | Needs the owner: review rounds used | Blocking findings in the last round. | `rounds` | added |
 
-Post one review with event COMMENT on the head commit: blocking findings as inline comments, and a body of the marker line, the verdict, the findings (blocking first, optional ones marked optional, each with `file:line` and its failure scenario) and the host's attribution footer. Then set the label, writing back the PR's full label set.
+Post one review with event COMMENT on the head commit: blocking findings as inline comments, and a body of the marker line, the verdict, the findings (blocking first, optional ones marked optional, each with `file:line` and its failure scenario) and the host's attribution footer. When the verdict hands the owner a PR that changes what users see, the body links before and after captures of each named change, so the owner judges what they can see. Then set the label, writing back the PR's full label set.
 
 Settle the unresolved threads: reply on each one the head fixes, naming the commit. Resolve it when its first comment is agent-written (it ends with the host's attribution footer); a person's thread stays for that person, and the review body names it. A thread that waits on an owner check (a device, a credential) stays open, and the verdict is `owner`, naming it.
 
@@ -50,7 +50,7 @@ Settle the unresolved threads: reply on each one the head fixes, naming the comm
 
 ## 4. Merge
 
-For each open PR on lanes.json's `branchPrefix` whose newest agent review says `ready` at its head, run `LANES merge-reviewed <pr>`. It merges only an open, ready AFK PR into the base, with no protected path, no `review:owner`, no review requesting changes, no newer comment from a person, and a clean merge state; otherwise it prints why it waits. A host without the GitHub CLI applies the same checks with its own GitHub tools and squash-merges at the reviewed head. After a merge, comment one line on the PR naming the round, with the attribution footer. Report a failed merge once.
+For each open PR whose newest agent review says `ready` at its head, run `LANES merge <pr>`. It merges an open, ready PR of this repository into the base when no owner rule matches, no review requests changes, no person commented after the review, no thread is open and the merge state is clean; otherwise it prints why it waits. A host without the GitHub CLI applies the same checks with its own GitHub tools and squash-merges at the reviewed head. After a merge, comment one line on the PR naming the round, with the attribution footer. Report a failed merge once.
 
 **Exit gate:** each candidate's printed result.
 

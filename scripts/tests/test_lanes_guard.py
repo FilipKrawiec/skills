@@ -36,7 +36,7 @@ ALLOWED = [
     "gh issue edit 5 --remove-label lane:afk,state:claimed --add-label lane:owner",
     "gh api -X DELETE repos/o/r/issues/5/labels/lane:afk", "gh release view v1.2.0", "gh api repos/o/r",
     "gh api -X PATCH repos/o/r/issues/5 -f state=closed", "git push -u origin agent/afk-5-x",
-    "python3 lanes.py automerge 12",
+    "python3 lanes.py automerge 12", "python3 lanes.py merge 12", "python3 lanes.py triage 12",
     'gh api repos/o/r/pulls/5/reviews -X POST -f body="missing keys in dict; see hooks.json and secrets handling"',
 ]
 MERGE = "gh pr " + "merge 1"
@@ -115,7 +115,7 @@ class GuardHookTests(unittest.TestCase):
                 {"repo": "o/r", "guard": [{"pattern": "just deploy", "reason": "CI deploys."}]}))
             blocked = self.call(tmp, "gh pr merge 1")
             self.assertEqual(blocked.returncode, 2)
-            self.assertIn("automerge", blocked.stderr)
+            self.assertIn("lanes.py merge", blocked.stderr)
             self.assertIn("CI deploys.", self.call(tmp, "just deploy web").stderr)
             self.assertEqual(self.call(tmp, "git status").returncode, 0)
 

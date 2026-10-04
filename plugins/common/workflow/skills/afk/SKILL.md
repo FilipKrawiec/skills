@@ -9,9 +9,9 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*)
 
 One run carries the delivery cycle while the owner is away. It checks what already shipped, tends its own open PRs, then takes **at most one** owner-approved issue from 02 Spec through 03 Plan, 04 Execute and 05 Review, or parks it with a question, or does housekeeping. The owner holds merge, release and settings authority; the plugin's guard hook enforces it in projects with `.github/lanes.json`.
 
-Leave the checkout a run starts in exactly as it is; it may hold the owner's work. Every build and fix happens in a worktree.
+Leave the checkout a run starts in exactly as it is; it may hold the owner's work. Every build and fix happens in a worktree. Run the commands this skill, the skills it invokes and [board.md](../../references/board.md) name; when their output leaves a question open, name it in the run's output, since an improvised command can raise a permission prompt that stops a run nobody is watching.
 
-`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). It holds only the gates: `next`, `scope`, `automerge` and `merge-reviewed`. Claim, park, release, tidy and the few card moves the board doesn't make itself are the `gh` and `git` steps in [board.md](../../references/board.md).
+`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). It holds only the gates: `next`, `scope`, `triage` and `merge`. Claim, park, release, tidy and the few card moves the board doesn't make itself are the `gh` and `git` steps in [board.md](../../references/board.md).
 
 Read [setup.md](references/setup.md) when the repository has no `.github/lanes.json`, or when scheduling unattended runs.
 
@@ -53,7 +53,7 @@ Follow the phases in order; each skill's exit gate is the next step's entry.
 2. **03 Plan.** Invoke `plan`. Its output is the `## Plan` comment.
 3. **04 Execute.** Invoke `tdd` for each plan step and commit each green slice per `vcs`. Update the docs the project's rules tie to the change. Pass `LANES scope <N>` and the full verification gate.
 4. **05 Review.** Invoke `review` as two fresh-context workers (its axes A and B) with only the issue and the diff; allow two rounds. Then the Open PR step, which releases the claim; linking the PR moves the card to Review.
-5. **Merge gate.** `LANES automerge <pr>` unless the issue asks for owner review. It merges (or queues) only docs, tests and Dependabot minor or patch changes and prints why anything else waits.
+5. **Merge gate.** `LANES merge <pr>`. It merges (or queues) a chore on green checks; any other PR lands when `agent-review` says ready, unless an owner rule matches, and the gate prints which.
 
 Park with one question, the options and a recommendation whenever the issue is ambiguous or contradicts project rules, needs a path outside its scope packet or a protected path, needs an undecided product or model choice, stays red after two honest fix attempts, still has a verified blocking finding after the second review round, or needs credentials, settings or a device.
 
@@ -63,7 +63,7 @@ Park with one question, the options and a recommendation whenever the issue is a
 
 Run when no issue was delivered this run, each step once:
 
-1. For each open Dependabot PR: `LANES automerge <pr>`; when its checks fail, comment the failing excerpt.
+1. For each open Dependabot PR: `LANES merge <pr>`; when its checks fail, comment the failing excerpt.
 2. Invoke `spec` to triage the issues `LANES next` lists as untriaged (issues created outside `spec`, which sets `lane:owner`).
 
 Keep to the queue: new work starts as an issue, not in a run. Name any follow-up you found in the output for the owner.
@@ -74,7 +74,7 @@ Keep to the queue: new work starts as an issue, not in a run. Name any follow-up
 
 Every run ends with:
 
-1. Invoke `improve` for each issue in 07 Improve, and for this run's own friction. It opens each lesson as a PR labelled `review:owner`, which waits for the owner's merge.
+1. Invoke `improve` for each issue in 07 Improve, and for this run's own friction. It opens each lesson as a PR that lands like any other.
 2. Tidy AFK runs' own worktrees and branches.
 
 **Exit gate:** a PR or the reason it stays a proposal for each lesson (or "no lessons"), and the worktrees removed.
