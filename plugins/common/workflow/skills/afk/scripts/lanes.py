@@ -8,8 +8,9 @@ everything else with plain `gh` and `git`. A repository opts in with
 Usage: lanes.py next                 # the next eligible AFK issue; in flight, skipped, untriaged
        lanes.py scope N              # changed files outside N's scope packet (exit 1 when any)
        lanes.py triage PR            # owner (and the rule it matched), chore or reviewed
-       lanes.py merge PR             # merge PR unless an owner rule matches: a chore on green
-                                     # checks, anything else after a ready agent review
+       lanes.py merge PR             # merge PR on green checks (auto-merge) unless an owner
+                                     # rule matches or a review holds it
+       lanes.py hold PR              # switch PR's auto-merge off: a review found blocking issues
 Standard library only; needs git and an authenticated gh.
 """
 import json
@@ -240,7 +241,7 @@ def triage(pr, config, scope):
     author = pr['author']['login']
     if all(chore(f['path'], author, config) for f in pr['files']):
         return 'chore', 'docs, tests or Dependabot dependencies: merges on green checks'
-    return 'reviewed', 'merges once its agent review says ready at the head'
+    return 'reviewed', 'merges on green checks unless a review holds it'
 
 
 REVIEW_MARKER = re.compile(r'<!-- agent-review sha=([0-9a-f]{40}) round=(\d+) verdict=(\w+) -->')
@@ -259,21 +260,24 @@ def latest_agent_review(pr, reviewer):
 
 
 def review_refusal(pr, config):
-    """Why a reviewed PR is not yet ready to merge, or None: the agent review's
-    verdict at the current head, no change request, and nothing newer from a person."""
-    if not config['agentReview']:
-        return 'agentReview is off in lanes.json'
-    review = latest_agent_review(pr, config['owner'])
-    if review is None or review[0] != pr['headRefOid'] or review[2] != 'ready':
-        return 'no "ready" agent review at the head commit'
+    """Why a PR no owner rule matches must not merge on green checks, or None. The
+    session that opened it reviewed it first; a later review holds it when it
+    requests changes, when the newest agent review finds problems at the head, or
+    when a person commented after that review."""
     latest = {}  # a person's later comment leaves their approval or change request standing
     for r in sorted(pr['reviews'], key=lambda r: r.get('submittedAt') or ''):
         if r['state'] in ('APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'):
             latest[r['author']['login']] = r['state']
     if 'CHANGES_REQUESTED' in latest.values():
         return 'a review requests changes'
+    review = latest_agent_review(pr, config['owner'])
+    if review is None:
+        return None
+    sha, _, verdict, reviewed_at = review
+    if sha == pr['headRefOid'] and verdict != 'ready':
+        return f'its agent review says {verdict} at the head commit'
     newer = [c for c in pr['reviews'] + pr['comments']
-             if (c.get('submittedAt') or c.get('createdAt') or '') > review[3]
+             if (c.get('submittedAt') or c.get('createdAt') or '') > reviewed_at
              and not AGENT_FOOTER.search(c.get('body') or '')]
     if newer:
         return 'a person commented after the agent review'
@@ -281,8 +285,8 @@ def review_refusal(pr, config):
 
 
 def merge_refusal(pr, config, scope=None):
-    """Why the PR may not merge now, or None. An owner rule hands it to the owner;
-    a chore merges on green checks; anything else after a ready agent review."""
+    """Why the PR may not merge on green checks, or None. An owner rule hands it to
+    the owner; a review can hold anything that is not a chore."""
     if pr['state'] != 'OPEN' or pr['isDraft']:
         return 'not an open, ready PR'
     if pr['baseRefName'] != config['base'] or pr['headRepositoryOwner']['login'] != config['repo'].split('/')[0]:
@@ -484,19 +488,11 @@ def cmd_merge(repo, args):
     if reason:
         print(f'#{number} waits: {reason}')
         return
-    kind, _ = triage(pr, repo.config, scope)
     step = merge_step(pr['mergeStateStatus'])
-    if kind == 'reviewed':
-        # The review holds for this head only, so it lands as reviewed or not at all.
-        if step != 'merge':
-            print(f"#{number} not mergeable yet: {pr['mergeStateStatus']}")
-            return
+    if step == 'merge':
+        # The gate read this head; a commit pushed since lands only through the next run.
         run('gh', 'pr', 'merge', number, '-R', repo.name, '--squash',
             '--match-head-commit', pr['headRefOid'])
-        print(f'#{number} merged after agent review')
-        return
-    if step == 'merge':
-        run('gh', 'pr', 'merge', number, '-R', repo.name, '--squash')
         print(f'#{number} merged: green and up to date')
         return
     if step == 'update':
@@ -507,8 +503,18 @@ def cmd_merge(repo, args):
           + (' (branch updated)' if step == 'update' else ''))
 
 
+def cmd_hold(repo, args):
+    number = args[0]
+    pr = gh_json('pr', 'view', number, '-R', repo.name, '--json', 'autoMergeRequest')
+    if pr['autoMergeRequest'] is None:
+        print(f'#{number} holds: auto-merge is off')
+        return
+    run('gh', 'pr', 'merge', number, '-R', repo.name, '--disable-auto')
+    print(f'#{number} holds: auto-merge switched off until `lanes.py merge` runs again')
+
+
 # `automerge` and `merge-reviewed` are the names older wrappers call.
-COMMANDS = {'next': cmd_next, 'scope': cmd_scope, 'triage': cmd_triage, 'merge': cmd_merge,
+COMMANDS = {'next': cmd_next, 'scope': cmd_scope, 'triage': cmd_triage, 'merge': cmd_merge, 'hold': cmd_hold,
             'automerge': cmd_merge, 'merge-reviewed': cmd_merge}
 
 if __name__ == '__main__':

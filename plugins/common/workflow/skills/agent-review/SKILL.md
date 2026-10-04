@@ -7,9 +7,9 @@ allowed-tools: Skill Read Bash(python3:*,git:*,gh:*)
 
 # Agent Review
 
-One pass reviews every open PR at its head commit, hands the owner only the PRs that `LANES triage` or the review rounds send there, merges the rest once they are ready, and wakes the AFK runner. The runner (the `afk` skill) fixes findings on its own PRs; each PR gets at most lanes.json's `reviewRounds` reviews (default 3).
+One pass reviews every open PR at its head commit, hands the owner only the PRs that `LANES triage` or the review rounds send there, holds the PRs it finds blocking issues in and lets the rest merge, and wakes the AFK runner. A PR that matches no owner rule already auto-merges on green checks from its Open PR step, so a review is a check that can stop it, not the gate that lets it in. The runner (the `afk` skill) fixes findings on its own PRs; each PR gets at most lanes.json's `reviewRounds` reviews (default 3).
 
-`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. GitHub writes are limited to: one review per PR per head commit, replies on review threads and resolving the agent-written ones it verified fixed, the `review:owner` label on PRs, and `LANES merge`.
+`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. GitHub writes are limited to: one review per PR per head commit, replies on review threads and resolving the agent-written ones it verified fixed, the `review:owner` label on PRs, `LANES hold` and `LANES merge`.
 
 A base branch that requires resolved conversations blocks a PR while any review thread is open, even with green checks, and GitHub reports only `BLOCKED`. Fixed findings whose threads stay open hand the owner a PR they can't merge, so every pass settles the threads it can.
 
@@ -42,7 +42,7 @@ Run `LANES triage <pr>`. It prints `owner` with the owner rule the PR matched, `
 | Needs fixes first | Blocking findings (`review`'s `REQUEST_CHANGES`), round below the last. | `fixes` | removed |
 | Needs the owner: review rounds used | Blocking findings in the last round. | `rounds` | added |
 
-Post one review with event COMMENT on the head commit: blocking findings as inline comments, and a body of the marker line, the verdict, the findings (blocking first, optional ones marked optional, each with `file:line` and its failure scenario) and the host's attribution footer. When the verdict hands the owner a PR that changes what users see, the body links before and after captures of each named change, so the owner judges what they can see. Then set the label, writing back the PR's full label set.
+Post one review with event COMMENT on the head commit: blocking findings as inline comments, and a body of the marker line, the verdict, the findings (blocking first, optional ones marked optional, each with `file:line` and its failure scenario) and the host's attribution footer. When the verdict hands the owner a PR that changes what users see, the body links before and after captures of each named change, so the owner judges what they can see. Then set the label, writing back the PR's full label set, and for any verdict other than `ready` run `LANES hold <pr>`, which switches its auto-merge off.
 
 Settle the unresolved threads: reply on each one the head fixes, naming the commit. Resolve it when its first comment is agent-written (it ends with the host's attribution footer); a person's thread stays for that person, and the review body names it. A thread that waits on an owner check (a device, a credential) stays open, and the verdict is `owner`, naming it.
 
@@ -50,7 +50,7 @@ Settle the unresolved threads: reply on each one the head fixes, naming the comm
 
 ## 4. Merge
 
-For each open PR whose newest agent review says `ready` at its head, run `LANES merge <pr>`. It merges an open, ready PR of this repository into the base when no owner rule matches, no review requests changes, no person commented after the review, no thread is open and the merge state is clean; otherwise it prints why it waits. A host without the GitHub CLI applies the same checks with its own GitHub tools and squash-merges at the reviewed head. After a merge, comment one line on the PR naming the round, with the attribution footer. Report a failed merge once.
+For each open PR whose newest agent review says `ready` at its head, run `LANES merge <pr>`. It merges an open, ready PR of this repository into the base, or switches its auto-merge back on, when no owner rule matches, no review requests changes, no person commented after the review and no thread is open; otherwise it prints why it waits. A host without the GitHub CLI applies the same checks with its own GitHub tools and squash-merges at the reviewed head. After a merge, comment one line on the PR naming the round, with the attribution footer. Report a failed merge once.
 
 **Exit gate:** each candidate's printed result.
 

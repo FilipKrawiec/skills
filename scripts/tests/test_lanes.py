@@ -285,30 +285,35 @@ class ReviewedMergeTests(unittest.TestCase):
     def test_a_ready_review_at_the_head_merges(self) -> None:
         self.assertIsNone(self.refusal(reviewed_pr()))
 
-    def test_only_the_reviewer_account_can_mark_ready(self) -> None:
-        stranger = reviewed_pr()
+    def test_without_an_agent_review_it_merges_on_green(self) -> None:
+        self.assertIsNone(self.refusal(reviewed_pr(reviews=[])))
+        self.assertIsNone(self.refusal(reviewed_pr(reviews=[]), CONFIG))
+
+    def test_an_agent_review_at_the_head_that_finds_problems_holds_it(self) -> None:
+        for verdict in ("fixes", "owner", "rounds"):
+            self.assertIn(f"says {verdict}", self.refusal(reviewed_pr(verdict=verdict)), verdict)
+
+    def test_commits_after_a_holding_review_lift_it(self) -> None:
+        self.assertIsNone(self.refusal(reviewed_pr(verdict="fixes", sha="b" * 40)))
+
+    def test_only_the_reviewer_account_can_hold_it(self) -> None:
+        stranger = reviewed_pr(verdict="fixes")
         stranger["reviews"][0]["author"] = {"login": "stranger"}
-        self.assertIn("ready", self.refusal(stranger))
+        self.assertIsNone(self.refusal(stranger))
 
     def test_pending_reviews_without_a_time_are_ignored(self) -> None:
         pending = {"author": {"login": OWNER}, "state": "PENDING", "body": "", "submittedAt": None}
         ready = reviewed_pr()
         self.assertIsNone(self.refusal({**ready, "reviews": ready["reviews"] + [pending]}))
 
-    def test_only_with_agent_review_on(self) -> None:
-        self.assertIn("agentReview", self.refusal(reviewed_pr(), CONFIG))
-
-    def test_the_verdict_must_be_ready_and_at_the_head(self) -> None:
-        self.assertIn("ready", self.refusal(reviewed_pr(verdict="owner")))
-        self.assertIn("head", self.refusal(reviewed_pr(sha="b" * 40)))
-        self.assertIn("head", self.refusal(reviewed_pr(reviews=[])))
-
     def test_the_newest_agent_review_decides(self) -> None:
         older = {"author": {"login": OWNER}, "state": "COMMENTED", "submittedAt": "2026-10-02T09:00:00Z",
                  "body": f"<!-- agent-review sha={SHA} round=1 verdict=ready -->"}
         newer = {"author": {"login": OWNER}, "state": "COMMENTED", "submittedAt": "2026-10-02T11:00:00Z",
                  "body": f"<!-- agent-review sha={SHA} round=2 verdict=fixes -->"}
-        self.assertIn("ready", self.refusal(reviewed_pr(reviews=[older, newer])))
+        self.assertIn("says fixes", self.refusal(reviewed_pr(reviews=[older, newer])))
+        later_ready = {**older, "submittedAt": "2026-10-02T12:00:00Z"}
+        self.assertIsNone(self.refusal(reviewed_pr(reviews=[newer, later_ready])))
 
     def test_any_branch_merges_and_owner_rules_hand_over(self) -> None:
         self.assertIsNone(self.refusal(reviewed_pr(headRefName="feature/12-thing")))
