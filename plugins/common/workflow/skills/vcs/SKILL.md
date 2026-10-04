@@ -42,4 +42,4 @@ Follow these steps for all version control and git operations to maintain a clea
 ## Delivery Authority & Merge Rules
 
 - Agents commit, push verified task branches, and open or update PRs as normal delivery work.
-- The owner retains merge authority: merging, approving and force-pushing a protected or default branch happen only on the owner's explicit word (the `afk` gates `automerge` and `merge-reviewed` are that word for chores and agent-reviewed AFK PRs).
+- The owner retains merge authority: merging, approving and force-pushing a protected or default branch happen only on the owner's explicit word (the `afk` skill's `lanes.py merge` gate is that word for every PR that matches no owner rule).

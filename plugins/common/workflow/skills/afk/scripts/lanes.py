@@ -7,8 +7,9 @@ everything else with plain `gh` and `git`. A repository opts in with
 
 Usage: lanes.py next                 # the next eligible AFK issue; in flight, skipped, untriaged
        lanes.py scope N              # changed files outside N's scope packet (exit 1 when any)
-       lanes.py automerge PR         # squash auto-merge PR on green checks if it is a chore
-       lanes.py merge-reviewed PR    # squash-merge an AFK PR whose agent review says ready
+       lanes.py triage PR            # owner (and the rule it matched), chore or reviewed
+       lanes.py merge PR             # merge PR unless an owner rule matches: a chore on green
+                                     # checks, anything else after a ready agent review
 Standard library only; needs git and an authenticated gh.
 """
 import json
@@ -37,6 +38,11 @@ DEFAULTS = {
     # True when an automated reviewer reviews PRs first and hands them over with review:owner.
     'agentReview': False,
     'reviewRounds': 3,
+    # The owner rules beyond `protected`: paths (stored data, security rules), labels that
+    # ship or deploy on merge, and the size of a change beyond docs and tests.
+    'ownerPaths': [],
+    'ownerLabels': [],
+    'ownerLines': 800,
 }
 
 PACKET = re.compile(r'```(?:scope|factory)\s*(\{.*?\})\s*```', re.S)
@@ -140,7 +146,7 @@ def out_of_scope(changed, paths, config):
             if matches(config['protected'], f) or not any(covers(p, f) for p in allowed)]
 
 
-# --- Chore auto-merge ------------------------------------------------------
+# --- Triage and merge ------------------------------------------------------
 
 def chore(path, author, config):
     """Docs, tests and Dependabot dependency files: safe to merge on green checks."""
@@ -166,7 +172,7 @@ def major_bumps(pr):
 
 
 def merge_step(merge_state):
-    """How an approved chore lands: 'merge' now, 'update' its branch first, or 'queue'."""
+    """How an approved PR lands: 'merge' now, 'update' its branch first, or 'queue'."""
     return {'CLEAN': 'merge', 'HAS_HOOKS': 'merge', 'BEHIND': 'update'}.get(merge_state, 'queue')
 
 
@@ -185,31 +191,56 @@ def open_threads(pr):
     return f"{count} unresolved review thread{'s' if count > 1 else ''}: answer, then resolve each"
 
 
-def automerge_refusal(pr, config):
-    """Why a PR must wait for the owner, or None when it may auto-merge."""
+def owner_rule(pr, config, scope):
+    """The first owner rule the PR matches, or None.
+
+    The list is closed and each rule reads data, never judgement: a PR that
+    matches none merges without the owner. `scope` is the union of the scope
+    packets of the issues the PR closes, or None when it closes none or one
+    of them has no packet."""
     author = pr['author']['login']
-    if pr['state'] != 'OPEN' or pr['isDraft']:
-        return 'not an open, ready PR'
-    if open_threads(pr):
-        return open_threads(pr)
-    if OWNER_REVIEW in names(pr):
+    labels = names(pr)
+    files = [f['path'] for f in pr['files']]
+    if OWNER_REVIEW in labels:
         return f'labelled {OWNER_REVIEW}'
-    if pr['baseRefName'] != config['base'] or pr['headRepositoryOwner']['login'] != config['repo'].split('/')[0]:
-        return f"not a branch of this repository into {config['base']}"
     if author != config['owner'] and author not in DEPENDABOT:
         return f'author {author} is neither the owner nor Dependabot'
-    breaking = major_bumps(pr) if author in DEPENDABOT else []
-    if breaking:
-        return 'major version update, a migration to plan: ' + ', '.join(breaking)
-    files = [f['path'] for f in pr['files']]
     if not files or len(files) >= 100:
         return 'file list is empty or truncated'
     if renamed(pr):
         return 'renames hide their old path: ' + ', '.join(renamed(pr)[:5])
-    product = [f for f in files if not chore(f, author, config)]
-    if product:
-        return 'changes more than docs, tests or dependencies: ' + ', '.join(product[:5])
+    owned = [f for f in files if matches(config['protected'] + config['ownerPaths'], f)]
+    if owned:
+        return 'touches owner paths: ' + ', '.join(owned[:5])
+    shipping = sorted(labels & set(config['ownerLabels']))
+    if shipping:
+        return 'ships on merge: ' + ', '.join(shipping)
+    breaking = major_bumps(pr) if author in DEPENDABOT else []
+    if breaking:
+        return 'major version update, a migration to plan: ' + ', '.join(breaking)
+    product = [f for f in pr['files'] if not chore(f['path'], author, config)]
+    if not product:
+        return None
+    lines = sum(f.get('additions', 0) + f.get('deletions', 0) for f in product)
+    if lines > config['ownerLines']:
+        return f"{lines} changed lines beyond docs and tests (limit {config['ownerLines']})"
+    if scope is None:
+        return 'closes no issue with a scope packet'
+    outside = out_of_scope([f['path'] for f in product], scope, config)
+    if outside:
+        return "changes outside its issue's scope packet: " + ', '.join(outside[:5])
     return None
+
+
+def triage(pr, config, scope):
+    """('owner', rule), ('chore', how) or ('reviewed', how): who lets the PR land."""
+    rule = owner_rule(pr, config, scope)
+    if rule:
+        return 'owner', rule
+    author = pr['author']['login']
+    if all(chore(f['path'], author, config) for f in pr['files']):
+        return 'chore', 'docs, tests or Dependabot dependencies: merges on green checks'
+    return 'reviewed', 'merges once its agent review says ready at the head'
 
 
 REVIEW_MARKER = re.compile(r'<!-- agent-review sha=([0-9a-f]{40}) round=(\d+) verdict=(\w+) -->')
@@ -227,31 +258,11 @@ def latest_agent_review(pr, reviewer):
     return max(found, key=lambda f: f[3]) if found else None
 
 
-def reviewed_merge_refusal(pr, config):
-    """Why an agent-reviewed AFK PR must wait for the owner, or None when it may merge.
-
-    The reviewer judges criticality and records it as its verdict; this gate
-    checks everything a script can: the branch, the base, protected paths,
-    the verdict at the current head, no open review thread, and nothing
-    newer from a person."""
+def review_refusal(pr, config):
+    """Why a reviewed PR is not yet ready to merge, or None: the agent review's
+    verdict at the current head, no change request, and nothing newer from a person."""
     if not config['agentReview']:
         return 'agentReview is off in lanes.json'
-    if pr['state'] != 'OPEN' or pr['isDraft']:
-        return 'not an open, ready PR'
-    if pr['baseRefName'] != config['base'] or pr['headRepositoryOwner']['login'] != config['repo'].split('/')[0]:
-        return f"not a branch of this repository into {config['base']}"
-    if not pr['headRefName'].startswith(config['branchPrefix']):
-        return f"not an AFK branch ({config['branchPrefix']}*)"
-    if OWNER_REVIEW in names(pr):
-        return f'labelled {OWNER_REVIEW}'
-    files = [f['path'] for f in pr['files']]
-    if not files or len(files) >= 100:
-        return 'file list is empty or truncated'
-    if renamed(pr):
-        return 'renames hide their old path: ' + ', '.join(renamed(pr)[:5])
-    protected = [f for f in files if matches(config['protected'], f)]
-    if protected:
-        return 'touches protected paths: ' + ', '.join(protected[:5])
     review = latest_agent_review(pr, config['owner'])
     if review is None or review[0] != pr['headRefOid'] or review[2] != 'ready':
         return 'no "ready" agent review at the head commit'
@@ -261,14 +272,29 @@ def reviewed_merge_refusal(pr, config):
             latest[r['author']['login']] = r['state']
     if 'CHANGES_REQUESTED' in latest.values():
         return 'a review requests changes'
-    if open_threads(pr):
-        return open_threads(pr)
     newer = [c for c in pr['reviews'] + pr['comments']
              if (c.get('submittedAt') or c.get('createdAt') or '') > review[3]
              and not AGENT_FOOTER.search(c.get('body') or '')]
     if newer:
         return 'a person commented after the agent review'
     return None
+
+
+def merge_refusal(pr, config, scope=None):
+    """Why the PR may not merge now, or None. An owner rule hands it to the owner;
+    a chore merges on green checks; anything else after a ready agent review."""
+    if pr['state'] != 'OPEN' or pr['isDraft']:
+        return 'not an open, ready PR'
+    if pr['baseRefName'] != config['base'] or pr['headRepositoryOwner']['login'] != config['repo'].split('/')[0]:
+        return f"not a branch of this repository into {config['base']}"
+    if open_threads(pr):
+        return open_threads(pr)
+    kind, why = triage(pr, config, scope)
+    if kind == 'owner':
+        return 'for the owner: ' + why
+    if kind == 'chore':
+        return None
+    return review_refusal(pr, config)
 
 
 def afk_in_flight(issues, with_pr):
@@ -419,16 +445,56 @@ def cmd_scope(repo, args):
     print(f'✓ {len(changed)} changed files within #{number} scope')
 
 
-def cmd_automerge(repo, args):
-    number = args[0]
-    pr = gh_json('pr', 'view', number, '-R', repo.name, '--json',
-                 'state,isDraft,baseRefName,headRepositoryOwner,author,files,title,body,labels,mergeStateStatus')
+PR_FIELDS = ('state,isDraft,baseRefName,headRefName,headRefOid,headRepositoryOwner,author,files,'
+             'title,body,labels,reviews,comments,mergeStateStatus,closingIssuesReferences')
+
+
+def closing_scope(repo, pr):
+    """The union of the scope packets of the issues the PR closes, or None."""
+    refs = pr.get('closingIssuesReferences') or []
+    if not refs:
+        return None
+    scope = []
+    for ref in refs:
+        body = gh_json('issue', 'view', str(ref['number']), '-R', repo.name, '--json', 'body')['body']
+        found = packet(body)
+        if found is None or not found['paths']:
+            return None
+        scope += found['paths']
+    return scope
+
+
+def read_pr(repo, number):
+    pr = gh_json('pr', 'view', number, '-R', repo.name, '--json', PR_FIELDS)
     pr['unresolvedThreads'] = unresolved_threads(repo.name, number)
-    reason = automerge_refusal(pr, repo.config)
+    return pr, closing_scope(repo, pr)
+
+
+def cmd_triage(repo, args):
+    number = args[0]
+    pr, scope = read_pr(repo, number)
+    kind, why = triage(pr, repo.config, scope)
+    print(f'#{number} {kind}: {why}')
+
+
+def cmd_merge(repo, args):
+    number = args[0]
+    pr, scope = read_pr(repo, number)
+    reason = merge_refusal(pr, repo.config, scope)
     if reason:
-        print(f'#{number} waits for the owner: {reason}')
+        print(f'#{number} waits: {reason}')
         return
+    kind, _ = triage(pr, repo.config, scope)
     step = merge_step(pr['mergeStateStatus'])
+    if kind == 'reviewed':
+        # The review holds for this head only, so it lands as reviewed or not at all.
+        if step != 'merge':
+            print(f"#{number} not mergeable yet: {pr['mergeStateStatus']}")
+            return
+        run('gh', 'pr', 'merge', number, '-R', repo.name, '--squash',
+            '--match-head-commit', pr['headRefOid'])
+        print(f'#{number} merged after agent review')
+        return
     if step == 'merge':
         run('gh', 'pr', 'merge', number, '-R', repo.name, '--squash')
         print(f'#{number} merged: green and up to date')
@@ -441,26 +507,9 @@ def cmd_automerge(repo, args):
           + (' (branch updated)' if step == 'update' else ''))
 
 
-def cmd_merge_reviewed(repo, args):
-    number = args[0]
-    pr = gh_json('pr', 'view', number, '-R', repo.name, '--json',
-                 'state,isDraft,baseRefName,headRefName,headRefOid,headRepositoryOwner,labels,'
-                 'files,reviews,comments,mergeStateStatus')
-    pr['unresolvedThreads'] = unresolved_threads(repo.name, number)
-    reason = reviewed_merge_refusal(pr, repo.config)
-    if reason:
-        print(f'#{number} waits for the owner: {reason}')
-        return
-    if merge_step(pr['mergeStateStatus']) != 'merge':
-        print(f"#{number} not mergeable yet: {pr['mergeStateStatus']}")
-        return
-    run('gh', 'pr', 'merge', number, '-R', repo.name, '--squash',
-        '--match-head-commit', pr['headRefOid'])
-    print(f'#{number} merged after agent review')
-
-
-COMMANDS = {'next': cmd_next, 'scope': cmd_scope, 'automerge': cmd_automerge,
-            'merge-reviewed': cmd_merge_reviewed}
+# `automerge` and `merge-reviewed` are the names older wrappers call.
+COMMANDS = {'next': cmd_next, 'scope': cmd_scope, 'triage': cmd_triage, 'merge': cmd_merge,
+            'automerge': cmd_merge, 'merge-reviewed': cmd_merge}
 
 if __name__ == '__main__':
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:

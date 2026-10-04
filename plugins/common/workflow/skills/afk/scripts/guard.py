@@ -4,7 +4,7 @@
 Active only in projects with `.github/lanes.json`. Blocks shell commands that
 merge PRs, publish releases, dispatch workflows, or change secrets, variables
 or repository settings, plus the project's own `guard` rules from lanes.json.
-Chore PRs merge through `lanes.py automerge`. `lane:afk` may be added only in a
+PRs merge through `lanes.py merge`, which hands the owner only what an owner rule matches. `lane:afk` may be added only in a
 session the owner is in; scheduled runs (and unreadable transcripts) never add it.
 
 Hook input: the host's pre-tool-use event as JSON on stdin (`tool_name`,
@@ -18,7 +18,7 @@ from pathlib import Path
 
 OWNER_RUNS_IT = 'The owner runs this themselves.'
 
-MERGE_IS_OWNERS = 'Merging is the owner\'s; chore PRs use `lanes.py automerge`.'
+MERGE_IS_OWNERS = 'Merging goes through `lanes.py merge`, or the owner.'
 RULES = [
     (r'\bgh\s+pr\s+merge\b', MERGE_IS_OWNERS),
     # A query file, --input or shell substitution hides the mutation, so each counts as a merge.

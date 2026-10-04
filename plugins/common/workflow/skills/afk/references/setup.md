@@ -15,7 +15,8 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `chores` | no | Regexes of paths that auto-merge on green checks (adds to `^docs/`, `\.md$`, test directories). |
 | `dependencyFiles` | no | Regexes of manifests and lockfiles that auto-merge when Dependabot changed them, unless the PR crosses a major version (or a minor one below 1.0): those stay open for the owner. |
 | `branchPrefix`, `staleClaimHours` | no | Defaults `agent/afk-`, `3`. |
-| `agentReview`, `reviewRounds` | no | `true` when the `agent-review` skill reviews PRs before the owner; it adds `review:owner` to a PR it hands to the owner, and `lanes.py merge-reviewed` may merge AFK PRs it judged ready. `reviewRounds` caps reviews per PR. Defaults `false`, `3`. |
+| `agentReview`, `reviewRounds` | no | `true` when the `agent-review` skill reviews PRs; `lanes.py merge` then lands any PR that matches no owner rule once its review says ready, and the reviewer adds `review:owner` to the rest. `reviewRounds` caps reviews per PR. Defaults `false`, `3`. |
+| `ownerPaths`, `ownerLabels`, `ownerLines` | no | The project's owner rules beyond `protected`: regexes of paths whose change the owner sees (security rules, stored data shapes, migrations), labels that ship or deploy on merge, and the most changed lines beyond docs and tests (default 800). `lanes.py triage` applies the whole closed list in the `agent-review` skill's owner rules reference. |
 | `guard` | no | Extra blocked commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. |
 
 Minimal example:
@@ -36,9 +37,9 @@ Minimal example:
 | --- | --- |
 | Labels | `gh label create <name> --color <hex> --description "<text>"` for each label below that the repository lacks. |
 | Board | Optional. Give the Project's Status field the columns in [board.md](../../../references/board.md), turn on the workflows it lists, add its Priority field and create its views (Views there). On a board with other Status options, add the new ones, move each card to its state's column, then delete the old options, so no card loses its Status. The token that runs agents needs the `project` scope: `gh auth refresh -s project`. |
-| Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard assumes the owner merges everything that is not a chore. |
+| Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard leaves merging to `lanes.py merge` and the owner. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
-| Rules | Add to the project's agent rules: "New work starts with `spec`, which opens the issue and decides its lane", "Working on an issue: follow Start here in the workflow plugin's `references/board.md`" and a link to the project's workflow page. |
+| Rules | Add one line to the project's agent rules: issues, lanes, the board, worktrees, branches, PRs, reviews and merges follow the workflow plugin's skills, with a link to the project's workflow page, which holds only the project's values. |
 
 ## Labels
 
@@ -50,12 +51,12 @@ Minimal example:
 | `state:claimed` | An AFK run is working on it now. |
 | `state:started` | Another session is working on it now. |
 | `state:parked` | An AFK run handed it back with a question. |
-| `review:owner` | PR: it waits for the owner (agent review is done, or it carries a lesson); `lanes.py automerge` and `merge-reviewed` leave it. |
+| `review:owner` | PR: an owner rule matched (`lanes.py triage` printed `owner`) or the review rounds ran out; `lanes.py merge` leaves it. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | The issue's type, exactly one per issue; Issue types in [board.md](../../../references/board.md) says which. |
 
 Priority, the board's columns, the commands that move a card and the claim, park and tidy steps are in [board.md](../../../references/board.md).
 
-With `agentReview`, the reviewer adds `review:owner` to a PR when it hands it to the owner (passed but needs the owner, or out of review rounds) and removes it when it asks for fixes again.
+With `agentReview`, the reviewer adds `review:owner` to a PR when `lanes.py triage` prints `owner` or the review rounds run out, and removes it when it asks for fixes again.
 
 ## Unattended runs
 

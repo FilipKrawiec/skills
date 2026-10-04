@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,python3:*,just:*)
 
 # Improve (07)
 
-Close the cycle by making the system learn: remove friction at its source instead of relying on anyone's memory. Each lesson arrives as a PR; the owner accepts it by merging and rejects it by closing.
+Close the cycle by making the system learn: remove friction at its source instead of relying on anyone's memory. Each lesson arrives as a PR and lands like any other: the owner sees it when an owner rule matches (a lesson for agent rules or automation touches protected paths), and can close any lesson to reject it.
 
 **With the owner:** every phase; the owner may drop a lesson before phase 4. **Unattended:** every phase; the owner decides on each lesson's PR later.
 
@@ -46,7 +46,7 @@ Each lesson becomes an issue and a PR, except one that targets `.github/lanes.js
 
 1. Invoke `spec` (phase 1) with the target repository (`-R <owner/repo>` for an upstream skill library) to open an issue carrying the target file and the wording.
 2. Make a worktree of the target repository from its fetched base branch, on branch `<branchPrefix>lesson-<N>-<slug>` (`<branchPrefix>` from the target's lanes.json, default `agent/afk-`); for another repository, clone it into the host's temporary directory instead. Apply the wording and pass the target's verification gate.
-3. Push, then open a PR labelled `review:owner` (create the label when the repository lacks it), titled `<type>(<area>): <outcome>`, its body starting `Closes #<N>` and linking the `## Lessons` comment. The label keeps it from `lanes.py automerge` and `merge-reviewed`: the owner's merge is the acceptance.
+3. Push, then open it through board.md's Open PR step, its body also linking the `## Lessons` comment.
 4. Link the issue and the PR from the `## Lessons` comment (or the run's output), and remove a temporary clone.
 
 **Exit gate:** the `## Lessons` comment (or the run's output) linking an issue and a PR for each lesson, or naming why it stays a proposal.
