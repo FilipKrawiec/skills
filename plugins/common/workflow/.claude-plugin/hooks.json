@@ -1,5 +1,5 @@
 {
-  "description": "Lanes guard: in projects with .github/lanes.json, blocks agent merges (shell or GitHub tools), pushes to the base branch, releases, settings changes, edits to lanes.json and unattended lane:afk.",
+  "description": "Lanes guard: in projects with .github/lanes.json, blocks agent merges (shell or GitHub tools), pushes to the base branch, releases, settings changes, edits to lanes.json, edits and branch switches in the main checkout, and unattended lane:afk.",
   "hooks": {
     "PreToolUse": [
       {

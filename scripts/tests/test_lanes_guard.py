@@ -88,6 +88,15 @@ class GuardRuleTests(unittest.TestCase):
         self.assertIsNone(guard.refusal("git push origin HEAD:main", False, base="develop"))
         self.assertIsNone(guard.refusal("git push -u origin agent/afk-5-x", False, base="develop"))
 
+    def test_the_main_checkout_keeps_its_branch(self) -> None:
+        for command in ("git switch -c claude/5-x origin/main", "git switch main", "git checkout -b x",
+                        "git checkout main", "cd . && git switch -c x"):
+            self.assertEqual(guard.refusal(command, False, in_main_checkout=True), guard.OWN_WORKTREE, command)
+            self.assertIsNone(guard.refusal(command, False), command)
+        for command in ("git checkout -- lib/a.dart", "git worktree add .worktrees/5-x -b x origin/main",
+                        "git status", "git restore lib/a.dart"):
+            self.assertIsNone(guard.refusal(command, False, in_main_checkout=True), command)
+
     def test_a_push_is_judged_by_its_own_command(self) -> None:
         for command in ("git push -u origin agent/afk-5-x && gh pr create --base main",
                         "git push origin agent/afk-5-x; gh pr create --base main",
@@ -141,6 +150,38 @@ class GuardHookTests(unittest.TestCase):
                 result = subprocess.run([sys.executable, str(GUARD)], input=json.dumps(event),
                                         capture_output=True, text=True)
                 self.assertEqual(result.returncode, code, event["tool_name"])
+
+    def test_hook_keeps_edits_and_branch_switches_out_of_the_main_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, linked = Path(tmp) / "root", Path(tmp) / "root/.worktrees/5-x"
+            git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            (root / ".github").mkdir()
+            (root / ".github/lanes.json").write_text(json.dumps({"repo": "o/r"}))
+            subprocess.run([*git, "-C", str(root), "add", "."], check=True)
+            subprocess.run([*git, "-C", str(root), "commit", "-qm", "init"], check=True)
+            subprocess.run([*git, "-C", str(root), "worktree", "add", "-q", str(linked), "-b", "x"], check=True)
+            plain = Path(tmp) / "elsewhere/a.md"
+
+            def run(event):
+                return subprocess.run([sys.executable, str(GUARD)], input=json.dumps(event),
+                                      capture_output=True, text=True)
+
+            def edit(path, cwd):
+                return run({"tool_name": "Write", "tool_input": {"file_path": str(path)}, "cwd": str(cwd)})
+
+            def shell(command, cwd):
+                return run({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(cwd)})
+
+            refused = edit(root / "lib/a.dart", root)
+            self.assertEqual(refused.returncode, 2)
+            self.assertIn("own worktree", refused.stderr)
+            self.assertEqual(edit(root / "lib/a.dart", linked).returncode, 2)
+            self.assertEqual(shell("git switch -c y origin/main", root).returncode, 2)
+            self.assertEqual(edit(linked / "lib/a.dart", linked).returncode, 0)
+            self.assertEqual(edit(plain, root).returncode, 0)
+            self.assertEqual(shell("git switch -c y", linked).returncode, 0)
+            self.assertEqual(shell("git status", root).returncode, 0)
 
     def test_hook_finds_the_repository_from_a_subdirectory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
