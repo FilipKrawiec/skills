@@ -1,6 +1,6 @@
 # Owner Rules
 
-`lanes.py triage <pr>` checks these in order and prints the first that matches. The list is closed: a PR that matches none lands without the owner, a chore (only docs, tests and Dependabot dependency files) on green checks and anything else once its agent review says `ready` at the head. Each rule reads data on the PR; none asks for judgement.
+`lanes.py triage <pr>` checks these in order and prints the first that matches. The list is closed: a PR that matches none lands without the owner on green checks, through the auto-merge the Open PR step switches on; a review that finds blocking issues holds anything that is not a chore (only docs, tests and Dependabot dependency files). Each rule reads data on the PR; none asks for judgement.
 
 | # | The PR | Configured by |
 | --- | --- | --- |

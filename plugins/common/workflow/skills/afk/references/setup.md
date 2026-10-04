@@ -15,7 +15,7 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `chores` | no | Regexes of paths that auto-merge on green checks (adds to `^docs/`, `\.md$`, test directories). |
 | `dependencyFiles` | no | Regexes of manifests and lockfiles that auto-merge when Dependabot changed them, unless the PR crosses a major version (or a minor one below 1.0): those stay open for the owner. |
 | `branchPrefix`, `staleClaimHours` | no | Defaults `agent/afk-`, `3`. |
-| `agentReview`, `reviewRounds` | no | `true` when the `agent-review` skill reviews PRs; `lanes.py merge` then lands any PR that matches no owner rule once its review says ready, and the reviewer adds `review:owner` to the rest. `reviewRounds` caps reviews per PR. Defaults `false`, `3`. |
+| `agentReview`, `reviewRounds` | no | `true` when the `agent-review` skill reviews open PRs. A PR that matches no owner rule auto-merges on green checks either way; the reviewer holds one with blocking findings (`lanes.py hold`) and adds `review:owner` to the rest. `reviewRounds` caps reviews per PR. Defaults `false`, `3`. |
 | `ownerPaths`, `ownerLabels`, `ownerLines` | no | The project's owner rules beyond `protected`: regexes of paths whose change the owner sees (security rules, stored data shapes, migrations), labels that ship or deploy on merge, and the most changed lines beyond docs and tests (default 800). `lanes.py triage` applies the whole closed list in the `agent-review` skill's owner rules reference. |
 | `guard` | no | Extra blocked commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. |
 
