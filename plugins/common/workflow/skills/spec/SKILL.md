@@ -56,7 +56,7 @@ An issue is AFK-ready when all five hold:
 | Check | Holds when |
 | --- | --- |
 | INVEST | Each of the six checks above holds or carries the owner's waiver. |
-| Bounded | The scope packet lists the paths it may change, with the package manifest and lockfile when a criterion needs a library the project lacks (such as opening a link), and every dependency. |
+| Bounded | The scope packet lists the paths it may change, with the package manifest and lockfile when a criterion needs a library the project lacks (such as opening a link), and every dependency. When the main unknown is how existing code handles real input (which files a parser reads), a run on a real sample shows the work stays inside those paths. |
 | Decided | No open product, design or model question; new UI has a mockup or names an existing pattern. |
 | Unprivileged | Nothing protected by the project's lanes.json: automation, agent instructions, infrastructure, credentials, settings, releases, deploys. |
 | Single | A story, chore or bug, not `type:epic` or `type:task`; no open PR, `state:claimed` or `state:started`. |
