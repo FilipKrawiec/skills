@@ -12,7 +12,7 @@ Close the cycle by making the system learn: remove friction at its source instea
 
 ## 1. Collect
 
-For the shipped issue (07 Improve in [board.md](../../references/board.md)'s States) or the current session, gather what slowed the cycle or caused rework: parks and their questions, failed fix attempts, review findings (especially ones raised on two or more PRs), red pipelines after merge, owner corrections, missing commands or docs.
+For the shipped issue (07 Improve in [board.md](../../references/board.md)'s States) or the current session, gather what slowed the cycle or caused rework: parks and their questions, failed fix attempts, review findings (especially ones raised on two or more PRs), red pipelines after merge, owner corrections (including ones an agent saved to its own memory), missing commands or docs.
 
 **Exit gate:** a list of friction points with their evidence (links or `file:line`), or none.
 
@@ -22,11 +22,13 @@ For each friction point, name where the lesson belongs and the proposed wording:
 
 | Lesson | Belongs in |
 | --- | --- |
-| An agent skipped or misread a step | The skill that owns that phase |
-| A project-specific rule was missing | The project's agent rules (`AGENTS.md` or equivalent) |
+| An agent skipped or misread a step, or a rule would hold in any project | The skill that owns that phase |
+| A rule only this project needs was missing (its paths, commands, tools, product rules) | The project's agent rules (`AGENTS.md` or equivalent) |
 | A scope, protection or merge rule misfired | `.github/lanes.json` |
 | An issue arrived unbuildable | The issue template, or the `spec` checks |
 | Users or developers lacked information | Application docs or assets |
+
+A project's agent rules and workflow doc hold only the project's own values and link the skill for each step. When one of them, or an agent's saved memory, restates or contradicts a skill, the same lesson replaces that text with a link to the skill.
 
 Keep only lessons that change future behavior. Before writing it, scrub secrets, internal hostnames, client names and local paths.
 

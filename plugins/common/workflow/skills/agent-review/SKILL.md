@@ -42,7 +42,7 @@ Decide criticality with [critical.md](references/critical.md). Pick the verdict:
 | Needs fixes first | Blocking findings (`review`'s `REQUEST_CHANGES`), round below the last. Say whether it is critical. | `fixes` | removed |
 | Needs the owner: review rounds used | Blocking findings in the last round. | `rounds` | added |
 
-Post one review with event COMMENT on the head commit: blocking findings as inline comments, and a body of the marker line, the verdict, the findings (blocking first, optional ones marked optional, each with `file:line` and its failure scenario) and the host's attribution footer. Then set the label, writing back the PR's full label set.
+Post one review with event COMMENT on the head commit: blocking findings as inline comments, and a body of the marker line, the verdict, the findings (blocking first, optional ones marked optional, each with `file:line` and its failure scenario) and the host's attribution footer. When the verdict hands the owner a PR that changes what users see, the body links before and after captures of each named change, so the owner judges what they can see. Then set the label, writing back the PR's full label set.
 
 Settle the unresolved threads: reply on each one the head fixes, naming the commit. Resolve it when its first comment is agent-written (it ends with the host's attribution footer); a person's thread stays for that person, and the review body names it. A thread that waits on an owner check (a device, a credential) stays open, and the verdict is `owner`, naming it.
 
