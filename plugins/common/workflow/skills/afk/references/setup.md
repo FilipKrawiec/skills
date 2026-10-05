@@ -17,7 +17,7 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `branchPrefix`, `staleClaimHours` | no | Defaults `agent/afk-`, `3`. |
 | `agentReview`, `reviewRounds` | no | `true` when the `agent-review` skill reviews open PRs. A PR that matches no owner rule auto-merges on green checks either way; the reviewer holds one with blocking findings (`lanes.py hold`) and adds `review:owner` to the rest. `reviewRounds` caps reviews per PR. Defaults `false`, `3`. |
 | `ownerPaths`, `ownerLabels`, `ownerLines` | no | The project's owner rules beyond `protected`: regexes of paths whose change the owner sees (security rules, stored data shapes, migrations), labels that ship or deploy on merge, and the most changed lines beyond docs and tests (default 800). `lanes.py triage` applies the whole closed list in the `agent-review` skill's owner rules reference. |
-| `guard` | no | Extra blocked commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. |
+| `guard` | no | Extra caught commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. Each pattern is searched in every command a call runs, its quoted prose and tools that run none of their arguments (`cat`, `grep`, `echo`...) left out, so mentioning a command never trips it. |
 
 Minimal example:
 
@@ -38,7 +38,7 @@ Minimal example:
 | Labels | `gh label create <name> --color <hex> --description "<text>"` for each label below that the repository lacks. |
 | Board | Optional. Give the Project's Status field the columns in [board.md](../../../references/board.md), turn on the workflows it lists, add its Priority field and create its views (Views there). On a board with other Status options, add the new ones, move each card to its state's column, then delete the old options, so no card loses its Status. The token that runs agents needs the `project` scope: `gh auth refresh -s project`. |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard leaves merging to `lanes.py merge` and the owner. |
-| Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command once the plugin is enabled; on other hosts the skill text is the guard. |
+| Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command, file edit and GitHub tool call once the plugin is enabled; on other hosts the skill text is the guard. It refuses a caught call in a scheduled run and asks the owner in an attended session, except in a bypass permission mode, which approves asks unseen. |
 | Rules | Add one line to the project's agent rules: issues, lanes, the board, worktrees, branches, PRs, reviews and merges follow the workflow plugin's skills, with a link to the project's workflow page, which holds only the project's values. |
 
 ## Labels
