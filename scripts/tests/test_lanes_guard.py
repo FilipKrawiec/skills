@@ -116,6 +116,16 @@ HIDDEN = [
     "echo 'system(\"gh pr merge 1\")' > m.rb; ruby -I lib m.rb", "perl -mPOSIX -e 'system(\"gh pr merge 1\")'",
     "php -r 'system(\"gh pr merge 1\");'", "echo 'gh pr merge 1' > m.sh; bash +x m.sh",
     "echo 'gh pr merge 1' > m.sh; bash --rcfile x m.sh", "bash +x <<< 'gh pr merge 1'",
+    "echo 'gh pr merge 1' > m.sh; bash --init-file x m.sh", "echo 'gh pr merge 1' > m.sh; bash -o errexit m.sh",
+    "bash -euo pipefail -c 'gh pr merge 1'", "perl -ne 'system(\"gh pr merge 1\")'",
+    "python3 -Bc \"import os; os.system('gh pr merge 1')\"", "echo x | python3 -u -",
+    "python3 -W ignore -X dev -c \"import os; os.system('gh pr merge 1')\"",
+    "echo 'import os; os.system(\"gh pr merge 1\")' > m.py; python3 -m m",
+    "echo 'system(\"gh pr merge 1\")' > m.rb; ruby -E UTF-8 m.rb", "echo 'system(\"gh pr merge 1\")' > m.pl; perl -I lib m.pl",
+    "echo '<?php system(\"gh pr merge 1\");' > m.php; php -d x=1 m.php",
+    "python3 -c \"open('m.sh','w').write('gh pr merge 1')\"; cp m.sh n.sh; bash n.sh",
+    "python3 -c \"import json; json.dump({'event': 'APPROVE'}, open('e.json', 'w'))\"; "
+    "gh api -X POST repos/o/r/pulls/5/reviews --input e.json",
 ]
 # Calls the guard caught in real runs although they ship nothing.
 READS_AND_WRITING = [
@@ -168,6 +178,10 @@ READS_AND_WRITING = [
     "python3 -c \"print('see scripts/test.sh')\"; bash scripts/test.sh",
     "python3 - <<'EOF'\nimport pathlib\np = pathlib.Path('scripts/tool.sh')\n"
     "p.write_text(p.read_text().replace('set -e', 'set -eu'))\nEOF\nbash scripts/tool.sh",
+    "python3 - <<'EOF'\nimport pathlib\ns = pathlib.Path('scripts/release.sh').read_text()\n"
+    "assert 'git push origin main' not in s\nEOF\nbash scripts/release.sh",
+    "node -e \"require('fs').readFileSync('scripts/release.sh', 'utf8').includes('gh pr merge')\"; bash scripts/release.sh",
+    "ruby -E UTF-8 scripts/x.rb",
 ]
 PROJECT_RULES = [(r"\bfirebase(-tools)?(@\S+)?\s.*\bdeploy\b", "Sites deploy from CI."),
                  (r"\bterraform\b.*\b(apply|destroy)\b", "DNS applies after merge."),
@@ -231,6 +245,15 @@ class GuardRuleTests(unittest.TestCase):
         self.assertIsNotNone(guard.refusal("npx firebase-tools deploy --only hosting", True, PROJECT_RULES))
         self.assertIsNotNone(guard.refusal("terraform -chdir=infra apply", True, PROJECT_RULES))
         self.assertIsNotNone(guard.refusal("dart run tool/kill_dev.dart", True, PROJECT_RULES))
+
+    def test_a_program_that_reads_a_request_body_leaves_it_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "q.json").write_text('{"query": "query { viewer { login } }"}')
+            Path(tmp, "b.json").write_text('{"event": "COMMENT", "body": "x"}')
+            for command in ("python3 -c \"import json; json.load(open('q.json'))\" && gh api graphql --input q.json",
+                            "python3 -c \"print(open('b.json').read())\" && "
+                            "gh api -X POST repos/o/r/pulls/5/reviews --input b.json"):
+                self.assertIsNone(guard.refusal(command, False, cwd=tmp), command)
 
     def test_a_command_the_guard_cannot_parse_is_caught(self) -> None:
         for command in ("gh pr view 'unclosed", "echo $(gh pr view 1", "cd x\x00y && ls"):

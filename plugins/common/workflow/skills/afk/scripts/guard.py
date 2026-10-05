@@ -14,8 +14,9 @@ Shell commands are parsed, not searched: a rule judges the commands a line
 runs (including `$(...)`, `bash -c`, launchers such as `env` or `npx`, scripts
 fed to a shell or written and run in one call, and the process calls of inline
 programs and of the files they write), never the text it writes, quotes or
-reads, and GitHub API calls by endpoint, method and body. A call whose effect the guard can't read (a script
-piped to a shell, a request body on stdin it can't see) is caught.
+reads, and GitHub API calls by endpoint, method and body. A call whose effect
+the guard can't read (a script piped to a shell, a request body on stdin it
+can't see) is caught.
 
 In a session the owner attends, a caught call goes to the owner to approve,
 in every permission mode where the host asks before a call. Bypass mode
@@ -345,15 +346,21 @@ STARTS_PROCESSES = {
     'python': r'\b(subprocess|pty)\b|\bos\.(system|popen|exec|spawn)|\bfrom\s+os\s+import\b',
     'node': r'\bchild_process\b|\bBun\.spawn\b|\bDeno\.(run|Command)\b',
 }
-# The flags of each interpreter that take a value, so the script is the first other operand.
+# Each interpreter's flag that takes the program as text, and its flags that take a value: the script is
+# the first other operand.
+CODE_FLAGS = {'python': r'-[A-Za-z]*c', 'node': r'-e|--eval|-p|--print|-pe', 'perl': r'-[a-zA-Z]*[eE]',
+              'ruby': r'-[a-zA-Z]*e', 'php': r'-r', 'osascript': r'-e', 'other': r'-c|-e|--eval'}
 PROGRAM_VALUES = {'python': {'-W', '-X', '--check-hash-based-pycs'}, 'ruby': {'-I', '-r', '-C', '-E', '-F'},
                   'perl': {'-I'}, 'php': {'-c', '-d', '-z'},
                   'node': {'-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions',
                            '--input-type'}}
 QUOTED = re.compile(r'"([^"\s\\]+)"|\'([^\'\s\\]+)\'')  # a string a program may name a file by
-# A string a program edits, prints or compares is text, not a command line it runs.
-TEXT_USE = re.compile(r'\.(replace|write|write_text|sub|startswith|endswith|find|index|count|split|join)\(|'
-                      r'\b(print|assert)\b|["\']\s+(not\s+)?in\s+\w')
+WRITES = re.compile(r'\bopen\s*\([^)]*,\s*["\'][^"\']*[wax+]|\.write|\bwrite_?(text|bytes|file)|appendFile|'
+                    r'createWriteStream|\bdump\(|\b(copy\w*|move|rename|symlink)\(|["\']\s*>|file_put_contents|fputs',
+                    re.IGNORECASE)  # a program that may write a file
+# A string a program compares is text, not a command line it runs; so is one it edits or prints.
+COMPARES = re.compile(r'\bassert\b|["\']\s+(not\s+)?in\s+\w|\.(startswith|endswith|find|index|count|includes)\(')
+TEXT_USE = re.compile(COMPARES.pattern + r'|\.(replace|write|write_text|sub|split|join)\(|\bprint\b')
 # Commands that run none of their arguments; `tee` writes files, but a file it writes runs nothing.
 RUNS_NOTHING = {'cat', 'head', 'tail', 'less', 'more', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'wc', 'ls',
                 'diff', 'cmp', 'file', 'stat', 'echo', 'printf', 'jq', 'yq', 'sort', 'uniq', 'cut', 'tr', 'column',
@@ -505,10 +512,11 @@ def current_branch(directory):
         return None
 
 
-class Generated:
-    """A file an inline program of this call names, so may write: its known text, and the programs' code."""
+class Written:
+    """A file this call writes: its text (None when the guard can't know it), and the code of the inline
+    programs that may also write it, whose strings are what they write."""
 
-    def __init__(self, text, code):
+    def __init__(self, text, code=''):
         self.text, self.code = text, code
 
 
@@ -521,7 +529,7 @@ class Judge:
     def __init__(self, unattended=True, extra=(), base='main', is_main_checkout=None, origin=None):
         self.unattended, self.extra, self.base, self.origin = unattended, list(extra), base, origin
         self.is_main = is_main_checkout or (lambda path: False)
-        self.findings, self.variables, self.written = [], {}, {}  # written: path -> text, Generated or None
+        self.findings, self.variables, self.written = [], {}, {}  # written: path -> Written
 
     def catch(self, reason, afk_only=False):
         if not afk_only or self.unattended:
@@ -624,31 +632,30 @@ class Judge:
         else:
             text = None
         for path, appends in command.writes:
-            self.written[self.path(path, cwd)] = None if appends else text
+            self.written[self.path(path, cwd)] = Written(None if appends else text)
         if name == 'tee':
             for path in positionals(argv[1:], set()):
-                self.written[self.path(path, cwd)] = command.stdin if '-a' not in argv else None
+                self.written[self.path(path, cwd)] = Written(command.stdin if '-a' not in argv else None)
         if name in ('curl', 'wget'):
             for path in option_values(argv[1:], ('-o', '--output', '-O', '--output-document')):
-                self.written[self.path(path, cwd)] = None
+                self.written[self.path(path, cwd)] = Written(None)
         files = positionals(argv[1:], {'-t', '--target-directory', '-S', '--suffix'})
         if name in ('cp', 'mv', 'install') and len(files) == 2:
             source = self.path(files[0], cwd)
-            self.written[self.path(files[1], cwd)] = (self.written[source] if source in self.written
-                                                      else self.read_file(files[0], cwd))
+            self.written[self.path(files[1], cwd)] = self.written.get(source) or Written(self.read_file(files[0], cwd))
 
     def note_program(self, code, cwd):
-        """A file an inline program names may be one it writes, from its code."""
+        """Each file an inline program that writes names may be one it writes, from its code."""
+        if not WRITES.search(code):
+            return
         for match in QUOTED.finditer(code):
             try:
                 full = self.path(match.group(1) or match.group(2), cwd)
             except (OSError, ValueError, RuntimeError):
                 continue
-            before = self.written.get(full, '')
-            if isinstance(before, Generated):
-                self.written[full] = Generated(before.text, before.code + '\n' + code)
-            elif before is not None:
-                self.written[full] = Generated(before, code)
+            before = self.written.get(full, Written(''))
+            if before.text is not None:
+                self.written[full] = Written(before.text, before.code + '\n' + code)
 
     def launched(self, argv, command, cwd, nested):
         """A launcher the guard doesn't know (`npx`, `uv run`) may run gh, git, a shell or a program."""
@@ -667,9 +674,9 @@ class Judge:
         if PROCSUB in path or unknown(path):
             return None
         full = self.path(path, cwd)
-        if full in self.written:
-            written = self.written[full]
-            return None if isinstance(written, Generated) else written
+        written = self.written.get(full)
+        if written:
+            return None if written.code else written.text  # what a program writes, the guard can't read
         try:
             return Path(full).read_text()
         except (OSError, ValueError):
@@ -690,8 +697,8 @@ class Judge:
         else:
             files = []
             for i, arg in enumerate(args):
-                if i and args[i - 1] in ('-o', '+o', '-O', '+O', '--rcfile', '--init-file'):
-                    continue
+                if i and (re.fullmatch(r'[-+][a-zA-Z]*[oO]', args[i - 1]) or args[i - 1] in ('--rcfile', '--init-file')):
+                    continue  # an option's value: `-euo pipefail`
                 if arg == '--' or not arg.startswith(('-', '+')):
                     files = args[i + 1:i + 2] if arg == '--' else [arg]
                     break  # the script; the arguments after it are its own
@@ -718,26 +725,21 @@ class Judge:
         """A script file a shell runs: the guard reads one this call wrote; a project's script is the project's."""
         if PROCSUB in path:
             return self.catch(UNREADABLE)
-        full = self.path(path, cwd)
-        if full not in self.written:
-            return
-        written = self.written[full]
-        if written is None:
+        written = self.written.get(self.path(path, cwd))
+        if written and written.text is None:
             self.catch(UNREADABLE)  # a download, an append or tee
-        elif isinstance(written, Generated):
+        elif written:
             self.text(written.text, cwd, nested + 1)
-            self.generated(written.code, cwd)
-        else:
-            self.text(written, cwd, nested + 1)
+            self.string_commands(written.code, cwd, COMPARES, every_language=True)
 
     def interpreter(self, name, args, command, cwd):
-        language = next((k for k in ('python', 'node', 'osascript') if name.startswith(k)),
-                        'node' if name in ('deno', 'bun') else 'other')
-        code, written = self.program_code(name, language, args, command, cwd)
-        if written:
-            self.generated(written.code, cwd)
-        if not code:
+        kind = next((k for k in CODE_FLAGS if name.startswith(k)), 'node' if name in ('deno', 'bun') else 'other')
+        language = kind if kind in SPAWNS else 'other'
+        written = self.program(name, kind, args, command, cwd)
+        if not written or written.text is None:
             return
+        self.string_commands(written.code, cwd, COMPARES, every_language=True)
+        code = written.text
         self.note_program(code, cwd)
         code = literal(code)
         calls = list(re.finditer(SPAWNS[language], code))
@@ -745,50 +747,49 @@ class Judge:
             self.process_call(code, call, cwd)
         if calls or re.search(STARTS_PROCESSES.get(language, '$^'), code):
             # A program that starts processes may hold the command line in a string or list first.
-            for statement in re.split(r'[\n;]', code):
-                if re.search(r'["\']\s*(gh|git)\b', statement) and not TEXT_USE.search(statement):
-                    self.command_line(statement, cwd)
+            self.string_commands(code, cwd, TEXT_USE)
 
-    def program_code(self, name, language, args, command, cwd):
-        """(code, Generated or None) of the program an interpreter runs; code is None when the guard reads none."""
-        flags = ('-c', '-e', '--eval', '-E') + (('-p', '--print') if language == 'node' else ()) + (
-            ('-r',) if name.startswith('php') else ())
+    def program(self, name, kind, args, command, cwd):
+        """The program an interpreter runs, as a Written; None when it runs none the guard reads."""
+        code_flag = re.compile(CODE_FLAGS[kind])
         if name in ('deno', 'bun') and args[:1] == ['eval']:
-            return (args[1] if len(args) > 1 else None), None
+            return Written(args[1] if len(args) > 1 else None)
         if name in ('deno', 'bun') and args[:1] == ['run']:
             args = args[1:]
-        first = next((a for a in args if a in flags or a == '-' or a.startswith('-m')), None)
-        if language == 'python' and first and first.startswith('-m'):
-            return None, None  # runs an installed module
-        code = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in flags), None)
-        if code is not None:
-            return code, None
-        values = next((v for k, v in PROGRAM_VALUES.items() if name.startswith(k)),
-                      PROGRAM_VALUES['node'] if name in ('deno', 'bun') else set())
-        # The first operand names the script (`-` for stdin); the arguments after it are the script's.
-        script = next((a for i, a in enumerate(args) if (a == '-' or not a.startswith('-'))
-                       and not (i and args[i - 1] in values)), '-')
-        if script == '-':
+        values = PROGRAM_VALUES.get(kind, set())
+        for i, arg in enumerate(args):
+            if i and args[i - 1] in values:
+                continue
+            if code_flag.fullmatch(arg):
+                return Written(args[i + 1] if i + 1 < len(args) else None)
+            if kind == 'python' and arg.startswith('-m'):
+                module = arg[2:] or (args[i + 1] if i + 1 < len(args) else '')
+                script = self.path(module.replace('.', '/') + '.py', cwd)
+                return self.written.get(script)  # an installed module, unless this call wrote it
+            if arg == '-' or not arg.startswith('-'):
+                break  # the script (`-` for stdin); the arguments after it are the script's
+        else:
+            arg = '-'
+        if arg == '-':
             if command.stdin is None and command.piped:
                 self.catch(UNREADABLE)
-            return command.stdin, None
-        if PROCSUB in script:
-            return self.catch(UNREADABLE), None
-        written = self.written.get(self.path(script, cwd), '')  # a program of the project's runs as the project's
-        if written is None:
-            return self.catch(UNREADABLE), None  # a download, an append or tee
-        if isinstance(written, Generated):
-            return written.text, written
-        return written, None
+            return Written(command.stdin) if command.stdin is not None else None
+        if PROCSUB in arg:
+            return self.catch(UNREADABLE)
+        written = self.written.get(self.path(arg, cwd))  # a program of the project's runs as the project's
+        if written and written.text is None:
+            self.catch(UNREADABLE)  # a download, an append or tee
+        return written
 
-    def generated(self, code, cwd):
-        """Judge a file programs may have written: in any language, the command lines in the programs' strings."""
+    def string_commands(self, code, cwd, text_use, every_language=False):
+        """Judge the gh and git command lines in a program's strings and, in any language, its process calls;
+        a statement that only uses its strings as `text_use` text runs none."""
         code = literal(code)
-        for language in SPAWNS:
+        for language in SPAWNS if every_language else ():
             for call in re.finditer(SPAWNS[language], code):
                 self.process_call(code, call, cwd)
         for statement in re.split(r'[\n;]', code):
-            if re.search(r'["\']\s*(gh|git)\b', statement):
+            if re.search(r'["\']\s*(gh|git)\b', statement) and not text_use.search(statement):
                 self.command_line(statement, cwd)
 
     def process_call(self, code, call, cwd):
