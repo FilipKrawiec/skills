@@ -13,7 +13,7 @@ lanes.json. `lane:afk` may be added only in a session the owner is in.
 Shell commands are parsed, not searched: a rule judges the commands a line
 runs (including `$(...)`, `bash -c`, launchers such as `env` or `npx`, scripts
 fed to a shell or written and run in one call, and the process calls of inline
-programs), never the text it writes, quotes or reads, and GitHub API calls by
+programs and of the files they write), never the text it writes, quotes or reads, and GitHub API calls by
 endpoint, method and body. A call whose effect the guard can't read (a script
 piped to a shell, a request body on stdin it can't see) is caught.
 
@@ -26,6 +26,7 @@ Hook input: the host's pre-tool-use event as JSON on stdin (`tool_name`,
 `tool_input`, `cwd`, `transcript_path`, `permission_mode`). Exit 2 refuses; a
 `permissionDecision` of `ask` on stdout hands the call to the owner.
 """
+import fnmatch
 import json
 import os
 import re
@@ -82,6 +83,7 @@ class Command:
     def __init__(self, argv=None):
         self.argv = argv or []
         self.stdin = None  # a heredoc or here-string's text
+        self.stdin_kept = False  # its `$` are kept as they are (a quoted heredoc delimiter)
         self.piped = False  # its input comes from the command before it
         self.writes = []  # (path, appends) of each `>`, `>>` and `&>`
         self.reads = None  # the file of a `<`
@@ -89,7 +91,8 @@ class Command:
     def running(self, argv):
         """The command `argv` that this one runs, with this one's input."""
         command = Command(argv)
-        command.stdin, command.piped, command.reads = self.stdin, self.piped, self.reads
+        command.stdin, command.stdin_kept = self.stdin, self.stdin_kept
+        command.piped, command.reads = self.piped, self.reads
         return command
 
 
@@ -107,7 +110,8 @@ def parse(text):
 
 def _substitution(text, i, script):
     """At a `$(` or backquote opening at `i`, parse the command it runs into `script`; return
-    the index after it, or None when no substitution opens there. `$((...))` is arithmetic: only
+    (the index after it, the word it stands for), or None when no substitution opens there. The
+    word is SUBST, except that `$(cat <<'EOF' ...)` stands for its text. `$((...))` is arithmetic: only
     the substitutions inside it run, unless it reads as words (`$((gh pr merge 1))`), which bash
     runs as a subshell."""
     if text.startswith('$((', i):
@@ -115,7 +119,7 @@ def _substitution(text, i, script):
         while end < len(text) and not (depth == 0 and text.startswith('))', end)):
             after = _substitution(text, end, inner)
             if after is not None:
-                end = after
+                end = after[0]
                 continue
             depth += {'(': 1, ')': -1}.get(text[end], 0)
             end += 1
@@ -123,7 +127,7 @@ def _substitution(text, i, script):
             raise Unparsable('unbalanced $((')
         if not re.search(r'[A-Za-z_][\w./-]*\s+[\w./-]', re.sub(r'\$\(.*\)', '', text[i + 3:end])):
             script.substituted += inner.substituted
-            return end + 2
+            return end + 2, SUBST
     if text.startswith('$(', i):
         inner, end = _Parser(text, ')').run(i + 2)
     elif text.startswith('`', i):
@@ -141,7 +145,10 @@ def _substitution(text, i, script):
     else:
         return None
     script.substituted.append(inner)
-    return end
+    only = inner.commands[0] if len(inner.commands) == 1 else None
+    if only and only.argv == ['cat'] and only.stdin is not None and not only.writes:
+        return end, only.stdin.replace('$', LITERAL) if only.stdin_kept else only.stdin
+    return end, SUBST
 
 
 def _expansions(body, script):
@@ -151,7 +158,8 @@ def _expansions(body, script):
         if body[i] == '\\':
             i += 2
         else:
-            i = _substitution(body, i, script) or i + 1
+            after = _substitution(body, i, script)
+            i = after[0] if after else i + 1
 
 
 class _Parser:
@@ -203,7 +211,7 @@ class _Parser:
                 if (line.lstrip('\t') if tabs else line) == delimiter:
                     break
                 lines.append(line)
-            owner.stdin = '\n'.join(lines)
+            owner.stdin, owner.stdin_kept = '\n'.join(lines), not expands
             if expands:
                 _expansions(owner.stdin, self.script)
         self.heredocs.clear()
@@ -215,7 +223,7 @@ class _Parser:
         while j < len(s) and s[j] != '"':
             after = _substitution(s, j, self.script)
             if after is not None:
-                j, text = after, text + SUBST
+                j, text = after[0], text + after[1]
             elif s[j] == '\\' and j + 1 < len(s):
                 text += {'$': LITERAL}.get(s[j + 1], s[j + 1]) if s[j + 1] in '$`"\\\n' else s[j:j + 2]
                 j += 2
@@ -282,8 +290,8 @@ class _Parser:
             elif c == '"':
                 i = self.double_quoted(i)
             elif s.startswith('$(', i) or c == '`':
-                i = _substitution(s, i, self.script)
-                self.add(SUBST, SUBST)
+                i, word = _substitution(s, i, self.script)
+                self.add(word, SUBST)
             elif s.startswith(('<(', '>('), i):
                 inner, i = _Parser(s, ')').run(i + 2)
                 self.script.substituted.append(inner)
@@ -322,7 +330,8 @@ WRAPPERS = {'command': set(), 'builtin': set(), 'exec': {'-a'}, 'nohup': set(), 
             'sudo': {'-u', '-g', '-C', '-D', '-h', '-p', '-r', '-T', '-U'}, 'xargs': {'-I', '-E', '-d', '-L', '-n',
             '-P', '-s'}, 'watch': {'-n', '-d'}, 'stdbuf': {'-i', '-o', '-e'}, 'arch': {'-arch'}}
 DECLARES = {'export', 'local', 'readonly', 'declare', 'typeset'}
-SHELLS = {'bash', 'sh', 'zsh', 'dash', 'ksh', 'fish'}
+SHELLS = {'bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'csh', 'tcsh'}
+SCHEDULERS = {'at', 'batch'}  # run the commands on their input later
 INTERPRETERS = re.compile(r'^(python[0-9.]*|node|nodejs|deno|bun|ruby|perl|php|osascript)$')
 # What starts a process in each language; backquotes run commands only in the last group.
 SPAWNS = {
@@ -331,6 +340,14 @@ SPAWNS = {
     'osascript': r'\bdo\s+shell\s+script\b',
     'other': r'\b(system|exec|spawn|popen|IO\.popen|Open3\.\w+|qx|proc_open|shell_exec|passthru)\b|`',
 }
+# A program that can start processes some other way (an imported `run`, an aliased module).
+STARTS_PROCESSES = {
+    'python': r'\b(subprocess|pty)\b|\bos\.(system|popen|exec|spawn)|\bfrom\s+os\s+import\b',
+    'node': r'\bchild_process\b|\bBun\.spawn\b|\bDeno\.(run|Command)\b',
+}
+# A string a program edits, prints or compares is text, not a command line it runs.
+TEXT_USE = re.compile(r'\.(replace|write|write_text|sub|startswith|endswith|find|index|count|split|join)\(|'
+                      r'\b(print|assert)\b|["\']\s+(not\s+)?in\s+\w')
 # Commands that run none of their arguments; `tee` writes files, but a file it writes runs nothing.
 RUNS_NOTHING = {'cat', 'head', 'tail', 'less', 'more', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'wc', 'ls',
                 'diff', 'cmp', 'file', 'stat', 'echo', 'printf', 'jq', 'yq', 'sort', 'uniq', 'cut', 'tr', 'column',
@@ -342,6 +359,8 @@ GRAPHQL_SECURITY = re.compile(r'\b((create|update|delete)(BranchProtectionRule|R
                               r'(update|archive|unarchive)Repository)\b')
 GRAPHQL_APPROVE = re.compile(r'\b(addPullRequestReview|submitPullRequestReview)\b')
 GRAPHQL_PUSH = re.compile(r'\b(createCommitOnBranch|updateRefs?)\b')
+GRAPHQL_LABELS = re.compile(r'\b(addLabelsToLabelable|labelIds)\b')  # labels by id: lane:afk can't be told apart
+GUESSED = '\ue001'  # an expansion read in a GraphQL value's place
 REPO = r'(?:repos/[^/\s]+/[^/\s]+|repositories/[^/\s]+)'
 EXPANSION = re.compile(r'\$\(…\)|\$\{[^}]*\}|\$\w+|\$[@*]|\$')
 MISREAD = (ValueError, IndexError, RecursionError)  # Unparsable, or a NUL byte in a path
@@ -452,6 +471,8 @@ def endpoint_paths(endpoint, base):
     readings = ['']
     for i, part in enumerate(parts):
         fills = ('x', 'x/x', base, '') if i else ('',)
+        if i and parts[i - 1].endswith('repos/') and re.match(r'/[^/]', part):
+            fills = ('x/x',)  # `repos/$REPO/issues`
         readings = [reading + fill + part for reading in readings for fill in fills]
     return [plain(reading) for reading in readings]
 
@@ -462,7 +483,7 @@ def readable_query(query):
     def placeholder(match):
         before = query[:match.start()]
         if before.rstrip().endswith(':') or before.count('"') % 2:
-            return 'x'
+            return GUESSED
         raise Unparsable('an expansion shapes the query')
     try:
         return literal(EXPANSION.sub(placeholder, query))
@@ -488,6 +509,7 @@ class Judge:
         self.unattended, self.extra, self.base, self.origin = unattended, list(extra), base, origin
         self.is_main = is_main_checkout or (lambda path: False)
         self.findings, self.variables, self.written = [], {}, {}
+        self.programs = []  # the code of the inline programs this call runs, which may write files
 
     def catch(self, reason, afk_only=False):
         if not afk_only or self.unattended:
@@ -497,6 +519,7 @@ class Judge:
         """Judge with `run(judge)` on a fresh judge, keeping only what it surely catches:
         for a fragment the guard reads loosely, a misread is not a finding."""
         judge = Judge(self.unattended, (), self.base, self.is_main, self.origin)
+        judge.programs = self.programs
         try:
             run(judge)
         except MISREAD:
@@ -546,12 +569,16 @@ class Judge:
         if not argv:
             return cwd
         name, args = os.path.basename(argv[0]), argv[1:]
-        if name == 'cd':
+        if name in ('cd', 'pushd', 'popd'):
             target = next((a for a in args if a == '-' or not a.startswith('-')), '~')
-            return None if target == '-' or unknown(target) else self.path(target, cwd)
+            return None if name == 'popd' or target == '-' or unknown(target) else self.path(target, cwd)
         if name in RUNS_NOTHING:
             return cwd
-        if name in SHELLS or name in ('eval', 'source', '.'):
+        if name == 'alias':  # with expand_aliases on, a defined alias runs as written
+            for definition in args:
+                if '=' in definition:
+                    self.shell_text(definition.split('=', 1)[1], cwd, nested)
+        elif name in SHELLS or name in SCHEDULERS or name in ('eval', 'source', '.'):
             self.shell(name, args, command, cwd, nested)
         elif INTERPRETERS.match(name):
             self.interpreter(name, args, command, cwd)
@@ -564,8 +591,8 @@ class Judge:
         elif name == 'gh':
             self.gh(args, command, cwd)
         elif name == 'git':
-            self.git(args, cwd, nested)
-        elif '/' in argv[0] and self.path(argv[0], cwd) in self.written:
+            self.git(args, command, cwd, nested)
+        elif '/' in argv[0] and (self.path(argv[0], cwd) in self.written or self.made_here(argv[0])):
             self.script_file(argv[0], cwd, nested)
         elif EXPANSION.fullmatch(argv[0]) and not args:
             self.catch(UNREADABLE)  # `$CMD` or `$(...)` runs a command line the guard can't see
@@ -590,6 +617,20 @@ class Judge:
         if name == 'tee':
             for path in positionals(argv[1:], set()):
                 self.written[self.path(path, cwd)] = command.stdin if '-a' not in argv else None
+        if name in ('curl', 'wget'):
+            for path in option_values(argv[1:], ('-o', '--output', '-O', '--output-document')):
+                self.written[self.path(path, cwd)] = None
+        files = positionals(argv[1:], {'-t', '--target-directory', '-S', '--suffix'})
+        if name in ('cp', 'mv', 'install') and len(files) == 2:
+            self.written[self.path(files[1], cwd)] = self.read_file(files[0], cwd)
+
+    def made_here(self, path):
+        """An inline program of this call names `path`, so it may have written it."""
+        return any(literal(path) in code for code in self.programs)
+
+    def writers(self, path):
+        """The code of this call's inline programs that name `path`: what they write comes from it."""
+        return '\n'.join(code for code in self.programs if literal(path) in code)
 
     def launched(self, argv, command, cwd, nested):
         """A launcher the guard doesn't know (`npx`, `uv run`) may run gh, git, a shell or a program."""
@@ -625,8 +666,14 @@ class Judge:
             return self.shell_text(' '.join(args), cwd, nested)
         if name in ('source', '.'):
             files = args[:1]
+        elif name in SCHEDULERS:
+            files = option_values(args, ('-f',))
         else:
             for i, arg in enumerate(args):
+                if not arg.startswith(('-', '+')) and args[i - 1:i] not in (['-o'], ['+o'], ['-O'], ['+O']):
+                    break  # the script; the arguments after it are its own
+                if re.fullmatch(r'-[a-zA-Z]*n[a-zA-Z]*', arg) or arg == '--no-execute':
+                    return  # `sh -n` reads the script without running it
                 if re.fullmatch(r'-[a-zA-Z]*c[a-zA-Z]*', arg):
                     rest = args[i + 2:] if args[i + 1:i + 2] == ['--'] else args[i + 1:]
                     return self.shell_text(rest[0], cwd, nested) if rest else self.catch(UNREADABLE)
@@ -650,31 +697,55 @@ class Judge:
         if PROCSUB in path:
             return self.catch(UNREADABLE)
         full = self.path(path, cwd)
-        if full in self.written:
-            if self.written[full] is None:
-                return self.catch(UNREADABLE)  # written by a program, appended to, or piped into tee
+        if full in self.written and self.written[full] is not None:
             self.text(self.written[full], cwd, nested + 1)
+        elif full in self.written or self.made_here(path):
+            self.catch(UNREADABLE)  # written by a program, a download, an append or tee
 
     def interpreter(self, name, args, command, cwd):
-        code = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ('-c', '-e', '--eval', '-E')), None)
-        if '-m' in args:
+        language = next((k for k in ('python', 'node', 'osascript') if name.startswith(k)),
+                        'node' if name in ('deno', 'bun') else 'other')
+        flags = ('-c', '-e', '--eval', '-E') + (('-p', '--print') if language == 'node' else ())
+        first = next((a for a in args if a in flags or a == '-' or a.startswith('-m')), None)
+        if first and first.startswith('-m'):
             return  # runs an installed module
-        files = positionals(args, {'-W', '-X'})
+        code = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in flags), None)
+        if name == 'deno' and args[:1] == ['eval']:
+            code = args[1] if len(args) > 1 else None
+        # The first argument that isn't an option names the script (`-` for stdin); the rest are the script's.
+        files = [a for i, a in enumerate(args) if (a == '-' or not a.startswith('-'))
+                 and args[i - 1:i] not in (['-W'], ['-X'])][:1]
         if code is None and command.stdin is not None and files in ([], ['-']):
             code = command.stdin
+        generated = False
+        if code is None and files and files[0] != '-':
+            full = self.path(files[0], cwd)
+            if PROCSUB in files[0]:
+                return self.catch(UNREADABLE)
+            if full in self.written:
+                code = self.written[full]
+                if code is None:
+                    return self.catch(UNREADABLE)  # a download, an append or tee
+            else:
+                # Written by this call's programs, the file holds their text; a project's runs as the project's.
+                code = self.writers(files[0])
+                generated = bool(code)
+        if code:
+            self.programs.append(literal(code))
         if code is None:
-            if (command.piped and not files) or any(PROCSUB in f for f in files[:1]):
+            if command.piped and not files:
                 self.catch(UNREADABLE)
             return
         code = literal(code)
-        language = next((k for k in ('python', 'node', 'osascript') if name.startswith(k)),
-                        'node' if name in ('deno', 'bun') else 'other')
-        calls = list(re.finditer(SPAWNS[language], code))
+        # Generated code may be in any language, and the strings its writer writes are what runs.
+        languages = SPAWNS if generated else (language,)
+        calls = [call for k in languages for call in re.finditer(SPAWNS[k], code)]
         for call in calls:
             self.process_call(code, call, cwd)
-        if calls:  # a program that starts processes may hold the command line in a string or list first
+        if calls or any(re.search(STARTS_PROCESSES.get(k, '$^'), code) for k in languages):
+            # A program that starts processes may hold the command line in a string or list first.
             for line in code.split('\n'):
-                if re.search(r'["\']\s*(gh|git)\b', line):
+                if re.search(r'["\']\s*(gh|git)\b', line) and (generated or not TEXT_USE.search(line)):
                     self.command_line(line, cwd)
 
     def process_call(self, code, call, cwd):
@@ -719,6 +790,10 @@ class Judge:
             return self.catch(MERGE_IS_OWNERS)  # even with --help: setup.md's preflight probes the guard with it
         if not args or '--help' in args or '-h' in args or group == 'help':
             return
+        if unknown(group) or (unknown(action) and group in {'pr'} | {rule[0] for rule in GH_RULES}):
+            return self.catch(UNREADABLE)  # `gh pr "$A" 1` could be a merge
+        if group == 'pr' and action == 'checkout' and self.is_main(cwd or self.origin):
+            self.catch(OWN_WORKTREE)
         for rule_group, actions, reason in GH_RULES:
             if group == rule_group and action in actions:
                 self.catch(reason)
@@ -735,7 +810,7 @@ class Judge:
     @staticmethod
     def approves_flag(arg):
         """`--approve`, or `-a` among short flags (`-ab ok`), before one that takes the rest as its value."""
-        if arg == '--approve':
+        if arg == '--approve' or re.fullmatch(r'(--approve|-a)=(?!false$|0$).*', arg, re.I):
             return True
         if re.fullmatch(r'-[A-Za-z]+', arg):
             for flag in arg[1:]:
@@ -752,11 +827,20 @@ class Judge:
             parts.append(command.stdin if name == '-' else self.read_file(name, cwd))
         return None if None in parts else ' '.join(parts)
 
+    def typed_field(self, field, command, cwd):
+        """A `-F key=@file` field with the file's text (`$` when unreadable); other fields as given."""
+        key, _, value = field.partition('=')
+        if key == 'query' or not value.startswith('@'):
+            return field  # graphql() reads a query file itself
+        text = command.stdin if value == '@-' else self.read_file(value[1:], cwd)
+        return f'{key}=' + ('$' if text is None else text)
+
     def gh_api(self, args, command, cwd):
         valued = {'-X', '--method', '-f', '--raw-field', '-F', '--field', '-H', '--header', '--input', '-q', '--jq',
                   '-t', '--template', '--cache', '-p', '--preview', '--hostname'}
         endpoint = next(iter(positionals(args, valued)), '')
-        fields = option_values(args, ('-f', '--raw-field', '-F', '--field'))
+        fields = option_values(args, ('-f', '--raw-field'))
+        fields += [self.typed_field(f, command, cwd) for f in option_values(args, ('-F', '--field'))]
         inputs = option_values(args, ('--input',))
         methods = option_values(args, ('-X', '--method'))
         method = methods[-1].upper() if methods else ('POST' if fields or inputs else 'GET')
@@ -772,7 +856,9 @@ class Judge:
         def names(pattern):
             return any(re.search(pattern, path) for path in paths)
 
-        for pattern, reason in API_RULES + [(rf'^{REPO}/git/refs/heads/{re.escape(self.base)}$', push_to(self.base))]:
+        base = re.escape(self.base)
+        for pattern, reason in API_RULES + [(rf'^{REPO}/git/refs/heads/{base}$', push_to(self.base)),
+                                            (rf'^{REPO}/branches/{base}/rename$', SETTINGS)]:
             if names(pattern):
                 self.catch(reason)
 
@@ -789,13 +875,13 @@ class Judge:
                 if not branches or any(b == self.base or unknown(b) for b in branches):
                     self.catch(push_to(self.base))
         if names(rf'^{REPO}/issues(/[^/]+(/labels)?)?$'):
-            if body is None:
+            labels = [f.split('=', 1)[1] for f in fields if re.match(r'labels(\[\])?=', f)]
+            files = self.request_body([], inputs, command, cwd)  # a JSON body: stdin or a file
+            if files is None:
                 self.catch(UNREADABLE, afk_only=True)
-            elif 'label' in body:
-                labels = [f.split('=', 1)[1] for f in fields if re.match(r'labels(\[\])?=', f)]
-                if labels_add_afk(labels) or re.search('lane:afk', literal(body), re.I) or (
-                        unknown(body) and 'labels' in body):
-                    self.catch(UNATTENDED_AFK, afk_only=True)
+            elif labels_add_afk(labels) or re.search('lane:afk', literal(files), re.I) or re.search(
+                    r'"labels"\s*:\s*\[[^\]]*\$', files):
+                self.catch(UNATTENDED_AFK, afk_only=True)
 
     def graphql(self, fields, inputs, command, cwd):
         texts = []
@@ -815,18 +901,24 @@ class Judge:
             self.catch(MERGE_IS_OWNERS)
         if GRAPHQL_SECURITY.search(query):
             self.catch(SECURITY)
+        if GRAPHQL_LABELS.search(query):
+            self.catch(UNREADABLE, afk_only=True)
         if GRAPHQL_PUSH.search(query):
             target = query + ' ' + variables
             if re.search(rf'(^|[\s"=:/]){re.escape(self.base)}\b', target):
                 self.catch(push_to(self.base))
-            elif any(unknown(v) for v in values) or not re.search(r'\b(branchName|qualifiedName)\b|refs/heads/',
-                                                                  target):
+            elif GUESSED in target or any(unknown(v) for v in values) or not re.search(
+                    r'\b(branchName|qualifiedName)\b|refs/heads/', target):
                 self.catch(UNREADABLE)  # a ref named by id or by a value the guard can't read
 
     # ------------------------------------------------------------------ git
 
-    def git(self, args, cwd, nested):
-        args, directory = list(args), cwd
+    def git(self, args, command, cwd, nested):
+        args, directory, aliases = list(args), cwd, {}
+        environment = {**{k: v for k, v in self.variables.items() if v is not None},
+                       **dict(ASSIGNMENT.match(a).groups() for a in command.argv if ASSIGNMENT.match(a))}
+        settings = [(environment[key], environment.get('GIT_CONFIG_VALUE_' + key[15:], ''))
+                    for key in environment if key.startswith('GIT_CONFIG_KEY_')]
         while args and args[0].startswith('-'):
             flag = args.pop(0)
             if flag in ('-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path') and args:
@@ -834,11 +926,26 @@ class Judge:
                 if flag == '-C':
                     directory = None if unknown(value) or directory is None else self.path(value, directory)
                 elif flag == '-c':
-                    key, _, setting = value.partition('=')
-                    self.git_setting(key, setting, cwd, nested)
+                    settings.append(tuple(value.split('=', 1)) if '=' in value else (value, ''))
+        for key, setting in settings:
+            self.git_setting(key, setting, cwd, nested)
+            if key.lower().startswith('alias.'):
+                aliases[key[6:]] = literal(setting)
         if not args or '--help' in args or '-h' in args:
             return
         sub, rest = args[0], args[1:]
+        if sub in aliases:  # the alias runs with the call's arguments after it
+            if aliases[sub].startswith('!'):
+                return self.shell_text(' '.join([aliases[sub][1:]] + rest), cwd, nested)
+            return self.git(['-C', directory] * bool(directory) + aliases[sub].split() + rest, Command(), cwd,
+                            nested + 1) if nested < MAX_NESTING else self.catch(UNREADABLE)
+        if sub == 'submodule' and 'foreach' in rest:
+            self.shell_text(' '.join(positionals(rest[rest.index('foreach') + 1:], set())), cwd, nested)
+        elif sub == 'rebase':
+            for line in option_values(rest, ('-x', '--exec')):
+                self.shell_text(line, cwd, nested)
+        elif sub == 'bisect' and rest[:1] == ['run']:
+            self.command(Command(rest[1:]), cwd, nested + 1)
         if sub == 'push':
             self.git_push(rest, directory)
         elif sub == 'config':
@@ -860,17 +967,21 @@ class Judge:
             self.git_push(['origin', value], cwd)
 
     def git_push(self, args, directory):
-        if '--all' in args or '--mirror' in args:
+        """`HEAD` in a directory the guard can't follow (`cd "$WT"`) isn't resolved: it is most likely the
+        worktree the agent works in, and the session's own branch says nothing about it."""
+        if {'--all', '--mirror', '--branches'} & set(args):
             return self.catch(push_to(self.base))
         valued = {'--repo', '-o', '--push-option', '--receive-pack', '--exec'}
         targets = positionals(args, valued)[1:] or ['HEAD']
         for refspec in targets:
             destination = refspec.lstrip('+').split(':')[-1]
             if destination in ('HEAD', '@'):
-                destination = current_branch(directory or self.origin)
+                if directory is None:
+                    continue
+                destination = current_branch(directory)
             if destination is None or unknown(destination):
                 self.catch(UNREADABLE)
-            elif re.sub(r'^(refs/)?heads/', '', destination) == self.base:
+            elif fnmatch.fnmatchcase(self.base, re.sub(r'^(refs/)?heads/', '', destination)):
                 self.catch(push_to(self.base))
 
 
