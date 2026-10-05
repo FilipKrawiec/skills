@@ -69,6 +69,12 @@ class GuardRuleTests(unittest.TestCase):
         for command in ('gh api repos/o/r/pulls/5/comments/9/replies -f body="Fixed in `abc123`."',
                         "gh api graphql --input m.json", 'gh api graphql -f query="$(cat m.graphql)"'):
             self.assertEqual(guard.refusal(command, unattended=False), guard.HIDDEN_MUTATION, command)
+        self.assertIn('hides what it changes', guard.HIDDEN_MUTATION)
+        self.assertIn('-F body=@<file>', guard.HIDDEN_MUTATION)
+
+    def test_a_named_merge_with_a_hidden_field_is_refused_as_a_merge(self) -> None:
+        command = 'gh api repos/o/r/pulls/5/merge -X PUT -f commit_title="$(git log -1)"'
+        self.assertEqual(guard.refusal(command, unattended=False), guard.MERGE_IS_OWNERS)
 
     def test_only_attended_sessions_mark_an_issue_afk(self) -> None:
         for command in MARKS_AFK:
