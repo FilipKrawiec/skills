@@ -24,10 +24,11 @@
   - Infrastructure / Adapter tests (`test/infrastructure/` or `integration_test/`): database, backend SDK or HTTP client adapter verification against real local emulators or databases.
 - In widget tests, find elements by semantic properties, keys, or localized text rather than deep widget tree structure; `find.byType` on layout primitives (`Container`, `Padding`, `SizedBox`), `findsNWidgets` counts of them, and reads of an internal widget's property (`AnimatedOpacity.opacity`) pin structure, not behaviour.
 - Every `testWidgets` file lives under the widget folder, even when it checks one value; `test/unit/` holds only plain `test` cases.
-- Value types are records, or classes with generated equality where the project has a generator; a hand-written `==`/`hashCode`/`copyWith` is tested only through the behaviour it enables (a `Set` deduplicates, an equal state does not notify listeners).
+- Plain data types are records; a validated value object uses generated equality where the project has a generator, or hand-written `==`/`hashCode`/`copyWith` tested only through the behaviour it enables (a `Set` deduplicates, an equal state does not notify listeners).
+- Reach runtime construction of a `const` class through a behaviour that builds it; a `// ignore: prefer_const_constructors` or a `DateTime.now()` argument that defeats const folding marks a test written for coverage.
 - Assert layout as relations (centres aligned, equal gutters, sizes equal to theme tokens, `greaterThanOrEqualTo(kMinInteractiveDimension)`) instead of pixel literals; `closeTo(36.0)`, `moreOrLessEquals(28.0)` and a literal compared with `constraints.maxWidth` are pixel literals too.
 - Treat the "would not hit test" warning as a missed tap: bring the target into view (`Scrollable.ensureVisible(..., alignment: 0.5)`) before tapping, and leave `warnIfMissed` at its default.
 - Mount the narrowest widget that owns the behaviour, through the project's shared pump helper and fakes; boot the whole app only for the few journeys that cross screens.
-- Tests do not exercise production code that detects tests (`WidgetsBinding.instance` type checks); the widget takes the switch as a parameter and the test passes it.
+- A widget takes environment-dependent behaviour (whether to animate, which clock) as a parameter, and the test passes the variant it needs, so production code holds no `WidgetsBinding.instance` type checks.
 - `tester.drag` / `tester.tap` default to touch; pass `kind: PointerDeviceKind.mouse` when exercising desktop pointer paths.
 - Assert presentation state changes and user interaction handling (e.g. tapping buttons, entering text, validating loading/error states).

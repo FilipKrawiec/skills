@@ -1,16 +1,16 @@
 # Mutation Testing
 
-Line coverage says a line ran; a mutant says whether any test noticed the line was wrong. In one audited codebase every file sat at 100% line coverage, yet the tests caught 59–68% of seeded mutants and missed shipped bugs at documented edges.
+Line coverage says a line ran; a mutant says whether any test noticed the line was wrong.
 
 ## Scope
 
 | Situation | Depth |
 | --- | --- |
 | One function whose mistake would corrupt data or mislead the user | Flip one condition or constant by hand and run its tests |
-| A domain or application area under audit | Seeded sample, 6–10 mutants per file |
+| A domain or application area under audit | Seeded sample, 10–15 mutants per file |
 | A project gate | The language's mutation tool on domain packages, scored per file and ratcheted |
 
-Prefer the language's established tool (PIT for JVM languages, Stryker for JavaScript, TypeScript and C#, cargo-mutants for Rust, mutmut for Python). Where none fits, a sampling script with the operators below is enough.
+Prefer the language's established tool: PIT for JVM languages, Stryker for JavaScript, TypeScript and C#, cargo-mutants for Rust, mutmut for Python, `mutation_test` for Dart. Where none fits, a sampling script with the operators below is enough.
 
 ## Operators
 
@@ -24,25 +24,31 @@ Prefer the language's established tool (PIT for JVM languages, Stryker for JavaS
 | Negation | `!x` → `x` |
 | Return | return an empty collection, `null` or the type's default |
 
-Mutate code only: skip string literals, comments, imports, logging and generated files.
+Mutate code only: string literals, comments, imports, logging and generated files stay as they are.
 
-## Sampling Procedure
+## Sampling Rules
 
-1. Work in a throwaway worktree, so a crash never leaves a mutant in the real checkout.
-2. Rank target files by risk: money, stored data, values the user acts on (durations, keys, tempos), then branching density.
-3. Run each target's own tests once as the baseline; skip a file whose baseline fails.
-4. With a fixed seed, sample mutation sites per file. Apply one mutant, run only the tests that exercise that file, and restore the source in a `finally` block.
-5. Classify each run: *killed* (a test failed or timed out), *survived* (all passed), *invalid* (does not compile; excluded).
-6. Read every survivor. Mark it *equivalent* when behaviour cannot differ (a redundant guard, an unspecified tuning constant); otherwise it is a missing test.
+| Concern | Rule |
+| --- | --- |
+| Isolation | Mutate in a throwaway worktree and restore each file in a `finally` block, so a crash never leaves a mutant in a real checkout |
+| Targets | Rank files by risk: money, stored data, values the user acts on (durations, keys, tempos), then branching density |
+| Baseline | A file whose own tests fail before mutation is skipped |
+| Test set | Each mutant runs only the tests that exercise its file |
+| Reproducibility | A fixed seed picks the sites, so a rerun samples the same mutants |
 
-## Score and Action
+## Classification
 
-`score = killed / (killed + survived − equivalent)`, per file and in total.
+| Result | Meaning |
+| --- | --- |
+| Killed | A test failed or timed out |
+| Survived | Every test passed |
+| Invalid | The mutant does not compile; excluded from the score |
+| Equivalent | A survivor whose behaviour cannot differ (a redundant guard, an unspecified tuning constant); excluded from the score |
 
-- A domain file below 80% has a test-effectiveness finding, whatever its line coverage.
-- Each non-equivalent survivor gets the boundary or failure-path test that kills it, or its code is deleted when no behaviour needs it.
+## Score
+
+`score = killed / (killed + survived − equivalent)`, per file and for the area.
+
+- The bar is 80% for domain code, applied to the area total and to each file with at least 10 scored mutants; a smaller sample is too noisy to judge one file.
 - A recorded per-file score is a ratchet: a change may raise it, never lower it.
-
-## Report
-
-One table (file, sampled, killed, survived, equivalent, score), then each non-equivalent survivor as `file:line`, the mutant, and the missing case in words.
+- The report is one table (file, sampled, killed, survived, equivalent, score), then each non-equivalent survivor as `file:line`, the mutant, and the missing case in words.

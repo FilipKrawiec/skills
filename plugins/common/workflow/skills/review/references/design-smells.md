@@ -6,7 +6,7 @@ A diff review sees one change; these smells grow across many. When the review co
 
 | Smell | Signal to search for | Refactoring |
 | --- | --- | --- |
-| Repeated conditional | One enum, sealed type or string set matched (`switch`, `case X.`, `== X.`) in two or more files; count the files per type | Move the varying behaviour onto the type: enhanced-enum member, sealed-class method, interface implemented by each variant (*Replace Conditional with Polymorphism*) |
+| Repeated conditional | One enum, type tag or string set matched (`switch`, `case X.`, `== X.`) in several files of the same layer to vary the same behaviour; count the files per type and layer | Move the varying behaviour onto the type: enum member, sealed-class method, interface implemented by each variant (*Replace Conditional with Polymorphism*). An outer layer's mapping of a domain type becomes one mapper in that layer; exhaustive matching on sealed outcome types stays |
 | Selector property bag | A state class with parallel fields per variant (`penColor`, `highlighterColor`) and getters that pick one by the active variant | Hold the variants as one type and expose the active one (`activeBrush`); the picking happens once |
 | Stringly typed concept | The same literal set (`'minor'`, `'dorian'`) or the same parsing regex in two or more files | *Introduce Value Object* with one parsing entry and the behaviour each caller reimplemented |
 | Parallel registries | Adding one case means editing N lists kept in step (an enum, a lookup map, resource keys, a test table), often guarded by a consistency check | Let one source generate or own the rest: the variant carries its data, or a convention or generator derives the map |
@@ -46,9 +46,3 @@ A diff review sees one change; these smells grow across many. When the review co
 | Real-time wait | Sleeps or real delays in tests | Fake clock or fake async scheduler |
 | Copied harness | The same setup builder, fake or whole test file repeated across files | One shared helper or fake; delete the copies |
 | Untested or evadable gate | A verification script with no fixture tests, or a text pattern an equivalent spelling slips past (`closeTo(36)` for `36`) | A passing and a failing fixture per rule; match parsed syntax |
-
-## Report
-
-Sample mutants on the area's domain files as the `tdd` skill's mutation testing reference describes, and report the per-file score next to line coverage.
-
-For each smell found: the count, the three strongest examples, the refactoring, and an estimate (S, M, L). Rank by defects or rework it is likely to cause, not by count.
