@@ -210,12 +210,15 @@ class GuardHookTests(unittest.TestCase):
                            "echo --owner-approved | xargs python3 lanes.py merge 12", "python3 l.py merge 12 --owner-approved",
                            "python3 lanes.py merge --owner-approved 12", "python3 lanes.py automerge 12 --owner-approved",
                            "python3 lanes.py merge 12 --owner-approved; python3 lanes.py merge 13 --owner-approved",
-                           "python3 lanes.py merge $PR", "just lanes merge `cat pr`"):
+                           "python3 lanes.py merge 12 --owner{-approved,-approved}", "python3 *lanes.py merge 12 --owner-approved",
+                           "python3 lanes.py merge 12\n--owner-approved"):
                 for mode in ("default", "auto"):
                     refused = run(hidden, mode, attended)
                     self.assertEqual(refused.returncode, 2, (hidden, mode))
                     self.assertIn("alone in its command", refused.stderr)
-            for allowed in ("python3 lanes.py merge 12", 'python3 "$LANES" merge 12', "just lanes merge 12"):
+            for allowed in ("python3 lanes.py merge 12", 'python3 "$LANES" merge 12', "just lanes merge 12",
+                            "for p in 1 2; do python3 lanes.py merge $p; done", "grep -rn owner-approved .",
+                            "git commit -m 'feat: merge takes --owner-approved'"):
                 plain = run(allowed, "auto", attended)
                 self.assertEqual((plain.returncode, plain.stdout), (0, ""), allowed)
 

@@ -219,9 +219,12 @@ class AutomergeTests(unittest.TestCase):
         self.assertIn("for the owner", lanes.merge_refusal(lesson(), CONFIG))
         self.assertIsNone(lanes.merge_refusal(lesson(), CONFIG, owner_approved=True))
         blocked = {"author": {"login": "alice"}, "state": "CHANGES_REQUESTED", "submittedAt": "2026-10-01T10:00:00Z"}
-        for held in [lesson(isDraft=True), lesson(headRepositoryOwner={"login": "fork"}), lesson(baseRefName="other"),
-                     lesson(unresolvedThreads=[thread()]), lesson(reviews=[blocked])]:
-            self.assertIsNotNone(lanes.merge_refusal(held, CONFIG, owner_approved=True))
+        for held, why in [(lesson(isDraft=True), "not an open, ready PR"),
+                          (lesson(headRepositoryOwner={"login": "fork"}), "not a branch of this repository"),
+                          (lesson(baseRefName="other"), "not a branch of this repository"),
+                          (lesson(unresolvedThreads=[thread()]), "1 unresolved review thread"),
+                          (lesson(reviews=[blocked]), "a review requests changes")]:
+            self.assertIn(why, lanes.merge_refusal(held, CONFIG, owner_approved=True))
 
     def test_merge_reads_the_owners_approval_in_any_position(self) -> None:
         self.assertEqual(lanes.merge_args(["12"]), ("12", False))

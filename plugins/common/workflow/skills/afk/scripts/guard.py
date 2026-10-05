@@ -64,35 +64,41 @@ OWNERS_CONFIG = (f'{CONFIG_FILE} is the owner\'s: the owner edits it, or approve
                  'in manual permission mode.')
 ASK_OWNER = f'{CONFIG_FILE} is the owner\'s: approve this edit only if you asked for it.'
 # The one form that merges past the owner rules: lanes.py by a literal path (quoted when it holds a space),
-# one PR number as it is, nothing else in the command. Matching the whole command keeps the shell from
-# rewriting anything between this check and lanes.py's argv.
-APPROVED_FORM = re.compile(r'\s*python3\s+(?:"[^"$`\\]*lanes\.py"|\'[^\']*lanes\.py\'|[^\s"\'$`\\;&|<>()]*lanes\.py)'
-                           r'\s+merge\s+(\d+)\s+--owner-approved\s*')
-LANES_MERGE = r'\blanes\b[^;&|\n]*?\b(?:merge|automerge|merge-reviewed)\b([^;&|\n]*)'
+# one PR number as it is, nothing else on the line. Matching the whole command keeps the shell from
+# rewriting anything (a glob, a brace, a second line) between this check and lanes.py's argv.
+APPROVED_FORM = re.compile(r'[ \t]*python3[ \t]+(?:"[^"$`\\\n]*lanes\.py"|\'[^\'\n]*lanes\.py\''
+                           r'|[^\s"\'$`\\;&|<>()*?\[\]{}~]*lanes\.py)[ \t]+merge[ \t]+([0-9]+)[ \t]+--owner-approved[ \t]*')
+# A command that can hand lanes.py an argument it was given as text.
+RUNS_LANES = re.compile(r'\blanes\b|\bpython|\bxargs\b|\beval\b|\bsh[ \t]+-c\b|\bjust\b', re.I)
 APPROVED_MERGE = ('A merge past the owner rules runs only in a session the owner is in, in manual permission mode, '
                   'where the host asks them.')
 APPROVAL_FORM = ('The owner\'s approval merges only as `python3 <path>/lanes.py merge <PR> --owner-approved`, alone '
-                 'in its command, and a `lanes merge` takes its PR number as it is, never from a `$` or backtick.')
+                 'in its command. To mention the option in a commit or a body, pass the text from a file.')
 ASK_MERGE = 'An owner rule holds {pr}: approve this merge only if you approved {pr} in this session.'
 
 
-def approved_merge(command):
-    """'#N' when the command is exactly the form that merges PR N past the owner rules, else None."""
+def owner_approval(command):
+    """('ask', '#N') for exactly the form that merges PR N past the owner rules; ('block', why) for a
+    command that can run lanes.py and carries the option any other way; None otherwise.
+
+    The guard is the only gate on the option, so it fails closed: with the shell's quotes, backslashes,
+    braces and line continuations dropped, the option anywhere in such a command counts, since a
+    variable, a pipe or a brace expansion may carry it there. Building it at run time is deliberate
+    evasion, which no text rule stops."""
     match = APPROVED_FORM.fullmatch(command)
-    return f'#{match.group(1)}' if match else None
-
-
-def approval_refusal(command):
-    """Why a command that may carry the owner's approval in any other form is blocked, or None.
-
-    The guard is the only gate on the flag, so it fails closed: with the shell's quotes, backslashes and
-    line continuations dropped, the flag anywhere in the command counts (a variable or a pipe may carry
-    it), and so does any `$` or backtick in a lanes merge call's own arguments."""
-    plain = re.sub(r'["\'\\]', '', command.replace('\\\n', ' '))
-    call = re.search(LANES_MERGE, plain)
-    if 'owner-approved' in plain or (call and re.search(r'[$`]', call.group(1))):
-        return APPROVAL_FORM
+    if match:
+        return 'ask', f'#{match.group(1)}'
+    plain = re.sub(r'["\'\\{}]', '', command.replace('\\\n', ' '))
+    if 'owner-approved' in plain and RUNS_LANES.search(plain):
+        return 'block', APPROVAL_FORM
     return None
+
+
+def ask(reason):
+    """Hand the call to the owner: the host asks them before it runs."""
+    print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
+                                             'permissionDecisionReason': reason}}))
+    return 0
 
 
 def main_checkout(path):
@@ -189,18 +195,14 @@ def main():
         in_main = bool(event.get('cwd')) and main_checkout(event['cwd']) is not None
         command = tool_input.get('command', '')
         reason = refusal(command, is_unattended(event.get('transcript_path')), extra, base, in_main)
-        approved = None if reason else approved_merge(command)
-        if approved and owner_approves(event):
-            print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
-                                                     'permissionDecisionReason': ASK_MERGE.format(pr=approved)}}))
-            return 0
-        reason = reason or (APPROVED_MERGE if approved else approval_refusal(command))
+        kind, detail = (None if reason else owner_approval(command)) or (None, None)
+        if kind == 'ask' and owner_approves(event):
+            return ask(ASK_MERGE.format(pr=detail))
+        reason = reason or {'ask': APPROVED_MERGE, 'block': detail}.get(kind)
     else:
         reason = tool_refusal(event.get('tool_name'), tool_input)
         if reason == OWNERS_CONFIG and owner_approves(event):
-            print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
-                                                     'permissionDecisionReason': ASK_OWNER}}))
-            return 0
+            return ask(ASK_OWNER)
     if reason:
         print(f'Blocked by the lanes guard: {reason}', file=sys.stderr)
         return 2
