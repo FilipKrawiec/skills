@@ -364,12 +364,13 @@ WRITES = re.compile(r'\bopen\s*\([^)]*(,\s*|mode\s*=\s*)["\'][^"\']*[wax+]|(?<!s
                     r'\b(shutil|fs|os|FileUtils)\.(copy|move|rename|symlink|cp|mv)|\.(rename|symlink_to)\(|'
                     r'\bFile\.new\(|["\']\s*>|file_put_contents|fputs', re.IGNORECASE)
 # A downloader's options: for the file it writes (`-` is stdout), for the file the URL names, and for the
-# directory that one goes in; and whether it writes the file the URL names unless given a file (wget).
-Downloader = namedtuple('Downloader', 'output remote directory names_by_default')
+# directory that one goes in; whether it writes the file the URL names unless given a file (wget); and
+# whether its directory holds the files it is given too (curl).
+Downloader = namedtuple('Downloader', 'output remote directory names_by_default directory_holds_output')
 DOWNLOADS = {'curl': Downloader(r'-[a-np-zA-Z]*o(.*)|--output(?:=(.*))?', r'-[a-zA-Z]*O|--remote-name(-all)?',
-                                r'--output-dir(?:=(.*))?', False),
+                                r'--output-dir(?:=(.*))?', False, True),
              'wget': Downloader(r'-[a-zA-NP-Z]*O(.*)|--output-document(?:=(.*))?', None,
-                                r'-[a-zA-OQ-Z]*P(.*)|--directory-prefix(?:=(.*))?', True)}
+                                r'-[a-zA-OQ-Z]*P(.*)|--directory-prefix(?:=(.*))?', True, False)}
 # A string a program compares is text, not a command line it runs; so is one it edits or prints.
 COMPARES = re.compile(r'\bassert\b|["\']\s+(not\s+)?in\s+\w|\.(startswith|endswith|find|index|count|includes)\(')
 TEXT_USE = re.compile(COMPARES.pattern + r'|\.(replace|write|write_text|sub|split|join)\(|\bprint\b')
@@ -446,6 +447,11 @@ def unwrap(argv):
         elif not (ASSIGNMENT.match(head) or head in KEYWORDS):
             return [head] + argv
     return argv
+
+
+def statements_running(code, text_use):
+    """A program's statements, except those that only use their strings as `text_use` text."""
+    return (statement for statement in re.split(STATEMENTS, literal(code)) if not text_use.search(statement))
 
 
 def matched_value(match, args, i, default=''):
@@ -669,7 +675,7 @@ class Judge:
             self.written[self.path(files[1], cwd)] = self.written.get(source) or Written(self.read_file(files[0], cwd))
 
     def note_downloads(self, name, args, cwd):
-        """A downloaded file is unreadable. curl's directory holds its `-o` files too; wget's only the URL's."""
+        """A downloaded file is unreadable."""
         tool, directory, files = DOWNLOADS[name], '', []
         named = tool.names_by_default
         for i, arg in enumerate(args):
@@ -681,7 +687,8 @@ class Judge:
                 named = True
             elif tool.directory and (prefix := re.fullmatch(tool.directory, arg, re.DOTALL)):
                 directory = matched_value(prefix, args, i)
-        files = [os.path.join('' if tool.names_by_default else directory, file) for file in files if file != '-']
+        given = directory if tool.directory_holds_output else ''
+        files = [os.path.join(given, file) for file in files if file != '-']
         for arg in args if named else ():
             url = re.fullmatch(r'\w+://[^/]+/(?:.*/)?([^/?#]+)(?:[?#].*)?', arg)
             if url:
@@ -795,7 +802,7 @@ class Judge:
         calls = self.process_calls(written.text, cwd, (kind if kind in SPAWNS else 'other',))
         if calls or re.search(STARTS_PROCESSES.get(kind, '$^'), literal(written.text)):
             # A program that starts processes may hold the command line in a string or list first.
-            self.string_commands(written.text, cwd, TEXT_USE)
+            self.string_commands(written.text, cwd)
 
     def program(self, name, kind, args, command, cwd):
         """The program an interpreter runs, as a Written; None when it runs none the guard reads."""
@@ -838,7 +845,7 @@ class Judge:
         """Judge what programs may have written into a file: in any language, their process calls and the
         command lines in their strings, except the strings they only compare."""
         self.process_calls(written.code, cwd, SPAWNS)
-        self.string_commands(written.code, cwd, COMPARES, script=True)
+        self.script_commands(written.code, cwd)
 
     def process_calls(self, code, cwd, languages):
         """Judge a program's process calls in `languages`; return them."""
@@ -848,17 +855,17 @@ class Judge:
             self.process_call(code, call, cwd)
         return calls
 
-    def string_commands(self, code, cwd, text_use, script=False):
-        """Judge the gh and git command lines in a program's strings; a statement that only uses its strings
-        as `text_use` text runs none. In a `script` the program wrote, each line of a string is a command
-        line (`'#!/bin/sh\\ngh pr merge 1'`); elsewhere a line in a message is text."""
-        for statement in re.split(STATEMENTS, literal(code)):
-            if text_use.search(statement):
-                continue
-            if not script:
-                if STRING_COMMAND.search(statement):
-                    self.command_line(statement, cwd)
-                continue
+    def string_commands(self, code, cwd):
+        """Judge the gh and git command lines a program's strings start; a statement that only compares,
+        edits or prints its strings runs none, and a line in a message is text."""
+        for statement in statements_running(code, TEXT_USE):
+            if STRING_COMMAND.search(statement):
+                self.command_line(statement, cwd)
+
+    def script_commands(self, code, cwd):
+        """Judge the lines of the strings a program writes into a script the command runs: each is a command
+        line (`'#!/bin/sh\\ngh pr merge 1'`); a statement that only compares its strings runs none."""
+        for statement in statements_running(code, COMPARES):
             for line in re.split(STATEMENTS + r'|\|', statement.replace('\\n', '\n').replace('\\t', ' ')):
                 if SCRIPT_COMMAND.search(line):
                     self.command_line(line, cwd)
