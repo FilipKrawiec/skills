@@ -35,6 +35,7 @@ import shlex
 import subprocess
 import sys
 from collections import namedtuple
+from enum import Enum
 from pathlib import Path
 
 OWNER_RUNS_IT = 'The owner runs this themselves.'
@@ -380,7 +381,8 @@ TEXT_USE = re.compile(COMPARES.pattern + r'|\.(replace|write|write_text|sub|spli
 # A program's string (`f'...'`, `\'\'\'...\'\'\'` too); a bracket, or the end of a statement, outside one.
 STRING = re.compile(r'(?:(?<!\w)[fbrFBR]{1,2})?(\'\'\'(?:[^\\]|\\.)*?\'\'\'|"""(?:[^\\]|\\.)*?"""|'
                     r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\')', re.DOTALL)
-STATEMENT_PART = re.compile(STRING.pattern + r'|([\[({])|([\])}])|(\n|;|&&|\|\|)', re.DOTALL)
+STATEMENT_PART = re.compile(STRING.pattern + r'|(?P<open>[\[({])|(?P<close>[\])}])|(?P<newline>\n)|;|&&|\|\|',
+                            re.DOTALL)
 GH_OR_GIT = re.compile(r'\b(gh|git)\b')
 # A string that runs a gh or git command: one it starts, or one past a shell separator (`'ls; gh …'`).
 SHELL_COMMAND = re.compile(r'(^|[;&|\n(`]|\$\()\s*(gh|git)\b')
@@ -455,11 +457,15 @@ def unwrap(argv):
 
 
 def statements(code):
-    """A program's statements, split at its newlines, `;`, `&&` and `||` outside its strings and brackets."""
-    found, start, depth = [], 0, 0
+    """A program's statements, split at its `;`, `&&`, `||` and newlines outside its strings; a newline
+    inside `(` or `[` continues the statement (a list over lines), one inside `{` (a block) does not."""
+    found, start, opened = [], 0, []
     for match in STATEMENT_PART.finditer(code):
-        depth = max(0, depth + bool(match.group(2)) - bool(match.group(3)))
-        if match.group(4) and not depth:
+        if match.group('open'):
+            opened.append(match.group('open'))
+        elif match.group('close'):
+            opened = opened[:-1]
+        elif match.group(1) is None and not (match.group('newline') and opened and opened[-1] in '(['):
             found.append(code[start:match.start()])
             start = match.end()
     return found + [code[start:]]
@@ -480,46 +486,54 @@ def string_text(string):
 
 
 def code_words(code):
-    """Program code as plain words: quotes, backquotes, brackets, commas and `\\n` dropped."""
-    return re.sub(r'["\'`\[\](),]+|\\[nt]', ' ', code)
+    """Program code as plain words on one line: quotes, backquotes, brackets, commas and `\\n` dropped."""
+    return ' '.join(re.sub(r'["\'`\[\](),]+|\\[nt]', ' ', code).split())
 
 
-def joining(before, previous, text):
-    """How the code `before` a string `text` joins it to the command line of the string `previous`:
-    'argument' after a comma or a keyword (`, input=`), unless in a list it starts a command of its own
-    (`['ls', 'gh …']`, not `['-m', 'gh …']`); 'joined' or 'text' after a concatenation (`+`, `.`, `..` or
-    none) with nothing or code between; else None, a command line of its own."""
-    if re.search(r',\s*(?!(args|cmd|command)\b)\w+\s*=\s*$', before):
-        return 'argument'
+class Join(Enum):
+    """How a program's string joins the command line of the string before it."""
+    ARGUMENT = 'one word of it'  # `['git', 'commit', '-m', 'x; y']`, `input='…'`
+    CONCATENATED = 'the same word'  # `'gh pr ' + 'merge 1'`, `'gh pr ' + n + ' merge'`
+    LINE = 'a command line of its own'
+
+
+def joining(before, previous, text, program):
+    """How the string `text` joins the line of `program`, after the string `previous` and the code `before`.
+    In a list, a string that starts a gh or git command starts a line of its own unless an option names it
+    (`['ls', 'gh …']`, not `['-m', 'gh …']`); a keyword's value is an argument, except the command it
+    names, or the script a shell reads (`input=`)."""
+    keyword = re.search(r',\s*(\w+)\s*=\s*$', before)
+    if keyword:
+        shell = keyword.group(1) == 'input' and os.path.basename(program) in SHELLS
+        return Join.LINE if shell or keyword.group(1) in ('args', 'cmd', 'command') else Join.ARGUMENT
     if re.search(r',[\s\[(]*$', before):
-        return None if re.match(r'\s*(gh|git)\s', text) and not previous.startswith('-') else 'argument'
-    if re.fullmatch(r'\s*(\+|\.\.?)?\s*', before):
-        return 'joined'
-    if re.match(r'\s*(\+|\.\.?\s)', before) or re.search(r'(\+|\s\.\.?)\s*$', before):
-        return 'text'
-    return None
+        own = re.match(r'\s*(gh|git)\s', text) and not previous.startswith('-')
+        return Join.LINE if own else Join.ARGUMENT
+    if re.fullmatch(r'\s*(\+|\.\.?)?\s*', before) or re.match(r'\s*(\+|\.\.?\s)', before) \
+            or re.search(r'(\+|\s\.\.?)\s*$', before):
+        return Join.CONCATENATED
+    return Join.LINE
 
 
 def spelled(code):
-    """The command lines program code spells: each string is shell text on a line of its own, except one that
-    is an argument (`['git', 'commit', '-m', 'x; y']`) or joins another (`'gh pr ' + 'merge 1'`). The
-    words between strings stay."""
-    lines, end, previous = [''], 0, None
+    """The command lines program code spells: each string is shell text on a line of its own, unless it
+    joins the one before (see `joining`). The words between strings stay."""
+    lines, end, previous = [[]], 0, None  # a line's words: [text, quoted]
     for match in STRING.finditer(code):
         before, text = code[end:match.start()], string_text(match.group(1))
-        how = previous is not None and joining(before, previous, text)
-        if how == 'argument':
-            lines[-1] += code_words(before) + ' ' + shlex.quote(text)
-        elif how == 'joined':
-            lines[-1] += text
-        elif how == 'text':
-            lines[-1] += re.sub(r'(?<!\S)(\+|\.\.?)(?!\S)', ' ', code_words(before)) + text
+        program = (lines[-1][0][0].split() or [''])[0] if lines[-1] else ''
+        how = Join.LINE if previous is None else joining(before, previous, text, program)
+        if how is Join.CONCATENATED:
+            between = code_words(re.sub(r'(?<!\S)(\+|\.\.?)(?!\S)', ' ', before))
+            lines[-1][-1][0] += f' {between} {text}' if between else text
+        elif how is Join.ARGUMENT:
+            lines[-1] += [[code_words(before), False], [text, True]]
         else:
-            lines[-1] += code_words(before)
-            lines.append(text)
+            lines[-1].append([code_words(before), False])
+            lines.append([[text, False]])
         end, previous = match.end(), text
-    lines[-1] += code_words(code[end:])
-    return lines
+    lines[-1].append([code_words(code[end:]), False])
+    return [' '.join(shlex.quote(text) if quoted else text for text, quoted in line) for line in lines]
 
 
 def matched_value(match, args, i, default=''):
@@ -958,7 +972,7 @@ class Judge:
     def command_line(self, code, cwd):
         """Judge program code as the command lines it spells; code before its first string, from its first gh
         or git (`qx{gh …}`)."""
-        self.project_rules(' '.join(code_words(code).split()))
+        self.project_rules(code_words(code))
         head, *lines = spelled(code)
         start = GH_OR_GIT.search(head)
         for line in ([head[start.start():]] if start else []) + lines:

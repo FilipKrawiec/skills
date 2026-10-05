@@ -188,6 +188,25 @@ HIDDEN = [
     "python3 -c \"import subprocess; subprocess.run(['bash','-c','bash -c \\\"gh pr merge 1\\\"'])\"",
     "python3 -c \"import os; os.system('gh pr merge %s' % n)\"",
     "python3 -c \"import os; os.system(f'gh pr merge {n}')\"",
+    "python3 -c \"import subprocess as s; s.run(['bash','-c','echo hi; ' + 'gh pr merge 1'])\"",
+    "python3 -c \"import subprocess; subprocess.run(['bash','-c', 'ls &&' 'gh pr merge 1'])\"",
+    "node -e \"const cp=require('child_process'); if (true) { console.log('go'); const c='gh pr merge 1'; "
+    "cp.execSync(c) }\"",
+    "node -e \"const cp=require('child_process'); (() => { const c = 'gh pr merge 1'; console.log('run'); "
+    "cp.execSync(c) })()\"",
+    "node - <<'EOF'\nconst cp = require('child_process');\n(() => {\n  const c = 'gh pr merge 1'\n  "
+    "console.log('run')\n  cp.execSync(c)\n})()\nEOF",
+    "node -e \"const cp=require('child_process'); try { const c = 'gh pr merge 1'; console.log('x'); cp.execSync(c) } "
+    "catch (e) {}\"",
+    "perl -e '{ my $c = \"gh pr merge 1\"; print \"go\\n\"; system($c) }'",
+    "python3 - <<'EOF'\nimport subprocess\nsubprocess.run([\n    'git',\n    'push',\n    'origin',\n    "
+    "'main',\n])\nEOF",
+    "node - <<'EOF'\nconst { spawnSync } = require('child_process');\nspawnSync('gh', [\n  'pr',\n  'merge',\n  "
+    "'1',\n]);\nEOF",
+    "python3 - <<'EOF'\nimport os\nb = 'x'\nos.system('git push origin ' + b +\n          ' main')\nEOF",
+    "python3 -c \"import subprocess; subprocess.run(['bash'], input='gh pr merge 1', text=True)\"",
+    "python3 -c \"import subprocess; subprocess.run('sh', input=b'gh pr merge 1')\"",
+    "python3 -c \"import subprocess; subprocess.run(['sh','-s'], input='git push origin main\\n', text=True)\"",
 ]
 # Calls the guard caught in real runs although they ship nothing.
 READS_AND_WRITING = [
@@ -277,6 +296,8 @@ READS_AND_WRITING = [
     "import subprocess\nsubprocess.run(['ls'])\nEOF",
     "python3 - <<'EOF'\nimport pathlib\np = pathlib.Path('scripts/release.sh')\ns = p.read_text()\n"
     "assert 'git push origin main' not in s\np.write_text(s + '\\n')\nEOF\nbash scripts/release.sh",
+    "node -e \"const cp=require('child_process'); cp.execSync('git status', { stdio: 'inherit' })\"",
+    "python3 - <<'EOF'\nimport json\nd = {\n    'title': 'gh pr merge docs',\n}\nprint(json.dumps(d))\nEOF",
 ]
 PROJECT_RULES = [(r"\bfirebase(-tools)?(@\S+)?\s.*\bdeploy\b", "Sites deploy from CI."),
                  (r"\bterraform\b.*\b(apply|destroy)\b", "DNS applies after merge."),
