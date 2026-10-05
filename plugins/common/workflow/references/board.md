@@ -130,9 +130,9 @@ Re-applying `lane:afk` hands a parked issue back, and its next claim reuses the 
 
 ## Merge gate
 
-A base branch that requires resolved conversations, passing checks or an up-to-date branch reports a PR that misses any of them only as `BLOCKED`, and a review agent can post a thread after a session last looked. So a session runs this gate at hand-off time: each time it reports a PR ready, hands it to the owner to merge, switches on auto-merge (`lanes.py merge` included) or merges it.
+A base branch that requires resolved conversations, passing checks or an up-to-date branch reports a PR that misses any of them only as `BLOCKED`, and a review agent can post a thread after a session last looked. So a session runs this gate at hand-off time: each time it reports a PR ready, hands it to the owner to merge, switches on auto-merge from the Open PR step or merges it itself.
 
-1. Run `lanes.py blockers <pr>`. It prints every reason the PR can't merge now: failing and pending checks, a conflict with or lag behind the base, each unresolved review thread with its `path:line`, first line and writer (`agent-written`, or `@<login>`), and standing change requests; it exits 1 while any remains. It only reads, and needs no lanes.json.
+1. Run `lanes.py blockers <pr>`. It prints every reason the PR can't merge now: failing and pending checks, a conflict with or lag behind the base, each unresolved review thread with its `path:line`, first line and writer (`agent-written`, or `@<login>`), standing change requests and a review the base branch still requires; it exits 1 while any remains. It only reads, needs no lanes.json, and outside the PR's repository takes the PR URL. A `mergeability not computed yet` line clears within a minute of a push; run it again then.
 2. Settle each thread. When the head fixes it, reply naming the fixing commit, and resolve it when it is agent-written. When the head doesn't fix it, fix it (`vcs` Phase 3), then reply and resolve the same way. A person's thread and a person's change request stay for that person: name each to the owner with its first line.
 3. Fix failing checks and conflicts, then run it again after every push.
 

@@ -388,6 +388,15 @@ class BlockersTests(unittest.TestCase):
         self.assertEqual(found, ["check failing: unit", "check failing: ci/legacy",
                                  "check pending: lint", "check pending: ci/deploy"])
 
+    def test_only_the_newest_run_of_each_check_counts(self) -> None:
+        cancelled = {**check("verify", conclusion="CANCELLED"), "workflowName": "Verify", "startedAt": "2026-10-01T10:00:00Z"}
+        passed = {**check("verify"), "workflowName": "Verify", "startedAt": "2026-10-01T10:05:00Z"}
+        self.assertEqual(lanes.blockers(mergeable_pr(statusCheckRollup=[passed, cancelled])), [])
+        queued = {**check("verify", status="QUEUED", conclusion=None), "workflowName": "Verify",
+                  "startedAt": "0001-01-01T00:00:00Z"}
+        self.assertEqual(lanes.blockers(mergeable_pr(statusCheckRollup=[cancelled, passed, queued])),
+                         ["check pending: verify"])
+
     def test_a_conflict_or_a_branch_behind_the_base_is_named(self) -> None:
         self.assertEqual(lanes.blockers(mergeable_pr(mergeable="CONFLICTING", mergeStateStatus="DIRTY")),
                          ["conflicts with main: merge origin/main and resolve"])
@@ -403,12 +412,31 @@ class BlockersTests(unittest.TestCase):
                                  "  src/a.py:3 (agent-written): Guard the empty list.",
                                  "  README.md (@alice): Why this word?"])
 
+    def test_threads_read_from_github_keep_their_place_writer_and_age(self) -> None:
+        outdated = lanes.thread_entry({"path": "src/a.py", "line": None, "originalLine": 9, "isOutdated": True,
+                                       "comments": {"nodes": [{"body": "Old.", "author": None}]}})
+        self.assertEqual(outdated, {"path": "src/a.py", "line": 9, "outdated": True, "body": "Old.", "author": "ghost"})
+        self.assertEqual(lanes.blockers(mergeable_pr(unresolvedThreads=[outdated]))[1],
+                         "  src/a.py:9 (outdated, @ghost): Old.")
+        empty = lanes.thread_entry({"path": "b.md", "line": 2, "comments": {"nodes": []}})
+        self.assertEqual((empty["body"], empty["author"], empty["outdated"]), ("", "ghost", False))
+
+    def test_a_pr_url_names_its_repository_and_number(self) -> None:
+        self.assertEqual(lanes.pr_ref("https://github.com/acme/app/pull/12"), ("acme/app", "12"))
+        self.assertEqual(lanes.pr_ref("https://github.com/acme/app/pull/12/"), ("acme/app", "12"))
+
     def test_a_standing_change_request_is_named(self) -> None:
         reviews = [{"author": {"login": "alice"}, "state": "CHANGES_REQUESTED", "submittedAt": "2026-10-01T10:00:00Z"},
                    {"author": {"login": "bob"}, "state": "CHANGES_REQUESTED", "submittedAt": "2026-10-01T10:00:00Z"},
                    {"author": {"login": "bob"}, "state": "APPROVED", "submittedAt": "2026-10-02T10:00:00Z"}]
         self.assertEqual(lanes.blockers(mergeable_pr(mergeStateStatus="BLOCKED", reviews=reviews)),
                          ["changes requested by @alice"])
+
+    def test_a_missing_required_review_is_named_beside_pending_checks(self) -> None:
+        self.assertEqual(lanes.blockers(mergeable_pr(
+            mergeStateStatus="BLOCKED", reviewDecision="REVIEW_REQUIRED",
+            statusCheckRollup=[check("unit", status="QUEUED", conclusion=None)])),
+            ["check pending: unit", "review required: an approval the base branch requires is missing"])
 
     def test_drafts_closed_prs_and_unexplained_blocks_are_named(self) -> None:
         self.assertEqual(lanes.blockers(mergeable_pr(isDraft=True, mergeStateStatus="DRAFT")),

@@ -19,6 +19,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -320,6 +321,19 @@ def check_state(check):
     return 'pass' if check.get('conclusion') in PASSED else 'fail'
 
 
+def latest_checks(rollup):
+    """The newest run of each check; a re-run or a second event leaves the older one in the
+    rollup. A run not started yet is the newest."""
+    newest = {}
+    for c in rollup or []:
+        key = (c.get('workflowName') or '', c.get('name') or c.get('context'))
+        started = c.get('startedAt') or ''
+        started = '9999' if not started or started.startswith('0001') else started
+        if key not in newest or started >= newest[key][0]:
+            newest[key] = (started, c)
+    return [c for _, c in newest.values()]
+
+
 def first_line(text):
     return next((l.strip() for l in (text or '').splitlines() if l.strip()), '')[:100]
 
@@ -333,7 +347,7 @@ def blockers(pr):
     base, found = pr['baseRefName'], []
     if pr['isDraft']:
         found.append('draft: mark it ready for review')
-    states = [(check_state(c), c.get('name') or c.get('context')) for c in pr.get('statusCheckRollup') or []]
+    states = [(check_state(c), c.get('name') or c.get('context')) for c in latest_checks(pr.get('statusCheckRollup'))]
     found += [f'check failing: {name}' for state, name in states if state == 'fail']
     found += [f'check pending: {name}' for state, name in states if state == 'pending']
     merge_state = pr.get('mergeStateStatus')
@@ -348,8 +362,12 @@ def blockers(pr):
         for t in pr['unresolvedThreads']:
             where = t['path'] + (f":{t['line']}" if t.get('line') else '')
             writer = 'agent-written' if AGENT_FOOTER.search(t.get('body') or '') else f"@{t['author']}"
+            if t.get('outdated'):
+                writer = 'outdated, ' + writer
             found.append(f"  {where} ({writer}): {first_line(t.get('body'))}")
     found += [f'changes requested by @{login}' for login in requesting_changes(pr)]
+    if pr.get('reviewDecision') == 'REVIEW_REQUIRED':
+        found.append('review required: an approval the base branch requires is missing')
     if not found and merge_state == 'BLOCKED':
         found.append('blocked by a rule of the base branch this command does not read (a required review?)')
     return found
@@ -376,25 +394,26 @@ def gh_json(*args):
 
 
 THREADS = ('query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) '
-           '{ pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved path line '
+           '{ pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved isOutdated path line '
            'originalLine comments(first: 1) { nodes { body author { login } } } } } } } }')
 
 
+def thread_entry(node):
+    """{path, line, outdated, body, author} of a review thread's first comment. An outdated
+    thread keeps the line it was written on; a deleted account reads as ghost."""
+    first = (node['comments']['nodes'] or [{}])[0]
+    return {'path': node['path'], 'line': node.get('line') or node.get('originalLine'),
+            'outdated': bool(node.get('isOutdated')), 'body': first.get('body') or '',
+            'author': (first.get('author') or {}).get('login', 'ghost')}
+
+
 def unresolved_threads(repo_name, number):
-    """The PR's open review threads, each {path, line, body, author} of its first comment;
-    `gh pr view` doesn't report them."""
+    """The PR's open review threads as thread_entry dicts; `gh pr view` doesn't report them."""
     owner, name = repo_name.split('/')
     data = gh_json('api', 'graphql', '-f', f'query={THREADS}', '-F', f'owner={owner}',
                    '-F', f'name={name}', '-F', f'number={number}')
     threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
-    found = []
-    for t in threads:
-        if t['isResolved']:
-            continue
-        first = (t['comments']['nodes'] or [{}])[0]
-        found.append({'path': t['path'], 'line': t.get('line') or t.get('originalLine'),
-                      'body': first.get('body') or '', 'author': (first.get('author') or {}).get('login', 'ghost')})
-    return found
+    return [thread_entry(t) for t in threads if not t['isResolved']]
 
 
 class Repo:
@@ -576,14 +595,34 @@ def cmd_hold(repo, args):
     print(f'#{number} holds: auto-merge switched off until `lanes.py merge` runs again')
 
 
-BLOCKER_FIELDS = 'url,state,isDraft,baseRefName,mergeable,mergeStateStatus,statusCheckRollup,reviews'
+BLOCKER_FIELDS = 'url,state,isDraft,baseRefName,mergeable,mergeStateStatus,statusCheckRollup,reviews,reviewDecision'
 
 
-def cmd_blockers(args):
+def pr_ref(url):
+    """('owner/name', 'number') of a pull request URL."""
+    owner, name, _, number = url.rstrip('/').split('/')[-4:]
+    return f'{owner}/{name}', number
+
+
+def read_blockers(ref):
+    """The PR with its open threads; GitHub computes mergeability a few seconds after a push."""
+    for _ in range(3):
+        pr = gh_json('pr', 'view', ref, '--json', BLOCKER_FIELDS)
+        if pr.get('mergeable') != 'UNKNOWN':
+            break
+        time.sleep(5)
+    pr['unresolvedThreads'] = unresolved_threads(*pr_ref(pr['url']))
+    return pr
+
+
+def cmd_blockers(_repo, args):
     """Read-only, and works in any repository gh can read: no lanes.json needed."""
-    pr = gh_json('pr', 'view', args[0], '--json', BLOCKER_FIELDS)
-    owner, name, _, number = pr['url'].split('/')[-4:]
-    pr['unresolvedThreads'] = unresolved_threads(f'{owner}/{name}', number)
+    if not args:
+        sys.exit(__doc__)
+    try:
+        pr = read_blockers(args[0])
+    except subprocess.CalledProcessError as error:
+        sys.exit(f'cannot read {args[0]}: {error.stderr.strip()} (outside its repository, pass the PR URL)')
     found = blockers(pr)
     for line in found:
         print(line)
@@ -593,12 +632,10 @@ def cmd_blockers(args):
 
 # `automerge` and `merge-reviewed` are the names older wrappers call.
 COMMANDS = {'next': cmd_next, 'scope': cmd_scope, 'triage': cmd_triage, 'merge': cmd_merge, 'hold': cmd_hold,
-            'automerge': cmd_merge, 'merge-reviewed': cmd_merge}
+            'blockers': cmd_blockers, 'automerge': cmd_merge, 'merge-reviewed': cmd_merge}
+WITHOUT_REPO = {'blockers'}
 
 if __name__ == '__main__':
-    if len(sys.argv) == 3 and sys.argv[1] == 'blockers':
-        cmd_blockers(sys.argv[2:])
-    elif len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
+    if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
         sys.exit(__doc__)
-    else:
-        COMMANDS[sys.argv[1]](Repo(), sys.argv[2:])
+    COMMANDS[sys.argv[1]](None if sys.argv[1] in WITHOUT_REPO else Repo(), sys.argv[2:])
