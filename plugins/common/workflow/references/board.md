@@ -115,7 +115,7 @@ With a board, every open issue has a value in its single-select Priority field (
 
 Every skill uses these same `gh` and `git` steps. `<base>` and `<branchPrefix>` come from lanes.json (defaults `main` and `agent/afk-`); `<slug>` is the issue title in a few lowercase hyphenated words. `<root>` is the main checkout, the parent of `git rev-parse --path-format=absolute --git-common-dir`; worktree paths start there whichever directory the agent is in. Remove a label only when the issue has it.
 
-Each issue works in its own worktree; `<root>` keeps its branch, since it may hold the owner's work. When the working directory is `<root>`, enter the issue's worktree before the first edit, through the host's worktree switch when it has one; the lanes guard refuses edits and branch switches in `<root>`.
+Each issue works in its own worktree; `<root>` keeps its branch, since it may hold the owner's work. When the working directory is `<root>`, enter the issue's worktree before the first edit, through the host's worktree switch when it has one; the lanes guard catches edits and branch switches in `<root>`.
 
 | Step | Commands | Card |
 | --- | --- | --- |
