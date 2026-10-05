@@ -15,7 +15,7 @@ To pause or hand off, release it.
 
 ### Work in progress
 
-A session holds one open PR. It claims or starts the next issue only once that PR has merged, or has passed the Merge gate and waits only on the owner while the next issue touches none of its files. With the owner present, it asks for that merge before starting the next issue, rather than gathering PRs for one review. A finding outside the issue's scope becomes a new issue through `spec` and does not grow the open PR. Dependent changes merge in dependency order, each before the next one opens: a shared library or plugin change and its release go before the change that uses them. Every PR then starts from the merged base, and none conflicts with an earlier one.
+A session holds one open PR. It claims or starts the next issue only once that PR has merged, or has passed the Merge gate and waits only on the owner while the next issue touches none of its files. While its PR waits, the session keeps it mergeable: whenever the base moves or a review posts a thread, it runs the Merge gate again and fixes what that prints before going on with the next issue. With the owner present, it asks for that merge before starting the next issue, rather than gathering PRs for one review. A finding outside the issue's scope becomes a new issue through `spec` and does not grow the open PR. Dependent changes merge in dependency order, each before the next one opens: a shared library or plugin change and its release go before the change that uses them. Every PR then starts from the merged base, and none conflicts with an earlier one.
 
 ## States
 
