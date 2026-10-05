@@ -367,12 +367,18 @@ WRITES = re.compile(r'\bopen\s*\([^)]*(,\s*|mode\s*=\s*)["\'][^"\']*[wax+]|(?<!s
 # directory that one goes in; and whether it writes the file the URL names unless given a file (wget).
 Downloader = namedtuple('Downloader', 'output remote directory names_by_default')
 DOWNLOADS = {'curl': Downloader(r'-[a-np-zA-Z]*o(.*)|--output(?:=(.*))?', r'-[a-zA-Z]*O|--remote-name(-all)?',
-                                None, False),
+                                r'--output-dir(?:=(.*))?', False),
              'wget': Downloader(r'-[a-zA-NP-Z]*O(.*)|--output-document(?:=(.*))?', None,
                                 r'-[a-zA-OQ-Z]*P(.*)|--directory-prefix(?:=(.*))?', True)}
 # A string a program compares is text, not a command line it runs; so is one it edits or prints.
 COMPARES = re.compile(r'\bassert\b|["\']\s+(not\s+)?in\s+\w|\.(startswith|endswith|find|index|count|includes)\(')
 TEXT_USE = re.compile(COMPARES.pattern + r'|\.(replace|write|write_text|sub|split|join)\(|\bprint\b')
+STATEMENTS = r'\n|;|&&|\|\|'
+# A gh or git command a string starts, or, in a script's line, one past a shell keyword or variable
+# (`then gh …`, `X=1 gh …`).
+STRING_COMMAND = re.compile(r'["\'](\s|\\[nt])*(gh|git)\b')
+SCRIPT_COMMAND = re.compile(r'(^|["\'])\s*((then|do|else|if|while|until|time|exec|command|env|nohup|!|\{|\(|'
+                            r'[A-Za-z_]\w*=\S*)\s+)*(gh|git)\b')
 # Commands that run none of their arguments; `tee` writes files, but a file it writes runs nothing.
 RUNS_NOTHING = {'cat', 'head', 'tail', 'less', 'more', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'wc', 'ls',
                 'diff', 'cmp', 'file', 'stat', 'echo', 'printf', 'jq', 'yq', 'sort', 'uniq', 'cut', 'tr', 'column',
@@ -663,24 +669,25 @@ class Judge:
             self.written[self.path(files[1], cwd)] = self.written.get(source) or Written(self.read_file(files[0], cwd))
 
     def note_downloads(self, name, args, cwd):
-        """A downloaded file is unreadable."""
-        tool, directory = DOWNLOADS[name], ''
+        """A downloaded file is unreadable. curl's directory holds its `-o` files too; wget's only the URL's."""
+        tool, directory, files = DOWNLOADS[name], '', []
         named = tool.names_by_default
         for i, arg in enumerate(args):
             if value := re.fullmatch(tool.output, arg, re.DOTALL):
-                path = matched_value(value, args, i, '-')
-                if path != '-':
-                    self.written[self.path(path, cwd)] = Written(None)
+                files.append(matched_value(value, args, i, '-'))
                 if tool.names_by_default:
                     named = False  # `wget -O` writes only its file
             elif tool.remote and re.fullmatch(tool.remote, arg):
                 named = True
             elif tool.directory and (prefix := re.fullmatch(tool.directory, arg, re.DOTALL)):
                 directory = matched_value(prefix, args, i)
+        files = [os.path.join('' if tool.names_by_default else directory, file) for file in files if file != '-']
         for arg in args if named else ():
             url = re.fullmatch(r'\w+://[^/]+/(?:.*/)?([^/?#]+)(?:[?#].*)?', arg)
             if url:
-                self.written[self.path(os.path.join(directory, url.group(1)), cwd)] = Written(None)
+                files.append(os.path.join(directory, url.group(1)))
+        for file in files:
+            self.written[self.path(file, cwd)] = Written(None)
 
     def note_program(self, code, cwd):
         """Each file an inline program that writes names may be one it writes, from its code. A writer often
@@ -831,7 +838,7 @@ class Judge:
         """Judge what programs may have written into a file: in any language, their process calls and the
         command lines in their strings, except the strings they only compare."""
         self.process_calls(written.code, cwd, SPAWNS)
-        self.string_commands(written.code, cwd, COMPARES)
+        self.string_commands(written.code, cwd, COMPARES, script=True)
 
     def process_calls(self, code, cwd, languages):
         """Judge a program's process calls in `languages`; return them."""
@@ -841,16 +848,19 @@ class Judge:
             self.process_call(code, call, cwd)
         return calls
 
-    def string_commands(self, code, cwd, text_use):
+    def string_commands(self, code, cwd, text_use, script=False):
         """Judge the gh and git command lines in a program's strings; a statement that only uses its strings
-        as `text_use` text runs none."""
-        commands = r'\n|;|&&|\|\|'
-        for statement in re.split(commands, literal(code)):
+        as `text_use` text runs none. In a `script` the program wrote, each line of a string is a command
+        line (`'#!/bin/sh\\ngh pr merge 1'`); elsewhere a line in a message is text."""
+        for statement in re.split(STATEMENTS, literal(code)):
             if text_use.search(statement):
                 continue
-            # A string's lines are lines it writes: `'#!/bin/sh\ngh pr merge 1'`.
-            for line in re.split(commands, statement.replace('\\n', '\n').replace('\\t', ' ')):
-                if re.search(r'(^|["\'])\s*(gh|git)\b', line):
+            if not script:
+                if STRING_COMMAND.search(statement):
+                    self.command_line(statement, cwd)
+                continue
+            for line in re.split(STATEMENTS + r'|\|', statement.replace('\\n', '\n').replace('\\t', ' ')):
+                if SCRIPT_COMMAND.search(line):
                     self.command_line(line, cwd)
 
     def process_call(self, code, call, cwd):
