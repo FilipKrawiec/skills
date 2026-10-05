@@ -1,69 +1,1627 @@
 #!/usr/bin/env python3
 """Pre-tool-use guard for issue lanes: agents build and propose; the owner ships.
 
-Active only in projects with `.github/lanes.json`. Blocks shell commands that
-merge PRs, publish releases, dispatch workflows, or change secrets, variables
-or repository settings, plus the project's own `guard` rules from lanes.json.
-PRs merge through `lanes.py merge`, which hands the owner only what an owner rule matches. `lane:afk` may be added only in a
-session the owner is in; scheduled runs (and unreadable transcripts) never add it.
-Each issue works in its own worktree: edits to a file in an opted-in project's
-main checkout, and `git switch` or `git checkout` run there, are blocked.
-An edit to lanes.json is blocked, except in an attended session in manual
-permission mode, where the host asks the owner to approve it.
+Active only in projects with `.github/lanes.json`. Catches calls that merge or
+approve PRs, push to the base branch, publish releases, dispatch workflows, or
+change secrets, variables or repository settings, plus the project's own
+`guard` rules from lanes.json. PRs merge through `lanes.py merge`, which hands
+the owner only what an owner rule matches. Each issue works in its own
+worktree: edits to a file in an opted-in project's main checkout, and
+`git switch` or `git checkout` run there, are caught too, as is an edit to
+lanes.json. `lane:afk` may be added only in a session the owner is in.
+`lanes.py merge --owner-approved` (a merge past the owner rules) runs only in
+an attended session in manual permission mode, where the host asks the owner.
+
+Shell commands are parsed, not searched: a rule judges the commands a line
+runs (including `$(...)`, `bash -c`, launchers such as `env` or `npx`, scripts
+fed to a shell or written and run in one call, and the process calls of inline
+programs and of the files they write), never the text it writes, quotes or
+reads, and GitHub API calls by endpoint, method and body. A call whose effect
+the guard can't read (a script piped to a shell, a request body on stdin it
+can't see) is caught.
+
+In a session the owner attends, a caught call goes to the owner to approve,
+in every permission mode where the host asks before a call. Bypass mode
+approves an ask unseen, so there the call is refused. A scheduled run (or a
+session whose transcript can't be read) is refused too.
 
 Hook input: the host's pre-tool-use event as JSON on stdin (`tool_name`,
-`tool_input.command`, `cwd`, `transcript_path`, `permission_mode`). Exit 2
-blocks; a `permissionDecision` of `ask` on stdout hands the call to the owner.
+`tool_input`, `cwd`, `transcript_path`, `permission_mode`). Exit 2 refuses; a
+`permissionDecision` of `ask` on stdout hands the call to the owner.
 """
+import bisect
+import fnmatch
 import json
+import os
 import re
+import shlex
 import subprocess
 import sys
+from collections import namedtuple
+from enum import Enum
 from pathlib import Path
 
 OWNER_RUNS_IT = 'The owner runs this themselves.'
-
-MERGE_IS_OWNERS = 'Merging goes through `lanes.py merge`, or the owner.'
-HIDDEN_REQUEST = ('A `gh api` call with `$(…)`, backticks or `--input` on its command line hides what it sends. '
-                  'Give it literal arguments (a body as `-F body=@<file>`), and loop in a script that calls gh.')
-RULES = [
-    (r'\bgh\s+pr\s+merge\b', MERGE_IS_OWNERS),
-    # --input or shell substitution could hide a merge mutation, so the guard refuses what it can't read.
-    (r'\bgh\s+api\b.*(--input\b|\$\(|`)', HIDDEN_REQUEST),
-    (r'\bgh\s+alias\s+(set|import)\b', 'Aliases hide commands from the guard.'),
-    (r'\bgh\s+api\b.*(\bpulls/[^/\s]+/merge\b|\brepos/[^/\s]+/[^/\s]+/merges\b|\bmergePullRequest\b'
-     r'|\benablePullRequestAutoMerge\b|\bquery=@)', MERGE_IS_OWNERS),
-    (r'\bgh\s+release\s+(create|edit|delete|upload)\b', 'Releases are the owner\'s. ' + OWNER_RUNS_IT),
-    (r'\bgh\s+(secret|variable)\s+(set|delete|remove)\b', 'Secrets and variables are the owner\'s.'),
-    (r'\bgh\s+repo\s+(edit|delete|rename|archive)\b', 'Repository settings are the owner\'s.'),
-    (r'\bgh\s+workflow\s+(run|enable|disable)\b', 'Dispatched workflows can publish. ' + OWNER_RUNS_IT),
-    (r'\bgh\s+api\b.*\brepos/[^/\s]+/[^/\s]+/(branches/[^\s]+/protection|rulesets|environments|actions/(secrets|variables)'
-     r'|dependabot/secrets|codespaces/secrets|collaborators|keys|hooks)\b',
-     'Repository security settings are the owner\'s.'),
-    (r'\bgh\s+api\b(?=.*(-X|--method)[=\s]*(PATCH|PUT|POST|DELETE)\b).*\brepos/[\w.-]+/[\w.-]+/?(["\'\s]|$)',
-     'Repository settings are the owner\'s.'),
-]
-
-MARKS_AFK = [
-    r'\bgh\b.*(--add-label|--label|\s-l)[=\s]+["\']?[^\s"\']*\blane:afk\b',
-    r'\bgh\b.*(--add-label|--label|\s-l)[=\s]+["\']?\$',  # a variable may hold lane:afk
-    r'\bgh\s+api\b(?!.*-X\s*DELETE).*(/labels\b|labels\[\]=).*\blane:afk\b',
-]
+MERGE_IS_OWNERS = 'Merging and approving go through `lanes.py merge`, or the owner.'
+RELEASE = 'Releases are the owner\'s. ' + OWNER_RUNS_IT
+SECRETS = 'Secrets and variables are the owner\'s.'
+SETTINGS = 'Repository settings are the owner\'s.'
+SECURITY = 'Repository security settings are the owner\'s.'
+DISPATCH = 'Dispatched workflows can publish. ' + OWNER_RUNS_IT
+ALIAS = 'Aliases hide commands from the guard.'
+UNREADABLE = 'The guard can\'t read what this command runs; write it out inline.'
+UNKNOWN_QUERY = 'The guard can\'t read this GraphQL query; pass it inline with `-f query=...`.'
 UNATTENDED_AFK = 'Unattended runs never mark an issue AFK; the owner approves it in a session.'
-
-
 OWN_WORKTREE = ('Each issue works in its own worktree; the main checkout keeps its branch and may hold '
                 'the owner\'s work. Enter the issue\'s worktree first (board.md, Claim or Start).')
-# `git checkout -- <path>` restores files and leaves the branch alone.
-SWITCHES_BRANCH = r'\bgit\s+(switch|checkout)\b(?![^;&|\n]*\s--(\s|$))'
-
-GLOBAL_FLAGS = re.compile(r'\s(?:-R|--repo|--hostname)(?:=|\s+)\S+')
-BLOCKED_TOOLS = {'mcp__github__merge_pull_request', 'mcp__github__enable_pr_auto_merge'}
-EDIT_TOOLS = ('Edit', 'Write', 'MultiEdit', 'NotebookEdit')
 CONFIG_FILE = '.github/lanes.json'
-OWNERS_CONFIG = (f'{CONFIG_FILE} is the owner\'s: the owner edits it, or approves the edit in a session '
-                 'in manual permission mode.')
-ASK_OWNER = f'{CONFIG_FILE} is the owner\'s: approve this edit only if you asked for it.'
+OWNERS_CONFIG = f'{CONFIG_FILE} is the owner\'s: the owner edits it, or approves the edit in a session.'
+UNSURE = (UNREADABLE, UNKNOWN_QUERY)
+# The one form that merges past the owner rules: lanes.py by a literal path (quoted when it holds a space),
+# one PR number as it is, nothing else on the line. Matching the whole command keeps the shell from
+# rewriting anything (a glob, a brace, a second line) between this check and lanes.py's argv.
+APPROVED_FORM = re.compile(r'[ \t]*python3[ \t]+(?:"[^"$`\\\n]*lanes\.py"|\'[^\'\n]*lanes\.py\''
+                           r'|[^\s"\'$`\\;&|<>()*?\[\]{}~]*lanes\.py)'
+                           r'[ \t]+merge[ \t]+([0-9]+)[ \t]+--owner-approved[ \t]*')
+# A command that can hand lanes.py an argument it was given as text.
+RUNS_LANES = re.compile(r'\blanes\b|\bpython|\bxargs\b|\beval\b|\bsh[ \t]+-c\b|\bjust\b', re.I)
+APPROVED_MERGE = ('A merge past the owner rules runs only in a session the owner is in, in manual permission mode, '
+                  'where the host asks them.')
+APPROVAL_FORM = ('The owner\'s approval merges only as `python3 <path>/lanes.py merge <PR> --owner-approved`, alone '
+                 'in its command. To mention the option in a commit or a body, pass the text from a file.')
+ASK_MERGE = 'An owner rule holds {pr}: approve this merge only if you approved {pr} in this session.'
+
+
+def push_to(base):
+    return f'Pushing to {base} is the owner\'s; work lands through a PR.'
+
+
+# ---------------------------------------------------------------- shell parsing
+
+class Unparsable(ValueError):
+    pass
+
+
+SUBST = '$(…)'  # stands in for a command substitution's output
+PROCSUB = '<(…)'  # stands in for the file a process substitution reads from
+LITERAL = '\ue000'  # a `$` the shell keeps as it is (quoted or escaped), so not an expansion
+
+
+def literal(text):
+    """`text` as the program it is passed to sees it: a kept `$` is a plain `$` again."""
+    return text.replace(LITERAL, '$')
+
+
+def unknown(text):
+    """`text` holds an expansion the guard can't fill in."""
+    return '$' in text
+
+
+class Command:
+    """A simple command: its words, its input, and the files it writes and reads by redirect."""
+
+    def __init__(self, argv=None):
+        self.argv = argv or []
+        self.stdin = None  # a heredoc or here-string's text
+        self.stdin_kept = False  # its `$` are kept as they are (a quoted heredoc delimiter)
+        self.piped = False  # its input comes from the command before it
+        self.writes = []  # (path, appends) of each `>`, `>>` and `&>`
+        self.reads = None  # the file of a `<`
+
+    def running(self, argv):
+        """The command `argv` that this one runs, with this one's input."""
+        command = Command(argv)
+        command.stdin, command.stdin_kept = self.stdin, self.stdin_kept
+        command.piped, command.reads = self.piped, self.reads
+        return command
+
+
+class Script:
+    """A parsed shell script: its simple commands, in order, and the scripts it substitutes."""
+
+    def __init__(self):
+        self.commands, self.substituted = [], []
+
+
+def parse(text, strict=False):
+    """The Script `text` runs; raises Unparsable. `strict` also refuses what only prose holds: a `)` closing
+    nothing, and a `(` after a command's words (`see (docs)`, `f(x)`), but a function's `f()` or an array's
+    `a=(`."""
+    return _Parser(text, strict=strict).run(0)[0]
+
+
+def _substitution(text, i, script, strict=False):
+    """At a `$(` or backquote opening at `i`, parse the command it runs into `script`; return
+    (the index after it, the word it stands for), or None when no substitution opens there. The
+    word is SUBST, except that `$(cat <<'EOF' ...)` stands for its text. `$((...))` is arithmetic: only
+    the substitutions inside it run, unless it reads as words (`$((gh pr merge 1))`), which bash
+    runs as a subshell."""
+    if text.startswith('$((', i):
+        inner, end, depth = Script(), i + 3, 0
+        while end < len(text) and not (depth == 0 and text.startswith('))', end)):
+            after = _substitution(text, end, inner, strict)
+            if after is not None:
+                end = after[0]
+                continue
+            depth += {'(': 1, ')': -1}.get(text[end], 0)
+            end += 1
+        if end >= len(text):
+            raise Unparsable('unbalanced $((')
+        if not re.search(r'[A-Za-z_][\w./-]*\s+[\w./-]', re.sub(r'\$\(.*\)', '', text[i + 3:end])):
+            script.substituted += inner.substituted
+            return end + 2, SUBST
+    if text.startswith('$(', i):
+        inner, end = _Parser(text, ')', strict).run(i + 2)
+    elif text.startswith('`', i):
+        end, body = i + 1, ''
+        while end < len(text) and text[end] != '`':
+            if text[end] == '\\' and end + 1 < len(text):
+                body += text[end + 1] if text[end + 1] in '`$\\' else text[end:end + 2]
+                end += 2
+            else:
+                body += text[end]
+                end += 1
+        if end >= len(text):
+            raise Unparsable('unbalanced `')
+        inner, end = parse(body, strict), end + 1
+    else:
+        return None
+    script.substituted.append(inner)
+    only = inner.commands[0] if len(inner.commands) == 1 else None
+    if only and only.argv == ['cat'] and only.stdin is not None and not only.writes:
+        return end, only.stdin.replace('$', LITERAL) if only.stdin_kept else only.stdin
+    return end, SUBST
+
+
+def _expansions(body, script, strict=False):
+    """Parse the commands an unquoted heredoc body runs."""
+    i = 0
+    while i < len(body):
+        if body[i] == '\\':
+            i += 2
+        else:
+            after = _substitution(body, i, script, strict)
+            i = after[0] if after else i + 1
+
+
+class _Parser:
+    """Parses up to an unmatched `stop` (`)` for `$(`). Quotes are removed, heredoc bodies and
+    here-strings become a command's stdin, and `(`/`)` stay as commands so a `cd` inside a
+    subshell ends there. A `case`'s patterns are left out: their `)` closes nothing."""
+
+    def __init__(self, text, stop=None, strict=False):
+        self.s, self.stop, self.strict = text, stop, strict
+        self.script, self.heredocs, self.depth = Script(), [], 0
+        self.command, self.word, self.raw, self.redirect = Command(), None, '', None
+        self.cases = []  # per open `case`: whether a pattern is read, not a command
+
+    def in_pattern(self):
+        return bool(self.cases) and self.cases[-1]
+
+    def add(self, text, raw):
+        self.word = (self.word or '') + text
+        self.raw += raw
+
+    def end_word(self):
+        word, redirect, command = self.word, self.redirect, self.command
+        if word is None:
+            return
+        if redirect in ('<<', '<<-'):
+            self.heredocs.append((command, word, redirect == '<<-', not re.search('[\'"\\\\]', self.raw)))
+        elif redirect == '<<<':
+            command.stdin = word
+        elif redirect is None and self.cases and self.raw == 'esac' and not command.argv:
+            self.cases.pop()
+        elif redirect is None:
+            command.argv.append(word)
+            words = command.argv[next((i for i, w in enumerate(command.argv) if w not in KEYWORDS), 0):]
+            if len(words) == 3 and words[0] == 'case' and words[2] == 'in':
+                self.cases.append(True)  # its words were read; its patterns follow
+                self.command = Command()
+        elif redirect in ('>', '>|', '&>', '>>', '&>>'):
+            command.writes.append((word, redirect.endswith('>>')))
+        elif redirect == '<':
+            command.reads = word
+        self.word, self.raw, self.redirect = None, '', None
+
+    def end_command(self, piped=False):
+        self.end_word()
+        if self.in_pattern():
+            if self.command.argv:
+                raise Unparsable('case pattern without )')
+        elif self.command.argv or self.command.stdin is not None:
+            self.script.commands.append(self.command)
+        self.command = Command()
+        self.command.piped = piped
+
+    def heredoc_bodies(self, i):
+        """Read the bodies of the line's heredocs, starting at `i`; return the index after them."""
+        s = self.s
+        for owner, delimiter, tabs, expands in self.heredocs:
+            lines = []
+            while i < len(s):
+                end = s.find('\n', i)
+                line = s[i:] if end < 0 else s[i:end]
+                i = len(s) if end < 0 else end + 1
+                if (line.lstrip('\t') if tabs else line) == delimiter:
+                    break
+                lines.append(line)
+            owner.stdin, owner.stdin_kept = '\n'.join(lines), not expands
+            if expands:
+                _expansions(owner.stdin, self.script, self.strict)
+        self.heredocs.clear()
+        return i
+
+    def double_quoted(self, i):
+        """Add the double-quoted word opening at `i`; return the index after it."""
+        s, j, text = self.s, i + 1, ''
+        while j < len(s) and s[j] != '"':
+            after = _substitution(s, j, self.script, self.strict)
+            if after is not None:
+                j, text = after[0], text + after[1]
+            elif s[j] == '\\' and j + 1 < len(s):
+                text += {'$': LITERAL}.get(s[j + 1], s[j + 1]) if s[j + 1] in '$`"\\\n' else s[j:j + 2]
+                j += 2
+            else:
+                text += s[j]
+                j += 1
+        if j >= len(s):
+            raise Unparsable('unbalanced "')
+        self.add(text, s[i:j + 1])
+        return j + 1
+
+    def ansi_quoted(self, i):
+        """Add the `$'...'` word opening at `i`; return the index after it."""
+        s, end = self.s, i + 2
+        while end < len(s) and s[end] != "'":
+            end += 2 if s[end] == '\\' else 1
+        if end >= len(s):
+            raise Unparsable("unbalanced $'")
+        try:
+            body = s[i + 2:end].encode('latin-1', 'backslashreplace').decode('unicode_escape')
+        except UnicodeDecodeError:
+            body = s[i + 2:end]
+        self.add(body.replace('$', LITERAL), s[i:end + 1])
+        return end + 1
+
+    def redirection(self, i):
+        """Start the redirect at `i`; return the index after its operator."""
+        if self.word is not None and self.word.isdigit() and self.redirect is None:
+            self.word, self.raw = None, ''  # the fd number of `2>&1`
+        self.end_word()
+        op = re.match(r'<<<|<<-|<<|&>>|&>|>>|>&|<&|>\||<>|>|<', self.s[i:]).group(0)
+        if op in ('>&', '<&'):
+            fd = re.match(r'[0-9-]+', self.s[i + 2:])
+            return i + 2 + (fd.end() if fd else 0)
+        self.redirect = op if op in ('<<', '<<-', '<<<', '>', '>|', '&>', '>>', '&>>', '<') else 'target'
+        return i + len(op)
+
+    def run(self, i):
+        """Parse from `i`; return (Script, index after the stop)."""
+        s = self.s
+        while i < len(s):
+            c = s[i]
+            if c in ' \t\r':
+                self.end_word()
+                i += 1
+            elif c == '\n':
+                self.end_command()
+                i = self.heredoc_bodies(i + 1)
+            elif c == '#' and self.word is None:
+                end = s.find('\n', i)
+                i = len(s) if end < 0 else end
+            elif c == '\\':
+                if not s.startswith('\\\n', i):
+                    self.add({'$': LITERAL}.get(s[i + 1:i + 2], s[i + 1:i + 2]), s[i:i + 2])
+                i += 2
+            elif c == "'":
+                end = s.find("'", i + 1)
+                if end < 0:
+                    raise Unparsable("unbalanced '")
+                self.add(s[i + 1:end].replace('$', LITERAL), s[i:end + 1])
+                i = end + 1
+            elif s.startswith("$'", i):
+                i = self.ansi_quoted(i)
+            elif c == '"':
+                i = self.double_quoted(i)
+            elif s.startswith('$(', i) or c == '`':
+                i, word = _substitution(s, i, self.script, self.strict)
+                self.add(word, SUBST)
+            elif s.startswith(('<(', '>('), i):
+                inner, i = _Parser(s, ')', self.strict).run(i + 2)
+                self.script.substituted.append(inner)
+                self.add(PROCSUB, PROCSUB)
+            elif c in '<>' or s.startswith('&>', i):
+                i = self.redirection(i)
+            elif self.in_pattern() and c in '()|' and not (self.raw == 'esac' and not self.command.argv):
+                # `(a|b)`: a pattern's end is a command's start; `esac)` ends the case, then its substitution
+                self.end_word()
+                if c == ')':
+                    self.command, self.cases[-1] = Command(), False
+                i += 1
+            elif c in ';&|':
+                op = re.match(r';;&|;;|;&|&&|\|\||\|&|[;&|]', s[i:]).group(0)
+                self.end_command(piped=op in ('|', '|&'))
+                if self.cases and op in (';;', ';&', ';;&'):
+                    self.cases[-1] = True
+                i += len(op)
+            elif c == ')' and self.stop == ')' and self.depth == 0:
+                self.end_command()
+                return self.script, i + 1
+            elif self.strict and (c == ')' and self.depth == 0 or c == '(' and (self.word or self.command.argv)
+                                  and not (re.match(r'\(\s*\)', s[i:]) or (self.word or '').endswith('='))):
+                raise Unparsable(f'{c} in prose')
+            elif c in '()':
+                self.end_command()
+                self.depth += 1 if c == '(' else -1
+                self.script.commands.append(Command([c]))
+                i += 1
+            else:
+                self.add(c, c)
+                i += 1
+        if self.stop:
+            raise Unparsable('unbalanced $(')
+        self.end_command()
+        return self.script, i
+
+
+# ---------------------------------------------------------------- command rules
+
+NAME = r'[A-Za-z_][A-Za-z0-9_]*'
+# A setting, in a variable, an option or its value: what it runs (`GIT_SSH_COMMAND='gh …'`,
+# `-c core.sshCommand='gh …'`, `-oProxyCommand='gh …'`).
+SETTING = re.compile(r'(?:-[a-zA-Z])?\w[\w.-]*=(.*)', re.S)
+ASSIGNMENT = re.compile(rf'^({NAME})=(.*)$', re.S)
+KEYWORDS = {'!', '{', '}', 'then', 'else', 'elif', 'do', 'if', 'while', 'until', 'coproc'}
+# Commands that run their arguments as a command, each with its options that take a value.
+WRAPPERS = {'command': set(), 'builtin': set(), 'exec': {'-a'}, 'nohup': set(), 'noglob': set(), 'time': set(),
+            'caffeinate': {'-t', '-w'}, 'env': {'-u', '-C', '-S'}, 'nice': {'-n'}, 'timeout': {'-s', '-k'},
+            'sudo': {'-u', '-g', '-C', '-D', '-h', '-p', '-r', '-T', '-U'}, 'xargs': {'-I', '-E', '-d', '-L', '-n',
+            '-P', '-s'}, 'watch': {'-n', '-d'}, 'stdbuf': {'-i', '-o', '-e'}, 'arch': {'-arch'},
+            'unbuffer': set(), 'chronic': set()}
+DECLARES = {'export', 'local', 'readonly', 'declare', 'typeset'}
+EXPORT_FLAG = re.compile(r'-[a-zA-Z]*x[a-zA-Z]*')  # `declare -x` and `typeset -rx` export too
+# Variables a user's environment may already export, whose values programs run as command lines: setting one
+# hands it on without `export` (`EDITOR='gh …'; git commit`).
+INHERITED = re.compile(r'GIT_(SSH_COMMAND|EDITOR|SEQUENCE_EDITOR|PAGER|ASKPASS|EXTERNAL_DIFF|PROXY_COMMAND)|EDITOR|'
+                       r'VISUAL|PAGER|MANPAGER|BROWSER|SSH_ASKPASS|LESSOPEN|LESSCLOSE|BASH_ENV|ENV|PROMPT_COMMAND')
+GIT_VALUED = ('-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path')  # git's options with a value
+SHELLS = {'bash', 'sh', 'zsh', 'dash', 'ksh', 'fish', 'csh', 'tcsh'}
+SCHEDULERS = {'at', 'batch'}  # run the commands on their input later
+# Programs that may run an argument as a shell command line (`ssh host 'cd x && gh …'`, `tmux new-window …`).
+LINE_RUNNERS = {'ssh', 'tmux', 'screen', 'parallel', 'script', 'su', 'runuser', 'flock', 'xterm'}
+INTERPRETERS = re.compile(r'^(python[0-9.]*|node|nodejs|deno|bun|ruby|perl|php|osascript)$')
+# What starts a process in each language; backquotes run commands only in the last group.
+SPAWNS = {
+    'python': r'\b(subprocess\.\w+|os\.(system|popen|exec\w*|spawn\w*|posix_spawn\w*)|pty\.spawn)\b',
+    'node': r'\b(exec|execSync|spawn|spawnSync|execFile|execFileSync|Bun\.spawn|Deno\.(run|Command))\b',
+    'osascript': r'\bdo\s+(shell\s+)?script\b',  # `do script` runs in Terminal
+    'other': r'\b(system|exec|spawn|popen|IO\.popen|Open3\.\w+|qx|proc_open|shell_exec|passthru)\b|%x(?=[^\w\s])|`',
+}
+NODE_ARGV_CALL = re.compile(r'spawn(Sync)?|execFile(Sync)?')  # one that joins its argv for `{shell: true}`
+SHELL_OPTION = re.compile(r'\bshell\s*:(?!\s*(false|null|undefined|0)\b)')
+SPAN_BUDGET = 1_000_000  # the characters of the process calls the guard reads in one program
+# Where a process call's argv starts: past the call, by a module's alias too (`sp.run([`, `execFileSync(`),
+# and the list it may be in.
+ARGS_OPEN = re.compile(r'\s*\(\s*(?P<list>[\[(])?\s*$')
+ARGV_START = re.compile(rf'({"|".join(SPAWNS.values())}|\.(run|call|check_call|check_output|Popen))'
+                        + ARGS_OPEN.pattern)
+# A Perl or Ruby string or word list quoted by an operator (`q(…)`, `qq {…}`, `qw(…)`, `q#…#`, `q=…=`,
+# `%q^…^`, `%w[…]`, Ruby's bare `%{…}` where an operand starts: `c = %|…|`), its brackets nesting once
+# (`q(echo $(date))`), and its text; not one in a name or after an operand (`$freq/2`, `$q/2`, `uniq(`,
+# `a %(2)`), nor Perl's `q => 1` or what ends or assigns in Ruby (`%q = 1`).
+QUOTE_BRACKETS = (r'\s*(?:\((?P<a>(?:[^()]|\([^()]*\))*)\)|\{(?P<b>(?:[^{}]|\{[^{}]*\})*)\}|'
+                  r'\[(?P<c>(?:[^\[\]]|\[[^\[\]]*\])*)\]|<(?P<d>(?:[^<>]|<[^<>]*>)*)>)')
+NOT_OPERAND = rf'(?<![\w$@%&)\]}}{LITERAL}])'
+QUOTE_OPERATORS = {
+    'perl': re.compile(rf'{NOT_OPERAND}q[qw]?(?:{QUOTE_BRACKETS}|(?!=>)(?P<mark>[^\w\s)\]}}>])(?P<e>.*?)(?P=mark))',
+                       re.DOTALL),
+    'ruby': re.compile(rf'(?:{NOT_OPERAND}%[qQwWiI]|(?<![^=(,\[;\n])\s*%)'
+                       rf'(?:{QUOTE_BRACKETS}|(?P<mark>[^\w\s=;,.)\]}}>])(?P<e>.*?)(?P=mark))', re.DOTALL),
+}
+# A program that can start processes some other way (an imported `run`, an aliased module).
+STARTS_PROCESSES = {
+    'python': r'\b(subprocess|pty)\b|\bos\.(system|popen|exec|spawn)|\bfrom\s+os\s+import\b',
+    'node': r'\bchild_process\b|\bBun\.spawn\b|\bDeno\.(run|Command)\b',
+}
+# Each interpreter's flag that takes the program as text, and its flags that take a value: the script is
+# the first other operand. A cluster holds only flags without a value (`perl -ne`, not `ruby -rdate`).
+PYTHON_SWITCHES = '[bBdEhiIOPqsSuvVx]*'
+CODE_FLAGS = {'python': rf'-{PYTHON_SWITCHES}c', 'node': r'-e|--eval|-p|--print|-pe',
+              'perl': r'-[aclnpsStTuUwWxX0-9]*[eE]', 'ruby': r'-[acdlnpsvwWxy]*e', 'php': r'-r', 'osascript': r'-e',
+              'other': r'-c|-e|--eval'}
+PROGRAM_VALUES = {'python': {'-W', '-X', '--check-hash-based-pycs'}, 'ruby': {'-I', '-r', '-C', '-E', '-F'},
+                  'perl': {'-I'}, 'php': {'-c', '-d', '-z'},
+                  'node': {'-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions',
+                           '--input-type'}}
+QUOTED = re.compile(r'"[+<>]*([^"\s\\]+)"|\'[+<>]*([^\'\s\\]+)\'')  # a file a program may name (perl `">m.sh"`)
+# a program that may write a file
+WRITES = re.compile(r'\bopen\s*\([^)]*(,\s*|mode\s*=\s*)["\'][^"\']*[wax+]|(?<!stdout)\.write|'
+                    r'\bwrite_?(text|bytes|file)|appendFile|createWriteStream|\bdump\(|'
+                    r'\b(shutil|fs|os|FileUtils)\.(copy|move|rename|symlink|cp|mv)|\.(rename|symlink_to)\(|'
+                    r'\bFile\.new\(|["\']\s*>|file_put_contents|fputs', re.IGNORECASE)
+# A downloader's options: for the file it writes (`-` is stdout), for the file the URL names, and for the
+# directory that one goes in; whether it writes the file the URL names unless given a file (wget); and
+# whether its directory holds the files it is given too (curl).
+Downloader = namedtuple('Downloader', 'output remote directory names_by_default directory_holds_output')
+DOWNLOADS = {'curl': Downloader(r'-[a-np-zA-Z]*o(.*)|--output(?:=(.*))?', r'-[a-zA-Z]*O|--remote-name(-all)?',
+                                r'--output-dir(?:=(.*))?', False, True),
+             'wget': Downloader(r'-[a-zA-NP-Z]*O(.*)|--output-document(?:=(.*))?', None,
+                                r'-[a-zA-OQ-Z]*P(.*)|--directory-prefix(?:=(.*))?', True, False)}
+# A string a program compares is text, not a command line it runs; so is one it edits or prints, but a
+# string it edits itself is still the command line (`'gh … N'.replace('N', n)`). One it splits is too.
+COMPARES = re.compile(r'\bassert\b|["\']\s+(not\s+)?in\s+\w|\.(startswith|endswith|find|index|count|includes)\(')
+TEXT_USE = re.compile(COMPARES.pattern + r'|(?<![\'"])\.replace\(|\.(write|write_text|sub|join)\(|'
+                      r'\bprint\b|\bconsole\.\w+|\blogg(ing|er)\.|\.(debug|info|warning|warn|error)\(|\braise\b|'
+                      r'\bthrow\b|\bsys\.exit\b')
+# A program's string (`f'...'`, `\'\'\'...\'\'\'` too); a bracket (a comment's too), a line continued by `\`,
+# the end of a statement, a comma, or what joins expressions (`a or b`, `a && b`, `a + b`, `a ? b : c`,
+# `if a: b`), outside one.
+STRING = re.compile(r'(?:(?<!\w)[fbrFBR]{1,2})?(?P<string>\'\'\'(?:[^\\]|\\.)*?\'\'\'|"""(?:[^\\]|\\.)*?"""|'
+                    r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\')', re.DOTALL)
+ANY_STRING = STRING.pattern.replace('(?P<string>', '(?:')
+# Ruby's `system([program, argv0], …)`: the program runs, named argv0.
+PROGRAM_PAIR = re.compile(rf'\s*\(\s*\[\s*{STRING.pattern}\s*,\s*{ANY_STRING}\s*\]', re.DOTALL)
+STATEMENT_PART = re.compile(STRING.pattern + r'|(?P<open>[\[({\ue002-\ue004])|(?P<close>[\])}\ue005-\ue007])|'
+                            r'(?P<continued>\\\n)|(?P<newline>\n)|(?P<end>;)|(?P<comma>,)|'
+                            r'(?P<joint>\b(or|and|if|else)\b|&&|\|\||\+|\?|:)', re.DOTALL)
+# A program's comment: in Python `# …`; in another language `# …`, `// …` or `/* … */`, where one may be code
+# (a JS `#field`, a Perl `$#a` or `$a // $b`, a regex `/^# /`): see `uncommented`.
+PYTHON_COMMENT = re.compile(STRING.pattern + r'|(?P<comment>#[^\n]*)', re.DOTALL)
+COMMENT = re.compile(STRING.pattern + r'|(?P<comment>#[^\n]*|//[^\n]*|/\*.*?\*/)', re.DOTALL)
+COMMENT_BRACKETS = str.maketrans('([{)]}', '\ue002\ue003\ue004\ue005\ue006\ue007')  # kept from a comment
+# A statement that only uses its strings as text, whatever its expressions (`assert ok, 'gh …'`), unless
+# it assigns one (`raise E if (c := 'gh …') else F`): by `:=`, or by `=`; in Python outside its brackets (not
+# `E(code=1)`).
+TEXT_STATEMENT = re.compile(r'\s*(assert|raise|throw)\b')
+ASSIGNS = re.compile(r'(?<![=!<>])=(?![=>~])')
+MASKED = '_'  # a part of a program's statement that only uses its strings as text
+# What a `{` follows when it opens a literal (`= {`, `({`, `[{`, a template's `${`); after `,` or `:` it does
+# only inside a literal or brackets (`{'a': {`, not `case 1: {`). Any other opens a block.
+LITERAL_START = re.compile(r'[=(\[$]\s*$')
+ITEM_START = re.compile(r'[,:]\s*$')
+# The code before a list's item, and the code the item's string is joined to (`, c + `, `, f(g(x)) + `,
+# `, d[0] + `, `, $c . `).
+LIST_ITEM = re.compile(r',[\s\[(]*(?P<code>[$@]?[\w.]+(\((?:[^()]|\([^()]*\))*\)|\[[^\[\]]*\])*\s*(\+|\.)\s*)?$')
+GH_OR_GIT = re.compile(r'\b(gh|git)\b')
+# Where a command may start in a string the shell can't parse: past a shell separator, a quote or an opening
+# bracket, or in or past a substitution (`$(gh …)`, `$(date) gh …`); not past prose (`see (docs) git …`,
+# `f(g(x)) git …`, `1) gh …`). The substitution's command line is captured.
+COMMAND_START = re.compile(r'\$\(([^()]*)\)|[;&|\n(`\'"]')
+# Commands that run none of their arguments; `tee` writes files, but a file it writes runs nothing.
+RUNS_NOTHING = {'cat', 'head', 'tail', 'less', 'more', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'wc', 'ls',
+                'diff', 'cmp', 'file', 'stat', 'echo', 'printf', 'jq', 'yq', 'sort', 'uniq', 'cut', 'tr', 'column',
+                'nl', 'tee', 'true', 'false', 'test', '[', 'basename', 'dirname', 'realpath', 'readlink', 'which',
+                'type', 'man', 'pwd', 'base64', 'shasum', 'md5'}
+
+GRAPHQL_OWNER = re.compile(r'\b(mergePullRequest|enablePullRequestAutoMerge|enqueuePullRequest|mergeBranch)\b')
+GRAPHQL_SECURITY = re.compile(r'\b((create|update|delete)(BranchProtectionRule|RepositoryRuleset)|'
+                              r'(update|archive|unarchive)Repository)\b')
+GRAPHQL_APPROVE = re.compile(r'\b(addPullRequestReview|submitPullRequestReview)\b')
+GRAPHQL_PUSH = re.compile(r'\b(createCommitOnBranch|updateRefs?)\b')
+GRAPHQL_LABELS = re.compile(r'\b(addLabelsToLabelable|labelIds)\b')  # labels by id: lane:afk can't be told apart
+GUESSED = '\ue001'  # an expansion read in a GraphQL value's place
+REPO = r'(?:repos/[^/\s]+/[^/\s]+|repositories/[^/\s]+)'
+EXPANSION = re.compile(r'\$\(…\)|\$\{[^}]*\}|\$\w+|\$[@*]|\$')
+MISREAD = (ValueError, IndexError, RecursionError)  # Unparsable, or a NUL byte in a path
+MAX_NESTING = 8  # shells, evals and substitutions within one another; deeper is unreadable
+STRING_NESTING = MAX_NESTING // 2  # a program's string may start shells within shells, a few deep
+
+# (path pattern, reason): API writes caught whatever their body; pushes to the base branch are judged per call.
+API_RULES = [
+    (rf'^{REPO}/pulls/[^/]+/merge$|^{REPO}/merges$', MERGE_IS_OWNERS),
+    (rf'^{REPO}$|^{REPO}/(transfer|vulnerability-alerts|automated-security-fixes|'
+     r'private-vulnerability-reporting)$', SETTINGS),
+    (rf'^{REPO}/(branches/[^/]+/protection|rulesets|environments|actions/(secrets|variables|permissions)|'
+     r'dependabot/secrets|codespaces/secrets|collaborators|invitations|keys|hooks)\b', SECURITY),
+    (rf'^{REPO}/releases\b', RELEASE),
+    (rf'^{REPO}/(dispatches|actions/workflows/[^/]+/(dispatches|enable|disable))$', DISPATCH),
+]
+
+# (group, actions, reason): the gh commands caught whatever their arguments.
+GH_RULES = [
+    ('release', {'create', 'new', 'edit', 'delete', 'upload', 'delete-asset'}, RELEASE),
+    ('secret', {'set', 'delete', 'remove'}, SECRETS),
+    ('variable', {'set', 'delete', 'remove'}, SECRETS),
+    ('repo', {'edit', 'delete', 'rename', 'archive', 'unarchive'}, SETTINGS),
+    ('workflow', {'run', 'enable', 'disable'}, DISPATCH),
+    ('alias', {'set', 'import'}, ALIAS),
+]
+
+
+def settings(argv):
+    """The values a command's words set that it may run as command lines, a leading `!` dropped: of
+    `NAME=value`, `-c k=v`, `-oK=v` and `-o 'K v'` (ssh), `git config`'s values, and rsync's `-e` (`-ae`),
+    `--rsh` and `--rsync-path`."""
+    names = [os.path.basename(word) for word in argv]
+    config = None
+    if 'git' in names:  # past git's options, its subcommand
+        config = names.index('git') + 1
+        while config < len(argv) and argv[config].startswith('-'):
+            config += 2 if argv[config] in GIT_VALUED else 1
+        config = config if argv[config:config + 1] == ['config'] else None
+    for i, word in enumerate(argv):
+        flag, rsync = argv[i - 1] if i else '', 'rsync' in names[:i]
+        setting = SETTING.match(word) or flag == '-o' and re.match(r'\w+\s+(.*)', word, re.S) \
+            or rsync and re.fullmatch(r'--(?:rsh|rsync-path)=(.*)', word, re.S)
+        if setting:
+            yield setting.group(1).lstrip('!')
+        elif rsync and (flag in ('--rsh', '--rsync-path') or re.fullmatch(r'-[a-zA-Z]*e', flag)) \
+                or config is not None and i > config:
+            yield word.lstrip('!')
+
+
+def unwrap(argv):
+    """argv without leading variable assignments, keywords and wrappers that run their arguments.
+
+    `watch` and `env -S` hand a command line to a shell, so they become `sh -c`."""
+    argv = list(argv)
+    while argv:
+        head = argv.pop(0)
+        name, line = os.path.basename(head), None
+        if name in WRAPPERS:
+            while argv and (argv[0].startswith('-') or ASSIGNMENT.match(argv[0])):
+                flag = argv.pop(0)
+                if flag == '--':
+                    break
+                if name == 'command' and flag in ('-v', '-V'):
+                    return []  # looks the command up; runs nothing
+                if name == 'env' and flag.startswith('-S') and len(flag) > 2:
+                    line = flag[2:]
+                elif flag in WRAPPERS[name] and argv:
+                    value = argv.pop(0)
+                    line = value if (name, flag) == ('env', '-S') else line
+            if name == 'timeout' and argv:
+                argv.pop(0)  # the duration
+            if name == 'watch' or line is not None:
+                return ['sh', '-c', ' '.join(([line] if line is not None else []) + argv)]
+        elif head == 'function' and argv:
+            argv.pop(0)  # the function's name; its body follows
+        elif not (ASSIGNMENT.match(head) or head in KEYWORDS):
+            return [head] + argv
+    return argv
+
+
+def statements(code):
+    """A program's statements, split at its `;`, newlines, and the `{` starting and the `}` ending a block,
+    outside its strings (`try { throw …`, `} catch (e) {`). A newline inside `(`, `[` or a `{` literal
+    continues the statement (a list over lines); one inside a `{` block does not, nor one after a `\\`."""
+    found, start, opened = [], 0, []  # per open bracket: is it a block?
+    for match in STATEMENT_PART.finditer(code):
+        ending = False  # a block's start or end (or `}` closing none open)
+        if match.lastgroup == 'open':
+            before = code[start:match.start()]
+            item = ITEM_START.search(before) and opened and not opened[-1]
+            opened.append(match.group('open') in '{\ue004' and not (LITERAL_START.search(before) or item))
+            ending = opened[-1]
+        elif match.lastgroup == 'close':
+            ending = match.group('close') in '}\ue007' and (not opened or opened[-1])
+            opened = opened[:-1]
+        if ending or match.lastgroup == 'end' or match.lastgroup == 'newline' and not (opened and not opened[-1]):
+            found.append(code[start:match.start()])  # a newline in a list or literal continues it
+            start = match.end()
+    return found + [code[start:]]
+
+
+def top_level(code):
+    """The insides of `code`'s outermost brackets; and its commas and what joins its expressions (`or`,
+    `&&`, `+`, `?`, `:`, …) outside them: all as spans. A line break there joins too: past an unpaired
+    bracket (`(` in a comment or a regex), or a comment's, the lines after it are each a statement still."""
+    code, opened = re.sub('[\ue002-\ue007]', ' ', code), []  # a comment's bracket pairs with none
+    for match in STATEMENT_PART.finditer(code):
+        if match.lastgroup == 'open':
+            opened.append(match.start())
+        elif match.lastgroup == 'close' and opened:
+            opened.pop()
+    for start in opened:  # an unpaired bracket holds nothing: the code past it is outside
+        code = code[:start] + ' ' + code[start + 1:]
+    insides, commas, joints, depth, inside = [], [], [], 0, 0
+    for match in STATEMENT_PART.finditer(code):
+        if match.lastgroup == 'open':
+            depth += 1
+            inside = match.end() if depth == 1 else inside
+        elif match.lastgroup == 'close' and depth:  # not one closing a statement before (`}), c = …`)
+            depth -= 1
+            if depth == 0:
+                insides.append((inside, match.start()))
+        elif match.lastgroup == 'comma' and depth == 0:
+            commas.append(match.span())
+        elif match.lastgroup in ('joint', 'newline') and depth == 0:
+            joints.append(match.span())
+    return insides, commas, joints
+
+
+def split_at(code, spans):
+    """The parts of `code` between `spans`."""
+    edges = [0] + [edge for span in spans for edge in span] + [len(code)]
+    return [code[edges[i]:edges[i + 1]] for i in range(0, len(edges), 2)]
+
+
+def blanked(code, spans):
+    """`code` with each of `spans` as spaces."""
+    parts = split_at(code, spans)
+    return ''.join(part + ' ' * (stop - start) for part, (start, stop) in zip(parts, spans)) + parts[-1]
+
+
+def assigns(code, kind):
+    """Whether program code in language `kind` assigns a value: by `:=`, or by `=`; in Python outside its
+    brackets (not `E(code=1)`, `print(x, end='')`)."""
+    bare = STRING.sub("''", code)
+    outside = ''.join(split_at(bare, top_level(bare)[0])) if kind == 'python' else bare
+    return ':=' in bare or ASSIGNS.search(outside) is not None
+
+
+def running(code, text_use, kind=None):
+    """`code` in language `kind` with each part that only uses its strings as `text_use` text (`print(…)`,
+    `x.replace(…)`) `MASKED`: each of its expressions (`print(x) or s.run(…)`, `c, m = 'gh …', x.replace(…)`)
+    whose own code outside its brackets and strings does, or else any item in its brackets. A part that
+    assigns a value past its text use (`print(c := 'gh …')`, `console.log(c = 'gh …')`) runs it."""
+    keyword = TEXT_STATEMENT.match(code)
+    if keyword and text_use.fullmatch(keyword.group(1)):
+        if not assigns(code, kind):
+            return MASKED
+        code = ' ' * keyword.end() + code[keyword.end():]  # the value it assigns may run
+    insides, commas, joints = top_level(code)
+    use = text_use.search(STRING.sub(lambda string: "'" + ' ' * (len(string[0]) - 2) + "'", blanked(code, insides)))
+    if use:
+        joints = sorted(commas + joints)
+        if joints:
+            words = [code[start:stop] for start, stop in joints] + ['']
+            parts = zip(split_at(code, joints), words)
+            return ' '.join(f'{running(part, text_use, kind)} {word}' for part, word in parts)
+        if not assigns(code[use.start():], kind):
+            return MASKED
+    kept, end = '', 0
+    for start, stop in insides:
+        inside = code[start:stop]
+        items = split_at(inside, top_level(inside)[1])
+        kept += code[end:start] + ','.join(running(item, text_use, kind) for item in items)
+        end = stop
+    return kept + code[end:]
+
+
+def uncommented(code, kind):
+    """A program's code in language `kind` with its comments blanked, its line breaks kept. A comment that may
+    be code stays when blanking it could hide a command: one naming gh or git, or starting a string over
+    lines (`a // 2; c = \'\'\'`, `'x\\`). Of one with brackets unpaired outside its strings, the brackets
+    stay, continuing a statement but pairing with no other (`a // 2; c = [`, `f(a,\\n b // 2)`, `// log(`). In
+    Python, a `#` in an f-string's unclosed `{` may be in it (`f'{d['#']}'; c = 'gh …'`): one that could hide
+    a command stays."""
+    def blank(part):
+        text = part[0]
+        if part.lastgroup != 'comment':
+            return text
+        hides = GH_OR_GIT.search(text) or re.search(r"\'\'\'|\"\"\"|\\$", text)
+        if kind == 'python':
+            line = code[code.rfind('\n', 0, part.start()) + 1:part.start()]
+            f_string = [*re.finditer(r'(?<!\w)[rRbB]?[fF][rRbB]?[\'"]', line)][-1:]
+            field = line[f_string[0].end():].replace('{{', '').replace('}}', '') if f_string else ''
+            return text if field.count('{') > field.count('}') and hides else re.sub(r'[^\n]', ' ', text)
+        if hides:
+            return text
+        bare = STRING.sub(lambda string: ' ' * len(string[0]), text)
+        unpaired = any(bare.count(o) != bare.count(c) for o, c in ('()', '[]', '{}'))
+        return re.sub(r'[^\n()\[\]{}]' if unpaired else r'[^\n]', ' ', bare).translate(COMMENT_BRACKETS)
+    return (PYTHON_COMMENT if kind == 'python' else COMMENT).sub(blank, code)
+
+
+def statements_running(code, text_use, kind=None):
+    """A program's statements, as the code they run (see `running`), its comments left out; a statement that
+    only uses its strings as `text_use` text runs none, nor one that is only a string (a docstring).
+    `d = {'a': ', '.join(x), 'b': 'gh …'}` holds a command, but `print({'b': 'gh …'})` doesn't."""
+    for statement in statements(uncommented(literal(code), kind)):
+        kept = running(statement, text_use, kind)
+        if kept != MASKED and not re.fullmatch(rf'\s*{STRING.pattern}\s*', statement, re.DOTALL):
+            yield kept
+
+
+def operator_quoted(code, kind):
+    """Perl or Ruby (`kind`) code with its strings quoted by an operator as plain ones: `q(gh …)` is `'gh …'`."""
+    def plain(quote):
+        text = next(quote.group(name) for name in 'abcde' if quote.group(name) is not None)
+        return repr(text)
+    return QUOTE_OPERATORS[kind].sub(plain, code)
+
+
+def runs_gh_or_git(text, nested=0):
+    """Whether shell text runs gh or git, as the shell parses it (see `parsed_runs_gh_or_git`), or else in a
+    command past where `COMMAND_START` finds one may start (`'ls; gh …'`, `"bash -c 'gh …'"`), past
+    assignments, wrappers and their options, by name or path (`'sudo -u root /usr/bin/gh …'`), or in the line
+    a wrapper hands a shell (`'watch gh …'`). Text nested too deep is taken to."""
+    if nested > MAX_NESTING:
+        return True
+    text = literal(text)  # as the shell given it reads it
+    try:
+        if parsed_runs_gh_or_git(parse(text, strict=True), nested):
+            return True
+    except MISREAD:
+        pass  # prose, or what the shell can't parse either: read loosely below
+    parts = COMMAND_START.split(text)
+    if any(body and runs_gh_or_git(body, nested + 1) for body in parts[1::2]):  # a substitution's command line
+        return True
+    for part in filter(None, parts[::2]):
+        argv = unwrap(part.split()) or ['']
+        if argv[:2] == ['sh', '-c'] and runs_gh_or_git(''.join(argv[2:3]), nested + 1) \
+                or os.path.basename(argv[0]) in ('gh', 'git'):
+            return True
+    return False
+
+
+def parsed_runs_gh_or_git(script, nested):
+    """Whether a parsed script runs gh or git: a command, past its assignments, keywords, redirects and
+    wrappers (`2>&1 gh …`, `function f { gh …`, `case x in (a) gh …`), a substitution's, or one in the line
+    a shell, `eval` or a line runner is given (`sh -c 'gh …'`, `eval gh …`, `ssh h 'gh …'`)."""
+    if any(parsed_runs_gh_or_git(inner, nested + 1) for inner in script.substituted):
+        return True
+    for command in script.commands:
+        argv = unwrap(command.argv)
+        name, args = (os.path.basename(argv[0]), argv[1:]) if argv else ('', [])
+        if name in ('gh', 'git'):
+            return True
+        lines = args if name in LINE_RUNNERS else [' '.join(args)] if name == 'eval' else []
+        if name in SHELLS:
+            flag = next((i for i, arg in enumerate(args) if re.fullmatch(r'-[a-zA-Z]*c[a-zA-Z]*', arg)), None)
+            lines = [arg for arg in args[flag + 1:flag + 3] if arg != '--'][:1] if flag is not None else []
+        if command.stdin and (name in SHELLS or name in LINE_RUNNERS or name in SCHEDULERS):
+            lines.append(command.stdin)
+        if any(runs_gh_or_git(line, nested + 1) for line in lines):
+            return True
+    return False
+
+
+def string_text(string):
+    """The text a program's string literal holds: `\\n` is a line break."""
+    quotes = 3 if string[:3] in ("'''", '"""') and len(string) >= 6 else 1
+    return re.sub(r'\\(.)', lambda escape: {'n': '\n', 't': ' '}.get(escape.group(1), escape.group(1)),
+                  string[quotes:-quotes])
+
+
+def code_words(code):
+    """Program code as plain words on one line: quotes, backquotes, brackets, commas and `\\n` dropped."""
+    return ' '.join(re.sub(r'["\'`\[\](),]+|\\[nt]', ' ', code).split())
+
+
+class Join(Enum):
+    """How a program's string joins the command line of the string before it."""
+    ARGUMENT = 'one word of it'  # `['git', 'commit', '-m', 'x; y']`, `input='…'`
+    CONCATENATED = 'the same word'  # `'gh pr ' + 'merge 1'`; code between is a word: `'gh pr ' + n + ' 1'`
+    LINE = 'a command line of its own'
+
+
+class Word:
+    """A word of the command line a program spells: shell text, or one argument (`quoted`)."""
+
+    def __init__(self, text, quoted=False):
+        self.text, self.quoted = text, quoted
+
+    def __str__(self):
+        return shlex.quote(self.text) if self.quoted else self.text
+
+
+def program_of(line):
+    """The program a spelled command line runs, past its wrappers (`env bash`)."""
+    return os.path.basename((unwrap(' '.join(word.text for word in line).split()) or [''])[0])
+
+
+def joining(before, previous, text, line, argv=False):
+    """How the string `text` joins `line`, after the string `previous` and the code `before`; `argv` when
+    the line is a process call's argv. In a list, a string that starts a gh or git command, or one that
+    runs gh or git anywhere but in the argv of a process call (`for c in ('make', 'cd x && gh …')`, not
+    `s.run(['notify-send', 'cd x && gh …'])`), starts a line of its own unless an option names it
+    (`['ls', 'gh …']`, not `['-m', 'gh …']`), as do a list after a list (`[['ls'], ['bash', …]]`) and any
+    item of a list of command lines (`['git fetch', 'cd x && gh …']`), and any other is an argument, joined
+    to code or not (`['bash', '-c', c + ' && gh …']`, `$c . ' && gh …'`); a keyword's value is an argument,
+    except the command it names, the script a shell reads (`input=`), or, but in a process call's argv, one
+    that runs gh or git (an assignment in JavaScript: `f('x', c = 'gh …')`)."""
+    keyword = re.search(r',\s*(\w+)\s*=\s*$', before)
+    if keyword:
+        shell = keyword.group(1) == 'input' and program_of(line) in SHELLS
+        names = shell or keyword.group(1) in ('args', 'cmd', 'command')
+        return Join.LINE if names or not argv and runs_gh_or_git(text) else Join.ARGUMENT
+    if LIST_ITEM.search(before):
+        runs = re.match(r'\s*(gh|git)\s', text) or not argv and runs_gh_or_git(text)
+        own = runs and not previous.startswith('-')
+        lines = re.search(r'[\])]\s*,\s*[\[(]\s*$', before) or ' ' in line[0].text
+        return Join.LINE if own or lines else Join.ARGUMENT
+    if re.fullmatch(r'\s*(\+|\.\.?)?\s*', before) or re.match(r'\s*(\+|\.\.?\s)', before) \
+            or re.search(r'(\+|\s\.\.?)\s*$', before):
+        return Join.CONCATENATED
+    return Join.LINE
+
+
+def taken_as_argv(code, end, call):
+    """Whether the strings past a process call's opening `call`, found in `code` from `end`, are its argv: a
+    list's are, unless the call takes one of its items or the value of a method (`run([…][1])`,
+    `execSync([…].pop())`)."""
+    if not call.group('list'):
+        return True
+    depth = 0
+    for match in STATEMENT_PART.finditer(code, end + call.start('list')):
+        depth += {'open': 1, 'close': -1}.get(match.lastgroup, 0)
+        if depth == 0:
+            return re.match(r'\s*([,)]|$)', code[match.end():]) is not None
+    return True
+
+
+def as_argv0(code, program):
+    """Code naming the program it runs apart from its argv (`execl('/bin/sh', 'sh', …)`, `executable='/bin/sh'`),
+    with the match `program`'s string in place of argv[0], and the match left out, with its comma."""
+    if not program:
+        return ''
+    rest = code[:program.start()] + re.sub(r'^\s*,', '', code[program.end():])
+    return STRING.sub(lambda _: program.group('string'), rest, count=1)
+
+
+def bracket_pairs(code, raw=False):
+    """Where each bracket of program code that is closed closes, outside its strings, or (`raw`) in them too:
+    {open: close}."""
+    pairs, opened = {}, []
+    for match in re.finditer(r'(?P<open>[\[({])|(?P<close>[\])}])', code) if raw else STATEMENT_PART.finditer(code):
+        if match.lastgroup == 'open':
+            opened.append(match.start())
+        elif match.lastgroup == 'close' and opened:
+            pairs[opened.pop()] = match.start()
+    return pairs
+
+
+def in_text(code, strings, position):
+    """Whether `position` is in one of program code's `strings` (spans, in order), and not in what it
+    interpolates (`"#{…}"`)."""
+    i = bisect.bisect(strings, (position,)) - 1
+    return i >= 0 and position < strings[i][1] and '#{' not in code[strings[i][0]:position]
+
+
+def joined(code):
+    """The words of code a string is joined to (`c + `), its `+`, `.` and `..` dropped."""
+    return code_words(re.sub(r'(?<!\S)(\+|\.\.?)(?!\S)', ' ', code))
+
+
+def spelled(code, argv=False):
+    """The command lines program code spells: each string is shell text on a line of its own, unless it
+    joins the one before (see `joining`). The words between strings stay, except a list item's code
+    joined to its string: unknown, it is left out (`['-c', c + ' && gh …']` runs ` && gh …`). With `argv`,
+    the code is a process call's arguments; but a list in them it takes an item of is not (`['sh', '-c',
+    ['make', 'gh …'][1]]`)."""
+    lines, end, previous, in_argv = [[]], 0, None, False
+    taken = [(start, stop) for start, stop in bracket_pairs(code).items()
+             if re.match(r'\s*[\[.]', code[stop + 1:]) and top_level(code[start + 1:stop])[1]]
+    for match in STRING.finditer(code):
+        before, text = code[end:match.start()], string_text(match.group('string'))
+        item_taken = any(start < match.start() < stop for start, stop in taken)
+        how = Join.LINE if previous is None else joining(before, previous, text, lines[-1],
+                                                         in_argv and not item_taken)
+        if how is Join.CONCATENATED:
+            # Code between strings is a word of its own: its value is unknown, and may be a space (`sp`).
+            between = joined(before)
+            lines[-1][-1].text += f' {between} {text}' if between else text
+        elif how is Join.ARGUMENT:
+            item = LIST_ITEM.search(before)
+            joined_to = (item and item.group('code')) or ''
+            head = before[:len(before) - len(joined_to)]
+            lines[-1] += [Word(code_words(head)), Word(text, quoted=True)]
+        else:
+            lines[-1].append(Word(code_words(before)))
+            lines.append([Word(text)])
+            call = ARGS_OPEN.match(before) if argv and previous is None else ARGV_START.search(before)
+            in_argv = bool(call) and taken_as_argv(code, end, call)
+        end, previous = match.end(), text
+    lines[-1].append(Word(code_words(code[end:])))
+    return [' '.join(map(str, line)) for line in lines]
+
+
+def matched_value(match, args, i, default=''):
+    """The value of the option `match` read at `args[i]`, in a cluster: attached (`-sSom.sh`, `--output=m.sh`)
+    or the next argument."""
+    attached = next((group for group in match.groups() if group), None)
+    return attached or (args[i + 1] if i + 1 < len(args) else default)
+
+
+def option_values(args, names):
+    """Values of the named options in `--name value`, `--name=value` and `-nvalue` forms."""
+    values = []
+    for i, arg in enumerate(args):
+        for name in names:
+            if arg == name and i + 1 < len(args):
+                values.append(args[i + 1])
+            elif arg.startswith(name + '=') and name.startswith('--'):
+                values.append(arg[len(name) + 1:])
+            elif not name.startswith('--') and arg.startswith(name) and len(arg) > len(name):
+                values.append(arg[len(name):])
+    return values
+
+
+def positionals(args, valued):
+    """Arguments that aren't options or option values."""
+    out, skip = [], False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg == '--':
+            continue
+        elif arg.startswith('-'):
+            skip = arg in valued
+        else:
+            out.append(arg)
+    return out
+
+
+def labels_add_afk(values):
+    """`lane:afk` among label values, or a value whose content is unknown (a variable)."""
+    for value in values:
+        for label in re.split(r'[,\n]', value):
+            if literal(label).strip().strip('"\'').lower() == 'lane:afk' or unknown(label):
+                return True
+    return False
+
+
+def endpoint_paths(endpoint, base):
+    """The API paths `endpoint` may name, host and slashes dropped; None when it could be any path.
+
+    Each expansion the guard can't fill in stands for a segment, an owner/repo pair, the base
+    branch or nothing, so a path is caught when any of its readings is."""
+    def plain(path):
+        path = re.sub(r'^https?://[^/]+/(api/v3/)?', '', path)
+        return path.strip('/').split('?')[0]
+    parts = EXPANSION.split(endpoint)
+    if len(parts) == 1:
+        return [plain(endpoint)]
+    if len(parts) > 5 or not re.search(r'[A-Za-z]{3}', ''.join(parts)):
+        return None
+    readings = ['']
+    for i, part in enumerate(parts):
+        fills = ('x', 'x/x', base, '') if i else ('',)
+        if i and parts[i - 1].endswith('repos/') and re.match(r'/[^/]', part):
+            fills = ('x/x',)  # `repos/$REPO/issues`
+        readings = [reading + fill + part for reading in readings for fill in fills]
+    return [plain(reading) for reading in readings]
+
+
+def readable_query(query):
+    """An inline GraphQL query with each expansion in a value's place (after `:` or inside a string)
+    read as a placeholder; None when one stands where it could change the operation."""
+    def placeholder(match):
+        before = query[:match.start()]
+        if before.rstrip().endswith(':') or before.count('"') % 2:
+            return GUESSED
+        raise Unparsable('an expansion shapes the query')
+    try:
+        return literal(EXPANSION.sub(placeholder, query))
+    except Unparsable:
+        return None
+
+
+def current_branch(directory):
+    try:
+        return subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=directory or None,
+                              capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        return None
+
+
+class Written:
+    """A file this call writes: its text (None when the guard can't know it), and the code of the inline
+    programs that may also write it, whose strings are what they write."""
+
+    def __init__(self, text, code=''):
+        self.text, self.code = text, code
+
+
+class Judge:
+    """Collects the reasons the calls in a shell command are caught.
+
+    `origin` is the hook's working directory: where a directory the guard can't follow
+    (`cd "$X"`) is taken to be."""
+
+    def __init__(self, unattended=True, extra=(), base='main', is_main_checkout=None, origin=None):
+        self.unattended, self.extra, self.base, self.origin = unattended, list(extra), base, origin
+        self.is_main = is_main_checkout or (lambda path: False)
+        self.findings, self.variables, self.written = [], {}, {}  # written: path -> Written
+        self.exported, self.allexport = set(), False  # the variables exported, and whether all are (`set -a`)
+
+    def catch(self, reason, afk_only=False):
+        if not afk_only or self.unattended:
+            self.findings.append(reason)
+
+    def sure(self, run):
+        """Judge with `run(judge)` on a fresh judge, keeping only what it surely catches:
+        for a fragment the guard reads loosely, a misread is not a finding."""
+        judge = Judge(self.unattended, (), self.base, self.is_main, self.origin)
+        try:
+            run(judge)
+        except MISREAD:
+            return
+        self.findings += [reason for reason in judge.findings if reason not in UNSURE]
+
+    def expand(self, word):
+        """`word` with the variables this script set to plain values filled in."""
+        def value(match):
+            known = self.variables.get(match.group(1) or match.group(2))
+            return match.group(0) if known is None else known
+        return re.sub(rf'\$(?:\{{({NAME})\}}|({NAME}))', value, word)
+
+    def path(self, path, cwd):
+        return str(Path(cwd or self.origin or '.').joinpath(os.path.expanduser(literal(path))).resolve())
+
+    def script(self, script, cwd, nested=0):
+        if nested > MAX_NESTING:
+            return self.catch(UNREADABLE)
+        for inner in script.substituted:
+            self.script(inner, cwd, nested + 1)
+        stack = []
+        for command in script.commands:
+            if command.argv == ['(']:
+                stack.append(cwd)
+            elif command.argv == [')']:
+                cwd = stack.pop() if stack else cwd
+            else:
+                cwd = self.command(command, cwd, nested)
+
+    def text(self, text, cwd, nested=0):
+        self.script(parse(literal(text)), cwd, nested)
+
+    def command(self, command, cwd, nested):
+        """Judge one simple command; return the working directory after it (None when unknown)."""
+        argv = command.argv
+        assignments = [a for a in argv if ASSIGNMENT.match(a)]
+        # A setting's value may be a command line a command runs (`-c alias.m='!gh …'`), or one an export hands
+        # on: by `export` or `declare -x`, of a variable set before (`C='gh …'; export C`), or set after it is
+        # exported (`export C; C='gh …'`, `set -a`), or one a user's environment may export (`EDITOR`).
+        exports = argv[:1] == ['export'] or argv[:1] and argv[0] in DECLARES and any(map(EXPORT_FLAG.fullmatch, argv))
+        set_for = exports or len(assignments) < len(argv) and argv[0] not in DECLARES
+        values = list(settings(argv)) if set_for else []
+        if exports:
+            names = [word for word in argv[1:] if re.match(rf'{NAME}(=|$)', word)]
+            self.exported.update(word.split('=', 1)[0] for word in names)
+            values += [self.variables.get(word) or '' for word in names if '=' not in word]
+        elif argv and len(assignments) == len(argv):
+            values += [value for name, value in map(lambda a: ASSIGNMENT.match(a).groups(), argv)
+                       if self.allexport or name in self.exported or INHERITED.fullmatch(name)]
+        for value in map(self.expand, values):
+            if runs_gh_or_git(value):
+                self.sure(lambda judge, line=value: judge.shell_text(line, cwd, nested))
+        if argv and (len(assignments) == len(argv) or argv[0] in DECLARES):
+            for assignment in (argv if len(assignments) == len(argv) else argv[1:]):
+                match = ASSIGNMENT.match(assignment)
+                if match:
+                    value = self.expand(match.group(2))
+                    self.variables[match.group(1)] = None if SUBST in value else value
+            return cwd
+        argv = [self.expand(a) for a in unwrap(argv)]
+        self.note_writes(argv, command, cwd)
+        if not argv:
+            return cwd
+        name, args = os.path.basename(argv[0]), argv[1:]
+        for i, arg in enumerate(args if name == 'set' else []):  # `set -a`, `set -o allexport`; `+` unsets
+            allexport = arg in ('-o', '+o') and args[i + 1:i + 2] == ['allexport']
+            if re.fullmatch(r'[-+][a-zA-Z]*a[a-zA-Z]*', arg) or allexport:
+                self.allexport = arg.startswith('-')
+        if name in ('cd', 'pushd', 'popd'):
+            target = next((a for a in args if a == '-' or not a.startswith('-')), '~')
+            return None if name == 'popd' or target == '-' or unknown(target) else self.path(target, cwd)
+        if name in RUNS_NOTHING:
+            return cwd
+        if name == 'alias':  # with expand_aliases on, a defined alias runs as written
+            for definition in args:
+                if '=' in definition:
+                    self.shell_text(definition.split('=', 1)[1], cwd, nested)
+        elif name in SHELLS or name in SCHEDULERS or name in ('eval', 'source', '.'):
+            self.shell(name, args, command, cwd, nested)
+        elif INTERPRETERS.match(name):
+            self.interpreter(name, args, command, cwd)
+        elif name == 'find':
+            for i, arg in enumerate(args):
+                if arg in ('-exec', '-execdir', '-ok', '-okdir'):
+                    rest = args[i + 1:]
+                    end = next((j for j, a in enumerate(rest) if a in (';', '+')), len(rest))
+                    self.command(Command(rest[:end]), cwd, nested)
+        elif name == 'gh':
+            self.gh(args, command, cwd)
+        elif name == 'git':
+            self.git(args, command, cwd, nested)
+        elif '/' in argv[0] and self.path(argv[0], cwd) in self.written:
+            self.script_file(argv[0], cwd, nested)
+        elif EXPANSION.fullmatch(argv[0]) and not args:
+            self.catch(UNREADABLE)  # `$CMD` or `$(...)` runs a command line the guard can't see
+        elif unknown(argv[0]):
+            self.held_program(argv, command, cwd, nested)
+        else:
+            self.launched(argv, command, cwd, nested)
+        self.project_rules(' '.join(literal(a) for a in argv if not re.search(r'\s', a)))
+        return cwd
+
+    def note_writes(self, argv, command, cwd):
+        """Note each file this command writes, with its text when the guard knows it and None otherwise."""
+        name = os.path.basename(argv[0]) if argv else ''
+        if name == 'cat' and len(argv) == 1 and command.stdin is not None:
+            text = command.stdin
+        elif name == 'echo' and not any(unknown(a) for a in argv):
+            text = literal(' '.join(a for a in argv[1:] if a not in ('-n', '-e', '-E')))
+        else:
+            text = None
+        for path, appends in command.writes:
+            self.written[self.path(path, cwd)] = Written(None if appends else text)
+        if name == 'tee':
+            for path in positionals(argv[1:], set()):
+                self.written[self.path(path, cwd)] = Written(command.stdin if '-a' not in argv else None)
+        if name in ('curl', 'wget'):
+            self.note_downloads(name, argv[1:], cwd)
+        files = positionals(argv[1:], {'-t', '--target-directory', '-S', '--suffix'})
+        if name in ('cp', 'mv', 'install') and len(files) == 2:
+            source = self.path(files[0], cwd)
+            self.written[self.path(files[1], cwd)] = self.written.get(source) or Written(self.read_file(files[0], cwd))
+
+    def note_downloads(self, name, args, cwd):
+        """A downloaded file is unreadable."""
+        tool, directory, files = DOWNLOADS[name], '', []
+        named = tool.names_by_default
+        for i, arg in enumerate(args):
+            if value := re.fullmatch(tool.output, arg, re.DOTALL):
+                files.append(matched_value(value, args, i, '-'))
+                if tool.names_by_default:
+                    named = False  # `wget -O` writes only its file
+            elif tool.remote and re.fullmatch(tool.remote, arg):
+                named = True
+            elif tool.directory and (prefix := re.fullmatch(tool.directory, arg, re.DOTALL)):
+                directory = matched_value(prefix, args, i)
+        given = directory if tool.directory_holds_output else ''
+        files = [os.path.join(given, file) for file in files if file != '-']
+        for arg in args if named else ():
+            url = re.fullmatch(r'\w+://[^/]+/(?:.*/)?([^/?#]+)(?:[?#].*)?', arg)
+            if url:
+                files.append(os.path.join(directory, url.group(1)))
+        for file in files:
+            self.written[self.path(file, cwd)] = Written(None)
+
+    def note_program(self, code, cwd):
+        """Each file an inline program that writes names may be one it writes, from its code. A writer often
+        names its file in a variable elsewhere, so every file it names counts, read ones too."""
+        if not WRITES.search(code):
+            return
+        for match in QUOTED.finditer(code):
+            try:
+                full = self.path(match.group(1) or match.group(2), cwd)
+            except (OSError, ValueError, RuntimeError):
+                continue
+            before = self.written.get(full, Written(''))
+            if before.text is not None:
+                self.written[full] = Written(before.text, before.code + '\n' + code)
+
+    def launched(self, argv, command, cwd, nested):
+        """A launcher the guard doesn't know (`npx`, `uv run`) may run gh, git, a shell or a program; one of
+        `LINE_RUNNERS` may run an argument that is a command line running gh or git."""
+        for i, arg in enumerate(argv[1:], 1):
+            name = os.path.basename(arg)
+            if name in ('gh', 'git') or name in SHELLS or INTERPRETERS.match(name):
+                return self.command(command.running(argv[i:]), cwd, nested + 1)
+        for arg in argv[1:] if os.path.basename(argv[0]) in LINE_RUNNERS else []:
+            if runs_gh_or_git(arg):
+                self.sure(lambda judge, arg=arg: judge.shell_text(arg, cwd, nested))
+
+    def held_program(self, argv, command, cwd, nested):
+        """A program held in a variable (`${GH:-gh} pr merge 1`) is judged as each one it could be."""
+        for program in ('gh', 'git', 'sh'):
+            self.sure(lambda judge: judge.command(command.running([program] + argv[1:]), cwd, nested + 1))
+
+    def read_file(self, path, cwd):
+        """A file's text, as this script wrote it or as it is on disk; None when unreadable."""
+        if PROCSUB in path or unknown(path):
+            return None
+        full = self.path(path, cwd)
+        written = self.written.get(full)
+        if written:
+            return None if written.code else written.text  # what a program writes, the guard can't read
+        try:
+            return Path(full).read_text()
+        except (OSError, ValueError):
+            return None
+
+    def project_rules(self, text):
+        for pattern, reason in self.extra:
+            if re.search(pattern, text):
+                self.catch(reason)
+
+    def shell(self, name, args, command, cwd, nested):
+        if name == 'eval':
+            return self.shell_text(' '.join(args), cwd, nested)
+        if name in ('source', '.'):
+            files = args[:1]
+        elif name in SCHEDULERS:
+            files = option_values(args, ('-f',))
+        else:
+            files = []
+            for i, arg in enumerate(args):
+                if i and (re.fullmatch(r'[-+][a-zA-Z]*[oO]', args[i - 1])
+                          or args[i - 1] in ('--rcfile', '--init-file')):
+                    continue  # an option's value: `-euo pipefail`
+                if arg == '--' or not arg.startswith(('-', '+')):
+                    files = args[i + 1:i + 2] if arg == '--' else [arg]
+                    break  # the script; the arguments after it are its own
+                if re.fullmatch(r'-[a-zA-Z]*n[a-zA-Z]*', arg) or arg == '--no-execute':
+                    return  # `sh -n` reads the script without running it
+                if re.fullmatch(r'-[a-zA-Z]*c[a-zA-Z]*', arg):
+                    rest = args[i + 2:] if args[i + 1:i + 2] == ['--'] else args[i + 1:]
+                    return self.shell_text(rest[0], cwd, nested) if rest else self.catch(UNREADABLE)
+        if not files and command.stdin is not None:
+            return self.text(command.stdin, cwd, nested + 1)
+        files = files or ([command.reads] if command.reads else [])
+        if files:
+            self.script_file(files[0], cwd, nested)
+        elif command.piped:
+            self.catch(UNREADABLE)
+
+    def shell_text(self, text, cwd, nested):
+        """Shell code given as text: one expansion the guard can't fill in (`"$(curl ...)"`) is unreadable."""
+        if EXPANSION.fullmatch(text.strip()):
+            return self.catch(UNREADABLE)
+        self.text(text, cwd, nested + 1)
+
+    def script_file(self, path, cwd, nested):
+        """A script file a shell runs: the guard reads one this call wrote; a project's script is the project's."""
+        written = self.runnable(path, cwd)
+        if written and written.text is not None:
+            self.text(written.text, cwd, nested + 1)
+            self.writers(written, cwd)
+
+    def runnable(self, path, cwd):
+        """The Written a script's path names, None for a project's; catches one the guard can't read."""
+        if PROCSUB in path:
+            self.catch(UNREADABLE)
+            return Written(None)
+        written = self.written.get(self.path(path, cwd))
+        if written and written.text is None:
+            self.catch(UNREADABLE)  # a download, an append or tee
+        return written
+
+    def interpreter(self, name, args, command, cwd):
+        kind = next((k for k in CODE_FLAGS if name.startswith(k)), 'node' if name in ('deno', 'bun') else 'other')
+        written = self.program(name, kind, args, command, cwd)
+        if not written or written.text is None:
+            return
+        self.writers(written, cwd)
+        self.note_program(written.text, cwd)
+        code = operator_quoted(written.text, kind) if kind in QUOTE_OPERATORS else written.text
+        calls = self.process_calls(code, cwd, (kind if kind in SPAWNS else 'other',))
+        if calls or re.search(STARTS_PROCESSES.get(kind, '$^'), literal(code)):
+            # A program that starts processes may hold the command line in a string or list first.
+            self.string_commands(code, cwd, kind)
+
+    def program(self, name, kind, args, command, cwd):
+        """The program an interpreter runs, as a Written; None when it runs none the guard reads."""
+        # `-pe` is node's flag, not `-p` with its code attached, so the whole flag is tried first.
+        code_flag = re.compile(CODE_FLAGS[kind])
+        attached = re.compile(rf'(?:{CODE_FLAGS[kind]})=?(.+)', re.DOTALL)  # `-c"..."`, `--eval=...`
+        if name in ('deno', 'bun') and args[:1] == ['eval']:
+            return Written(args[1] if len(args) > 1 else None)
+        if name in ('deno', 'bun') and args[:1] == ['run']:
+            args = args[1:]
+        values, code, taken = PROGRAM_VALUES.get(kind, set()), [], set()
+        for i, arg in enumerate(args):
+            if i in taken or i and args[i - 1] in values:
+                continue
+            if code_flag.fullmatch(arg):
+                code.append(args[i + 1] if i + 1 < len(args) else None)
+                taken.add(i + 1)
+            elif given := attached.fullmatch(arg):
+                code.append(given.group(1))
+            elif arg == '-' or not arg.startswith('-'):
+                break  # the script (`-` for stdin); after code, the program's arguments
+            elif kind == 'python' and (module := re.fullmatch(rf'-{PYTHON_SWITCHES}m(.*)', arg)):
+                module = matched_value(module, args, i)  # python stops at its first code, so none came before
+                return self.runnable(module.replace('.', '/') + '.py', cwd)  # installed, unless this call wrote it
+            else:
+                continue
+            if kind == 'python':
+                break  # the rest are the program's arguments; `perl -e a -w -e b` runs both
+        else:
+            arg = '-'
+        if code:
+            return Written(None if None in code else '\n'.join(code))
+        if arg == '-':
+            if command.stdin is None and command.piped:
+                self.catch(UNREADABLE)
+            return Written(command.stdin) if command.stdin is not None else None
+        return self.runnable(arg, cwd)  # a program of the project's runs as the project's
+
+    def writers(self, written, cwd):
+        """Judge what programs may have written into a file: in any language, their process calls and the
+        command lines in their strings, except the strings they only compare."""
+        self.process_calls(written.code, cwd, SPAWNS)
+        self.script_commands(written.code, cwd)
+
+    def process_calls(self, code, cwd, languages):
+        """Judge a program's process calls in `languages`; return them. A `%x` in a string is text
+        (`printf("%x", n)`). Calls longer in all than `SPAN_BUDGET` are unreadable."""
+        code = literal(code)
+        strings = [string.span() for string in STRING.finditer(code)]
+        calls = [call for language in languages for call in re.finditer(SPAWNS[language], code)
+                 if not (call.group(0).startswith('%x') and in_text(code, strings, call.start()))]
+        pairs, read = bracket_pairs(code), 0
+        for start, stop in bracket_pairs(code, raw=True).items():  # a call in a string (`'system("ls")'`)
+            if in_text(code, strings, start):
+                pairs[start] = stop
+        for call in calls:
+            read += self.process_call(code, call, cwd, pairs)
+            if read > SPAN_BUDGET:
+                self.catch(UNREADABLE)
+                break
+        return calls
+
+    def string_commands(self, code, cwd, kind):
+        """Judge the gh and git command lines a program's strings run; a statement that only compares,
+        edits, prints or logs its strings runs none."""
+        for statement in statements_running(code, TEXT_USE, kind):
+            if any(runs_gh_or_git(string_text(string.group('string'))) for string in STRING.finditer(statement)):
+                self.command_line(statement, cwd)
+
+    def script_commands(self, code, cwd):
+        """Judge the strings a program writes into a script the command runs, as the shell text they are;
+        a statement that only compares its strings runs none."""
+        for statement in statements_running(code, COMPARES):
+            for string in STRING.finditer(statement):
+                text = string_text(string.group('string'))
+                if GH_OR_GIT.search(text):
+                    self.sure(lambda judge, text=text: judge.text(text, cwd, STRING_NESTING))
+
+    def process_call(self, code, call, cwd, pairs):
+        """Judge the command line a program's process call could run: the call's own arguments, to its
+        closing bracket in `pairs`, or else to the line's end; return their length."""
+        if call.group(0) == '`':
+            end = code.find('`', call.end())
+        else:
+            opening, end = code.find('(', call.end(), call.end() + 3), code.find('\n', call.end())
+            end = pairs.get(opening, end) if opening >= 0 else end
+        span = code[call.end():end if end >= 0 else len(code)]
+        self.command_line(span, cwd, argv=True)
+        if re.match(r'os\.(exec|spawn|posix_spawn)', call.group(0)):  # the program, then its argv in full
+            self.command_line(as_argv0(span, STRING.search(span)), cwd, argv=True)
+        elif re.fullmatch(SPAWNS['other'], call.group(0)) and (pair := PROGRAM_PAIR.match(span)):
+            self.command_line('(' + pair.group('string') + span[pair.end():], cwd, argv=True)
+        if NODE_ARGV_CALL.fullmatch(call.group(0)) and SHELL_OPTION.search(span):
+            self.command_line(span, cwd)  # node joins the argv into a shell's command line
+        return len(span)
+
+    def command_line(self, code, cwd, argv=False):
+        """Judge program code as the command lines it spells; code before its first string, from its first gh
+        or git (`qx{gh …}`)."""
+        self.project_rules(code_words(code))
+        program = re.search(rf'\bexecutable\s*=\s*(?:{STRING.pattern})', code)
+        if program:  # the program in place of argv[0]
+            self.command_line(as_argv0(code, program), cwd, argv)
+        head, *lines = spelled(code, argv)
+        start = GH_OR_GIT.search(head)
+        for line in ([head[start.start():]] if start else []) + lines:
+            if GH_OR_GIT.search(line):
+                self.sure(lambda judge, line=line: judge.text(line, cwd, STRING_NESTING))
+
+    # ------------------------------------------------------------------ gh
+
+    def gh(self, args, command, cwd):
+        flat, skip = [], False
+        for arg in args:  # `gh pr -R o/r merge 1` reads as `gh pr merge 1`
+            if skip:
+                skip = False
+            elif arg in ('-R', '--repo', '--hostname'):
+                skip = True
+            elif not re.match(r'(-R|--repo=|--hostname=)', arg):
+                flat.append(arg)
+        args = flat
+        group, action, rest = (args + ['', ''])[0], (args + ['', ''])[1], args[2:]
+        if group == 'pr' and action == 'merge':
+            return self.catch(MERGE_IS_OWNERS)  # even with --help: setup.md's preflight probes the guard with it
+        if not args or '--help' in args or '-h' in args or group == 'help':
+            return
+        if unknown(group) or (unknown(action) and group in {'pr'} | {rule[0] for rule in GH_RULES}):
+            return self.catch(UNREADABLE)  # `gh pr "$A" 1` could be a merge
+        if group == 'pr' and action == 'checkout' and self.is_main(cwd or self.origin):
+            self.catch(OWN_WORKTREE)
+        for rule_group, actions, reason in GH_RULES:
+            if group == rule_group and action in actions:
+                self.catch(reason)
+        if group == 'pr' and action == 'review' and any(self.approves_flag(arg) for arg in rest):
+            self.catch(MERGE_IS_OWNERS)
+        elif group == 'repo' and action == 'deploy-key' and rest[:1] in (['add'], ['delete']):
+            self.catch(SECURITY)
+        elif group == 'api':
+            self.gh_api(args[1:], command, cwd)
+        if group in ('issue', 'pr') and action in ('create', 'edit'):
+            if labels_add_afk(option_values(rest, ('--add-label', '--label', '-l'))):
+                self.catch(UNATTENDED_AFK, afk_only=True)
+
+    @staticmethod
+    def approves_flag(arg):
+        """`--approve`, or `-a` among short flags (`-ab ok`), before one that takes the rest as its value."""
+        if arg == '--approve' or re.fullmatch(r'(--approve|-a)=(?!false$|0$).*', arg, re.I):
+            return True
+        if re.fullmatch(r'-[A-Za-z]+', arg):
+            for flag in arg[1:]:
+                if flag == 'a':
+                    return True
+                if flag in 'bF':
+                    return False
+        return False
+
+    def request_body(self, fields, inputs, command, cwd):
+        """The fields and input files of an API call as text; None when an input can't be read."""
+        parts = list(fields)
+        for name in inputs:
+            parts.append(command.stdin if name == '-' else self.read_file(name, cwd))
+        return None if None in parts else ' '.join(parts)
+
+    def typed_field(self, field, command, cwd):
+        """A `-F key=@file` field with the file's text (`$` when unreadable); other fields as given."""
+        key, _, value = field.partition('=')
+        if key == 'query' or not value.startswith('@'):
+            return field  # graphql() reads a query file itself
+        text = command.stdin if value == '@-' else self.read_file(value[1:], cwd)
+        return f'{key}=' + ('$' if text is None else text)
+
+    def gh_api(self, args, command, cwd):
+        valued = {'-X', '--method', '-f', '--raw-field', '-F', '--field', '-H', '--header', '--input', '-q', '--jq',
+                  '-t', '--template', '--cache', '-p', '--preview', '--hostname'}
+        endpoint = next(iter(positionals(args, valued)), '')
+        fields = option_values(args, ('-f', '--raw-field'))
+        fields += [self.typed_field(f, command, cwd) for f in option_values(args, ('-F', '--field'))]
+        inputs = option_values(args, ('--input',))
+        methods = option_values(args, ('-X', '--method'))
+        method = methods[-1].upper() if methods else ('POST' if fields or inputs else 'GET')
+        paths = endpoint_paths(endpoint, self.base)
+        if paths == ['graphql']:
+            return self.graphql(fields, inputs, command, cwd)
+        if method == 'GET':
+            return
+        if paths is None:
+            return self.catch(UNREADABLE)  # a write to an endpoint the guard can't read
+        body = self.request_body(fields, inputs, command, cwd)
+
+        def names(pattern):
+            return any(re.search(pattern, path) for path in paths)
+
+        base = re.escape(self.base)
+        for pattern, reason in API_RULES + [(rf'^{REPO}/git/refs/heads/{base}$', push_to(self.base)),
+                                            (rf'^{REPO}/branches/{base}/rename$', SETTINGS)]:
+            if names(pattern):
+                self.catch(reason)
+
+        if names(rf'^{REPO}/pulls/[^/]+/reviews(/[^/]+/events)?$'):
+            if body is None or re.search(r'(^|\s)event=\S*\$|"event"\s*:\s*"?\$', body):
+                self.catch(UNREADABLE)
+            elif re.search(r'(^|\s)event=APPROVE\b|"event"\s*:\s*"APPROVE"', literal(body), re.I):
+                self.catch(MERGE_IS_OWNERS)
+        if names(rf'^{REPO}/contents/'):
+            if body is None:
+                self.catch(UNREADABLE)
+            else:
+                branches = re.findall(r'(?:^|\s)branch=(\S*)', body) + re.findall(r'"branch"\s*:\s*"([^"]*)"', body)
+                if not branches or any(b == self.base or unknown(b) for b in branches):
+                    self.catch(push_to(self.base))
+        if names(rf'^{REPO}/issues(/[^/]+(/labels)?)?$'):
+            labels = [f.split('=', 1)[1] for f in fields if re.match(r'labels(\[\])?=', f)]
+            files = self.request_body([], inputs, command, cwd)  # a JSON body: stdin or a file
+            if files is None:
+                self.catch(UNREADABLE, afk_only=True)
+            elif labels_add_afk(labels) or re.search('lane:afk', literal(files), re.I) or re.search(
+                    r'"labels"\s*:\s*\[[^\]]*\$', files):
+                self.catch(UNATTENDED_AFK, afk_only=True)
+
+    def graphql(self, fields, inputs, command, cwd):
+        texts = []
+        for query in (f.split('=', 1)[1] for f in fields if f.startswith('query=')):
+            if query.startswith('@'):
+                texts.append(self.read_file(query[1:], cwd))  # in a file, `$name` is a GraphQL variable
+            else:
+                texts.append(readable_query(query))
+        texts += [command.stdin if name == '-' else self.read_file(name, cwd) for name in inputs]
+        if not texts or None in texts or (any(f.startswith('operationName=') for f in fields) and any(
+                unknown(f) for f in fields)):
+            return self.catch(UNKNOWN_QUERY)
+        query = '\n'.join(texts)
+        values = [f for f in fields if not f.startswith('query=')]
+        variables = literal(' '.join(values))
+        if GRAPHQL_OWNER.search(query) or (GRAPHQL_APPROVE.search(query) and 'APPROVE' in query + variables):
+            self.catch(MERGE_IS_OWNERS)
+        if GRAPHQL_SECURITY.search(query):
+            self.catch(SECURITY)
+        if GRAPHQL_LABELS.search(query):
+            self.catch(UNREADABLE, afk_only=True)
+        if GRAPHQL_PUSH.search(query):
+            target = query + ' ' + variables
+            if re.search(rf'(^|[\s"=:/]){re.escape(self.base)}\b', target):
+                self.catch(push_to(self.base))
+            elif GUESSED in target or any(unknown(v) for v in values) or not re.search(
+                    r'\b(branchName|qualifiedName)\b|refs/heads/', target):
+                self.catch(UNREADABLE)  # a ref named by id or by a value the guard can't read
+
+    # ------------------------------------------------------------------ git
+
+    def git(self, args, command, cwd, nested):
+        args, directory, aliases = list(args), cwd, {}
+        environment = {**{k: v for k, v in self.variables.items() if v is not None},
+                       **dict(ASSIGNMENT.match(a).groups() for a in command.argv if ASSIGNMENT.match(a))}
+        config_settings = [(environment[key], environment.get('GIT_CONFIG_VALUE_' + key[15:], ''))
+                           for key in environment if key.startswith('GIT_CONFIG_KEY_')]
+        while args and args[0].startswith('-'):
+            flag = args.pop(0)
+            if flag in GIT_VALUED and args:
+                value = args.pop(0)
+                if flag == '-C':
+                    directory = None if unknown(value) or directory is None else self.path(value, directory)
+                elif flag == '-c':
+                    config_settings.append(tuple(value.split('=', 1)) if '=' in value else (value, ''))
+        for key, setting in config_settings:
+            self.git_setting(key, setting, cwd, nested)
+            if key.lower().startswith('alias.'):
+                aliases[key[6:]] = literal(setting)
+        if not args or '--help' in args or '-h' in args:
+            return
+        sub, rest = args[0], args[1:]
+        if sub in aliases:  # the alias runs with the call's arguments after it
+            if aliases[sub].startswith('!'):
+                return self.shell_text(' '.join([aliases[sub][1:]] + rest), cwd, nested)
+            return self.git(['-C', directory] * bool(directory) + aliases[sub].split() + rest, Command(), cwd,
+                            nested + 1) if nested < MAX_NESTING else self.catch(UNREADABLE)
+        if sub == 'submodule' and 'foreach' in rest:
+            self.shell_text(' '.join(positionals(rest[rest.index('foreach') + 1:], set())), cwd, nested)
+        elif sub == 'rebase':
+            for line in option_values(rest, ('-x', '--exec')):
+                self.shell_text(line, cwd, nested)
+        elif sub == 'bisect' and rest[:1] == ['run']:
+            self.command(Command(rest[1:]), cwd, nested + 1)
+        if sub == 'push':
+            self.git_push(rest, directory)
+        elif sub == 'config':
+            config_settings = positionals(rest, {'-f', '--file', '--blob', '--type', '--default', '--comment'})
+            config_settings = config_settings[1:] if config_settings[:1] in (['set'], ['add']) else config_settings
+            if len(config_settings) >= 2:
+                self.git_setting(config_settings[0], config_settings[1], cwd, nested)
+        elif sub in ('switch', 'checkout') and self.is_main(directory or self.origin):
+            if not (sub == 'checkout' and ('--' in rest or '-p' in rest or '--patch' in rest)):
+                self.catch(OWN_WORKTREE)
+
+    def git_setting(self, key, value, cwd, nested):
+        """An alias runs its command; a remote's push refspec is where a bare `git push` goes."""
+        key = key.lower()
+        if key.startswith('alias.'):
+            line = literal(value)
+            self.text(line[1:] if line.startswith('!') else 'git ' + line, cwd, nested + 1)
+        elif re.fullmatch(r'remote\..+\.push', key):
+            self.git_push(['origin', value], cwd)
+
+    def git_push(self, args, directory):
+        """`HEAD` in a directory the guard can't follow (`cd "$WT"`) isn't resolved: it is most likely the
+        worktree the agent works in, and the session's own branch says nothing about it."""
+        if {'--all', '--mirror', '--branches'} & set(args):
+            return self.catch(push_to(self.base))
+        valued = {'--repo', '-o', '--push-option', '--receive-pack', '--exec'}
+        targets = positionals(args, valued)[1:] or ['HEAD']
+        for refspec in targets:
+            destination = refspec.lstrip('+').split(':')[-1]
+            if destination in ('HEAD', '@'):
+                if directory is None:
+                    continue
+                destination = current_branch(directory)
+            if destination is None or unknown(destination):
+                self.catch(UNREADABLE)
+            elif fnmatch.fnmatchcase(self.base, re.sub(r'^(refs/)?heads/', '', destination)):
+                self.catch(push_to(self.base))
+
+
+def refusal(command, unattended=True, extra=(), base='main', cwd=None, is_main_checkout=None):
+    """The first reason a shell command is caught, or None."""
+    cwd = cwd or os.getcwd()
+    judge = Judge(unattended, extra, base, is_main_checkout, cwd)
+    try:
+        judge.text(command, cwd)
+    except MISREAD as error:
+        return f'{UNREADABLE} ({error})'
+    return judge.findings[0] if judge.findings else None
+
+
+# ---------------------------------------------------------------- other tools
+
+MERGE_TOOLS = ('merge_pull_request', 'enable_pr_auto_merge', 'enable_auto_merge')
+PUSH_TOOLS = ('push_files', 'create_or_update_file', 'delete_file')
+REVIEW_TOOLS = ('create_pull_request_review', 'submit_pending_pull_request_review', 'pull_request_review_write')
+EDIT_TOOLS = ('Edit', 'Write', 'MultiEdit', 'NotebookEdit')
 
 
 def main_checkout(path):
@@ -76,41 +1634,46 @@ def main_checkout(path):
     return None
 
 
-def refusal(command, unattended=True, extra=(), base='main', in_main_checkout=False):
-    """The reason a shell command is blocked, or None."""
-    plain = GLOBAL_FLAGS.sub(' ', command)  # `gh -R o/r pr merge` reads as `gh pr merge`
-    # The push rule reads only its own command: it stops at `&&`, `||`, `;`, `|` and newlines.
-    rules = [*RULES, *extra, (rf'\bgit\s+push\b[^;&|\n]*(\s|:){re.escape(base)}(\s|$|[;&|])',
-                              f'Pushing to {base} is the owner\'s; work lands through a PR.')]
-    for pattern, reason in rules:
-        if re.search(pattern, plain):
-            return reason
-    if in_main_checkout and re.search(SWITCHES_BRANCH, plain):
-        return OWN_WORKTREE
-    if unattended and any(re.search(p, plain) for p in MARKS_AFK):
-        return UNATTENDED_AFK
-    return None
+def opted_in_main_checkout(path):
+    """`path` lies in the main checkout of a project with lanes.json."""
+    checkout = main_checkout(path) if path else None
+    return bool(checkout and (checkout / CONFIG_FILE).is_file())
 
 
-def tool_refusal(tool_name, tool_input):
-    """Why a non-shell tool call is blocked, or None."""
-    if tool_name in BLOCKED_TOOLS:
-        return MERGE_IS_OWNERS
+def tool_refusal(tool_name, tool_input, base='main'):
+    """Why a non-shell tool call is caught, or None."""
+    tool = str(tool_name or '')
+    if tool.startswith('mcp__'):
+        action = tool.rsplit('__', 1)[-1]
+        if action in MERGE_TOOLS:
+            return MERGE_IS_OWNERS
+        if action in PUSH_TOOLS and str(tool_input.get('branch') or base) == base:
+            return push_to(base)
+        if action in REVIEW_TOOLS and str(tool_input.get('event', '')).upper() == 'APPROVE':
+            return MERGE_IS_OWNERS
+        return None
     target = str(tool_input.get('file_path') or tool_input.get('notebook_path') or '')
-    if tool_name not in EDIT_TOOLS or not target:
+    if tool not in EDIT_TOOLS or not target:
         return None
     if target.endswith(CONFIG_FILE):
         return OWNERS_CONFIG
-    checkout = main_checkout(target)
-    if checkout and (checkout / CONFIG_FILE).is_file():
+    if opted_in_main_checkout(target):
         return OWN_WORKTREE
     return None
 
 
+# ---------------------------------------------------------------- hook
+
 def is_unattended(transcript_path):
-    """A scheduled-task run, or a transcript that can't be read (fail closed)."""
+    """A scheduled-task run, or a transcript that can't be read (fail closed).
+
+    A subagent's transcript (`<session>/subagents/agent-*.jsonl`) starts with its
+    task, so the session's own transcript beside that directory decides."""
     try:
-        with open(transcript_path) as transcript:
+        path = Path(transcript_path)
+        if path.parent.name == 'subagents':
+            path = path.parent.parent.with_suffix('.jsonl')
+        with open(path) as transcript:
             for line in transcript:
                 entry = json.loads(line)
                 if entry.get('type') == 'user':
@@ -118,11 +1681,6 @@ def is_unattended(transcript_path):
     except (OSError, TypeError, ValueError):
         pass
     return True
-
-
-def owner_approves(event):
-    """An attended session in manual permission mode, where the host asks the owner before each edit."""
-    return event.get('permission_mode') == 'default' and not is_unattended(event.get('transcript_path'))
 
 
 def project_root(cwd):
@@ -138,7 +1696,7 @@ def project_root(cwd):
 def project_config(project_dir):
     """(extra rules, base branch), or None when the project hasn't opted in.
 
-    A rule without `pattern` and `reason` strings raises, and main() then fails closed."""
+    A rule without `pattern` and `reason` strings raises, and the hook then fails closed."""
     try:
         config = json.loads((Path(project_dir) / CONFIG_FILE).read_text())
     except (OSError, TypeError, ValueError):
@@ -149,32 +1707,74 @@ def project_config(project_dir):
     return rules, config.get('base', 'main')
 
 
-def main():
-    event = json.load(sys.stdin)
+ASKING_MODES = ('default', 'acceptEdits', 'auto', 'plan')
+
+
+def owner_approval(command):
+    """('ask', '#N') for exactly the form that merges PR N past the owner rules; ('block', why) for a
+    command that can run lanes.py and carries the option any other way; None otherwise.
+
+    The guard is the only gate on the option, so it fails closed: with the shell's quotes, backslashes,
+    braces and line continuations dropped, the option anywhere in such a command counts, since a
+    variable, a pipe or a brace expansion may carry it there. Building it at run time is deliberate
+    evasion, which no text rule stops."""
+    match = APPROVED_FORM.fullmatch(command)
+    if match:
+        return 'ask', f'#{match.group(1)}'
+    plain = re.sub(r'["\'\\{}]', '', command.replace('\\\n', ' '))
+    if 'owner-approved' in plain and RUNS_LANES.search(plain):
+        return 'block', APPROVAL_FORM
+    return None
+
+
+def refuse(reason):
+    print(f'Blocked by the lanes guard: {reason}', file=sys.stderr)
+    return 2
+
+
+def ask(reason):
+    """Hand the call to the owner: the host asks them before it runs."""
+    print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
+                                             'permissionDecisionReason': reason}}))
+    return 0
+
+
+def decide(reason, unattended, mode=None):
+    """Ask the owner in an attended session whose mode shows the ask; refuse otherwise."""
+    if not reason:
+        return 0
+    if unattended or mode not in ASKING_MODES:
+        hint = '' if unattended else (' This permission mode approves asks unseen, so the owner runs it, '
+                                      'or approves it in a mode that asks.')
+        return refuse(reason + hint)
+    return ask(f'Lanes guard: {reason} Approve only if you asked for it.')
+
+
+def main(event, unattended):
     project = project_config(project_root(event.get('cwd')))
     if project is None:
         return 0
     extra, base = project
     tool_input = event.get('tool_input') or {}
     if event.get('tool_name') == 'Bash':
-        in_main = bool(event.get('cwd')) and main_checkout(event['cwd']) is not None
-        reason = refusal(tool_input.get('command', ''), is_unattended(event.get('transcript_path')), extra, base,
-                         in_main)
+        command = tool_input.get('command', '')
+        kind, detail = owner_approval(command) or (None, None)
+        if kind == 'block':
+            return refuse(detail)
+        if kind == 'ask':  # only manual mode asks before each call, so only there is the owner's approval seen
+            manual = event.get('permission_mode') == 'default' and not unattended
+            return ask(ASK_MERGE.format(pr=detail)) if manual else refuse(APPROVED_MERGE)
+        reason = refusal(command, unattended, extra, base, event.get('cwd'), opted_in_main_checkout)
     else:
-        reason = tool_refusal(event.get('tool_name'), tool_input)
-        if reason == OWNERS_CONFIG and owner_approves(event):
-            print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
-                                                     'permissionDecisionReason': ASK_OWNER}}))
-            return 0
-    if reason:
-        print(f'Blocked by the lanes guard: {reason}', file=sys.stderr)
-        return 2
-    return 0
+        reason = tool_refusal(event.get('tool_name'), tool_input, base)
+    return decide(reason, unattended, event.get('permission_mode'))
 
 
 if __name__ == '__main__':
+    unattended, mode = True, None
     try:
-        sys.exit(main())
-    except Exception as error:  # fail closed: a guard that cannot decide blocks
-        print(f'Blocked by the lanes guard: it could not run ({error})', file=sys.stderr)
-        sys.exit(2)
+        event = json.load(sys.stdin)
+        unattended, mode = is_unattended(event.get('transcript_path')), event.get('permission_mode')
+        sys.exit(main(event, unattended))
+    except Exception as error:  # fail closed: a guard that cannot decide refuses, or asks the owner
+        sys.exit(decide(f'it could not run ({error}).', unattended, mode))

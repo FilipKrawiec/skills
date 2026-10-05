@@ -212,6 +212,28 @@ class AutomergeTests(unittest.TestCase):
         lesson = pr(["docs/a.md"], labels=[{"name": "review:owner"}])
         self.assertEqual(lanes.merge_refusal(lesson, CONFIG), "for the owner: labelled review:owner")
 
+    def test_the_owners_approval_passes_only_the_owner_rules(self) -> None:
+        def lesson(**overrides):
+            return pr(["AGENTS.md"], **{"labels": [{"name": "review:owner"}], "reviews": [], "comments": [],
+                                        "headRefOid": "a" * 40, **overrides})
+        self.assertIn("for the owner", lanes.merge_refusal(lesson(), CONFIG))
+        self.assertIsNone(lanes.merge_refusal(lesson(), CONFIG, owner_approved=True))
+        blocked = {"author": {"login": "alice"}, "state": "CHANGES_REQUESTED", "submittedAt": "2026-10-01T10:00:00Z"}
+        for held, why in [(lesson(isDraft=True), "not an open, ready PR"),
+                          (lesson(headRepositoryOwner={"login": "fork"}), "not a branch of this repository"),
+                          (lesson(baseRefName="other"), "not a branch of this repository"),
+                          (lesson(unresolvedThreads=[thread()]), "1 unresolved review thread"),
+                          (lesson(reviews=[blocked]), "a review requests changes")]:
+            self.assertIn(why, lanes.merge_refusal(held, CONFIG, owner_approved=True))
+
+    def test_merge_reads_the_owners_approval_in_any_position(self) -> None:
+        self.assertEqual(lanes.merge_args(["12"]), ("12", False))
+        self.assertEqual(lanes.merge_args(["12", "--owner-approved"]), ("12", True))
+        self.assertEqual(lanes.merge_args(["--owner-approved", "12"]), ("12", True))
+        for wrong in ([], ["--owner-approved"], ["12", "13"]):
+            with self.assertRaises(SystemExit):
+                lanes.merge_args(wrong)
+
 
 def sized(*files):
     """A PR whose files carry (path, additions, deletions)."""

@@ -22,7 +22,7 @@ Every issue this skill writes or lanes is checked against these six. Phase 3 gri
 | Negotiable | The description states the outcome and its constraints; implementation steps are left to `plan`. |
 | Valuable | Merging it alone gives a user a behaviour or the owner a named benefit (a removed risk, a faster build); a layer that pays off only with another issue fails. |
 | Estimable | It carries an estimate (S, M or L) and one sentence on the main unknown behind it. |
-| Small | The estimate is S or M. An L is split into vertical slices: with the owner, on their yes, create one issue per slice through phases 1 to 3, link each as a sub-issue and label the parent `type:epic`, then move its card to In progress (Epics in [board.md](../../references/board.md)); unattended, propose the slices in the triage comment. |
+| Small | The estimate is S or M. An L is split into vertical slices: with the owner, on their yes, create one issue per slice through phases 1 to 3, link each as a sub-issue and label the parent `type:epic`, then move its card to In progress (Epics in [board.md](../../references/board.md)); unattended, propose the slices in the triage comment. Slices that touch the same element (a shared widget, a baseline or ratchet file) name the one slice that owns it; the others list it under their exclusions. |
 | Testable | Each acceptance criterion can be proven by a test or by a render the issue describes. |
 
 ## 1. Define
@@ -64,6 +64,7 @@ An issue is AFK-ready when all five hold:
 - With the owner: offer your check result as a recommendation and ask whether it is AFK. Yes → `lane:afk`; no → `lane:owner`; unsure → `lane:proposed`.
 - Triage (unattended, or issues without a lane from `gh issue list --search "-label:lane:afk -label:lane:proposed -label:lane:owner"`): all checks pass → `lane:proposed`, any fails → `lane:owner`; apply the Issue form in [board.md](../../references/board.md); comment once with the failing checks and what would fix each, ending a proposal with "Apply `lane:afk` to let an AFK run take it."
 - Tidy (when asked): apply the Issue form to every open issue and every card on the board in one pass, listing the owner's fixes in the output instead of commenting.
+- When an epic gains or changes binding design (a mockup, a decision), re-run Decided on each of its open slices in the same session: amend the slice's criteria, or move it to `lane:owner` with a comment so a claimed run parks. Each slice names the designs that bind it, or says none do.
 - When merged PRs already meet the acceptance criteria, comment the evidence (one PR link per criterion) and propose closing; the owner closes.
 - With a board, move each issue that now has acceptance criteria, a scope packet and a lane to Todo.
 
