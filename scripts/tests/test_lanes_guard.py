@@ -102,6 +102,20 @@ HIDDEN = [
     "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.p GIT_CONFIG_VALUE_0='!gh pr merge 1' git p",
     "shopt -s expand_aliases; alias m='gh pr merge'\nm 1", "csh -c 'gh pr merge 1'",
     "git submodule foreach 'gh pr merge 1'", "git rebase -x 'gh pr merge 1' HEAD~1", "at now <<< 'gh pr merge 1'",
+    # A written file, by another spelling of its path; a script piped in; the script after an option's value.
+    "python3 -c \"open('m.sh','w').write('gh pr merge 1')\"; bash ./m.sh",
+    "cd /tmp && python3 -c \"open('m.sh','w').write('gh pr merge 1')\"; /tmp/m.sh",
+    "python3 -c \"open('m.py','w').write('import os\\nos.system(\\\"gh pr merge 1\\\")')\"; python3 ./m.py",
+    "cat > x.sh <<'EOF'\ngh pr merge 1\nEOF\npython3 -c \"print(open('x.sh').read())\"; bash x.sh",
+    "python3 - <<'EOF'\nfrom subprocess import run\nrun(['gh','pr','merge','1']); print('ok')\nEOF",
+    "python3 - <<'EOF'\nimport subprocess as sp\nc = ['gh','pr','merge','1']; print(c)\nsp.run(c)\nEOF",
+    "echo \"import os; os.system('gh pr merge 1')\" | python3 -", "cat m.py | python3 - x",
+    "echo \"require('child_process').execSync('gh pr merge 1')\" | node -",
+    "echo \"require('child_process').execSync('gh pr merge 1')\" > m.js; node -r ./x m.js",
+    "echo \"require('child_process').execSync('gh pr merge 1')\" > m.js; deno run m.js",
+    "echo 'system(\"gh pr merge 1\")' > m.rb; ruby -I lib m.rb", "perl -mPOSIX -e 'system(\"gh pr merge 1\")'",
+    "php -r 'system(\"gh pr merge 1\");'", "echo 'gh pr merge 1' > m.sh; bash +x m.sh",
+    "echo 'gh pr merge 1' > m.sh; bash --rcfile x m.sh", "bash +x <<< 'gh pr merge 1'",
 ]
 # Calls the guard caught in real runs although they ship nothing.
 READS_AND_WRITING = [
@@ -150,6 +164,10 @@ READS_AND_WRITING = [
     "python3 -c \"open('m.js','w').write('console.log(1)')\"; node m.js",
     "B=$(mktemp) && gh pr view 5 --json body -q .body > \"$B\" && python3 - \"$B\" <<'EOF'\nimport sys\n"
     "print(open(sys.argv[1]).read())\nEOF",
+    "python3 -c \"import pathlib; print(pathlib.Path('scripts/test.sh').exists())\" && bash scripts/test.sh",
+    "python3 -c \"print('see scripts/test.sh')\"; bash scripts/test.sh",
+    "python3 - <<'EOF'\nimport pathlib\np = pathlib.Path('scripts/tool.sh')\n"
+    "p.write_text(p.read_text().replace('set -e', 'set -eu'))\nEOF\nbash scripts/tool.sh",
 ]
 PROJECT_RULES = [(r"\bfirebase(-tools)?(@\S+)?\s.*\bdeploy\b", "Sites deploy from CI."),
                  (r"\bterraform\b.*\b(apply|destroy)\b", "DNS applies after merge."),

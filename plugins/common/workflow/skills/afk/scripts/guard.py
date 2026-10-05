@@ -13,8 +13,8 @@ lanes.json. `lane:afk` may be added only in a session the owner is in.
 Shell commands are parsed, not searched: a rule judges the commands a line
 runs (including `$(...)`, `bash -c`, launchers such as `env` or `npx`, scripts
 fed to a shell or written and run in one call, and the process calls of inline
-programs and of the files they write), never the text it writes, quotes or reads, and GitHub API calls by
-endpoint, method and body. A call whose effect the guard can't read (a script
+programs and of the files they write), never the text it writes, quotes or
+reads, and GitHub API calls by endpoint, method and body. A call whose effect the guard can't read (a script
 piped to a shell, a request body on stdin it can't see) is caught.
 
 In a session the owner attends, a caught call goes to the owner to approve,
@@ -345,6 +345,12 @@ STARTS_PROCESSES = {
     'python': r'\b(subprocess|pty)\b|\bos\.(system|popen|exec|spawn)|\bfrom\s+os\s+import\b',
     'node': r'\bchild_process\b|\bBun\.spawn\b|\bDeno\.(run|Command)\b',
 }
+# The flags of each interpreter that take a value, so the script is the first other operand.
+PROGRAM_VALUES = {'python': {'-W', '-X', '--check-hash-based-pycs'}, 'ruby': {'-I', '-r', '-C', '-E', '-F'},
+                  'perl': {'-I'}, 'php': {'-c', '-d', '-z'},
+                  'node': {'-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions',
+                           '--input-type'}}
+QUOTED = re.compile(r'"([^"\s\\]+)"|\'([^\'\s\\]+)\'')  # a string a program may name a file by
 # A string a program edits, prints or compares is text, not a command line it runs.
 TEXT_USE = re.compile(r'\.(replace|write|write_text|sub|startswith|endswith|find|index|count|split|join)\(|'
                       r'\b(print|assert)\b|["\']\s+(not\s+)?in\s+\w')
@@ -499,6 +505,13 @@ def current_branch(directory):
         return None
 
 
+class Generated:
+    """A file an inline program of this call names, so may write: its known text, and the programs' code."""
+
+    def __init__(self, text, code):
+        self.text, self.code = text, code
+
+
 class Judge:
     """Collects the reasons the calls in a shell command are caught.
 
@@ -508,8 +521,7 @@ class Judge:
     def __init__(self, unattended=True, extra=(), base='main', is_main_checkout=None, origin=None):
         self.unattended, self.extra, self.base, self.origin = unattended, list(extra), base, origin
         self.is_main = is_main_checkout or (lambda path: False)
-        self.findings, self.variables, self.written = [], {}, {}
-        self.programs = []  # the code of the inline programs this call runs, which may write files
+        self.findings, self.variables, self.written = [], {}, {}  # written: path -> text, Generated or None
 
     def catch(self, reason, afk_only=False):
         if not afk_only or self.unattended:
@@ -519,7 +531,6 @@ class Judge:
         """Judge with `run(judge)` on a fresh judge, keeping only what it surely catches:
         for a fragment the guard reads loosely, a misread is not a finding."""
         judge = Judge(self.unattended, (), self.base, self.is_main, self.origin)
-        judge.programs = self.programs
         try:
             run(judge)
         except MISREAD:
@@ -592,7 +603,7 @@ class Judge:
             self.gh(args, command, cwd)
         elif name == 'git':
             self.git(args, command, cwd, nested)
-        elif '/' in argv[0] and (self.path(argv[0], cwd) in self.written or self.made_here(argv[0])):
+        elif '/' in argv[0] and self.path(argv[0], cwd) in self.written:
             self.script_file(argv[0], cwd, nested)
         elif EXPANSION.fullmatch(argv[0]) and not args:
             self.catch(UNREADABLE)  # `$CMD` or `$(...)` runs a command line the guard can't see
@@ -622,15 +633,22 @@ class Judge:
                 self.written[self.path(path, cwd)] = None
         files = positionals(argv[1:], {'-t', '--target-directory', '-S', '--suffix'})
         if name in ('cp', 'mv', 'install') and len(files) == 2:
-            self.written[self.path(files[1], cwd)] = self.read_file(files[0], cwd)
+            source = self.path(files[0], cwd)
+            self.written[self.path(files[1], cwd)] = (self.written[source] if source in self.written
+                                                      else self.read_file(files[0], cwd))
 
-    def made_here(self, path):
-        """An inline program of this call names `path`, so it may have written it."""
-        return any(literal(path) in code for code in self.programs)
-
-    def writers(self, path):
-        """The code of this call's inline programs that name `path`: what they write comes from it."""
-        return '\n'.join(code for code in self.programs if literal(path) in code)
+    def note_program(self, code, cwd):
+        """A file an inline program names may be one it writes, from its code."""
+        for match in QUOTED.finditer(code):
+            try:
+                full = self.path(match.group(1) or match.group(2), cwd)
+            except (OSError, ValueError, RuntimeError):
+                continue
+            before = self.written.get(full, '')
+            if isinstance(before, Generated):
+                self.written[full] = Generated(before.text, before.code + '\n' + code)
+            elif before is not None:
+                self.written[full] = Generated(before, code)
 
     def launched(self, argv, command, cwd, nested):
         """A launcher the guard doesn't know (`npx`, `uv run`) may run gh, git, a shell or a program."""
@@ -650,7 +668,8 @@ class Judge:
             return None
         full = self.path(path, cwd)
         if full in self.written:
-            return self.written[full]
+            written = self.written[full]
+            return None if isinstance(written, Generated) else written
         try:
             return Path(full).read_text()
         except (OSError, ValueError):
@@ -669,15 +688,18 @@ class Judge:
         elif name in SCHEDULERS:
             files = option_values(args, ('-f',))
         else:
+            files = []
             for i, arg in enumerate(args):
-                if not arg.startswith(('-', '+')) and args[i - 1:i] not in (['-o'], ['+o'], ['-O'], ['+O']):
+                if i and args[i - 1] in ('-o', '+o', '-O', '+O', '--rcfile', '--init-file'):
+                    continue
+                if arg == '--' or not arg.startswith(('-', '+')):
+                    files = args[i + 1:i + 2] if arg == '--' else [arg]
                     break  # the script; the arguments after it are its own
                 if re.fullmatch(r'-[a-zA-Z]*n[a-zA-Z]*', arg) or arg == '--no-execute':
                     return  # `sh -n` reads the script without running it
                 if re.fullmatch(r'-[a-zA-Z]*c[a-zA-Z]*', arg):
                     rest = args[i + 2:] if args[i + 1:i + 2] == ['--'] else args[i + 1:]
                     return self.shell_text(rest[0], cwd, nested) if rest else self.catch(UNREADABLE)
-            files = positionals(args, {'-o', '+o', '-O', '+O'})[:1]
         if not files and command.stdin is not None:
             return self.text(command.stdin, cwd, nested + 1)
         files = files or ([command.reads] if command.reads else [])
@@ -697,56 +719,77 @@ class Judge:
         if PROCSUB in path:
             return self.catch(UNREADABLE)
         full = self.path(path, cwd)
-        if full in self.written and self.written[full] is not None:
-            self.text(self.written[full], cwd, nested + 1)
-        elif full in self.written or self.made_here(path):
-            self.catch(UNREADABLE)  # written by a program, a download, an append or tee
+        if full not in self.written:
+            return
+        written = self.written[full]
+        if written is None:
+            self.catch(UNREADABLE)  # a download, an append or tee
+        elif isinstance(written, Generated):
+            self.text(written.text, cwd, nested + 1)
+            self.generated(written.code, cwd)
+        else:
+            self.text(written, cwd, nested + 1)
 
     def interpreter(self, name, args, command, cwd):
         language = next((k for k in ('python', 'node', 'osascript') if name.startswith(k)),
                         'node' if name in ('deno', 'bun') else 'other')
-        flags = ('-c', '-e', '--eval', '-E') + (('-p', '--print') if language == 'node' else ())
-        first = next((a for a in args if a in flags or a == '-' or a.startswith('-m')), None)
-        if first and first.startswith('-m'):
-            return  # runs an installed module
-        code = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in flags), None)
-        if name == 'deno' and args[:1] == ['eval']:
-            code = args[1] if len(args) > 1 else None
-        # The first argument that isn't an option names the script (`-` for stdin); the rest are the script's.
-        files = [a for i, a in enumerate(args) if (a == '-' or not a.startswith('-'))
-                 and args[i - 1:i] not in (['-W'], ['-X'])][:1]
-        if code is None and command.stdin is not None and files in ([], ['-']):
-            code = command.stdin
-        generated = False
-        if code is None and files and files[0] != '-':
-            full = self.path(files[0], cwd)
-            if PROCSUB in files[0]:
-                return self.catch(UNREADABLE)
-            if full in self.written:
-                code = self.written[full]
-                if code is None:
-                    return self.catch(UNREADABLE)  # a download, an append or tee
-            else:
-                # Written by this call's programs, the file holds their text; a project's runs as the project's.
-                code = self.writers(files[0])
-                generated = bool(code)
-        if code:
-            self.programs.append(literal(code))
-        if code is None:
-            if command.piped and not files:
-                self.catch(UNREADABLE)
+        code, written = self.program_code(name, language, args, command, cwd)
+        if written:
+            self.generated(written.code, cwd)
+        if not code:
             return
+        self.note_program(code, cwd)
         code = literal(code)
-        # Generated code may be in any language, and the strings its writer writes are what runs.
-        languages = SPAWNS if generated else (language,)
-        calls = [call for k in languages for call in re.finditer(SPAWNS[k], code)]
+        calls = list(re.finditer(SPAWNS[language], code))
         for call in calls:
             self.process_call(code, call, cwd)
-        if calls or any(re.search(STARTS_PROCESSES.get(k, '$^'), code) for k in languages):
+        if calls or re.search(STARTS_PROCESSES.get(language, '$^'), code):
             # A program that starts processes may hold the command line in a string or list first.
-            for line in code.split('\n'):
-                if re.search(r'["\']\s*(gh|git)\b', line) and (generated or not TEXT_USE.search(line)):
-                    self.command_line(line, cwd)
+            for statement in re.split(r'[\n;]', code):
+                if re.search(r'["\']\s*(gh|git)\b', statement) and not TEXT_USE.search(statement):
+                    self.command_line(statement, cwd)
+
+    def program_code(self, name, language, args, command, cwd):
+        """(code, Generated or None) of the program an interpreter runs; code is None when the guard reads none."""
+        flags = ('-c', '-e', '--eval', '-E') + (('-p', '--print') if language == 'node' else ()) + (
+            ('-r',) if name.startswith('php') else ())
+        if name in ('deno', 'bun') and args[:1] == ['eval']:
+            return (args[1] if len(args) > 1 else None), None
+        if name in ('deno', 'bun') and args[:1] == ['run']:
+            args = args[1:]
+        first = next((a for a in args if a in flags or a == '-' or a.startswith('-m')), None)
+        if language == 'python' and first and first.startswith('-m'):
+            return None, None  # runs an installed module
+        code = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in flags), None)
+        if code is not None:
+            return code, None
+        values = next((v for k, v in PROGRAM_VALUES.items() if name.startswith(k)),
+                      PROGRAM_VALUES['node'] if name in ('deno', 'bun') else set())
+        # The first operand names the script (`-` for stdin); the arguments after it are the script's.
+        script = next((a for i, a in enumerate(args) if (a == '-' or not a.startswith('-'))
+                       and not (i and args[i - 1] in values)), '-')
+        if script == '-':
+            if command.stdin is None and command.piped:
+                self.catch(UNREADABLE)
+            return command.stdin, None
+        if PROCSUB in script:
+            return self.catch(UNREADABLE), None
+        written = self.written.get(self.path(script, cwd), '')  # a program of the project's runs as the project's
+        if written is None:
+            return self.catch(UNREADABLE), None  # a download, an append or tee
+        if isinstance(written, Generated):
+            return written.text, written
+        return written, None
+
+    def generated(self, code, cwd):
+        """Judge a file programs may have written: in any language, the command lines in the programs' strings."""
+        code = literal(code)
+        for language in SPAWNS:
+            for call in re.finditer(SPAWNS[language], code):
+                self.process_call(code, call, cwd)
+        for statement in re.split(r'[\n;]', code):
+            if re.search(r'["\']\s*(gh|git)\b', statement):
+                self.command_line(statement, cwd)
 
     def process_call(self, code, call, cwd):
         """Judge the command line a program's process call could run: the call's own arguments."""
