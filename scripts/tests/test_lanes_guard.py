@@ -959,6 +959,8 @@ ALLOWED = [
     "gh api -X PATCH repos/o/r/issues/5 -f state=closed", "git push -u origin agent/afk-5-x",
     "python3 lanes.py automerge 12", "python3 lanes.py merge 12", "python3 lanes.py triage 12",
     "gh api repos/o/r/pulls/5/comments/9/replies -F body=@reply.md",
+    "gh api -X PATCH repos/o/r/issues/comments/1 -F body=@plan.md",
+    'gh api -X PATCH repos/o/r/issues/comments/1 -f body="$(cat plan.md)"',
     'gh api repos/o/r/pulls/5/reviews -X POST -f body="missing keys in dict; see hooks.json and secrets handling"',
 ]
 MERGE = "gh pr " + "merge 1"

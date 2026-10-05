@@ -36,7 +36,7 @@ When the plan needs a path outside the scope packet or a protected path, or an a
 - Attended: show the draft and wait for the owner to approve or adjust it.
 - Unattended: the owner's `lane:afk` approval of the specified issue stands in.
 
-Post the approved plan as one issue comment headed `## Plan` (edit the existing one when resuming). Keep the comment current whenever execution departs from it.
+Post the approved plan as one issue comment headed `## Plan`. When resuming, or whenever execution departs from it, edit that comment in place: `gh api -X PATCH repos/<owner/repo>/issues/comments/<id> -F body=@<file>`, where `<id>` is the number after `#issuecomment-` in its url (`gh issue view <N> --json comments`); `gh issue comment --edit-last` may edit another session's newer comment.
 
 **Exit gate:** the `## Plan` comment link.
 
