@@ -77,8 +77,14 @@ def unknown(text):
 
 
 class Command:
+    """A simple command: its words, its input, and the files it writes and reads by redirect."""
+
     def __init__(self, argv=None):
-        self.argv, self.stdin, self.piped, self.writes, self.reads = argv or [], None, False, None, None
+        self.argv = argv or []
+        self.stdin = None  # a heredoc or here-string's text
+        self.piped = False  # its input comes from the command before it
+        self.writes = []  # (path, appends) of each `>`, `>>` and `&>`
+        self.reads = None  # the file of a `<`
 
     def running(self, argv):
         """The command `argv` that this one runs, with this one's input."""
@@ -101,7 +107,23 @@ def parse(text):
 
 def _substitution(text, i, script):
     """At a `$(` or backquote opening at `i`, parse the command it runs into `script`; return
-    the index after it, or None when no substitution opens there."""
+    the index after it, or None when no substitution opens there. `$((...))` is arithmetic: only
+    the substitutions inside it run, unless it reads as words (`$((gh pr merge 1))`), which bash
+    runs as a subshell."""
+    if text.startswith('$((', i):
+        inner, end, depth = Script(), i + 3, 0
+        while end < len(text) and not (depth == 0 and text.startswith('))', end)):
+            after = _substitution(text, end, inner)
+            if after is not None:
+                end = after
+                continue
+            depth += {'(': 1, ')': -1}.get(text[end], 0)
+            end += 1
+        if end >= len(text):
+            raise Unparsable('unbalanced $((')
+        if not re.search(r'[A-Za-z_][\w./-]*\s+[\w./-]', re.sub(r'\$\(.*\)', '', text[i + 3:end])):
+            script.substituted += inner.substituted
+            return end + 2
     if text.startswith('$(', i):
         inner, end = _Parser(text, ')').run(i + 2)
     elif text.startswith('`', i):
@@ -156,8 +178,8 @@ class _Parser:
             command.stdin = word
         elif redirect is None:
             command.argv.append(word)
-        elif redirect in ('>', '>|'):
-            command.writes = word
+        elif redirect in ('>', '>|', '&>', '>>', '&>>'):
+            command.writes.append((word, redirect.endswith('>>')))
         elif redirect == '<':
             command.reads = word
         self.word, self.raw, self.redirect = None, '', None
@@ -228,7 +250,7 @@ class _Parser:
         if op in ('>&', '<&'):
             fd = re.match(r'[0-9-]+', self.s[i + 2:])
             return i + 2 + (fd.end() if fd else 0)
-        self.redirect = op if op in ('<<', '<<-', '<<<', '>', '>|', '<') else 'target'
+        self.redirect = op if op in ('<<', '<<-', '<<<', '>', '>|', '&>', '>>', '&>>', '<') else 'target'
         return i + len(op)
 
     def run(self, i):
@@ -321,8 +343,20 @@ GRAPHQL_SECURITY = re.compile(r'\b((create|update|delete)(BranchProtectionRule|R
 GRAPHQL_APPROVE = re.compile(r'\b(addPullRequestReview|submitPullRequestReview)\b')
 GRAPHQL_PUSH = re.compile(r'\b(createCommitOnBranch|updateRefs?)\b')
 REPO = r'(?:repos/[^/\s]+/[^/\s]+|repositories/[^/\s]+)'
-EXPANSION = re.compile(r'\$\(…\)|\$\{[^}]*\}|\$\w+|\$')
+EXPANSION = re.compile(r'\$\(…\)|\$\{[^}]*\}|\$\w+|\$[@*]|\$')
+MISREAD = (ValueError, IndexError, RecursionError)  # Unparsable, or a NUL byte in a path
 MAX_NESTING = 8  # shells, evals and substitutions within one another; deeper is unreadable
+
+# (path pattern, reason): API writes caught whatever their body; pushes to the base branch are judged per call.
+API_RULES = [
+    (rf'^{REPO}/pulls/[^/]+/merge$|^{REPO}/merges$', MERGE_IS_OWNERS),
+    (rf'^{REPO}$|^{REPO}/(transfer|vulnerability-alerts|automated-security-fixes|'
+     r'private-vulnerability-reporting)$', SETTINGS),
+    (rf'^{REPO}/(branches/[^/]+/protection|rulesets|environments|actions/(secrets|variables|permissions)|'
+     r'dependabot/secrets|codespaces/secrets|collaborators|invitations|keys|hooks)\b', SECURITY),
+    (rf'^{REPO}/releases\b', RELEASE),
+    (rf'^{REPO}/(dispatches|actions/workflows/[^/]+/(dispatches|enable|disable))$', DISPATCH),
+]
 
 # (group, actions, reason): the gh commands caught whatever their arguments.
 GH_RULES = [
@@ -348,7 +382,11 @@ def unwrap(argv):
                 flag = argv.pop(0)
                 if flag == '--':
                     break
-                if flag in WRAPPERS[name] and argv:
+                if name == 'command' and flag in ('-v', '-V'):
+                    return []  # looks the command up; runs nothing
+                if name == 'env' and flag.startswith('-S') and len(flag) > 2:
+                    line = flag[2:]
+                elif flag in WRAPPERS[name] and argv:
                     value = argv.pop(0)
                     line = value if (name, flag) == ('env', '-S') else line
             if name == 'timeout' and argv:
@@ -461,7 +499,7 @@ class Judge:
         judge = Judge(self.unattended, (), self.base, self.is_main, self.origin)
         try:
             run(judge)
-        except (ValueError, IndexError, RecursionError):
+        except MISREAD:
             return
         self.findings += [reason for reason in judge.findings if reason not in UNSURE]
 
@@ -504,8 +542,7 @@ class Judge:
                     self.variables[match.group(1)] = None if SUBST in value else value
             return cwd
         argv = [self.expand(a) for a in unwrap(argv)]
-        if command.writes and command.stdin is not None and argv[:1] == ['cat']:
-            self.written[self.path(command.writes, cwd)] = command.stdin
+        self.note_writes(argv, command, cwd)
         if not argv:
             return cwd
         name, args = os.path.basename(argv[0]), argv[1:]
@@ -529,13 +566,30 @@ class Judge:
         elif name == 'git':
             self.git(args, cwd, nested)
         elif '/' in argv[0] and self.path(argv[0], cwd) in self.written:
-            self.text(self.written[self.path(argv[0], cwd)], cwd, nested + 1)  # a script this call wrote
+            self.script_file(argv[0], cwd, nested)
+        elif EXPANSION.fullmatch(argv[0]) and not args:
+            self.catch(UNREADABLE)  # `$CMD` or `$(...)` runs a command line the guard can't see
         elif unknown(argv[0]):
             self.held_program(argv, command, cwd, nested)
         else:
             self.launched(argv, command, cwd, nested)
         self.project_rules(' '.join(literal(a) for a in argv if not re.search(r'\s', a)))
         return cwd
+
+    def note_writes(self, argv, command, cwd):
+        """Note each file this command writes, with its text when the guard knows it and None otherwise."""
+        name = os.path.basename(argv[0]) if argv else ''
+        if name == 'cat' and len(argv) == 1 and command.stdin is not None:
+            text = command.stdin
+        elif name == 'echo' and not any(unknown(a) for a in argv):
+            text = literal(' '.join(a for a in argv[1:] if a not in ('-n', '-e', '-E')))
+        else:
+            text = None
+        for path, appends in command.writes:
+            self.written[self.path(path, cwd)] = None if appends else text
+        if name == 'tee':
+            for path in positionals(argv[1:], set()):
+                self.written[self.path(path, cwd)] = command.stdin if '-a' not in argv else None
 
     def launched(self, argv, command, cwd, nested):
         """A launcher the guard doesn't know (`npx`, `uv run`) may run gh, git, a shell or a program."""
@@ -568,14 +622,14 @@ class Judge:
 
     def shell(self, name, args, command, cwd, nested):
         if name == 'eval':
-            return self.text(' '.join(args), cwd, nested + 1)
+            return self.shell_text(' '.join(args), cwd, nested)
         if name in ('source', '.'):
             files = args[:1]
         else:
             for i, arg in enumerate(args):
                 if re.fullmatch(r'-[a-zA-Z]*c[a-zA-Z]*', arg):
                     rest = args[i + 2:] if args[i + 1:i + 2] == ['--'] else args[i + 1:]
-                    return self.text(rest[0], cwd, nested + 1) if rest else self.catch(UNREADABLE)
+                    return self.shell_text(rest[0], cwd, nested) if rest else self.catch(UNREADABLE)
             files = positionals(args, {'-o', '+o', '-O', '+O'})[:1]
         if not files and command.stdin is not None:
             return self.text(command.stdin, cwd, nested + 1)
@@ -585,12 +639,21 @@ class Judge:
         elif command.piped:
             self.catch(UNREADABLE)
 
+    def shell_text(self, text, cwd, nested):
+        """Shell code given as text: one expansion the guard can't fill in (`"$(curl ...)"`) is unreadable."""
+        if EXPANSION.fullmatch(text.strip()):
+            return self.catch(UNREADABLE)
+        self.text(text, cwd, nested + 1)
+
     def script_file(self, path, cwd, nested):
         """A script file a shell runs: the guard reads one this call wrote; a project's script is the project's."""
         if PROCSUB in path:
             return self.catch(UNREADABLE)
-        if self.path(path, cwd) in self.written:
-            self.text(self.written[self.path(path, cwd)], cwd, nested + 1)
+        full = self.path(path, cwd)
+        if full in self.written:
+            if self.written[full] is None:
+                return self.catch(UNREADABLE)  # written by a program, appended to, or piped into tee
+            self.text(self.written[full], cwd, nested + 1)
 
     def interpreter(self, name, args, command, cwd):
         code = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ('-c', '-e', '--eval', '-E')), None)
@@ -605,7 +668,7 @@ class Judge:
             return
         code = literal(code)
         language = next((k for k in ('python', 'node', 'osascript') if name.startswith(k)),
-                        'node' if name in ('nodejs', 'deno', 'bun') else 'other')
+                        'node' if name in ('deno', 'bun') else 'other')
         calls = list(re.finditer(SPAWNS[language], code))
         for call in calls:
             self.process_call(code, call, cwd)
@@ -705,22 +768,13 @@ class Judge:
         if paths is None:
             return self.catch(UNREADABLE)  # a write to an endpoint the guard can't read
         body = self.request_body(fields, inputs, command, cwd)
-        rules = [
-            (rf'^{REPO}/pulls/[^/]+/merge$|^{REPO}/merges$', MERGE_IS_OWNERS),
-            (rf'^{REPO}$|^{REPO}/(transfer|vulnerability-alerts|automated-security-fixes|'
-             r'private-vulnerability-reporting)$', SETTINGS),
-            (rf'^{REPO}/(branches/[^/]+/protection|rulesets|environments|actions/(secrets|variables|permissions)|'
-             r'dependabot/secrets|codespaces/secrets|collaborators|invitations|keys|hooks)\b', SECURITY),
-            (rf'^{REPO}/releases\b', RELEASE),
-            (rf'^{REPO}/(dispatches|actions/workflows/[^/]+/(dispatches|enable|disable))$', DISPATCH),
-            (rf'^{REPO}/git/refs/heads/{re.escape(self.base)}$', push_to(self.base)),
-        ]
-        for pattern, reason in rules:
-            if any(re.search(pattern, path) for path in paths):
-                self.catch(reason)
 
         def names(pattern):
             return any(re.search(pattern, path) for path in paths)
+
+        for pattern, reason in API_RULES + [(rf'^{REPO}/git/refs/heads/{re.escape(self.base)}$', push_to(self.base))]:
+            if names(pattern):
+                self.catch(reason)
 
         if names(rf'^{REPO}/pulls/[^/]+/reviews(/[^/]+/events)?$'):
             if body is None or re.search(r'(^|\s)event=\S*\$|"event"\s*:\s*"?\$', body):
@@ -822,10 +876,11 @@ class Judge:
 
 def refusal(command, unattended=True, extra=(), base='main', cwd=None, is_main_checkout=None):
     """The first reason a shell command is caught, or None."""
-    judge = Judge(unattended, extra, base, is_main_checkout, cwd or os.getcwd())
+    cwd = cwd or os.getcwd()
+    judge = Judge(unattended, extra, base, is_main_checkout, cwd)
     try:
-        judge.text(command, cwd or os.getcwd())
-    except (ValueError, IndexError, RecursionError) as error:  # Unparsable, or a NUL byte in a path
+        judge.text(command, cwd)
+    except MISREAD as error:
         return f'{UNREADABLE} ({error})'
     return judge.findings[0] if judge.findings else None
 
