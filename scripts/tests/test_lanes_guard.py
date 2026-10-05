@@ -236,6 +236,39 @@ HIDDEN = [
     "python3 -c \"import subprocess as s; sp=' '; s.run('git push origin' + sp + 'main', shell=True)\"",
     "python3 - <<'EOF'\nimport subprocess as s\nd = {\n  'a': print('x'),\n  'b': s.run(['gh','pr','merge','1']),\n}\n"
     "EOF",
+    "node - <<'EOF'\nconst cp = require('child_process');\ntry {\n  const c = 'gh pr merge 1'\n  console.log('run')\n "
+    " cp.execSync(c)\n} catch (e) {}\nEOF",
+    "perl -e 'my $c = \"cd x\"; system(\"bash\", \"-c\", $c . \" && gh pr merge 1\")'",
+    "python3 - <<'EOF'\nimport subprocess\ncfg = {\n    'msg': ', '.join(['a', 'b']),\n    'cmd': 'gh pr merge 1 "
+    "--squash',\n}\nsubprocess.run(cfg['cmd'], shell=True)\nEOF",
+    "python3 - <<'EOF'\nimport subprocess\ncfg = {\n    'title': 'x'.replace('a','b'),\n    'cmd': 'gh pr merge 1 "
+    "--squash',\n}\nsubprocess.run(cfg['cmd'], shell=True)\nEOF",
+    "python3 - <<'EOF'\nimport subprocess\ncfg = {\n    'ready': 'ok' in status,\n    'cmd': 'gh pr merge 1 "
+    "--squash',\n}\nsubprocess.run(cfg['cmd'], shell=True)\nEOF",
+    "python3 - <<'EOF'\nimport subprocess\ncfg = {\n    'log': print('pushing'),\n    'push': 'git push origin "
+    "main',\n}\nsubprocess.run(cfg['cmd'], shell=True)\nEOF",
+    "python3 - <<'EOF'\nimport subprocess\ncfg = {\n    'cmd': 'gh pr review 1 --approve',\n    'why': ', "
+    "'.join(reasons),\n}\nsubprocess.run(cfg['cmd'], shell=True)\nEOF",
+    "python3 - <<'EOF'\nimport subprocess\ncfg = {\n    'cmd': ['gh','pr','merge','1'],\n    'note': "
+    "print('merging'),\n}\nsubprocess.run(cfg['cmd'], shell=True)\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\nconst o = {\n  msg: ['a','b'].join(' '),\n  cmd: 'gh pr "
+    "merge 1',\n}\ncp.execSync(o.cmd)\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\nconst o = {\n  announce: () => console.log('merging'),\n  "
+    "merge: 'gh pr merge 1 --squash',\n}\ncp.execSync(o.merge)\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\nclass M {\n  static cmd = 'gh pr merge 1'\n  static note = "
+    "console.log('x')\n}\ncp.execSync(M.cmd)\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\ntry { cp.execSync('git fetch') } catch {\n  "
+    "console.log('fetch failed')\n  const c = 'gh pr merge 1'\n  cp.execSync(c)\n}\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\nclass M {\n  static {\n    console.log('x')\n    "
+    "cp.execSync('gh pr merge 1')\n  }\n}\nEOF",
+    "python3 - <<'EOF'\nimport subprocess as s\nx = 1  # {\nprint('start')\nc = ['gh', 'pr', 'merge', '1']\ns.run(c)\n"
+    "EOF",
+    "python3 -c \"import os\nfor c in ['git fetch', 'cd x && gh pr merge 1']: os.system(c)\"",
+    "python3 -c \"import os\nfor c in ['git fetch', 'cd ' + d + ' && gh pr merge 1']: os.system(c)\"",
+    "python3 - <<'EOF'\nimport subprocess\ncmds = [\n    ' '.join(['a', 'b']),\n    'gh pr merge 1',\n]\n"
+    "subprocess.run(cmds[1], shell=True)\nEOF",
+    "python3 -c \"import subprocess as s; s.run(['bash', '-c', pre + 'gh pr merge 1'])\"",
+    "python3 -c \"import subprocess as s; s.run(['bash', '-c', f(x) + ' && gh pr merge 1'])\"",
 ]
 # Calls the guard caught in real runs although they ship nothing.
 READS_AND_WRITING = [
@@ -337,6 +370,20 @@ READS_AND_WRITING = [
     "python3 -c \"import os; os.system('echo use gh pr merge later')\"",
     "python3 -c \"import subprocess as s; s.run(['git','commit','-m', prefix + ' gh pr merge later'])\"",
     "python3 -c \"import subprocess as s; s.run(['git', 'push', 'origin', 'HEAD:' + branch])\"",
+    "python3 -c \"import subprocess; subprocess.run(['ls']); print({'a': 1, 'next': 'gh pr merge 12'})\"",
+    "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['ls'])\nprint({\n    'a': 1,\n    'next': 'gh pr merge "
+    "12',\n})\nEOF",
+    "python3 - <<'EOF'\nimport subprocess\nst = subprocess.check_output(['git','status'], text=True)\n"
+    "print({'status': st, 'hint': 'gh pr merge 12'.upper()})\nEOF",
+    "python3 -c \"import subprocess; subprocess.run(['ls']); print({'a': 1, 'b': 'gh pr merge 12'.upper()})\"",
+    "python3 -c \"import subprocess; subprocess.run(['git', 'commit', '-m', 'a && gh pr merge later'])\"",
+    "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['ls'])\nprint([{\n    'next': 'gh pr merge 12',\n}])\nEOF",
+    "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['ls'])\nprint(f(a, {\n    'next': 'gh pr merge 12',\n}))\n"
+    "EOF",
+    "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['ls'])\nprint({'a': {\n    'next': 'gh pr merge 12',\n}})\n"
+    "EOF",
+    "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['ls'])\nprint(dict(rows={\n    'next': 'gh pr merge 12',\n"
+    "}))\nEOF",
 ]
 PROJECT_RULES = [(r"\bfirebase(-tools)?(@\S+)?\s.*\bdeploy\b", "Sites deploy from CI."),
                  (r"\bterraform\b.*\b(apply|destroy)\b", "DNS applies after merge."),
