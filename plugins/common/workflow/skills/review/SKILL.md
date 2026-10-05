@@ -30,9 +30,12 @@ Run the two axes as two parallel fresh-context workers when the host offers them
 2. Inbound adapters call an application use case, even for trivial queries.
 3. Aggregate children change only through their root; one transaction touches one aggregate; cross-aggregate changes travel as domain events.
 4. Abstractions earn their place: an interface needs two implementations (Rule of Two Adapters; a port's test fake counts), adjacent layers pass domain types instead of 1:1 DTO chains, and modules are deep rather than passthrough wrappers.
-5. When presentation code changes, semantic structure, accessibility attributes, and layout stay intact.
-6. Design smells that will cause defects or rework in this area, each with the Fowler refactoring that removes it (e.g. *Introduce Value Object* for primitive obsession, *Move Method* for feature envy).
-7. When a finding hinges on domain modeling or layer placement, invoke `ddd` or `hexagonal-architecture` for the governing rule.
+5. Behaviour that varies by kind lives on the kind: an enum, type tag or string set switched over in two or more places, or re-tested in one `if` chain, moves onto that type as an enhanced-enum member, a sealed-class method, an interface its variants implement, or a mixin its components share (*Replace Conditional with Polymorphism*). Each existing case already counts as an implementation for the Rule of Two Adapters.
+6. One concept, one model: a concept parsed, validated or formatted from raw primitives in two places becomes one value object, and a generic the codebase already has (an undo history, a cache, a retry policy) is reused instead of a second hand-rolled copy.
+7. A cross-cutting capability of a component (help text, analytics name, accessibility label) is declared by the component that owns its meaning, through an interface or mixin, rather than wrapped around it at each call site; the same control rebuilt on several screens to carry such a wrapper is a missing reusable component.
+8. When presentation code changes, semantic structure, accessibility attributes, and layout stay intact.
+9. Design smells that will cause defects or rework in this area, each with the Fowler refactoring that removes it (e.g. *Introduce Value Object* for primitive obsession, *Move Method* for feature envy). Read [design-smells.md](references/design-smells.md) when auditing a whole codebase or area rather than one diff.
+10. When a finding hinges on domain modeling or layer placement, invoke `ddd` or `hexagonal-architecture` for the governing rule.
 
 ### Axis B: Spec (Tech Lead)
 
@@ -40,7 +43,9 @@ Run the two axes as two parallel fresh-context workers when the host offers them
 2. Runtime defects the tests miss: boundary and empty-collection cases, unchecked nil and swallowed errors, races and missing `await`, resources released on every exit path, and repeated commands or messages that duplicate side effects.
 3. Tests assert state transitions and domain events (Chicago style) rather than mock calls; expected values come from an independent source, not the production algorithm.
 4. Failure and invalid-input paths are tested; assertions can fail.
-5. Unasked-for modifications are scope creep.
+5. Every test would fail if a behaviour a user or caller relies on broke. A test whose only assertions are existence checks (`isNotNull`, the widget just built is found, no exception), one that exercises a test double, or one that walks the branches of `==`, `hashCode`, `copyWith` or `toString` exists for coverage: assert the behaviour the line serves, or delete the line. Production API kept alive only by its tests is dead code.
+6. Tests pin observable behaviour, not structure: locating or counting framework layout primitives, reading a private animation or style value, or asserting a tuning constant breaks on refactor without catching a defect.
+7. Unasked-for modifications are scope creep.
 
 ### Verdict
 

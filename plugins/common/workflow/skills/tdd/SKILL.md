@@ -58,6 +58,10 @@ Report longer failure detail only when GREEN cannot be reached, as: root cause (
 - Test behavior through public observable seams; keep tests independent of private implementation details.
 - Assert behavior and relations (state, outcomes, ordering, direction, alignment to design tokens); keep expected values independent of layout pixels and tuning constants that change without a behavior change.
 - Apply the project's coverage policy. When the project defines none, aggregate unit and component test branch coverage into one value reaching 100% branch coverage for domain and application layers.
+- Coverage is a byproduct of behaviour tests. When the gate flags an uncovered line, write the test whose failure a user or caller would notice, or delete the line; a test named after a method's branches, one that exercises a test double, and one that only walks `==`, `hashCode`, `copyWith` or `toString` prove nothing and stay out of the suite. Prefer language value equality (records, data classes, generated equality) over hand-written equality whose lines would need such tests.
+- In REFACTOR, delete production API that only tests call, together with those tests.
+- For a function whose mistake would corrupt data or mislead the user, flip one of its conditions or constants and run its tests: at least one must fail, or add the boundary case that makes it fail.
+- File each test by what it boots: a test that renders UI belongs with the UI tests even when it checks one value.
 - Exclude integration, system, and acceptance tests from coverage calculations; treat them as verification suites, not coverage sources.
 
 ---
