@@ -38,7 +38,11 @@ ALLOWED = [
     "gh api -X PATCH repos/o/r/issues/5 -f state=closed", "git push -u origin agent/afk-5-x",
     "python3 lanes.py automerge 12", "python3 lanes.py merge 12", "python3 lanes.py triage 12",
     'gh api repos/o/r/pulls/5/reviews -X POST -f body="missing keys in dict; see hooks.json and secrets handling"',
+    "gh api -X PATCH repos/o/r/issues/comments/1 -F body=@plan.md",
 ]
+HIDDEN_REQUESTS = ["gh api graphql --input m.json", 'gh api graphql -f query="$(cat m.graphql)"',
+                   'gh api -X PATCH repos/o/r/issues/comments/1 -f body="$(cat plan.md)"',
+                   "gh api repos/o/r/pulls/1/comments --jq length; n=`date`"]
 MERGE = "gh pr " + "merge 1"
 MARKS_AFK = ["gh issue edit 5 --add-label lane:afk", 'gh issue edit 5 --add-label "type:chore,lane:afk"',
              "gh issue create -t x --label lane:afk", "gh issue create -t x -l lane:afk",
@@ -63,6 +67,10 @@ class GuardRuleTests(unittest.TestCase):
     def test_building_proposing_and_reading_are_allowed(self) -> None:
         for command in ALLOWED:
             self.assertIsNone(guard.refusal(command), command)
+
+    def test_a_hidden_request_is_refused_with_the_literal_form_to_use(self) -> None:
+        for command in HIDDEN_REQUESTS:
+            self.assertEqual(guard.refusal(command, False), guard.HIDDEN_REQUEST, command)
 
     def test_only_attended_sessions_mark_an_issue_afk(self) -> None:
         for command in MARKS_AFK:

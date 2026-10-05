@@ -24,10 +24,12 @@ from pathlib import Path
 OWNER_RUNS_IT = 'The owner runs this themselves.'
 
 MERGE_IS_OWNERS = 'Merging goes through `lanes.py merge`, or the owner.'
+HIDDEN_REQUEST = ('A `gh api` call with `$(…)`, backticks or `--input` on its command line hides what it sends. '
+                  'Give it literal arguments (a body as `-F body=@<file>`), and loop in a script that calls gh.')
 RULES = [
     (r'\bgh\s+pr\s+merge\b', MERGE_IS_OWNERS),
-    # A query file, --input or shell substitution hides the mutation, so each counts as a merge.
-    (r'\bgh\s+api\b.*(--input\b|\$\(|`)', MERGE_IS_OWNERS),
+    # --input or shell substitution could hide a merge mutation, so the guard refuses what it can't read.
+    (r'\bgh\s+api\b.*(--input\b|\$\(|`)', HIDDEN_REQUEST),
     (r'\bgh\s+alias\s+(set|import)\b', 'Aliases hide commands from the guard.'),
     (r'\bgh\s+api\b.*(\bpulls/[^/\s]+/merge\b|\brepos/[^/\s]+/[^/\s]+/merges\b|\bmergePullRequest\b'
      r'|\benablePullRequestAutoMerge\b|\bquery=@)', MERGE_IS_OWNERS),
