@@ -378,19 +378,23 @@ COMPARES = re.compile(r'\bassert\b|["\']\s+(not\s+)?in\s+\w|\.(startswith|endswi
 TEXT_USE = re.compile(COMPARES.pattern + r'|\.(replace|write|write_text|sub|split|join)\(|\bprint\b|'
                       r'\bconsole\.\w+|\blogg(ing|er)\.|\.(debug|info|warning|warn|error)\(|\braise\b|'
                       r'\bthrow\b|\bsys\.exit\b')
-# A program's string (`f'...'`, `\'\'\'...\'\'\'` too); a bracket, the end of a statement or a comma,
-# outside one.
+# A program's string (`f'...'`, `\'\'\'...\'\'\'` too); a comment, a bracket, the end of a statement, a
+# comma or a word that joins expressions (`a or b`), outside one.
 STRING = re.compile(r'(?:(?<!\w)[fbrFBR]{1,2})?(?P<string>\'\'\'(?:[^\\]|\\.)*?\'\'\'|"""(?:[^\\]|\\.)*?"""|'
                     r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\')', re.DOTALL)
-STATEMENT_PART = re.compile(STRING.pattern + r'|(?P<open>[\[({])|(?P<close>[\])}])|(?P<newline>\n)|;|&&|\|\||,',
-                            re.DOTALL)
-# What a `{` follows when it opens a literal (`= {`, `({`, `[{`, `, {`, `: {`); any other opens a block.
-LITERAL_START = re.compile(r'[=(\[,:]\s*$')
-# The code before a list's item, and the code the item's string is joined to (`, c + `).
-LIST_ITEM = re.compile(r',[\s\[(]*(?P<code>[\w.]+\s*\+\s*)?$')
+STATEMENT_PART = re.compile(STRING.pattern + r'|(?P<comment>(?<!\S)#(?!\S)[^\n]*)|(?P<open>[\[({])|'
+                            r'(?P<close>[\])}])|(?P<newline>\n)|(?P<joint>\b(or|and|if|else)\b)|;|&&|\|\||,', re.DOTALL)
+# What a `{` follows when it opens a literal (`= {`, `({`, `[{`); after `,` or `:` it does only inside a
+# literal or brackets (`{'a': {`, not `case 1: {`). Any other opens a block.
+LITERAL_START = re.compile(r'[=(\[]\s*$')
+ITEM_START = re.compile(r'[,:]\s*$')
+# The code before a list's item, and the code the item's string is joined to (`, c + `, `, f(x) + `).
+LIST_ITEM = re.compile(r',[\s\[(]*(?P<code>[\w.]+(\([^()]*\))?\s*\+\s*)?$')
 GH_OR_GIT = re.compile(r'\b(gh|git)\b')
-# A string that runs a gh or git command: one it starts, or one past a shell separator (`'ls; gh …'`).
-SHELL_COMMAND = re.compile(r'(^|[;&|\n(`]|\$\()\s*(gh|git)\b')
+# A string that runs a gh or git command: one it starts, or one past a shell separator (`'ls; gh …'`), past
+# assignments, wrappers and their options, by name or path (`'env GH_TOKEN=x /usr/bin/gh …'`).
+SHELL_COMMAND = re.compile(r'(^|[;&|\n(`]|\$\()\s*((\w+=\S*|' + '|'.join(WRAPPERS) + r'|-\S+)\s+)*'
+                           r'(\S*/)?(gh|git)\b')
 # Commands that run none of their arguments; `tee` writes files, but a file it writes runs nothing.
 RUNS_NOTHING = {'cat', 'head', 'tail', 'less', 'more', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'wc', 'ls',
                 'diff', 'cmp', 'file', 'stat', 'echo', 'printf', 'jq', 'yq', 'sort', 'uniq', 'cut', 'tr', 'column',
@@ -467,10 +471,13 @@ def statements(code):
     found, start, opened = [], 0, []  # per open bracket: is it a block?
     for match in STATEMENT_PART.finditer(code):
         if match.group('open'):
-            opened.append(match.group('open') == '{' and not LITERAL_START.search(code[start:match.start()]))
+            before = code[start:match.start()]
+            item = ITEM_START.search(before) and opened and not opened[-1]
+            opened.append(match.group('open') == '{' and not (LITERAL_START.search(before) or item))
         elif match.group('close'):
             opened = opened[:-1]
-        elif match.group('string') is not None or match.group(0) == ',':
+        elif match.group('string') is not None or match.group('comment') is not None or match.group('joint') \
+                or match.group(0) == ',':
             continue
         elif match.group('newline') and opened and not opened[-1]:
             continue  # a list or literal over lines
@@ -480,30 +487,55 @@ def statements(code):
     return found + [code[start:]]
 
 
-def items(statement):
-    """A statement's parts, each with the code before the brackets that hold it: the items of its outermost
-    brackets (`'a': 1` with `d = {` in `d = {'a': 1, 'b': 2}`), and the code outside them (with none)."""
-    found, start, depth, before = [], 0, 0, ''
-    for match in STATEMENT_PART.finditer(statement):
-        opener, closer, comma = match.group('open'), match.group('close'), match.group(0) == ','
-        if (opener and depth == 0) or ((closer or comma) and depth == 1):
-            found.append((statement[start:match.start()], before if depth else ''))
-            before = statement[start:match.end()] if opener else before  # with its bracket: `print(`
-            start = match.end()
-        depth += 1 if opener else -1 if closer else 0
-    return found + [(statement[start:], '')]
+def top_level(code):
+    """The insides of `code`'s outermost brackets, as spans; its commas outside them, and the words that join
+    its expressions there (`or`, `and`, `if`, `else`), as matches."""
+    insides, commas, joints, depth, inside = [], [], [], 0, 0
+    for match in STATEMENT_PART.finditer(code):
+        if match.group('open'):
+            depth += 1
+            inside = match.end() if depth == 1 else inside
+        elif match.group('close') and depth:
+            depth -= 1
+            if depth == 0:
+                insides.append((inside, match.start()))
+        elif match.group(0) == ',' and depth == 0:
+            commas.append(match.start())
+        elif match.group('joint') and depth == 0:
+            joints.append(match)
+    return insides, commas, joints
+
+
+def running(code, text_use):
+    """`code` with each part that only uses its strings as `text_use` text (`print(…)`, `x.replace(…)`) as
+    `_`: each of its expressions (`print(x) or s.run(…)`) whose own code outside its brackets does, or else
+    any item in its brackets."""
+    insides, _, joints = top_level(code)
+    edges = [0] + [edge for inside in insides for edge in inside] + [len(code)]
+    if text_use.search(''.join(code[edges[i]:edges[i + 1]] for i in range(0, len(edges), 2))):
+        if not joints:
+            return '_'
+        bounds = zip([0] + [joint.end() for joint in joints], [joint.start() for joint in joints] + [len(code)])
+        words = [joint.group(0) for joint in joints] + ['']
+        return ' '.join(f'{running(code[i:j], text_use)} {word}' for (i, j), word in zip(bounds, words))
+    kept, end = '', 0
+    for start, stop in insides:
+        inside = code[start:stop]
+        _, commas, _ = top_level(inside)
+        bounds = zip([-1] + commas, commas + [len(inside)])
+        kept += code[end:start] + ','.join(running(inside[i + 1:j], text_use) for i, j in bounds)
+        end = stop
+    return kept + code[end:]
 
 
 def statements_running(code, text_use):
-    """A program's statements, except those that only use their strings as `text_use` text, or are only a
-    string (a docstring). Of a statement that uses some as text, the parts that don't still run, unless
-    they are what it uses as text: `d = {'a': ', '.join(x), 'b': 'gh …'}` holds a command, but
-    `print({'b': 'gh …'})` doesn't."""
+    """A program's statements, as the code they run (see `running`); a statement that only uses its strings
+    as `text_use` text runs none, nor one that is only a string (a docstring). `d = {'a': ', '.join(x),
+    'b': 'gh …'}` holds a command, but `print({'b': 'gh …'})` doesn't."""
     for statement in statements(literal(code)):
-        if text_use.search(statement):
-            yield from (part for part, before in items(statement) if not text_use.search(before + part))
-        elif not re.fullmatch(rf'\s*{STRING.pattern}\s*', statement, re.DOTALL):
-            yield statement
+        kept = running(statement, text_use)
+        if kept != '_' and not re.fullmatch(rf'\s*{STRING.pattern}\s*', statement, re.DOTALL):
+            yield kept
 
 
 def string_text(string):
@@ -538,8 +570,12 @@ class Word:
 
 def program_of(line):
     """The program a spelled command line runs, past its wrappers (`env bash`)."""
-    argv = [part for word in line for part in ([word.text] if word.quoted else word.text.split())]
-    return os.path.basename((unwrap(argv) or [''])[0])
+    return os.path.basename((unwrap(' '.join(word.text for word in line).split()) or [''])[0])
+
+
+def named_by_option(previous):
+    """Whether the string after `previous` in a list is an option's value (`['-m', 'gh …']`)."""
+    return previous.startswith('-')
 
 
 def joining(before, previous, text, program):
@@ -553,7 +589,7 @@ def joining(before, previous, text, program):
         shell = keyword.group(1) == 'input' and program in SHELLS
         return Join.LINE if shell or keyword.group(1) in ('args', 'cmd', 'command') else Join.ARGUMENT
     if LIST_ITEM.search(before):
-        own = re.match(r'\s*(gh|git)\s', text) and not previous.startswith('-')
+        own = re.match(r'\s*(gh|git)\s', text) and not named_by_option(previous)
         return Join.LINE if own else Join.ARGUMENT
     if re.fullmatch(r'\s*(\+|\.\.?)?\s*', before) or re.match(r'\s*(\+|\.\.?\s)', before) \
             or re.search(r'(\+|\s\.\.?)\s*$', before):
@@ -568,8 +604,8 @@ def joined(code):
 
 def spelled(code):
     """The command lines program code spells: each string is shell text on a line of its own, unless it
-    joins the one before (see `joining`). The words between strings stay, and a list item's code is part
-    of its argument (`['-c', c + ' && gh …']` runs `c && gh …`)."""
+    joins the one before (see `joining`). The words between strings stay, except a list item's code
+    joined to its string: unknown, it is left out (`['-c', c + ' && gh …']` runs ` && gh …`)."""
     lines, end, previous = [[]], 0, None
     for match in STRING.finditer(code):
         before, text = code[end:match.start()], string_text(match.group('string'))
@@ -582,17 +618,17 @@ def spelled(code):
             item = LIST_ITEM.search(before)
             joined_to = (item and item.group('code')) or ''
             head = before[:len(before) - len(joined_to)]
-            listed = bool(item) and not previous.startswith('-')
-            argument = f'{joined(joined_to)} {text}'.lstrip()  # `c + ' && gh …'` runs `c && gh …`
-            lines[-1] += [Word(code_words(head)), Word(argument, quoted=True, listed=listed)]
+            listed = bool(item) and not named_by_option(previous)
+            lines[-1] += [Word(code_words(head)), Word(text, quoted=True, listed=listed)]
         else:
             lines[-1].append(Word(code_words(before)))
             lines.append([Word(text)])
         end, previous = match.end(), text
     lines[-1].append(Word(code_words(code[end:])))
-    # A list's item that runs gh or git past a separator may be a command line of its own, not an argument.
-    listed = [word.text for line in lines for word in line if word.listed and SHELL_COMMAND.search(word.text)]
-    return [' '.join(map(str, line)) for line in lines] + listed
+    # A list's item may be a command line of its own, not an argument, unless the list's program runs none.
+    listed_lines = [word.text for line in lines if program_of(line) not in RUNS_NOTHING for word in line
+                    if word.listed]
+    return [' '.join(map(str, line)) for line in lines] + listed_lines
 
 
 def matched_value(match, args, i, default=''):
