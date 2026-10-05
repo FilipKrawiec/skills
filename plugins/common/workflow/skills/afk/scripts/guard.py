@@ -31,6 +31,7 @@ import fnmatch
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from collections import namedtuple
@@ -373,13 +374,14 @@ DOWNLOADS = {'curl': Downloader(r'-[a-np-zA-Z]*o(.*)|--output(?:=(.*))?', r'-[a-
                                 r'-[a-zA-OQ-Z]*P(.*)|--directory-prefix(?:=(.*))?', True, False)}
 # A string a program compares is text, not a command line it runs; so is one it edits or prints.
 COMPARES = re.compile(r'\bassert\b|["\']\s+(not\s+)?in\s+\w|\.(startswith|endswith|find|index|count|includes)\(')
-TEXT_USE = re.compile(COMPARES.pattern + r'|\.(replace|write|write_text|sub|split|join)\(|\bprint\b')
-STATEMENTS = r'\n|;|&&|\|\|'
-# A gh or git command a string starts, or, in a script's line, one past a shell keyword or variable
-# (`then gh …`, `X=1 gh …`).
-STRING_COMMAND = re.compile(r'["\'](\s|\\[nt])*(gh|git)\b')
-SCRIPT_COMMAND = re.compile(r'(^|["\'])\s*((then|do|else|if|while|until|time|exec|command|env|nohup|!|\{|\(|'
-                            r'[A-Za-z_]\w*=\S*)\s+)*(gh|git)\b')
+TEXT_USE = re.compile(COMPARES.pattern + r'|\.(replace|write|write_text|sub|split|join)\(|\bprint\b|'
+                      r'\bconsole\.\w+|\blogg(ing|er)\.|\.(debug|info|warning|warn|error)\(|\braise\b|'
+                      r'\bthrow\b|\bsys\.exit\b')
+# A program's string (`f'...'` too), and the end of a statement outside one.
+STRING = re.compile(r'(?:(?<!\w)[fbrFBR])?("(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\')')
+STATEMENT_END = re.compile(STRING.pattern + r'|(\n|;|&&|\|\|)')
+# A string that runs a gh or git command: one it starts, or one past a shell separator (`'ls; gh …'`).
+SHELL_COMMAND = re.compile(r'(^|[;&|\n(`]|\$\()\s*(gh|git)\b')
 # Commands that run none of their arguments; `tee` writes files, but a file it writes runs nothing.
 RUNS_NOTHING = {'cat', 'head', 'tail', 'less', 'more', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'wc', 'ls',
                 'diff', 'cmp', 'file', 'stat', 'echo', 'printf', 'jq', 'yq', 'sort', 'uniq', 'cut', 'tr', 'column',
@@ -449,9 +451,46 @@ def unwrap(argv):
     return argv
 
 
+def statements(code):
+    """A program's statements, split at its newlines, `;`, `&&` and `||` outside its strings."""
+    found, start = [], 0
+    for match in STATEMENT_END.finditer(code):
+        if match.group(2):
+            found.append(code[start:match.start()])
+            start = match.end()
+    return found + [code[start:]]
+
+
 def statements_running(code, text_use):
     """A program's statements, except those that only use their strings as `text_use` text."""
-    return (statement for statement in re.split(STATEMENTS, literal(code)) if not text_use.search(statement))
+    return (statement for statement in statements(literal(code)) if not text_use.search(statement))
+
+
+def string_text(string):
+    """The text a program's string literal holds: `\\n` is a line break."""
+    return re.sub(r'\\(.)', lambda escape: {'n': '\n', 't': ' '}.get(escape.group(1), escape.group(1)),
+                  string[1:-1])
+
+
+def code_words(code):
+    """Program code as plain words: quotes, brackets, commas and `\\n` dropped."""
+    return re.sub(r'["\'\[\](),]+|\\[nt]', ' ', code)
+
+
+def spelled(code):
+    """The command lines program code spells. Each string starts one, as shell text, except a string after a
+    comma: that is one argument (`['git', 'commit', '-m', 'x; y']`). The words between strings stay."""
+    lines, end = [''], 0
+    for match in STRING.finditer(code):
+        before, text = code[end:match.start()], string_text(match.group(1))
+        lines[-1] += code_words(before)
+        if re.search(r',[\s\[(]*$', before):
+            lines[-1] += ' ' + shlex.quote(text)
+        else:
+            lines.append(text)
+        end = match.end()
+    lines[-1] += code_words(code[end:])
+    return lines
 
 
 def matched_value(match, args, i, default=''):
@@ -856,19 +895,20 @@ class Judge:
         return calls
 
     def string_commands(self, code, cwd):
-        """Judge the gh and git command lines a program's strings start; a statement that only compares,
-        edits or prints its strings runs none, and a line in a message is text."""
+        """Judge the gh and git command lines a program's strings run; a statement that only compares,
+        edits, prints or logs its strings runs none."""
         for statement in statements_running(code, TEXT_USE):
-            if STRING_COMMAND.search(statement):
+            if any(SHELL_COMMAND.search(string_text(string.group(1))) for string in STRING.finditer(statement)):
                 self.command_line(statement, cwd)
 
     def script_commands(self, code, cwd):
-        """Judge the lines of the strings a program writes into a script the command runs: each is a command
-        line (`'#!/bin/sh\\ngh pr merge 1'`); a statement that only compares its strings runs none."""
+        """Judge the strings a program writes into a script the command runs, as the shell text they are;
+        a statement that only compares its strings runs none."""
         for statement in statements_running(code, COMPARES):
-            for line in re.split(STATEMENTS + r'|\|', statement.replace('\\n', '\n').replace('\\t', ' ')):
-                if SCRIPT_COMMAND.search(line):
-                    self.command_line(line, cwd)
+            for string in STRING.finditer(statement):
+                text = string_text(string.group(1))
+                if re.search(r'\b(gh|git)\b', text):
+                    self.sure(lambda judge, text=text: judge.text(text, cwd, MAX_NESTING - 1))
 
     def process_call(self, code, call, cwd):
         """Judge the command line a program's process call could run: the call's own arguments."""
@@ -887,13 +927,16 @@ class Judge:
         self.command_line(span, cwd)
 
     def command_line(self, code, cwd):
-        """Judge program code as the command line it spells, quotes, brackets and commas dropped."""
-        line = ' '.join(re.sub(r'["\'\[\](),]+|\b[fbr]?(?=["\'])|\\[nt]', ' ', code).split())
-        self.project_rules(line)
-        start = re.search(r'\b(gh|git)\b', line)
-        if start:
-            # Judged at the deepest nesting: a shell this fragment seems to start is not read further.
-            self.sure(lambda judge: judge.text(line[start.start():], cwd, MAX_NESTING))
+        """Judge program code as the command lines it spells; code before its first string, from its first gh
+        or git (`qx{gh …}`)."""
+        self.project_rules(' '.join(code_words(code).split()))
+        lines = spelled(code)
+        start = re.search(r'\b(gh|git)\b', lines[0])
+        lines[0] = lines[0][start.start():] if start else ''
+        for line in lines:
+            if re.search(r'\b(gh|git)\b', line):
+                # Judged near the deepest nesting: a shell the fragment starts is read, one within it not.
+                self.sure(lambda judge, line=line: judge.text(line, cwd, MAX_NESTING - 1))
 
     # ------------------------------------------------------------------ gh
 

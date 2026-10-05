@@ -162,6 +162,15 @@ HIDDEN = [
     "python3 -c \"open('m.sh','w').write('true | gh pr merge 1')\"; bash m.sh",
     "python3 -c \"open('m.sh','w').write('if true; then gh pr merge 1; fi')\"; bash m.sh",
     "python3 -c \"open('m.sh','w').write('X=1 gh pr merge 1')\"; bash m.sh",
+    "python3 -c \"open('m.sh','w').write('true & gh pr merge 1')\"; bash m.sh",
+    "python3 -c \"open('m.sh','w').write('sudo gh pr merge 1')\"; bash m.sh",
+    "python3 -c \"open('m.sh','w').write('echo $(gh pr merge 1)')\"; bash m.sh",
+    "python3 -c \"import subprocess; cmd = 'cd x && gh pr merge 1'; subprocess.run(cmd, shell=True)\"",
+    "python3 -c \"import subprocess; cmd = 'ls; gh pr merge 1'; subprocess.run(cmd, shell=True)\"",
+    "python3 -c \"import subprocess; cmd = 'ls\\ngh pr merge 1'; subprocess.run(cmd, shell=True)\"",
+    "python3 - <<'EOF'\nimport subprocess\ncmd = 'ls; gh pr merge 1'\nsubprocess.run(cmd, shell=True)\nEOF",
+    "node -e \"const c='ls && gh pr merge 1'; require('child_process').execSync(c)\"",
+    "python3 -c \"import subprocess; subprocess.run(['sh','-c','gh pr merge 1'])\"", "perl -e 'qx{gh pr merge 1}'",
 ]
 # Calls the guard caught in real runs although they ship nothing.
 READS_AND_WRITING = [
@@ -232,6 +241,11 @@ READS_AND_WRITING = [
     "'Fix x\\n\\ngit push to main is blocked'])\"",
     "python3 -c \"import subprocess; subprocess.run(['gh','issue','create','-t','x',"
     "'-b','Repro:\\ngh pr merge 5 fails'])\"",
+    "python3 -c \"import subprocess; subprocess.run(['git','commit','-m','x; gh pr merge 1 later'])\"",
+    "python3 -c \"import subprocess; subprocess.run(['git','commit','-m','x && gh pr merge 1 later'])\"",
+    "python3 -c \"import subprocess, logging; logging.info('gh pr merge 1'); subprocess.run(['ls'])\"",
+    "node -e \"const cp=require('child_process'); console.log('gh pr merge 1'); cp.execSync('ls')\"",
+    "python3 -c \"import subprocess, sys; sys.exit('gh pr merge 1 is the owner')\"",
     "perl -e 'system(\"git\",\"commit\",\"-m\",\"x\\n\\ngit push origin main later\")'",
     "python3 - <<'EOF'\n\"\"\"Release notes.\n\n    git push origin main\n\"\"\"\n"
     "import subprocess\nsubprocess.run(['ls'])\nEOF",
