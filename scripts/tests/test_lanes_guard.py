@@ -417,6 +417,72 @@ HIDDEN = [
     "node -e \"const cp=require('child_process'); const c='gh pr merge 1' /* a\n*/ console.log('go')\ncp.execSync(c)\"",
     "node -e \"const cp=require('child_process'); const c=s.includes('a')?'gh pr merge 1':'ls'\ncp.execSync(c)\"",
     "node -e \"const cp=require('child_process'); /* { */ console.log('a') } const c='gh pr merge 1'\ncp.execSync(c)\"",
+    "python3 - <<'X'\nimport os\nn = a // 2; c = [\n  'gh pr merge 1'\n]\nos.system(c[0])\nX",
+    "python3 - <<'X'\nimport os\nn = a // 2; c = (\n  'gh pr merge 1'\n)\nos.system(c)\nX",
+    "node - <<'X'\nconst cp = require('child_process')\nclass A { #c = [\n  'gh pr merge 1'\n]; go() { "
+    "cp.execSync(this.#c[0]) } }\nnew A().go()\nX",
+    "node - <<'X'\nconst cp = require('child_process')\nconst r = /a\\//; const c = [\n  'gh pr merge 1'\n]\n"
+    "cp.execSync(c[0])\nX",
+    "perl - <<'X'\nmy $n = $#ARGV; my @c = (\n  \"gh pr merge 1\"\n); system($c[0])\nX",
+    "python3 - <<'X'\nimport os\nassert (c := 'gh pr merge 1')\nos.system(c)\nX",
+    "python3 - <<'X'\nimport os\ntry:\n    raise ValueError((c := 'gh pr merge 1'))\nexcept ValueError:\n    "
+    "os.system(c)\nX",
+    "python3 -c \"import subprocess as s\nfor c in ('make', 'cd x && gh pr merge 1'): s.run(c, shell=True)\"",
+    "python3 -c \"import os; os.system('T=$(date) gh pr merge 1')\"",
+    "python3 -c \"import os; os.system('echo $(gh pr merge 1)')\"",
+    "python3 -c \"import os; os.system('echo $(cat $(gh pr merge 1))')\"",
+    "python3 - <<'X'\nimport os\nc = 'echo $(gh pr merge 1)'\nos.system(c)\nX",
+    "node -e \"const cp=require('child_process'); console.log('a') } const c='gh pr merge 1'\ncp.execSync(c)\"",
+    "python3 - <<'EOF'\nimport os\nprint(n // 2)\nc = 'gh pr merge 1'\nos.system(c)\nEOF",
+    "python3 - <<'EOF'\nimport subprocess\nprint(n // 2)\ncmd = ['gh', 'api', '-X', 'PUT', "
+    "'repos/o/r/pulls/1/merge']\nsubprocess.run(cmd)\nEOF",
+    "python3 - <<'EOF'\nimport subprocess as s\nprint(n // 2)\nc = 'git push origin HEAD:main'\ns.run(c, shell=True)\n"
+    "EOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\nconst u = url.replace(/^https?:\\/\\//, '')\nconst c = 'gh "
+    "pr merge 1'\ncp.execSync(c)\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\nconsole.log(this.#n)\nconst c = 'gh pr merge 1'\n"
+    "cp.execSync(c)\nEOF",
+    "perl -e 'print($#a)\nmy $c = \"gh pr merge 1\";\nsystem($c)'",
+    "python3 - <<'EOF'\nimport os\nassert total == (n // 2)\nc = 'gh pr merge 1'\nos.system(c)\nEOF",
+    "python3 - <<'EOF'\nimport os\nlogger.info(n // 2)\nc = 'gh pr merge 1'\nos.system(c)\nEOF",
+    "python3 - <<'EOF'\nimport os\nprint(', '.join(str(i // 2) for i in x))\nc = 'gh pr merge 1'\nos.system(c)\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\nconsole.log('a') // steps (1 and 2\nconst c = 'gh pr merge "
+    "1'\ncp.execSync(c)\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\nconsole.log(x, // first (a\n  y)\nconst c = 'gh pr merge "
+    "1'\ncp.execSync(c)\nEOF",
+    "python3 - <<'EOF'\nimport os\nprint(n // 2)  # half (rounded\nc = 'gh pr merge 1'\nos.system(c)\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\nconsole.log(this.#n, '(')\nconst c = 'gh pr merge 1'\n"
+    "cp.execSync(c)\nEOF",
+    "perl -e 'print($#a, \"(\")\nmy $c = \"gh pr merge 1\";\nsystem($c)'",
+    "python3 -c \"import os\nfor c in ('make', 'pytest', 'cd x && gh pr merge 1'): os.system(c)\"",
+    "python3 -c \"import os\nfor c in ('make', 'pytest', 'sudo gh pr merge 1'): os.system(c)\"",
+    "python3 -c \"import os\nfor c in ('make', 'pytest', '/usr/bin/gh pr merge 1'): os.system(c)\"",
+    "python3 -c \"import os\nfor c in ('make', 'pytest', 'T=1 gh pr merge 1'): os.system(c)\"",
+    "node -e \"const cp=require('child_process'); for (const c of ['make', 'lint', 'cd x && gh pr merge 1']) "
+    "cp.execSync(c)\"",
+    "python3 -c \"import os\nfor c in sorted(['make', 'cd x && gh pr merge 1']): os.system(c)\"",
+    "node -e \"const cp=require('child_process'); for (const c of new Set(['make', 'cd x && gh pr merge 1'])) "
+    "cp.execSync(c)\"",
+    "python3 - <<'EOF'\nimport os\nprint(f'{d['#']}'); c = 'gh pr merge 1'\nos.system(c)\nEOF",
+    "ssh -o 'ProxyCommand=gh pr merge 1' host true",
+    "ssh -o'ProxyCommand=gh pr merge 1' host true",
+    "GIT_SSH_COMMAND='gh pr merge 1' git fetch",
+    "git -c core.sshCommand='gh pr merge 1' fetch",
+    "git -c alias.m='!gh pr merge 1' m",
+    "env GIT_EDITOR='gh pr merge 1' git commit",
+    "perl -e 'my $c = q(gh pr merge 1); system($c)'",
+    "perl -e 'my $e = q(); my $c = qq/gh pr merge 1/; system($c)'",
+    "ruby -e 'c = %q(gh pr merge 1); system(c)'",
+    "ruby -e '%x(gh pr merge 1)'",
+    "xterm -e 'gh pr merge 1'",
+    "python3 -c \"import os\nfor c in ('echo', 'cd x && gh pr merge 1'): os.system(c)\"",
+    "git -c alias.m='!cd x && gh pr merge 1' m",
+    "ruby -e 'c = %(gh pr merge 1); system(c)'",
+    "python3 - <<'EOF'\nx = a // 2; s = '''\n#!/bin/sh\ngh pr merge 1\n'''\nopen('m.sh', 'w').write(s)\nEOF\nsh m.sh",
+    "osascript -e 'tell application \"Terminal\" to do script \"gh pr merge 1\"'",
+    "perl -e 'my $n = $#a; my $c = \"x \\\n&& gh pr merge 1\"; system($c)'",
+    "node -e \"const cp=require('child_process'); setTimeout(function () { x() }), console.log('a'), c = 'gh pr merge "
+    "1'; cp.execSync(c)\"",
 ]
 # Calls the guard caught in real runs although they ship nothing.
 READS_AND_WRITING = [
@@ -557,8 +623,6 @@ READS_AND_WRITING = [
     "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['git', 'status'])  # then 'gh pr merge 1' (later\nEOF",
     "node - <<'EOF'\nconst cp = require('child_process')\ncp.execSync('git status')\n/* next:\n   gh pr merge 12 */\n"
     "EOF",
-    "python3 -c \"import subprocess as s; s.run(['node', 'notify.js', 'Next: cd x && gh pr merge 12'])\"",
-    "python3 -c \"import subprocess as s; s.run(['git', 'commit', flag, 'Then: cd x && gh pr merge 12'])\"",
     "python3 -c \"import subprocess as s; s.run(['git', 'status']); print(f'done: {x}')\"",
     "python3 - <<'EOF'\nfrom pathlib import Path\np = Path('t.py'); s = p.read_text()\ns = s.replace('a', '''         "
     "   self.assertEqual(self.call(str(Path(tmp) / \"src\"), \"gh pr merge 1\").returncode, 2)''')\np.write_text(s)\n"
@@ -566,6 +630,40 @@ READS_AND_WRITING = [
     "ruby -e 'system(\"git status\") # then\nprint \"gh pr merge 1 next\"'",
     "node -e \"require('child_process').execSync('git status') // log\nconsole.log('gh pr merge 1 next')\"",
     "node -e \"require('child_process').execSync('git status'); console.log({a: 1}, 'gh pr merge 1 next')\"",
+    "python3 -c \"import os; os.system('sh -c \\\"make test\\\"')\"",
+    "node -e \"require('child_process').execSync('sh -c \\'npm test\\'')\"",
+    "ssh host 'sh -c \"uptime\"'",
+    "tmux new-window 'sh -c \"npm test\"'",
+    "python3 -c \"import subprocess as s; s.run(['notify-send', 'Next: cd x && gh pr merge 12'])\"",
+    "python3 -c \"import subprocess as s; s.run(['say', 'done; gh pr merge 12 next'])\"",
+    "python3 -c \"import subprocess as s; s.run(['git','status']); raise SystemExit(1) if a else SystemExit('gh pr "
+    "merge 12 failed: rc=1')\"",
+    "node -e \"require('child_process').execSync('git status'); throw ok ? new Error('a=b') : new Error('gh pr merge "
+    "1 failed')\"",
+    "python3 -c \"import subprocess as s; s.run(['git','status']); raise SystemExit(code='gh pr merge 1 failed') if a "
+    "else b\"",
+    "python3 -c \"import subprocess as s; s.run(['git','status']); msg = 'see (docs) git push origin main later'\"",
+    "python3 - <<'X'\nimport subprocess\nsubprocess.run(['git', 'status'])\nprint(  # done)\n    'gh pr merge 1 "
+    "next')\nX",
+    "node -e \"require('child_process').execSync('git status'); throw 'rc=1, run ' + 'gh pr merge 1'\"",
+    "python3 -c \"import subprocess as s; s.run(('notify-send', 'Next: cd x && gh pr merge 12'))\"",
+    "python3 -c \"import subprocess; subprocess.run(['notify-send', 'PR ready; gh pr merge 12'])\"",
+    "node -e \"require('child_process').execFileSync('notify-send', ['PR ready; gh pr merge 12'])\"",
+    "python3 -c \"from subprocess import run; run(['notify-send', 'PR', 'ready; gh pr merge 12'])\"",
+    "node - <<'EOF'\nconst cp = require('child_process')\ncp.execSync('git status')\nconsole.log(`${n} PRs`, 'gh pr "
+    "merge 1 next')\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process')\ncp.execSync('git status')\nthrow new Error(`failed: ${e}`, "
+    "{ cause: 'gh pr merge 1' })\nEOF",
+    "gh pr create --title='gh pr merge fails on forks' --body x",
+    "git commit -m 'Guard: GIT_SSH_COMMAND and gh pr merge are refused'",
+    "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['git', 'status'])\nx = 7 // 2  # half\nprint('gh pr merge "
+    "1 next')\nEOF",
+    "perl -e 'system(\"git status\"); print q(use gh pr merge 1 later)'",
+    "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['git', 'status'])\nsubprocess.run(['say', 'merged (gh pr "
+    "merge 1)'])\nEOF",
+    "python3 -c \"import subprocess as s; s.run(['git', 'log']); cmd = 'see (docs) and then git push'\"",
+    "node - <<'EOF'\nconst cp = require('child_process')\ncp.execSync('git status')\nconsole.log(  // ')'\n  'gh pr "
+    "merge 1 next')\nEOF",
 ]
 PROJECT_RULES = [(r"\bfirebase(-tools)?(@\S+)?\s.*\bdeploy\b", "Sites deploy from CI."),
                  (r"\bterraform\b.*\b(apply|destroy)\b", "DNS applies after merge."),
