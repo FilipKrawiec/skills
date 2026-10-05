@@ -67,7 +67,7 @@ Report longer failure detail only when GREEN cannot be reached, as: root cause (
 - Test a documented range, unit or format at each edge and across its wrap-around (a duration past one hour, a cyclic delta at exactly half the cycle, a multiplier below one).
 - Drive time through the project's fake clock or fake async scheduler; a test that waits on real time is slow and flakes under load.
 - Prove an adapter contract once and run it against every implementation, including a deliberately broken one the contract must reject.
-- A verification gate is code: give each rule one passing and one failing fixture, and match parsed syntax or types rather than one spelling, so an equivalent spelling cannot slip past.
+- A verification gate is code: give each rule one passing and one failing fixture, and each exemption one case just outside it that the gate still rejects. Match parsed syntax or types rather than one spelling, so an equivalent spelling cannot slip past.
 - File each test by what it boots: a test that renders UI belongs with the UI tests even when it checks one value.
 - Exclude integration, system, and acceptance tests from coverage calculations; treat them as verification suites, not coverage sources.
 
