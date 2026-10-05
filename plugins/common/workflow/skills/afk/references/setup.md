@@ -17,7 +17,7 @@ Its presence opts the repository in (the guard hook is inactive elsewhere). List
 | `branchPrefix`, `staleClaimHours` | no | Defaults `agent/afk-`, `3`. |
 | `agentReview`, `reviewRounds` | no | `true` when the `agent-review` skill reviews open PRs. A PR that matches no owner rule auto-merges on green checks either way; the reviewer holds one with blocking findings (`lanes.py hold`) and adds `review:owner` to the rest. `reviewRounds` caps reviews per PR. Defaults `false`, `3`. |
 | `ownerPaths`, `ownerLabels`, `ownerLines` | no | The project's owner rules beyond `protected`: regexes of paths whose change the owner sees (security rules, stored data shapes, migrations), labels that ship or deploy on merge, and the most changed lines beyond docs and tests (default 800). `lanes.py triage` applies the whole closed list in the `agent-review` skill's owner rules reference. |
-| `guard` | no | Extra caught commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. Each pattern is searched in every command a call runs, its quoted prose and read-only tools (`cat`, `grep`, `echo`...) left out, so mentioning a command never trips it. |
+| `guard` | no | Extra caught commands: `[{"pattern": "<regex>", "reason": "<why>"}]`, e.g. deploy commands. Each pattern is searched in every command a call runs, its quoted prose and tools that run none of their arguments (`cat`, `grep`, `echo`...) left out, so mentioning a command never trips it. |
 
 Minimal example:
 

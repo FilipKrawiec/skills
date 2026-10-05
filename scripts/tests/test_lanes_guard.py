@@ -131,7 +131,7 @@ class GuardRuleTests(unittest.TestCase):
     def test_reading_and_writing_about_a_command_is_allowed(self) -> None:
         for command in READS_AND_WRITING:
             self.assertIsNone(guard.refusal(command, True, PROJECT_RULES, cwd="/repo",
-                                            main_checkout=lambda path: path == "/repo"), command)
+                                            is_main_checkout=lambda path: path == "/repo"), command)
         self.assertIsNotNone(guard.refusal("npx firebase-tools deploy --only hosting", True, PROJECT_RULES))
         self.assertIsNotNone(guard.refusal("terraform -chdir=infra apply", True, PROJECT_RULES))
         self.assertIsNotNone(guard.refusal("dart run tool/kill_dev.dart", True, PROJECT_RULES))
@@ -163,13 +163,13 @@ class GuardRuleTests(unittest.TestCase):
 
         for command in ("git switch -c claude/5-x origin/main", "git switch main", "git checkout -b x",
                         "git checkout main", "cd /repo && git switch -c x", "git -C /repo switch main"):
-            self.assertEqual(guard.refusal(command, False, cwd="/repo", main_checkout=main), guard.OWN_WORKTREE,
+            self.assertEqual(guard.refusal(command, False, cwd="/repo", is_main_checkout=main), guard.OWN_WORKTREE,
                              command)
             self.assertIsNone(guard.refusal(command.replace("C /repo", "C /wt").replace("cd /repo", "cd /wt"),
-                                            False, cwd="/wt", main_checkout=main), command)
+                                            False, cwd="/wt", is_main_checkout=main), command)
         for command in ("git checkout -- lib/a.dart", "git worktree add .worktrees/5-x -b x origin/main",
                         "git status", "git restore lib/a.dart"):
-            self.assertIsNone(guard.refusal(command, False, cwd="/repo", main_checkout=main), command)
+            self.assertIsNone(guard.refusal(command, False, cwd="/repo", is_main_checkout=main), command)
 
     def test_a_push_is_judged_by_its_own_command(self) -> None:
         for command in ("git push -u origin agent/afk-5-x && gh pr create --base main",

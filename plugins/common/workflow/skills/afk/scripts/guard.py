@@ -77,24 +77,30 @@ class Script:
 
 def parse(text):
     """The Script `text` runs; raises Unparsable."""
-    script, _ = _parse(text, 0, None)
-    return script
+    return _Parser(text).run(0)[0]
 
 
-def _backquoted(text, i, script):
-    """Parse the backquoted command opening at `i`; return the index after it."""
-    end, inner = i + 1, ''
-    while end < len(text) and text[end] != '`':
-        if text[end] == '\\' and end + 1 < len(text):
-            inner += text[end + 1] if text[end + 1] in '`$\\' else text[end:end + 2]
-            end += 2
-        else:
-            inner += text[end]
-            end += 1
-    if end >= len(text):
-        raise Unparsable('unbalanced `')
-    script.substituted.append(parse(inner))
-    return end + 1
+def _substitution(text, i, script):
+    """At a `$(` or backquote opening at `i`, parse the command it runs into `script`; return
+    the index after it, or None when no substitution opens there."""
+    if text.startswith('$(', i):
+        inner, end = _Parser(text, ')').run(i + 2)
+    elif text.startswith('`', i):
+        end, body = i + 1, ''
+        while end < len(text) and text[end] != '`':
+            if text[end] == '\\' and end + 1 < len(text):
+                body += text[end + 1] if text[end + 1] in '`$\\' else text[end:end + 2]
+                end += 2
+            else:
+                body += text[end]
+                end += 1
+        if end >= len(text):
+            raise Unparsable('unbalanced `')
+        inner, end = parse(body), end + 1
+    else:
+        return None
+    script.substituted.append(inner)
+    return end
 
 
 def _expansions(body, script):
@@ -103,154 +109,159 @@ def _expansions(body, script):
     while i < len(body):
         if body[i] == '\\':
             i += 2
-        elif body.startswith('$(', i):
-            inner, i = _parse(body, i + 2, ')')
-            script.substituted.append(inner)
-        elif body[i] == '`':
-            i = _backquoted(body, i, script)
         else:
-            i += 1
+            i = _substitution(body, i, script) or i + 1
 
 
-def _parse(s, i, stop):
-    """Parse from `i` up to the unmatched `stop` (`)` for `$(`); return (Script, index after it).
+class _Parser:
+    """Parses up to an unmatched `stop` (`)` for `$(`). Quotes are removed, heredoc bodies and
+    here-strings become a command's stdin, and `(`/`)` stay as commands so a `cd` inside a
+    subshell ends there."""
 
-    Quotes are removed, heredoc bodies and here-strings become a command's stdin,
-    and `(`/`)` stay as commands so a `cd` inside a subshell ends there."""
-    script, heredocs = Script(), []
-    state = {'cmd': Command(), 'word': None, 'raw': '', 'redirect': None}
-    depth = 0
+    def __init__(self, text, stop=None):
+        self.s, self.stop = text, stop
+        self.script, self.heredocs, self.depth = Script(), [], 0
+        self.command, self.word, self.raw, self.redirect = Command(), None, '', None
 
-    def add(text, raw):
-        state['word'] = (state['word'] or '') + text
-        state['raw'] += raw
+    def add(self, text, raw):
+        self.word = (self.word or '') + text
+        self.raw += raw
 
-    def end_word():
-        word, redirect = state['word'], state['redirect']
+    def end_word(self):
+        word, redirect, command = self.word, self.redirect, self.command
         if word is None:
             return
         if redirect in ('<<', '<<-'):
-            heredocs.append((state['cmd'], word, redirect == '<<-', not re.search('[\'"\\\\]', state['raw'])))
+            self.heredocs.append((command, word, redirect == '<<-', not re.search('[\'"\\\\]', self.raw)))
         elif redirect == '<<<':
-            state['cmd'].stdin = word
+            command.stdin = word
         elif redirect is None:
-            state['cmd'].argv.append(word)
+            command.argv.append(word)
         elif redirect in ('>', '>|'):
-            state['cmd'].writes = word
-        state['word'], state['raw'], state['redirect'] = None, '', None
+            command.writes = word
+        self.word, self.raw, self.redirect = None, '', None
 
-    def end_command(piped=False):
-        end_word()
-        if state['cmd'].argv or state['cmd'].stdin is not None:
-            script.commands.append(state['cmd'])
-        state['cmd'] = Command()
-        state['cmd'].piped = piped
+    def end_command(self, piped=False):
+        self.end_word()
+        if self.command.argv or self.command.stdin is not None:
+            self.script.commands.append(self.command)
+        self.command = Command()
+        self.command.piped = piped
 
-    while i < len(s):
-        c = s[i]
-        if c in ' \t\r':
-            end_word()
-            i += 1
-        elif c == '\n':
-            end_command()
-            i += 1
-            for owner, delimiter, tabs, expands in heredocs:
-                lines = []
-                while i < len(s):
-                    end = s.find('\n', i)
-                    line = s[i:] if end < 0 else s[i:end]
-                    i = len(s) if end < 0 else end + 1
-                    if (line.lstrip('\t') if tabs else line) == delimiter:
-                        break
-                    lines.append(line)
-                owner.stdin = '\n'.join(lines)
-                if expands:
-                    _expansions(owner.stdin, script)
-            heredocs.clear()
-        elif c == '#' and state['word'] is None:
-            end = s.find('\n', i)
-            i = len(s) if end < 0 else end
-        elif c == '\\':
-            if s.startswith('\\\n', i):
+    def heredoc_bodies(self, i):
+        """Read the bodies of the line's heredocs, starting at `i`; return the index after them."""
+        s = self.s
+        for owner, delimiter, tabs, expands in self.heredocs:
+            lines = []
+            while i < len(s):
+                end = s.find('\n', i)
+                line = s[i:] if end < 0 else s[i:end]
+                i = len(s) if end < 0 else end + 1
+                if (line.lstrip('\t') if tabs else line) == delimiter:
+                    break
+                lines.append(line)
+            owner.stdin = '\n'.join(lines)
+            if expands:
+                _expansions(owner.stdin, self.script)
+        self.heredocs.clear()
+        return i
+
+    def double_quoted(self, i):
+        """Add the double-quoted word opening at `i`; return the index after it."""
+        s, j, text = self.s, i + 1, ''
+        while j < len(s) and s[j] != '"':
+            after = _substitution(s, j, self.script)
+            if after is not None:
+                j, text = after, text + SUBST
+            elif s[j] == '\\' and j + 1 < len(s):
+                text += s[j + 1] if s[j + 1] in '$`"\\\n' else s[j:j + 2]
+                j += 2
+            else:
+                text += s[j]
+                j += 1
+        if j >= len(s):
+            raise Unparsable('unbalanced "')
+        self.add(text, s[i:j + 1])
+        return j + 1
+
+    def ansi_quoted(self, i):
+        """Add the `$'...'` word opening at `i`; return the index after it."""
+        s, end = self.s, i + 2
+        while end < len(s) and s[end] != "'":
+            end += 2 if s[end] == '\\' else 1
+        if end >= len(s):
+            raise Unparsable("unbalanced $'")
+        try:
+            body = s[i + 2:end].encode('latin-1', 'backslashreplace').decode('unicode_escape')
+        except UnicodeDecodeError:
+            body = s[i + 2:end]
+        self.add(body, s[i:end + 1])
+        return end + 1
+
+    def redirection(self, i):
+        """Start the redirect at `i`; return the index after its operator."""
+        if self.word is not None and self.word.isdigit() and self.redirect is None:
+            self.word, self.raw = None, ''  # the fd number of `2>&1`
+        self.end_word()
+        op = re.match(r'<<<|<<-|<<|&>>|&>|>>|>&|<&|>\||<>|>|<', self.s[i:]).group(0)
+        if op in ('>&', '<&'):
+            fd = re.match(r'[0-9-]+', self.s[i + 2:])
+            return i + 2 + (fd.end() if fd else 0)
+        self.redirect = op if op in ('<<', '<<-', '<<<', '>', '>|') else 'target'
+        return i + len(op)
+
+    def run(self, i):
+        """Parse from `i`; return (Script, index after the stop)."""
+        s = self.s
+        while i < len(s):
+            c = s[i]
+            if c in ' \t\r':
+                self.end_word()
+                i += 1
+            elif c == '\n':
+                self.end_command()
+                i = self.heredoc_bodies(i + 1)
+            elif c == '#' and self.word is None:
+                end = s.find('\n', i)
+                i = len(s) if end < 0 else end
+            elif c == '\\':
+                if not s.startswith('\\\n', i):
+                    self.add(s[i + 1:i + 2], s[i:i + 2])
                 i += 2
-                continue
-            add(s[i + 1:i + 2], s[i:i + 2])
-            i += 2
-        elif c == "'":
-            end = s.find("'", i + 1)
-            if end < 0:
-                raise Unparsable("unbalanced '")
-            add(s[i + 1:end], s[i:end + 1])
-            i = end + 1
-        elif s.startswith("$'", i):
-            end = i + 2
-            while end < len(s) and s[end] != "'":
-                end += 2 if s[end] == '\\' else 1
-            if end >= len(s):
-                raise Unparsable("unbalanced $'")
-            try:
-                body = s[i + 2:end].encode('latin-1', 'backslashreplace').decode('unicode_escape')
-            except UnicodeDecodeError:
-                body = s[i + 2:end]
-            add(body, s[i:end + 1])
-            i = end + 1
-        elif c == '"':
-            j, text = i + 1, ''
-            while j < len(s) and s[j] != '"':
-                if s[j] == '\\' and j + 1 < len(s):
-                    text += s[j + 1] if s[j + 1] in '$`"\\\n' else s[j:j + 2]
-                    j += 2
-                elif s.startswith('$(', j):
-                    inner, j = _parse(s, j + 2, ')')
-                    script.substituted.append(inner)
-                    text += SUBST
-                elif s[j] == '`':
-                    j = _backquoted(s, j, script)
-                    text += SUBST
-                else:
-                    text += s[j]
-                    j += 1
-            if j >= len(s):
-                raise Unparsable('unbalanced "')
-            add(text, s[i:j + 1])
-            i = j + 1
-        elif s.startswith('$(', i):
-            inner, i = _parse(s, i + 2, ')')
-            script.substituted.append(inner)
-            add(SUBST, SUBST)
-        elif c == '`':
-            i = _backquoted(s, i, script)
-            add(SUBST, SUBST)
-        elif c in '<>' or s.startswith('&>', i):
-            if state['word'] is not None and state['word'].isdigit() and state['redirect'] is None:
-                state['word'], state['raw'] = None, ''  # the fd number of `2>&1`
-            end_word()
-            op = re.match(r'<<<|<<-|<<|&>>|&>|>>|>&|<&|>\||<>|>|<', s[i:]).group(0)
-            if op in ('>&', '<&'):
-                fd = re.match(r'[0-9-]+', s[i + 2:])
-                i += 2 + (fd.end() if fd else 0)
-                continue
-            state['redirect'] = op if op in ('<<', '<<-', '<<<', '>', '>|') else 'target'
-            i += len(op)
-        elif c in ';&|':
-            op = re.match(r';;|&&|\|\||\|&|[;&|]', s[i:]).group(0)
-            end_command(piped=op in ('|', '|&'))
-            i += len(op)
-        elif c == ')' and stop == ')' and depth == 0:
-            end_command()
-            return script, i + 1
-        elif c in '()':
-            end_command()
-            depth += 1 if c == '(' else -1
-            script.commands.append(Command([c]))
-            i += 1
-        else:
-            add(c, c)
-            i += 1
-    if stop:
-        raise Unparsable('unbalanced $(')
-    end_command()
-    return script, i
+            elif c == "'":
+                end = s.find("'", i + 1)
+                if end < 0:
+                    raise Unparsable("unbalanced '")
+                self.add(s[i + 1:end], s[i:end + 1])
+                i = end + 1
+            elif s.startswith("$'", i):
+                i = self.ansi_quoted(i)
+            elif c == '"':
+                i = self.double_quoted(i)
+            elif s.startswith('$(', i) or c == '`':
+                i = _substitution(s, i, self.script)
+                self.add(SUBST, SUBST)
+            elif c in '<>' or s.startswith('&>', i):
+                i = self.redirection(i)
+            elif c in ';&|':
+                op = re.match(r';;|&&|\|\||\|&|[;&|]', s[i:]).group(0)
+                self.end_command(piped=op in ('|', '|&'))
+                i += len(op)
+            elif c == ')' and self.stop == ')' and self.depth == 0:
+                self.end_command()
+                return self.script, i + 1
+            elif c in '()':
+                self.end_command()
+                self.depth += 1 if c == '(' else -1
+                self.script.commands.append(Command([c]))
+                i += 1
+            else:
+                self.add(c, c)
+                i += 1
+        if self.stop:
+            raise Unparsable('unbalanced $(')
+        self.end_command()
+        return self.script, i
 
 
 # ---------------------------------------------------------------- command rules
@@ -258,7 +269,10 @@ def _parse(s, i, stop):
 NAME = r'[A-Za-z_][A-Za-z0-9_]*'
 ASSIGNMENT = re.compile(rf'^({NAME})=(.*)$', re.S)
 KEYWORDS = {'!', '{', '}', 'then', 'else', 'elif', 'do', 'time', 'if', 'while', 'until'}
-WRAPPERS = {'command', 'builtin', 'exec', 'nohup', 'noglob', 'caffeinate'}
+# Commands that run their arguments as a command, each with its short options that take a value.
+WRAPPERS = {'command': '', 'builtin': '', 'exec': '-a', 'nohup': '', 'noglob': '', 'caffeinate': '-tw',
+            'env': '-uCS', 'sudo': '-ugCDhprTU', 'nice': '-n', 'timeout': '-sk', 'xargs': '-IEdLnPs',
+            'watch': '-nd', 'stdbuf': '-ioe'}
 DECLARES = {'export', 'local', 'readonly', 'declare', 'typeset'}
 SHELLS = {'bash', 'sh', 'zsh', 'dash', 'ksh', 'fish'}
 INTERPRETERS = re.compile(r'^(python[0-9.]*|node|nodejs|deno|bun|ruby|perl|php|osascript)$')
@@ -269,7 +283,8 @@ SPAWNS = {
     'osascript': r'\bdo\s+shell\s+script\b',
     'other': r'\b(system|exec|spawn|popen|IO\.popen|Open3\.\w+|qx|proc_open|shell_exec|passthru)\b|`',
 }
-READ_ONLY = {'cat', 'head', 'tail', 'less', 'more', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'wc', 'ls',
+# Commands that run none of their arguments; `tee` writes files, but a file it writes runs nothing.
+RUNS_NOTHING = {'cat', 'head', 'tail', 'less', 'more', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'wc', 'ls',
              'diff', 'cmp', 'file', 'stat', 'echo', 'printf', 'jq', 'yq', 'sort', 'uniq', 'cut', 'tr', 'column',
              'nl', 'tee', 'true', 'false', 'test', '[', 'basename', 'dirname', 'realpath', 'readlink', 'which',
              'type', 'man', 'pwd', 'base64', 'shasum', 'md5'}
@@ -280,27 +295,33 @@ GRAPHQL_SECURITY = re.compile(r'\b((create|update|delete)(BranchProtectionRule|R
 GRAPHQL_APPROVE = re.compile(r'\b(addPullRequestReview|submitPullRequestReview)\b')
 GRAPHQL_PUSH = re.compile(r'\b(createCommitOnBranch|updateRefs?)\b')
 REPO = r'repos/[^/\s]+/[^/\s]+'
+MAX_NESTING = 8  # shells, evals and substitutions within one another; deeper is unreadable
+
+# (group, actions, reason): the gh commands caught whatever their arguments.
+GH_RULES = [
+    ('release', {'create', 'edit', 'delete', 'upload', 'delete-asset'}, RELEASE),
+    ('secret', {'set', 'delete', 'remove'}, SECRETS),
+    ('variable', {'set', 'delete', 'remove'}, SECRETS),
+    ('repo', {'edit', 'delete', 'rename', 'archive', 'unarchive'}, SETTINGS),
+    ('workflow', {'run', 'enable', 'disable'}, DISPATCH),
+    ('alias', {'set', 'import'}, ALIAS),
+]
 
 
 def unwrap(argv):
     """argv without leading variable assignments, keywords and pass-through wrappers."""
     argv = list(argv)
     while argv:
-        head = argv[0]
-        if ASSIGNMENT.match(head) or head in KEYWORDS or head in WRAPPERS:
-            argv.pop(0)
-        elif head in ('env', 'sudo', 'nice', 'timeout', 'xargs', 'watch', 'stdbuf'):
-            argv.pop(0)
-            takes_value = {'env': '-uCS', 'sudo': '-ugCDhprTU', 'nice': '-n', 'timeout': '-sk', 'xargs': '-IEdLnPs',
-                           'watch': '-nd', 'stdbuf': '-ioe'}[head]
+        head = argv.pop(0)
+        if head in WRAPPERS:
             while argv and (argv[0].startswith('-') or ASSIGNMENT.match(argv[0])):
                 flag = argv.pop(0)
-                if len(flag) == 2 and flag[1] in takes_value and argv:
+                if len(flag) == 2 and flag[1] in WRAPPERS[head] and argv:
                     argv.pop(0)
             if head == 'timeout' and argv:
                 argv.pop(0)  # the duration
-        else:
-            break
+        elif not (ASSIGNMENT.match(head) or head in KEYWORDS):
+            return [head] + argv
     return argv
 
 
@@ -353,12 +374,12 @@ def current_branch(directory):
 class Judge:
     """Collects the reasons the calls in a shell command are caught."""
 
-    def __init__(self, unattended=True, extra=(), base='main', main_checkout=None):
+    def __init__(self, unattended=True, extra=(), base='main', is_main_checkout=None):
         self.unattended, self.extra, self.base = unattended, list(extra), base
-        self.is_main = main_checkout or (lambda path: False)
+        self.is_main = is_main_checkout or (lambda path: False)
         self.findings, self.variables, self.written = [], {}, {}
 
-    def find(self, reason, afk_only=False):
+    def catch(self, reason, afk_only=False):
         if not afk_only or self.unattended:
             self.findings.append(reason)
 
@@ -370,8 +391,8 @@ class Judge:
         return re.sub(rf'\$(?:\{{({NAME})\}}|({NAME}))', value, word)
 
     def script(self, script, cwd, nested=0):
-        if nested > 8:
-            return self.find(UNREADABLE)
+        if nested > MAX_NESTING:
+            return self.catch(UNREADABLE)
         for inner in script.substituted:
             self.script(inner, cwd, nested + 1)
         stack = []
@@ -407,7 +428,7 @@ class Judge:
             if '$' in target:
                 return None
             return str(Path(cwd or '.').joinpath(os.path.expanduser(target)).resolve())
-        if name in READ_ONLY:
+        if name in RUNS_NOTHING:
             return cwd
         if name in SHELLS or name == 'eval':
             self.shell(name, args, command, cwd, nested)
@@ -439,7 +460,7 @@ class Judge:
     def project_rules(self, text):
         for pattern, reason in self.extra:
             if re.search(pattern, text):
-                self.find(reason)
+                self.catch(reason)
 
     def shell(self, name, args, command, cwd, nested):
         if name == 'eval':
@@ -447,14 +468,14 @@ class Judge:
         for i, arg in enumerate(args):
             if re.fullmatch(r'-[a-zA-Z]*c[a-zA-Z]*', arg):
                 if i + 1 >= len(args):
-                    return self.find(UNREADABLE)
+                    return self.catch(UNREADABLE)
                 return self.text(args[i + 1], cwd, nested + 1)
         if positionals(args, {'-o', '+o', '-O', '+O'}):
             return None  # runs a script file of the project's
         if command.stdin is not None:
             return self.text(command.stdin, cwd, nested + 1)
         if command.piped:
-            self.find(UNREADABLE)
+            self.catch(UNREADABLE)
 
     def interpreter(self, name, args, command, cwd):
         code = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ('-c', '-e', '--eval', '-E')), None)
@@ -465,7 +486,7 @@ class Judge:
             code = command.stdin
         if code is None:
             if command.piped and not files:
-                self.find(UNREADABLE)
+                self.catch(UNREADABLE)
             return
         language = next((k for k in ('python', 'node', 'osascript') if name.startswith(k)),
                         'node' if name in ('nodejs', 'deno', 'bun') else 'other')
@@ -492,9 +513,10 @@ class Judge:
         if not start:
             return
         # Only what the call surely runs counts: a fragment the guard misreads is not a finding.
+        # Judged at the deepest nesting: a shell this fragment seems to start is not read further.
         judge = Judge(self.unattended, (), self.base, self.is_main)
         try:
-            judge.text(line[start.start():], cwd, 8)
+            judge.text(line[start.start():], cwd, MAX_NESTING)
         except Unparsable:
             return
         self.findings += [reason for reason in judge.findings if reason not in UNSURE]
@@ -513,28 +535,21 @@ class Judge:
         args = flat
         group, action, rest = (args + ['', ''])[0], (args + ['', ''])[1], args[2:]
         if group == 'pr' and action == 'merge':
-            return self.find(MERGE_IS_OWNERS)  # even with --help: setup.md's preflight probes the guard with it
+            return self.catch(MERGE_IS_OWNERS)  # even with --help: setup.md's preflight probes the guard with it
         if not args or '--help' in args or '-h' in args or group == 'help':
             return
+        for rule_group, actions, reason in GH_RULES:
+            if group == rule_group and action in actions:
+                self.catch(reason)
         if group == 'pr' and action == 'review' and ('--approve' in rest or '-a' in rest):
-            self.find(MERGE_IS_OWNERS)
-        elif group == 'release' and action in ('create', 'edit', 'delete', 'upload', 'delete-asset'):
-            self.find(RELEASE)
-        elif group in ('secret', 'variable') and action in ('set', 'delete', 'remove'):
-            self.find(SECRETS)
-        elif group == 'repo' and action in ('edit', 'delete', 'rename', 'archive', 'unarchive'):
-            self.find(SETTINGS)
+            self.catch(MERGE_IS_OWNERS)
         elif group == 'repo' and action == 'deploy-key' and rest[:1] in (['add'], ['delete']):
-            self.find(SECURITY)
-        elif group == 'workflow' and action in ('run', 'enable', 'disable'):
-            self.find(DISPATCH)
-        elif group == 'alias' and action in ('set', 'import'):
-            self.find(ALIAS)
+            self.catch(SECURITY)
         elif group == 'api':
             self.gh_api(args[1:], cwd)
         if group in ('issue', 'pr') and action in ('create', 'edit'):
             if labels_add_afk(option_values(rest, ('--add-label', '--label', '-l'))):
-                self.find(UNATTENDED_AFK, afk_only=True)
+                self.catch(UNATTENDED_AFK, afk_only=True)
 
     def gh_api(self, args, cwd):
         valued = {'-X', '--method', '-f', '--raw-field', '-F', '--field', '-H', '--header', '--input', '-q', '--jq',
@@ -565,29 +580,29 @@ class Judge:
         ]
         for pattern, reason in rules:
             if reason and re.search(pattern, path):
-                self.find(reason)
+                self.catch(reason)
         if re.search(rf'^{REPO}/contents/', path):
             branches = [f.split('=', 1)[1] for f in fields if f.startswith('branch=')]
             if not branches or self.base in branches or any('$' in b for b in branches):
-                self.find(push_to(self.base))
+                self.catch(push_to(self.base))
         if re.search(rf'^{REPO}/issues(/[^/]+(/labels)?)?$', path) and 'label' in body:
             labels = [f.split('=', 1)[1] for f in fields if re.match(r'labels(\[\])?=', f)]
             if labels_add_afk(labels) or 'lane:afk' in body or ('$' in body and 'labels' in body):
-                self.find(UNATTENDED_AFK, afk_only=True)
+                self.catch(UNATTENDED_AFK, afk_only=True)
 
     def graphql(self, fields, inputs, cwd):
         queries = [f.split('=', 1)[1] for f in fields if f.startswith('query=')]
         text = [self.read_file(q[1:], cwd) if q.startswith('@') else q for q in queries]
         text += [None if name == '-' else self.read_file(name, cwd) for name in inputs]
         if not text or any(t is None or SUBST in t or re.fullmatch(r'\s*\$\{?\w+\}?\s*', t) for t in text):
-            return self.find(UNKNOWN_QUERY)
+            return self.catch(UNKNOWN_QUERY)
         query, variables = '\n'.join(text), ' '.join(fields)
         if GRAPHQL_OWNER.search(query) or (GRAPHQL_APPROVE.search(query) and 'APPROVE' in query + variables):
-            self.find(MERGE_IS_OWNERS)
+            self.catch(MERGE_IS_OWNERS)
         if GRAPHQL_SECURITY.search(query):
-            self.find(SECURITY)
+            self.catch(SECURITY)
         if GRAPHQL_PUSH.search(query) and re.search(rf'(^|[\s"=:/]){re.escape(self.base)}\b', query + ' ' + variables):
-            self.find(push_to(self.base))
+            self.catch(push_to(self.base))
 
     # ------------------------------------------------------------------ git
 
@@ -606,11 +621,11 @@ class Judge:
             self.git_push(rest, directory)
         elif sub in ('switch', 'checkout') and directory and self.is_main(directory):
             if not (sub == 'checkout' and ('--' in rest or '-p' in rest or '--patch' in rest)):
-                self.find(OWN_WORKTREE)
+                self.catch(OWN_WORKTREE)
 
     def git_push(self, args, directory):
         if '--all' in args or '--mirror' in args:
-            return self.find(push_to(self.base))
+            return self.catch(push_to(self.base))
         valued = {'--repo', '-o', '--push-option', '--receive-pack', '--exec'}
         targets = positionals(args, valued)[1:] or ['HEAD']
         for refspec in targets:
@@ -618,14 +633,14 @@ class Judge:
             if destination == 'HEAD':
                 destination = current_branch(directory) if directory else None
             if destination is None or '$' in destination:
-                self.find(UNREADABLE)
+                self.catch(UNREADABLE)
             elif destination.removeprefix('refs/heads/') == self.base:
-                self.find(push_to(self.base))
+                self.catch(push_to(self.base))
 
 
-def refusal(command, unattended=True, extra=(), base='main', cwd=None, main_checkout=None):
+def refusal(command, unattended=True, extra=(), base='main', cwd=None, is_main_checkout=None):
     """The first reason a shell command is caught, or None."""
-    judge = Judge(unattended, extra, base, main_checkout)
+    judge = Judge(unattended, extra, base, is_main_checkout)
     try:
         judge.text(command, cwd or os.getcwd())
     except (Unparsable, IndexError, RecursionError) as error:
