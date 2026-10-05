@@ -35,7 +35,7 @@ Ignore cancelled runs. Keep each run's `url`: phase 3 links the head's run from 
 When an AFK merge broke the base branch and `gh pr list --head <branchPrefix>revert-<short-sha>` shows no open PR:
 
 1. `git worktree add <root>/.worktrees/afk-revert-<short-sha> -b <branchPrefix>revert-<short-sha> origin/<base>` (`<root>` as in board.md); in it run `git revert --no-edit <sha>`, then pass the project's full verification gate (its own command, e.g. `python3 scripts/project-verify.py verify` or `just verify`).
-2. Push and open a PR titled `revert: <subject>` whose body names the failing checks.
+2. Push and open a PR titled `revert: <subject>` whose body names the failing checks, then report it through board.md's Merge gate.
 3. Reopen the issue the reverted PR closed (`gh issue reopen`) and park it with the failing checks, the revert PR and a recommendation for the retry: it is claimed again once the owner re-applies `lane:afk`.
 
 Any other red base branch belongs to the owner: report the failing checks and the culprit or range. A fix forward is new work: name it as a follow-up for the owner.

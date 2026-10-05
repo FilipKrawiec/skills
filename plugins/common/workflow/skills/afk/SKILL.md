@@ -11,7 +11,7 @@ One run carries the delivery cycle while the owner is away. It checks what alrea
 
 Leave the checkout a run starts in exactly as it is; it may hold the owner's work. Every build and fix happens in a worktree. Run the commands this skill, the skills it invokes and [board.md](../../references/board.md) name; when their output leaves a question open, name it in the run's output, since an improvised command can raise a permission prompt that stops a run nobody is watching.
 
-`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). It holds only the gates: `next`, `scope`, `triage`, `merge` and `hold`. Claim, park, release, tidy and the few card moves the board doesn't make itself are the `gh` and `git` steps in [board.md](../../references/board.md).
+`LANES` below means `python3 <this skill's directory>/scripts/lanes.py` (or the project's wrapper, e.g. `just lanes`). It holds only the gates: `next`, `scope`, `triage`, `merge`, `hold`, and `blockers` for board.md's Merge gate. Claim, park, release, tidy and the few card moves the board doesn't make itself are the `gh` and `git` steps in [board.md](../../references/board.md).
 
 Read [setup.md](references/setup.md) when the repository has no `.github/lanes.json`, or when scheduling unattended runs.
 

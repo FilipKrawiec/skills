@@ -1,7 +1,7 @@
 ---
 name: vcs
 description: Use when committing, branching, rebasing, pushing or moving files with Git.
-allowed-tools: Bash(git:*) Read
+allowed-tools: Bash(git:*,gh:*,python3:*) Read
 ---
 
 # Version Control System (VCS) Workflow
@@ -23,7 +23,7 @@ Follow these steps for all version control and git operations to maintain a clea
 
 ### Phase 3: Conventional Commit Creation
 1. Write an atomic Conventional Commit: `<type>[(<scope>)][!]: <imperative description>`, one per green slice; pair `!` with a `BREAKING CHANGE:` footer; reserve `wip:` for local commits squashed before the PR opens.
-2. When addressing review feedback on an open PR, add a commit; the squash merge lands the PR as one commit. Reply on each review thread with the commit that fixes it, and resolve an agent-written thread once the fix is verified at the head; a person's thread waits for them or their word. A base branch that requires resolved conversations stays `BLOCKED`, even with green checks, while any thread is open.
+2. When addressing review feedback on an open PR, add a commit; the squash merge lands the PR as one commit. Reply on each review thread with the commit that fixes it, and resolve an agent-written thread once the fix is verified at the head; a person's thread waits for them or their word. A base branch that requires resolved conversations stays `BLOCKED`, even with green checks, while any thread is open; board.md's Merge gate finds them at hand-off.
 *Exit Gate*: Commit created with clean git log entry.
 *Output Envelope*:
 ```text
@@ -43,3 +43,4 @@ Follow these steps for all version control and git operations to maintain a clea
 
 - Agents commit, push verified task branches, and open or update PRs as normal delivery work.
 - The owner retains merge authority: merging, approving and force-pushing a protected or default branch happen only on the owner's explicit word (the `afk` skill's `lanes.py merge` gate is that word for every PR that matches no owner rule: board.md's Open PR step runs it, so such a PR auto-merges on green checks).
+- Before reporting a PR ready, handing it to the owner to merge, switching on auto-merge or merging it, pass board.md's Merge gate: run the `afk` skill's `lanes.py blockers <pr>`, answer and resolve each agent-written thread the head fixes, fix the rest, and name each person's thread to the owner. A PR is ready only when that command exits 0 and prints nothing.
