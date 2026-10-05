@@ -5,6 +5,7 @@
 - Runner by package type: pure Dart packages (no Flutter SDK dependency) run `dart test`; every test inside a Flutter package, including pure unit tests, runs `flutter test`. Prefer the project's wrapper command when one exists.
 - Assertions: `package:test/expect.dart` matchers (`expect(actual, equals(expected))`, `isA<T>()`).
 - State Management & Routing: use the override and test hooks of the state-management and router packages the project already has; stub application use cases at the presentation boundary.
+- Mutation: the `mutation_test` package.
 - Mocks & Fakes: In-memory fake ports (e.g. `MemoryUsers implements Users`) preferred over mock packages (Chicago-style state verification).
 - Integration: backend SDK and database adapters are integration-suite territory (local emulator or real local database); unit and widget suites use in-memory adapters of the same port.
 - Time: production code reads `clock.now()` (`package:clock`) so `testWidgets` fake time controls it; `DateTime.now()` makes timer-based tests flaky under load. Plain `test` cases that need time use `fakeAsync` (`package:fake_async`) instead of awaiting a real `Future.delayed`.

@@ -6,7 +6,7 @@ A diff review sees one change; these smells grow across many. When the review co
 
 | Smell | Signal to search for | Refactoring |
 | --- | --- | --- |
-| Repeated conditional | One enum, type tag or string set matched (`switch`, `case X.`, `== X.`) in several files of the same layer to vary the same behaviour; count the files per type and layer | Move the varying behaviour onto the type: enum member, sealed-class method, interface implemented by each variant (*Replace Conditional with Polymorphism*). An outer layer's mapping of a domain type becomes one mapper in that layer; exhaustive matching on sealed outcome types stays |
+| Repeated conditional | One enum, type tag or string set matched (`switch`, `case X.`, `== X.`) in several files of the same layer to vary the same behaviour; count the files per type and layer | Move the varying behaviour onto the type: enum member, sealed-class method, interface or mixin each variant takes (*Replace Conditional with Polymorphism*), with the exemptions in the review skill's A.5 |
 | Selector property bag | A state class with parallel fields per variant (`penColor`, `highlighterColor`) and getters that pick one by the active variant | Hold the variants as one type and expose the active one (`activeBrush`); the picking happens once |
 | Stringly typed concept | The same literal set (`'minor'`, `'dorian'`) or the same parsing regex in two or more files | *Introduce Value Object* with one parsing entry and the behaviour each caller reimplemented |
 | Parallel registries | Adding one case means editing N lists kept in step (an enum, a lookup map, resource keys, a test table), often guarded by a consistency check | Let one source generate or own the rest: the variant carries its data, or a convention or generator derives the map |
@@ -35,14 +35,14 @@ A diff review sees one change; these smells grow across many. When the review co
 
 | Smell | Signal to search for | Remedy |
 | --- | --- | --- |
-| Coverage test | Test names with "covers", "branches", "coverage", "equality and hash"; assertions only `isNotNull`, `returnsNormally`, or finding the widget just built | Assert the behaviour the covered line serves, or delete the line |
+| Coverage test | Test names with "covers", "branches", "coverage", "equality and hash"; existence-only assertions (not null, does not throw, finds the element just rendered) | Assert the behaviour the covered line serves, or delete the line |
 | Testing the double | A test that constructs and exercises a fake or stub defined in the test | Delete it; the fake is proven by the tests that use it |
-| Boilerplate tests | Tests for hand-written `==`, `hashCode`, `copyWith`, `toString` | Use language value equality (records, data classes, generated equality), or reach equality through behaviour (a set deduplicates, an equal state does not notify) |
-| Structure-coupled | Finding or counting layout primitives (`Container`, `Padding`, `Row`), reading animation or style properties of internal widgets, asserting tuning constants | Assert through semantics, keys, visible text, relations between rendered boxes, or the domain value behind the look |
+| Boilerplate tests | Tests for hand-written equality, hash, copy and string-conversion methods | Use language value equality (records, data classes, generated equality), or reach equality through behaviour (a set deduplicates, an equal state does not notify) |
+| Structure-coupled | Finding or counting layout primitives (generic boxes, padding, rows), reading animation or style properties of internal widgets, asserting tuning constants | Assert through semantics, keys, visible text, relations between rendered boxes, or the domain value behind the look |
 | Misfiled level | UI-booting tests in the unit folder; UI tests checking pure logic | Move pumped tests to the UI suite; extract the logic and unit test it |
 | Surviving mutant | Flip one condition or constant in an important function; no test fails | Add the boundary or failure-path case that kills it |
 | Act without assert | No assertion at all, interactions after the last assertion, or a silenced missed-interaction warning | End on an assertion of the outcome; let a missed interaction fail |
-| Documented edge untested | A documented range, unit or format whose ends and wrap-around have no case (hours in a duration, the half-way delta) | A table test at each documented edge |
+| Documented edge untested | A documented range, unit or format whose ends and wrap-around have no case (hours in a duration, a cyclic delta at exactly half the cycle: 6 of 12 semitones) | A table test at each documented edge |
 | Real-time wait | Sleeps or real delays in tests | Fake clock or fake async scheduler |
 | Copied harness | The same setup builder, fake or whole test file repeated across files | One shared helper or fake; delete the copies |
-| Untested or evadable gate | A verification script with no fixture tests, or a text pattern an equivalent spelling slips past (`closeTo(36)` for `36`) | A passing and a failing fixture per rule; match parsed syntax |
+| Untested or evadable gate | A verification script with no fixture tests, or a text pattern an equivalent spelling slips past (a tolerance matcher around the same literal) | A passing and a failing fixture per rule; match parsed syntax |
