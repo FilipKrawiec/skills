@@ -33,6 +33,7 @@ import os
 import re
 import subprocess
 import sys
+from collections import namedtuple
 from pathlib import Path
 
 OWNER_RUNS_IT = 'The owner runs this themselves.'
@@ -362,10 +363,13 @@ WRITES = re.compile(r'\bopen\s*\([^)]*(,\s*|mode\s*=\s*)["\'][^"\']*[wax+]|(?<!s
                     r'\bwrite_?(text|bytes|file)|appendFile|createWriteStream|\bdump\(|'
                     r'\b(shutil|fs|os|FileUtils)\.(copy|move|rename|symlink|cp|mv)|\.(rename|symlink_to)\(|'
                     r'\bFile\.new\(|["\']\s*>|file_put_contents|fputs', re.IGNORECASE)
-# Each downloader's option for the file it writes (`-` is stdout), and curl's for the file the URL names;
-# wget writes the file the URL names without one, in its `-P` directory.
-DOWNLOADS = {'curl': (r'-[a-np-zA-Z]*o(.*)|--output(?:=(.*))?', r'-[a-zA-Z]*O|--remote-name(-all)?'),
-             'wget': (r'-[a-zA-NP-Z]*O(.*)|--output-document(?:=(.*))?', None)}
+# A downloader's options: for the file it writes (`-` is stdout), for the file the URL names, and for the
+# directory that one goes in; and whether it writes the file the URL names unless given a file (wget).
+Downloader = namedtuple('Downloader', 'output remote directory names_by_default')
+DOWNLOADS = {'curl': Downloader(r'-[a-np-zA-Z]*o(.*)|--output(?:=(.*))?', r'-[a-zA-Z]*O|--remote-name(-all)?',
+                                None, False),
+             'wget': Downloader(r'-[a-zA-NP-Z]*O(.*)|--output-document(?:=(.*))?', None,
+                                r'-[a-zA-OQ-Z]*P(.*)|--directory-prefix(?:=(.*))?', True)}
 # A string a program compares is text, not a command line it runs; so is one it edits or prints.
 COMPARES = re.compile(r'\bassert\b|["\']\s+(not\s+)?in\s+\w|\.(startswith|endswith|find|index|count|includes)\(')
 TEXT_USE = re.compile(COMPARES.pattern + r'|\.(replace|write|write_text|sub|split|join)\(|\bprint\b')
@@ -436,6 +440,13 @@ def unwrap(argv):
         elif not (ASSIGNMENT.match(head) or head in KEYWORDS):
             return [head] + argv
     return argv
+
+
+def matched_value(match, args, i, default=''):
+    """The value of the option `match` read at `args[i]`, in a cluster: attached (`-sSom.sh`, `--output=m.sh`)
+    or the next argument."""
+    attached = next((group for group in match.groups() if group), None)
+    return attached or (args[i + 1] if i + 1 < len(args) else default)
 
 
 def option_values(args, names):
@@ -653,20 +664,19 @@ class Judge:
 
     def note_downloads(self, name, args, cwd):
         """A downloaded file is unreadable."""
-        output, remote = DOWNLOADS[name]
-        named, directory = remote is None, ''
+        tool, directory = DOWNLOADS[name], ''
+        named = tool.names_by_default
         for i, arg in enumerate(args):
-            value = re.fullmatch(output, arg, re.DOTALL)
-            if value:
-                path = value.group(1) or value.group(2) or (args[i + 1] if i + 1 < len(args) else '-')
+            if value := re.fullmatch(tool.output, arg, re.DOTALL):
+                path = matched_value(value, args, i, '-')
                 if path != '-':
                     self.written[self.path(path, cwd)] = Written(None)
-                named = named and remote is not None
-            elif remote and re.fullmatch(remote, arg):
+                if tool.names_by_default:
+                    named = False  # `wget -O` writes only its file
+            elif tool.remote and re.fullmatch(tool.remote, arg):
                 named = True
-            elif name == 'wget' and re.fullmatch(r'-P(.*)|--directory-prefix(?:=(.*))?', arg):
-                prefix = re.fullmatch(r'-P(.*)|--directory-prefix(?:=(.*))?', arg)
-                directory = prefix.group(1) or prefix.group(2) or (args[i + 1] if i + 1 < len(args) else '')
+            elif tool.directory and (prefix := re.fullmatch(tool.directory, arg, re.DOTALL)):
+                directory = matched_value(prefix, args, i)
         for arg in args if named else ():
             url = re.fullmatch(r'\w+://[^/]+/(?:.*/)?([^/?#]+)(?:[?#].*)?', arg)
             if url:
@@ -782,7 +792,9 @@ class Judge:
 
     def program(self, name, kind, args, command, cwd):
         """The program an interpreter runs, as a Written; None when it runs none the guard reads."""
+        # `-pe` is node's flag, not `-p` with its code attached, so the whole flag is tried first.
         code_flag = re.compile(CODE_FLAGS[kind])
+        attached = re.compile(rf'(?:{CODE_FLAGS[kind]})=?(.+)', re.DOTALL)  # `-c"..."`, `--eval=...`
         if name in ('deno', 'bun') and args[:1] == ['eval']:
             return Written(args[1] if len(args) > 1 else None)
         if name in ('deno', 'bun') and args[:1] == ['run']:
@@ -791,16 +803,15 @@ class Judge:
         for i, arg in enumerate(args):
             if i in taken or i and args[i - 1] in values:
                 continue
-            attached = re.fullmatch(rf'(?:{CODE_FLAGS[kind]})=?(.+)', arg, re.DOTALL)  # `-c"..."`, `--eval=...`
             if code_flag.fullmatch(arg):
                 code.append(args[i + 1] if i + 1 < len(args) else None)
                 taken.add(i + 1)
-            elif attached:
-                code.append(attached.group(1))
+            elif given := attached.fullmatch(arg):
+                code.append(given.group(1))
             elif arg == '-' or not arg.startswith('-'):
                 break  # the script (`-` for stdin); after code, the program's arguments
-            elif not code and kind == 'python' and (module := re.fullmatch(rf'-{PYTHON_SWITCHES}m(.*)', arg)):
-                module = module.group(1) or (args[i + 1] if i + 1 < len(args) else '')
+            elif kind == 'python' and (module := re.fullmatch(rf'-{PYTHON_SWITCHES}m(.*)', arg)):
+                module = matched_value(module, args, i)  # python stops at its first code, so none came before
                 return self.runnable(module.replace('.', '/') + '.py', cwd)  # installed, unless this call wrote it
             else:
                 continue
@@ -833,10 +844,14 @@ class Judge:
     def string_commands(self, code, cwd, text_use):
         """Judge the gh and git command lines in a program's strings; a statement that only uses its strings
         as `text_use` text runs none."""
-        code = literal(code).replace('\\n', '\n').replace('\\t', ' ')  # a string's lines are lines it writes
-        for statement in re.split(r'\n|;|&&|\|\|', code):
-            if re.search(r'(^|["\'])\s*(gh|git)\b', statement) and not text_use.search(statement):
-                self.command_line(statement, cwd)
+        commands = r'\n|;|&&|\|\|'
+        for statement in re.split(commands, literal(code)):
+            if text_use.search(statement):
+                continue
+            # A string's lines are lines it writes: `'#!/bin/sh\ngh pr merge 1'`.
+            for line in re.split(commands, statement.replace('\\n', '\n').replace('\\t', ' ')):
+                if re.search(r'(^|["\'])\s*(gh|git)\b', line):
+                    self.command_line(line, cwd)
 
     def process_call(self, code, call, cwd):
         """Judge the command line a program's process call could run: the call's own arguments."""
