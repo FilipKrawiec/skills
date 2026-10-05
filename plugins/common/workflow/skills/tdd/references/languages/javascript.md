@@ -4,6 +4,7 @@
 
 - Runner: Vitest for Vite/modern TS projects; Jest when the project already standardizes on it.
 - Assertions: built-in `expect`; add `@testing-library/jest-dom` for DOM matchers.
+- Mutation: StrykerJS.
 - Mocks: `vi.fn`, `vi.spyOn`, and `vi.mock` for Vitest; Jest equivalents in Jest projects.
 - Acceptance: CucumberJS only when Gherkin is a project contract; otherwise keep acceptance tests in the runner.
 

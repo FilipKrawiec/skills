@@ -4,6 +4,7 @@
 
 - Runner: built-in `cargo test`.
 - Assertions: `assert!`, `assert_eq!`, `assert_ne!`; add assertion crates only when the project already uses them.
+- Mutation: `cargo-mutants`.
 - Mocks: prefer hand-written fakes for traits; use `mockall` when interaction verification is clearer than a fake.
 - Acceptance: `cucumber` crate only when Gherkin is a team-facing contract.
 

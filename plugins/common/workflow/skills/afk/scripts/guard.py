@@ -9,6 +9,8 @@ the owner only what an owner rule matches. Each issue works in its own
 worktree: edits to a file in an opted-in project's main checkout, and
 `git switch` or `git checkout` run there, are caught too, as is an edit to
 lanes.json. `lane:afk` may be added only in a session the owner is in.
+`lanes.py merge --owner-approved` (a merge past the owner rules) runs only in
+an attended session in manual permission mode, where the host asks the owner.
 
 Shell commands are parsed, not searched: a rule judges the commands a line
 runs (including `$(...)`, `bash -c`, launchers such as `env` or `npx`, scripts
@@ -55,6 +57,19 @@ OWN_WORKTREE = ('Each issue works in its own worktree; the main checkout keeps i
 CONFIG_FILE = '.github/lanes.json'
 OWNERS_CONFIG = f'{CONFIG_FILE} is the owner\'s: the owner edits it, or approves the edit in a session.'
 UNSURE = (UNREADABLE, UNKNOWN_QUERY)
+# The one form that merges past the owner rules: lanes.py by a literal path (quoted when it holds a space),
+# one PR number as it is, nothing else on the line. Matching the whole command keeps the shell from
+# rewriting anything (a glob, a brace, a second line) between this check and lanes.py's argv.
+APPROVED_FORM = re.compile(r'[ \t]*python3[ \t]+(?:"[^"$`\\\n]*lanes\.py"|\'[^\'\n]*lanes\.py\''
+                           r'|[^\s"\'$`\\;&|<>()*?\[\]{}~]*lanes\.py)'
+                           r'[ \t]+merge[ \t]+([0-9]+)[ \t]+--owner-approved[ \t]*')
+# A command that can hand lanes.py an argument it was given as text.
+RUNS_LANES = re.compile(r'\blanes\b|\bpython|\bxargs\b|\beval\b|\bsh[ \t]+-c\b|\bjust\b', re.I)
+APPROVED_MERGE = ('A merge past the owner rules runs only in a session the owner is in, in manual permission mode, '
+                  'where the host asks them.')
+APPROVAL_FORM = ('The owner\'s approval merges only as `python3 <path>/lanes.py merge <PR> --owner-approved`, alone '
+                 'in its command. To mention the option in a commit or a body, pass the text from a file.')
+ASK_MERGE = 'An owner rule holds {pr}: approve this merge only if you approved {pr} in this session.'
 
 
 def push_to(base):
@@ -1695,6 +1710,35 @@ def project_config(project_dir):
 ASKING_MODES = ('default', 'acceptEdits', 'auto', 'plan')
 
 
+def owner_approval(command):
+    """('ask', '#N') for exactly the form that merges PR N past the owner rules; ('block', why) for a
+    command that can run lanes.py and carries the option any other way; None otherwise.
+
+    The guard is the only gate on the option, so it fails closed: with the shell's quotes, backslashes,
+    braces and line continuations dropped, the option anywhere in such a command counts, since a
+    variable, a pipe or a brace expansion may carry it there. Building it at run time is deliberate
+    evasion, which no text rule stops."""
+    match = APPROVED_FORM.fullmatch(command)
+    if match:
+        return 'ask', f'#{match.group(1)}'
+    plain = re.sub(r'["\'\\{}]', '', command.replace('\\\n', ' '))
+    if 'owner-approved' in plain and RUNS_LANES.search(plain):
+        return 'block', APPROVAL_FORM
+    return None
+
+
+def refuse(reason):
+    print(f'Blocked by the lanes guard: {reason}', file=sys.stderr)
+    return 2
+
+
+def ask(reason):
+    """Hand the call to the owner: the host asks them before it runs."""
+    print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
+                                             'permissionDecisionReason': reason}}))
+    return 0
+
+
 def decide(reason, unattended, mode=None):
     """Ask the owner in an attended session whose mode shows the ask; refuse otherwise."""
     if not reason:
@@ -1702,12 +1746,8 @@ def decide(reason, unattended, mode=None):
     if unattended or mode not in ASKING_MODES:
         hint = '' if unattended else (' This permission mode approves asks unseen, so the owner runs it, '
                                       'or approves it in a mode that asks.')
-        print(f'Blocked by the lanes guard: {reason}{hint}', file=sys.stderr)
-        return 2
-    print(json.dumps({'hookSpecificOutput': {
-        'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
-        'permissionDecisionReason': f'Lanes guard: {reason} Approve only if you asked for it.'}}))
-    return 0
+        return refuse(reason + hint)
+    return ask(f'Lanes guard: {reason} Approve only if you asked for it.')
 
 
 def main(event, unattended):
@@ -1717,8 +1757,14 @@ def main(event, unattended):
     extra, base = project
     tool_input = event.get('tool_input') or {}
     if event.get('tool_name') == 'Bash':
-        reason = refusal(tool_input.get('command', ''), unattended, extra, base, event.get('cwd'),
-                         opted_in_main_checkout)
+        command = tool_input.get('command', '')
+        kind, detail = owner_approval(command) or (None, None)
+        if kind == 'block':
+            return refuse(detail)
+        if kind == 'ask':  # only manual mode asks before each call, so only there is the owner's approval seen
+            manual = event.get('permission_mode') == 'default' and not unattended
+            return ask(ASK_MERGE.format(pr=detail)) if manual else refuse(APPROVED_MERGE)
+        reason = refusal(command, unattended, extra, base, event.get('cwd'), opted_in_main_checkout)
     else:
         reason = tool_refusal(event.get('tool_name'), tool_input, base)
     return decide(reason, unattended, event.get('permission_mode'))

@@ -958,6 +958,7 @@ ALLOWED = [
     "gh api -X DELETE repos/o/r/issues/5/labels/lane:afk", "gh release view v1.2.0", "gh api repos/o/r",
     "gh api -X PATCH repos/o/r/issues/5 -f state=closed", "git push -u origin agent/afk-5-x",
     "python3 lanes.py automerge 12", "python3 lanes.py merge 12", "python3 lanes.py triage 12",
+    "gh api repos/o/r/pulls/5/comments/9/replies -F body=@reply.md",
     'gh api repos/o/r/pulls/5/reviews -X POST -f body="missing keys in dict; see hooks.json and secrets handling"',
 ]
 MERGE = "gh pr " + "merge 1"
@@ -986,6 +987,18 @@ class GuardRuleTests(unittest.TestCase):
     def test_building_proposing_and_reading_are_allowed(self) -> None:
         for command in ALLOWED:
             self.assertIsNone(guard.refusal(command), command)
+
+    def test_a_body_is_read_or_names_the_way_to_pass_one(self) -> None:
+        # A substitution in a reply's body runs no gh or git and ships nothing; a query the guard can't read could.
+        self.assertIsNone(guard.refusal('gh api repos/o/r/pulls/5/comments/9/replies -f body="Fixed in `abc123`."',
+                                        unattended=False))
+        for command in ("gh api graphql --input m.json", 'gh api graphql -f query="$(cat m.graphql)"'):
+            self.assertEqual(guard.refusal(command, unattended=False), guard.UNKNOWN_QUERY, command)
+        self.assertIn('-f query=', guard.UNKNOWN_QUERY)
+
+    def test_a_named_merge_with_a_hidden_field_is_refused_as_a_merge(self) -> None:
+        command = 'gh api repos/o/r/pulls/5/merge -X PUT -f commit_title="$(git log -1)"'
+        self.assertEqual(guard.refusal(command, unattended=False), guard.MERGE_IS_OWNERS)
 
     def test_only_attended_sessions_mark_an_issue_afk(self) -> None:
         for command in MARKS_AFK:
@@ -1167,6 +1180,52 @@ class GuardHookTests(unittest.TestCase):
                     refused = run(call, mode, path)
                     self.assertEqual(refused.returncode, 2, (mode, path))
                     self.assertNotIn("approves asks unseen", refused.stderr)
+
+    def test_the_owner_approves_a_merge_past_the_owner_rules_only_in_manual_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            (Path(tmp) / ".github").mkdir()
+            (Path(tmp) / ".github/lanes.json").write_text(json.dumps({"repo": "o/r"}))
+            scheduled = str(Path(transcript(tmp, '<scheduled-task name="afk">run')).rename(Path(tmp) / "s.jsonl"))
+            attended = transcript(tmp, "Merge the lessons I approved")
+
+            def run(command, mode, transcript_path):
+                event = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": tmp,
+                         "permission_mode": mode, "transcript_path": transcript_path}
+                return subprocess.run([sys.executable, str(GUARD)], input=json.dumps(event),
+                                      capture_output=True, text=True)
+
+            for command in ("python3 lanes.py merge 12 --owner-approved",
+                            'python3 "/Users/o/Application Support/afk/scripts/lanes.py" merge 12 --owner-approved'):
+                asked = run(command, "default", attended)
+                self.assertEqual(asked.returncode, 0, command)
+                decision = json.loads(asked.stdout)["hookSpecificOutput"]
+                self.assertEqual(decision["permissionDecision"], "ask")
+                self.assertIn("#12", decision["permissionDecisionReason"])
+            for mode, path in (("acceptEdits", attended), ("auto", attended), ("bypassPermissions", attended),
+                               ("default", scheduled), ("default", None), (None, attended)):
+                refused = run("python3 lanes.py merge 12 --owner-approved", mode, path)
+                self.assertEqual(refused.returncode, 2, (mode, path))
+                self.assertIn("manual permission mode", refused.stderr)
+            # The shell turns each of these into the flag or hides the PR, so each is refused in every mode.
+            for hidden in ("python3 lanes.py merge 12 \\\n  --owner-approved", 'python3 lanes.py merge 12 --owner-app""roved',
+                           "python3 lanes.py merge 12 --own'er'-approved", "python3 lanes.py merge 12 --owner-approv\\ed",
+                           "F=--owner-approved; python3 lanes.py merge 12 $F", 'python3 lanes.py "merge" 12 --owner-approved',
+                           "just lanes merge 12 --owner-approved", 'python3 "$S/lanes.py" merge 12 --owner-approved',
+                           "echo --owner-approved | xargs python3 lanes.py merge 12", "python3 l.py merge 12 --owner-approved",
+                           "python3 lanes.py merge --owner-approved 12", "python3 lanes.py automerge 12 --owner-approved",
+                           "python3 lanes.py merge 12 --owner-approved; python3 lanes.py merge 13 --owner-approved",
+                           "python3 lanes.py merge 12 --owner{-approved,-approved}", "python3 *lanes.py merge 12 --owner-approved",
+                           "python3 lanes.py merge 12\n--owner-approved"):
+                for mode in ("default", "auto"):
+                    refused = run(hidden, mode, attended)
+                    self.assertEqual(refused.returncode, 2, (hidden, mode))
+                    self.assertIn("alone in its command", refused.stderr)
+            for allowed in ("python3 lanes.py merge 12", 'python3 "$LANES" merge 12', "just lanes merge 12",
+                            "for p in 1 2; do python3 lanes.py merge $p; done", "grep -rn owner-approved .",
+                            "git commit -m 'feat: merge takes --owner-approved'"):
+                plain = run(allowed, "auto", attended)
+                self.assertEqual((plain.returncode, plain.stdout), (0, ""), allowed)
 
     def test_hook_keeps_edits_and_branch_switches_out_of_the_main_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -42,7 +42,8 @@ Report longer failure detail only when GREEN cannot be reached, as: root cause (
 
 ### Phase 3: **REFACTOR** (Clean Code & Invariants)
 1. Improve structure without expanding behavior, tighten aggregate invariants, and align variable names with the project glossary.
-2. Re-run the test suite to verify no regressions.
+2. Delete production API that only tests call, together with those tests.
+3. Re-run the test suite to verify no regressions.
 *Exit Gate*: Code is clean; all tests pass without behavior drift.
 
 ### Phase 4: **VERIFY** (Targeted & Completion Gate)
@@ -58,6 +59,16 @@ Report longer failure detail only when GREEN cannot be reached, as: root cause (
 - Test behavior through public observable seams; keep tests independent of private implementation details.
 - Assert behavior and relations (state, outcomes, ordering, direction, alignment to design tokens); keep expected values independent of layout pixels and tuning constants that change without a behavior change.
 - Apply the project's coverage policy. When the project defines none, aggregate unit and component test branch coverage into one value reaching 100% branch coverage for domain and application layers.
+- Coverage is a byproduct of behaviour tests. When the gate flags an uncovered line, write the test whose failure a user or caller would notice, or delete the line; a test named after a method's branches, one whose subject is a test double, and one that only walks equality, hash, copy or string-conversion methods prove nothing and stay out of the suite. Prefer language value equality (records, data classes, generated equality) over hand-written equality whose lines would need such tests.
+- For a function whose mistake would corrupt data or mislead the user, flip one of its conditions or constants and run its tests: at least one must fail, or add the boundary case that makes it fail.
+- To audit a suite or area: pick the target files by risk, then for each file mutate seeded sites in a throwaway checkout, run that file's own tests per mutant, classify and score the results as [mutation-testing.md](references/mutation-testing.md) defines, and report its table. Every survivor gets the test that kills it, or its code is deleted.
+- Name a test after the behaviour it protects; a name or comment citing coverage, a branch or a line number marks a test written for the gate.
+- End each test on an assertion of the outcome after its last action. A test that acts without asserting, or suppresses the warning that an interaction missed its target, proves only that nothing threw.
+- Test a documented range, unit or format at each edge and across its wrap-around (a duration past one hour, a cyclic delta at exactly half the cycle, a multiplier below one).
+- Drive time through the project's fake clock or fake async scheduler; a test that waits on real time is slow and flakes under load.
+- Prove an adapter contract once and run it against every implementation, including a deliberately broken one the contract must reject.
+- A verification gate is code: give each rule one passing and one failing fixture, and match parsed syntax or types rather than one spelling, so an equivalent spelling cannot slip past.
+- File each test by what it boots: a test that renders UI belongs with the UI tests even when it checks one value.
 - Exclude integration, system, and acceptance tests from coverage calculations; treat them as verification suites, not coverage sources.
 
 ---
@@ -69,6 +80,7 @@ Report longer failure detail only when GREEN cannot be reached, as: root cause (
 - Read [integration-testing.md](references/integration-testing.md) when testing inter-service communication boundaries.
 - Read [system-testing.md](references/system-testing.md) when implementing end-to-end black-box system tests.
 - Read [acceptance-testing.md](references/acceptance-testing.md) when introducing new features or acceptance criteria.
+- Read [mutation-testing.md](references/mutation-testing.md) when sampling mutants to audit a suite or area.
 - Read [java.md](references/languages/java.md) when implementing tests in Java.
 - Read [kotlin.md](references/languages/kotlin.md) when implementing tests in Kotlin.
 - Read [javascript.md](references/languages/javascript.md) when implementing tests in JavaScript or TypeScript.
