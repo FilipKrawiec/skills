@@ -207,6 +207,19 @@ HIDDEN = [
     "python3 -c \"import subprocess; subprocess.run(['bash'], input='gh pr merge 1', text=True)\"",
     "python3 -c \"import subprocess; subprocess.run('sh', input=b'gh pr merge 1')\"",
     "python3 -c \"import subprocess; subprocess.run(['sh','-s'], input='git push origin main\\n', text=True)\"",
+    "python3 -c \"import subprocess; subprocess.run(['env','bash'], input='gh pr merge 1')\"",
+    "python3 -c \"import subprocess; subprocess.run(['/usr/bin/env','sh'], input='gh pr merge 1')\"",
+    "python3 -c \"import subprocess; subprocess.run(['sudo','bash'], input='gh pr merge 1')\"",
+    "python3 -c \"import subprocess as s; c='cd x'; s.run(['bash', '-c', c + ' && gh pr merge 1'])\"",
+    "python3 -c \"import subprocess as s; b='x'; s.run(['git', 'push', 'origin', b + ':main'])\"",
+    "node -e \"const {spawnSync}=require('child_process'); const c='cd x'; spawnSync('sh', ['-c', c + ' && gh pr merge"
+    " 1'])\"",
+    "node -e \"const {spawnSync}=require('child_process'); const b='x'; spawnSync('git', ['push','origin', b + ':main'"
+    "])\"",
+    "python3 -c \"import os; c='cd x'; os.system(c + ' && gh pr merge 1')\"",
+    "python3 -c \"import os; c='cd x'; os.system(c + '; gh pr merge 1')\"",
+    "node - <<'EOF'\nconst cp = require('child_process');\nfunction main() {\n  const c = 'gh pr merge 1'\n  console.l"
+    "og('run')\n  cp.execSync(c)\n}\nmain()\nEOF",
 ]
 # Calls the guard caught in real runs although they ship nothing.
 READS_AND_WRITING = [
@@ -298,6 +311,14 @@ READS_AND_WRITING = [
     "assert 'git push origin main' not in s\np.write_text(s + '\\n')\nEOF\nbash scripts/release.sh",
     "node -e \"const cp=require('child_process'); cp.execSync('git status', { stdio: 'inherit' })\"",
     "python3 - <<'EOF'\nimport json\nd = {\n    'title': 'gh pr merge docs',\n}\nprint(json.dumps(d))\nEOF",
+    "python3 - <<'EOF'\nimport subprocess\nst = subprocess.check_output(['git','status'], text=True)\nprint({\n    'ne"
+    "xt': 'gh pr merge 12',\n})\nEOF",
+    "node - <<'EOF'\nconst cp = require('child_process');\ncp.execSync('git status');\nconsole.log({\n  next: 'gh pr m"
+    "erge 12',\n})\nEOF",
+    "python3 - <<'EOF'\nimport json, subprocess\nfrom pathlib import Path\nsubprocess.run(['git', 'status'])\nPath('x."
+    "json').write_text(json.dumps({\n    'next': 'gh pr merge 12',\n}))\nEOF",
+    "python3 -c \"import subprocess; subprocess.run(['git','commit','-m', 'Fix: ' + title])\"",
+    "python3 -c \"import os; os.system('echo use gh pr merge later')\"",
 ]
 PROJECT_RULES = [(r"\bfirebase(-tools)?(@\S+)?\s.*\bdeploy\b", "Sites deploy from CI."),
                  (r"\bterraform\b.*\b(apply|destroy)\b", "DNS applies after merge."),
