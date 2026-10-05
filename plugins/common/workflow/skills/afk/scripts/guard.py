@@ -11,10 +11,11 @@ worktree: edits to a file in an opted-in project's main checkout, and
 lanes.json. `lane:afk` may be added only in a session the owner is in.
 
 Shell commands are parsed, not searched: a rule judges the commands a line
-runs (including `$(...)`, `bash -c`, scripts fed to a shell and the process
-calls of inline programs), never the text it writes, quotes or reads, and
-GitHub API calls by endpoint and method. A call whose effect the guard can't
-read (a script piped to a shell, a GraphQL query held in a file) is caught.
+runs (including `$(...)`, `bash -c`, launchers such as `env` or `npx`, scripts
+fed to a shell or written and run in one call, and the process calls of inline
+programs), never the text it writes, quotes or reads, and GitHub API calls by
+endpoint, method and body. A call whose effect the guard can't read (a script
+piped to a shell, a request body on stdin it can't see) is caught.
 
 In a session the owner attends, a caught call goes to the owner to approve,
 in every permission mode where the host asks before a call. Bypass mode
@@ -61,11 +62,29 @@ class Unparsable(ValueError):
 
 
 SUBST = '$(…)'  # stands in for a command substitution's output
+PROCSUB = '<(…)'  # stands in for the file a process substitution reads from
+LITERAL = '\ue000'  # a `$` the shell keeps as it is (quoted or escaped), so not an expansion
+
+
+def literal(text):
+    """`text` as the program it is passed to sees it: a kept `$` is a plain `$` again."""
+    return text.replace(LITERAL, '$')
+
+
+def unknown(text):
+    """`text` holds an expansion the guard can't fill in."""
+    return '$' in text
 
 
 class Command:
     def __init__(self, argv=None):
-        self.argv, self.stdin, self.piped, self.writes = argv or [], None, False, None
+        self.argv, self.stdin, self.piped, self.writes, self.reads = argv or [], None, False, None, None
+
+    def running(self, argv):
+        """The command `argv` that this one runs, with this one's input."""
+        command = Command(argv)
+        command.stdin, command.piped, command.reads = self.stdin, self.piped, self.reads
+        return command
 
 
 class Script:
@@ -139,6 +158,8 @@ class _Parser:
             command.argv.append(word)
         elif redirect in ('>', '>|'):
             command.writes = word
+        elif redirect == '<':
+            command.reads = word
         self.word, self.raw, self.redirect = None, '', None
 
     def end_command(self, piped=False):
@@ -174,7 +195,7 @@ class _Parser:
             if after is not None:
                 j, text = after, text + SUBST
             elif s[j] == '\\' and j + 1 < len(s):
-                text += s[j + 1] if s[j + 1] in '$`"\\\n' else s[j:j + 2]
+                text += {'$': LITERAL}.get(s[j + 1], s[j + 1]) if s[j + 1] in '$`"\\\n' else s[j:j + 2]
                 j += 2
             else:
                 text += s[j]
@@ -195,7 +216,7 @@ class _Parser:
             body = s[i + 2:end].encode('latin-1', 'backslashreplace').decode('unicode_escape')
         except UnicodeDecodeError:
             body = s[i + 2:end]
-        self.add(body, s[i:end + 1])
+        self.add(body.replace('$', LITERAL), s[i:end + 1])
         return end + 1
 
     def redirection(self, i):
@@ -207,7 +228,7 @@ class _Parser:
         if op in ('>&', '<&'):
             fd = re.match(r'[0-9-]+', self.s[i + 2:])
             return i + 2 + (fd.end() if fd else 0)
-        self.redirect = op if op in ('<<', '<<-', '<<<', '>', '>|') else 'target'
+        self.redirect = op if op in ('<<', '<<-', '<<<', '>', '>|', '<') else 'target'
         return i + len(op)
 
     def run(self, i):
@@ -226,13 +247,13 @@ class _Parser:
                 i = len(s) if end < 0 else end
             elif c == '\\':
                 if not s.startswith('\\\n', i):
-                    self.add(s[i + 1:i + 2], s[i:i + 2])
+                    self.add({'$': LITERAL}.get(s[i + 1:i + 2], s[i + 1:i + 2]), s[i:i + 2])
                 i += 2
             elif c == "'":
                 end = s.find("'", i + 1)
                 if end < 0:
                     raise Unparsable("unbalanced '")
-                self.add(s[i + 1:end], s[i:end + 1])
+                self.add(s[i + 1:end].replace('$', LITERAL), s[i:end + 1])
                 i = end + 1
             elif s.startswith("$'", i):
                 i = self.ansi_quoted(i)
@@ -241,6 +262,10 @@ class _Parser:
             elif s.startswith('$(', i) or c == '`':
                 i = _substitution(s, i, self.script)
                 self.add(SUBST, SUBST)
+            elif s.startswith(('<(', '>('), i):
+                inner, i = _Parser(s, ')').run(i + 2)
+                self.script.substituted.append(inner)
+                self.add(PROCSUB, PROCSUB)
             elif c in '<>' or s.startswith('&>', i):
                 i = self.redirection(i)
             elif c in ';&|':
@@ -268,11 +293,12 @@ class _Parser:
 
 NAME = r'[A-Za-z_][A-Za-z0-9_]*'
 ASSIGNMENT = re.compile(rf'^({NAME})=(.*)$', re.S)
-KEYWORDS = {'!', '{', '}', 'then', 'else', 'elif', 'do', 'time', 'if', 'while', 'until'}
-# Commands that run their arguments as a command, each with its short options that take a value.
-WRAPPERS = {'command': '', 'builtin': '', 'exec': '-a', 'nohup': '', 'noglob': '', 'caffeinate': '-tw',
-            'env': '-uCS', 'sudo': '-ugCDhprTU', 'nice': '-n', 'timeout': '-sk', 'xargs': '-IEdLnPs',
-            'watch': '-nd', 'stdbuf': '-ioe'}
+KEYWORDS = {'!', '{', '}', 'then', 'else', 'elif', 'do', 'if', 'while', 'until', 'coproc'}
+# Commands that run their arguments as a command, each with its options that take a value.
+WRAPPERS = {'command': set(), 'builtin': set(), 'exec': {'-a'}, 'nohup': set(), 'noglob': set(), 'time': set(),
+            'caffeinate': {'-t', '-w'}, 'env': {'-u', '-C', '-S'}, 'nice': {'-n'}, 'timeout': {'-s', '-k'},
+            'sudo': {'-u', '-g', '-C', '-D', '-h', '-p', '-r', '-T', '-U'}, 'xargs': {'-I', '-E', '-d', '-L', '-n',
+            '-P', '-s'}, 'watch': {'-n', '-d'}, 'stdbuf': {'-i', '-o', '-e'}, 'arch': {'-arch'}}
 DECLARES = {'export', 'local', 'readonly', 'declare', 'typeset'}
 SHELLS = {'bash', 'sh', 'zsh', 'dash', 'ksh', 'fish'}
 INTERPRETERS = re.compile(r'^(python[0-9.]*|node|nodejs|deno|bun|ruby|perl|php|osascript)$')
@@ -285,21 +311,22 @@ SPAWNS = {
 }
 # Commands that run none of their arguments; `tee` writes files, but a file it writes runs nothing.
 RUNS_NOTHING = {'cat', 'head', 'tail', 'less', 'more', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'wc', 'ls',
-             'diff', 'cmp', 'file', 'stat', 'echo', 'printf', 'jq', 'yq', 'sort', 'uniq', 'cut', 'tr', 'column',
-             'nl', 'tee', 'true', 'false', 'test', '[', 'basename', 'dirname', 'realpath', 'readlink', 'which',
-             'type', 'man', 'pwd', 'base64', 'shasum', 'md5'}
+                'diff', 'cmp', 'file', 'stat', 'echo', 'printf', 'jq', 'yq', 'sort', 'uniq', 'cut', 'tr', 'column',
+                'nl', 'tee', 'true', 'false', 'test', '[', 'basename', 'dirname', 'realpath', 'readlink', 'which',
+                'type', 'man', 'pwd', 'base64', 'shasum', 'md5'}
 
-GRAPHQL_OWNER = re.compile(r'\b(mergePullRequest|enablePullRequestAutoMerge|mergeBranch)\b')
+GRAPHQL_OWNER = re.compile(r'\b(mergePullRequest|enablePullRequestAutoMerge|enqueuePullRequest|mergeBranch)\b')
 GRAPHQL_SECURITY = re.compile(r'\b((create|update|delete)(BranchProtectionRule|RepositoryRuleset)|'
                               r'(update|archive|unarchive)Repository)\b')
 GRAPHQL_APPROVE = re.compile(r'\b(addPullRequestReview|submitPullRequestReview)\b')
 GRAPHQL_PUSH = re.compile(r'\b(createCommitOnBranch|updateRefs?)\b')
-REPO = r'repos/[^/\s]+/[^/\s]+'
+REPO = r'(?:repos/[^/\s]+/[^/\s]+|repositories/[^/\s]+)'
+EXPANSION = re.compile(r'\$\(…\)|\$\{[^}]*\}|\$\w+|\$')
 MAX_NESTING = 8  # shells, evals and substitutions within one another; deeper is unreadable
 
 # (group, actions, reason): the gh commands caught whatever their arguments.
 GH_RULES = [
-    ('release', {'create', 'edit', 'delete', 'upload', 'delete-asset'}, RELEASE),
+    ('release', {'create', 'new', 'edit', 'delete', 'upload', 'delete-asset'}, RELEASE),
     ('secret', {'set', 'delete', 'remove'}, SECRETS),
     ('variable', {'set', 'delete', 'remove'}, SECRETS),
     ('repo', {'edit', 'delete', 'rename', 'archive', 'unarchive'}, SETTINGS),
@@ -309,17 +336,25 @@ GH_RULES = [
 
 
 def unwrap(argv):
-    """argv without leading variable assignments, keywords and pass-through wrappers."""
+    """argv without leading variable assignments, keywords and wrappers that run their arguments.
+
+    `watch` and `env -S` hand a command line to a shell, so they become `sh -c`."""
     argv = list(argv)
     while argv:
         head = argv.pop(0)
-        if head in WRAPPERS:
+        name, line = os.path.basename(head), None
+        if name in WRAPPERS:
             while argv and (argv[0].startswith('-') or ASSIGNMENT.match(argv[0])):
                 flag = argv.pop(0)
-                if len(flag) == 2 and flag[1] in WRAPPERS[head] and argv:
-                    argv.pop(0)
-            if head == 'timeout' and argv:
+                if flag == '--':
+                    break
+                if flag in WRAPPERS[name] and argv:
+                    value = argv.pop(0)
+                    line = value if (name, flag) == ('env', '-S') else line
+            if name == 'timeout' and argv:
                 argv.pop(0)  # the duration
+            if name == 'watch' or line is not None:
+                return ['sh', '-c', ' '.join(([line] if line is not None else []) + argv)]
         elif not (ASSIGNMENT.match(head) or head in KEYWORDS):
             return [head] + argv
     return argv
@@ -358,9 +393,43 @@ def labels_add_afk(values):
     """`lane:afk` among label values, or a value whose content is unknown (a variable)."""
     for value in values:
         for label in re.split(r'[,\n]', value):
-            if label.strip().strip('"\'') == 'lane:afk' or '$' in label:
+            if literal(label).strip().strip('"\'').lower() == 'lane:afk' or unknown(label):
                 return True
     return False
+
+
+def endpoint_paths(endpoint, base):
+    """The API paths `endpoint` may name, host and slashes dropped; None when it could be any path.
+
+    Each expansion the guard can't fill in stands for a segment, an owner/repo pair, the base
+    branch or nothing, so a path is caught when any of its readings is."""
+    def plain(path):
+        path = re.sub(r'^https?://[^/]+/(api/v3/)?', '', path)
+        return path.strip('/').split('?')[0]
+    parts = EXPANSION.split(endpoint)
+    if len(parts) == 1:
+        return [plain(endpoint)]
+    if len(parts) > 5 or not re.search(r'[A-Za-z]{3}', ''.join(parts)):
+        return None
+    readings = ['']
+    for i, part in enumerate(parts):
+        fills = ('x', 'x/x', base, '') if i else ('',)
+        readings = [reading + fill + part for reading in readings for fill in fills]
+    return [plain(reading) for reading in readings]
+
+
+def readable_query(query):
+    """An inline GraphQL query with each expansion in a value's place (after `:` or inside a string)
+    read as a placeholder; None when one stands where it could change the operation."""
+    def placeholder(match):
+        before = query[:match.start()]
+        if before.rstrip().endswith(':') or before.count('"') % 2:
+            return 'x'
+        raise Unparsable('an expansion shapes the query')
+    try:
+        return literal(EXPANSION.sub(placeholder, query))
+    except Unparsable:
+        return None
 
 
 def current_branch(directory):
@@ -372,10 +441,13 @@ def current_branch(directory):
 
 
 class Judge:
-    """Collects the reasons the calls in a shell command are caught."""
+    """Collects the reasons the calls in a shell command are caught.
 
-    def __init__(self, unattended=True, extra=(), base='main', is_main_checkout=None):
-        self.unattended, self.extra, self.base = unattended, list(extra), base
+    `origin` is the hook's working directory: where a directory the guard can't follow
+    (`cd "$X"`) is taken to be."""
+
+    def __init__(self, unattended=True, extra=(), base='main', is_main_checkout=None, origin=None):
+        self.unattended, self.extra, self.base, self.origin = unattended, list(extra), base, origin
         self.is_main = is_main_checkout or (lambda path: False)
         self.findings, self.variables, self.written = [], {}, {}
 
@@ -383,12 +455,25 @@ class Judge:
         if not afk_only or self.unattended:
             self.findings.append(reason)
 
+    def sure(self, run):
+        """Judge with `run(judge)` on a fresh judge, keeping only what it surely catches:
+        for a fragment the guard reads loosely, a misread is not a finding."""
+        judge = Judge(self.unattended, (), self.base, self.is_main, self.origin)
+        try:
+            run(judge)
+        except (ValueError, IndexError, RecursionError):
+            return
+        self.findings += [reason for reason in judge.findings if reason not in UNSURE]
+
     def expand(self, word):
         """`word` with the variables this script set to plain values filled in."""
         def value(match):
             known = self.variables.get(match.group(1) or match.group(2))
             return match.group(0) if known is None else known
         return re.sub(rf'\$(?:\{{({NAME})\}}|({NAME}))', value, word)
+
+    def path(self, path, cwd):
+        return str(Path(cwd or self.origin or '.').joinpath(os.path.expanduser(literal(path))).resolve())
 
     def script(self, script, cwd, nested=0):
         if nested > MAX_NESTING:
@@ -405,32 +490,31 @@ class Judge:
                 cwd = self.command(command, cwd, nested)
 
     def text(self, text, cwd, nested=0):
-        self.script(parse(text), cwd, nested)
+        self.script(parse(literal(text)), cwd, nested)
 
     def command(self, command, cwd, nested):
-        """Judge one simple command; return the working directory after it."""
+        """Judge one simple command; return the working directory after it (None when unknown)."""
         argv = command.argv
-        head = [a for a in argv if ASSIGNMENT.match(a)]
-        if argv and (len(head) == len(argv) or argv[0] in DECLARES):
-            for assignment in (argv if len(head) == len(argv) else argv[1:]):
+        assignments = [a for a in argv if ASSIGNMENT.match(a)]
+        if argv and (len(assignments) == len(argv) or argv[0] in DECLARES):
+            for assignment in (argv if len(assignments) == len(argv) else argv[1:]):
                 match = ASSIGNMENT.match(assignment)
                 if match:
-                    self.variables[match.group(1)] = match.group(2) if SUBST not in match.group(2) else None
+                    value = self.expand(match.group(2))
+                    self.variables[match.group(1)] = None if SUBST in value else value
             return cwd
         argv = [self.expand(a) for a in unwrap(argv)]
         if command.writes and command.stdin is not None and argv[:1] == ['cat']:
-            self.written[str(Path(cwd or '.').joinpath(self.expand(command.writes)).resolve())] = command.stdin
+            self.written[self.path(command.writes, cwd)] = command.stdin
         if not argv:
             return cwd
         name, args = os.path.basename(argv[0]), argv[1:]
         if name == 'cd':
-            target = next((a for a in args if not a.startswith('-')), '~')
-            if '$' in target:
-                return None
-            return str(Path(cwd or '.').joinpath(os.path.expanduser(target)).resolve())
+            target = next((a for a in args if a == '-' or not a.startswith('-')), '~')
+            return None if target == '-' or unknown(target) else self.path(target, cwd)
         if name in RUNS_NOTHING:
             return cwd
-        if name in SHELLS or name == 'eval':
+        if name in SHELLS or name in ('eval', 'source', '.'):
             self.shell(name, args, command, cwd, nested)
         elif INTERPRETERS.match(name):
             self.interpreter(name, args, command, cwd)
@@ -441,19 +525,39 @@ class Judge:
                     end = next((j for j, a in enumerate(rest) if a in (';', '+')), len(rest))
                     self.command(Command(rest[:end]), cwd, nested)
         elif name == 'gh':
-            self.gh(args, cwd)
+            self.gh(args, command, cwd)
         elif name == 'git':
-            self.git(args, cwd)
-        self.project_rules(' '.join(a for a in argv if not re.search(r'\s', a)))
+            self.git(args, cwd, nested)
+        elif '/' in argv[0] and self.path(argv[0], cwd) in self.written:
+            self.text(self.written[self.path(argv[0], cwd)], cwd, nested + 1)  # a script this call wrote
+        elif unknown(argv[0]):
+            self.held_program(argv, command, cwd, nested)
+        else:
+            self.launched(argv, command, cwd, nested)
+        self.project_rules(' '.join(literal(a) for a in argv if not re.search(r'\s', a)))
         return cwd
+
+    def launched(self, argv, command, cwd, nested):
+        """A launcher the guard doesn't know (`npx`, `uv run`) may run gh, git, a shell or a program."""
+        for i, arg in enumerate(argv[1:], 1):
+            name = os.path.basename(arg)
+            if name in ('gh', 'git') or name in SHELLS or INTERPRETERS.match(name):
+                return self.command(command.running(argv[i:]), cwd, nested + 1)
+
+    def held_program(self, argv, command, cwd, nested):
+        """A program held in a variable (`${GH:-gh} pr merge 1`) is judged as each one it could be."""
+        for program in ('gh', 'git', 'sh'):
+            self.sure(lambda judge: judge.command(command.running([program] + argv[1:]), cwd, nested + 1))
 
     def read_file(self, path, cwd):
         """A file's text, as this script wrote it or as it is on disk; None when unreadable."""
-        full = Path(cwd or '.').joinpath(path).resolve()
-        if str(full) in self.written:
-            return self.written[str(full)]
+        if PROCSUB in path or unknown(path):
+            return None
+        full = self.path(path, cwd)
+        if full in self.written:
+            return self.written[full]
         try:
-            return full.read_text()
+            return Path(full).read_text()
         except (OSError, ValueError):
             return None
 
@@ -465,17 +569,28 @@ class Judge:
     def shell(self, name, args, command, cwd, nested):
         if name == 'eval':
             return self.text(' '.join(args), cwd, nested + 1)
-        for i, arg in enumerate(args):
-            if re.fullmatch(r'-[a-zA-Z]*c[a-zA-Z]*', arg):
-                if i + 1 >= len(args):
-                    return self.catch(UNREADABLE)
-                return self.text(args[i + 1], cwd, nested + 1)
-        if positionals(args, {'-o', '+o', '-O', '+O'}):
-            return None  # runs a script file of the project's
-        if command.stdin is not None:
+        if name in ('source', '.'):
+            files = args[:1]
+        else:
+            for i, arg in enumerate(args):
+                if re.fullmatch(r'-[a-zA-Z]*c[a-zA-Z]*', arg):
+                    rest = args[i + 2:] if args[i + 1:i + 2] == ['--'] else args[i + 1:]
+                    return self.text(rest[0], cwd, nested + 1) if rest else self.catch(UNREADABLE)
+            files = positionals(args, {'-o', '+o', '-O', '+O'})[:1]
+        if not files and command.stdin is not None:
             return self.text(command.stdin, cwd, nested + 1)
-        if command.piped:
+        files = files or ([command.reads] if command.reads else [])
+        if files:
+            self.script_file(files[0], cwd, nested)
+        elif command.piped:
             self.catch(UNREADABLE)
+
+    def script_file(self, path, cwd, nested):
+        """A script file a shell runs: the guard reads one this call wrote; a project's script is the project's."""
+        if PROCSUB in path:
+            return self.catch(UNREADABLE)
+        if self.path(path, cwd) in self.written:
+            self.text(self.written[self.path(path, cwd)], cwd, nested + 1)
 
     def interpreter(self, name, args, command, cwd):
         code = next((args[i + 1] for i, a in enumerate(args[:-1]) if a in ('-c', '-e', '--eval', '-E')), None)
@@ -485,13 +600,19 @@ class Judge:
         if code is None and command.stdin is not None and files in ([], ['-']):
             code = command.stdin
         if code is None:
-            if command.piped and not files:
+            if (command.piped and not files) or any(PROCSUB in f for f in files[:1]):
                 self.catch(UNREADABLE)
             return
+        code = literal(code)
         language = next((k for k in ('python', 'node', 'osascript') if name.startswith(k)),
                         'node' if name in ('nodejs', 'deno', 'bun') else 'other')
-        for call in re.finditer(SPAWNS[language], code):
+        calls = list(re.finditer(SPAWNS[language], code))
+        for call in calls:
             self.process_call(code, call, cwd)
+        if calls:  # a program that starts processes may hold the command line in a string or list first
+            for line in code.split('\n'):
+                if re.search(r'["\']\s*(gh|git)\b', line):
+                    self.command_line(line, cwd)
 
     def process_call(self, code, call, cwd):
         """Judge the command line a program's process call could run: the call's own arguments."""
@@ -507,30 +628,27 @@ class Judge:
                     break
                 end += 1
             span = code[call.end():code.find('\n', call.end()) if opening < 0 else end]
-        line = ' '.join(re.sub(r'["\'\[\](),]+|\b[fbr]?(?=["\'])|\\[nt]', ' ', span).split())
+        self.command_line(span, cwd)
+
+    def command_line(self, code, cwd):
+        """Judge program code as the command line it spells, quotes, brackets and commas dropped."""
+        line = ' '.join(re.sub(r'["\'\[\](),]+|\b[fbr]?(?=["\'])|\\[nt]', ' ', code).split())
         self.project_rules(line)
         start = re.search(r'\b(gh|git)\b', line)
-        if not start:
-            return
-        # Only what the call surely runs counts: a fragment the guard misreads is not a finding.
-        # Judged at the deepest nesting: a shell this fragment seems to start is not read further.
-        judge = Judge(self.unattended, (), self.base, self.is_main)
-        try:
-            judge.text(line[start.start():], cwd, MAX_NESTING)
-        except Unparsable:
-            return
-        self.findings += [reason for reason in judge.findings if reason not in UNSURE]
+        if start:
+            # Judged at the deepest nesting: a shell this fragment seems to start is not read further.
+            self.sure(lambda judge: judge.text(line[start.start():], cwd, MAX_NESTING))
 
     # ------------------------------------------------------------------ gh
 
-    def gh(self, args, cwd):
+    def gh(self, args, command, cwd):
         flat, skip = [], False
         for arg in args:  # `gh pr -R o/r merge 1` reads as `gh pr merge 1`
             if skip:
                 skip = False
             elif arg in ('-R', '--repo', '--hostname'):
                 skip = True
-            elif not arg.startswith(('--repo=', '-R=', '--hostname=')):
+            elif not re.match(r'(-R|--repo=|--hostname=)', arg):
                 flat.append(arg)
         args = flat
         group, action, rest = (args + ['', ''])[0], (args + ['', ''])[1], args[2:]
@@ -541,17 +659,37 @@ class Judge:
         for rule_group, actions, reason in GH_RULES:
             if group == rule_group and action in actions:
                 self.catch(reason)
-        if group == 'pr' and action == 'review' and ('--approve' in rest or '-a' in rest):
+        if group == 'pr' and action == 'review' and any(self.approves_flag(arg) for arg in rest):
             self.catch(MERGE_IS_OWNERS)
         elif group == 'repo' and action == 'deploy-key' and rest[:1] in (['add'], ['delete']):
             self.catch(SECURITY)
         elif group == 'api':
-            self.gh_api(args[1:], cwd)
+            self.gh_api(args[1:], command, cwd)
         if group in ('issue', 'pr') and action in ('create', 'edit'):
             if labels_add_afk(option_values(rest, ('--add-label', '--label', '-l'))):
                 self.catch(UNATTENDED_AFK, afk_only=True)
 
-    def gh_api(self, args, cwd):
+    @staticmethod
+    def approves_flag(arg):
+        """`--approve`, or `-a` among short flags (`-ab ok`), before one that takes the rest as its value."""
+        if arg == '--approve':
+            return True
+        if re.fullmatch(r'-[A-Za-z]+', arg):
+            for flag in arg[1:]:
+                if flag == 'a':
+                    return True
+                if flag in 'bF':
+                    return False
+        return False
+
+    def request_body(self, fields, inputs, command, cwd):
+        """The fields and input files of an API call as text; None when an input can't be read."""
+        parts = list(fields)
+        for name in inputs:
+            parts.append(command.stdin if name == '-' else self.read_file(name, cwd))
+        return None if None in parts else ' '.join(parts)
+
+    def gh_api(self, args, command, cwd):
         valued = {'-X', '--method', '-f', '--raw-field', '-F', '--field', '-H', '--header', '--input', '-q', '--jq',
                   '-t', '--template', '--cache', '-p', '--preview', '--hostname'}
         endpoint = next(iter(positionals(args, valued)), '')
@@ -559,18 +697,17 @@ class Judge:
         inputs = option_values(args, ('--input',))
         methods = option_values(args, ('-X', '--method'))
         method = methods[-1].upper() if methods else ('POST' if fields or inputs else 'GET')
-        if endpoint == 'graphql':
-            return self.graphql(fields, inputs, cwd)
-        path = endpoint.lstrip('/').split('?')[0]
-        if method == 'GET' or not path:
+        paths = endpoint_paths(endpoint, self.base)
+        if paths == ['graphql']:
+            return self.graphql(fields, inputs, command, cwd)
+        if method == 'GET':
             return
-        body = ' '.join(fields)
-        for name in inputs:
-            body += ' ' + ((self.read_file(name, cwd) or '$') if name != '-' else '$')
+        if paths is None:
+            return self.catch(UNREADABLE)  # a write to an endpoint the guard can't read
+        body = self.request_body(fields, inputs, command, cwd)
         rules = [
             (rf'^{REPO}/pulls/[^/]+/merge$|^{REPO}/merges$', MERGE_IS_OWNERS),
-            (rf'^{REPO}/pulls/[^/]+/reviews(/[^/]+/events)?$', MERGE_IS_OWNERS if 'APPROVE' in body else None),
-            (rf'^{REPO}/?$|^{REPO}/(transfer|vulnerability-alerts|automated-security-fixes|'
+            (rf'^{REPO}$|^{REPO}/(transfer|vulnerability-alerts|automated-security-fixes|'
              r'private-vulnerability-reporting)$', SETTINGS),
             (rf'^{REPO}/(branches/[^/]+/protection|rulesets|environments|actions/(secrets|variables|permissions)|'
              r'dependabot/secrets|codespaces/secrets|collaborators|invitations|keys|hooks)\b', SECURITY),
@@ -579,49 +716,94 @@ class Judge:
             (rf'^{REPO}/git/refs/heads/{re.escape(self.base)}$', push_to(self.base)),
         ]
         for pattern, reason in rules:
-            if reason and re.search(pattern, path):
+            if any(re.search(pattern, path) for path in paths):
                 self.catch(reason)
-        if re.search(rf'^{REPO}/contents/', path):
-            branches = [f.split('=', 1)[1] for f in fields if f.startswith('branch=')]
-            if not branches or self.base in branches or any('$' in b for b in branches):
-                self.catch(push_to(self.base))
-        if re.search(rf'^{REPO}/issues(/[^/]+(/labels)?)?$', path) and 'label' in body:
-            labels = [f.split('=', 1)[1] for f in fields if re.match(r'labels(\[\])?=', f)]
-            if labels_add_afk(labels) or 'lane:afk' in body or ('$' in body and 'labels' in body):
-                self.catch(UNATTENDED_AFK, afk_only=True)
 
-    def graphql(self, fields, inputs, cwd):
-        queries = [f.split('=', 1)[1] for f in fields if f.startswith('query=')]
-        text = [self.read_file(q[1:], cwd) if q.startswith('@') else q for q in queries]
-        text += [None if name == '-' else self.read_file(name, cwd) for name in inputs]
-        if not text or any(t is None or SUBST in t or re.fullmatch(r'\s*\$\{?\w+\}?\s*', t) for t in text):
+        def names(pattern):
+            return any(re.search(pattern, path) for path in paths)
+
+        if names(rf'^{REPO}/pulls/[^/]+/reviews(/[^/]+/events)?$'):
+            if body is None or re.search(r'(^|\s)event=\S*\$|"event"\s*:\s*"?\$', body):
+                self.catch(UNREADABLE)
+            elif re.search(r'(^|\s)event=APPROVE\b|"event"\s*:\s*"APPROVE"', literal(body), re.I):
+                self.catch(MERGE_IS_OWNERS)
+        if names(rf'^{REPO}/contents/'):
+            if body is None:
+                self.catch(UNREADABLE)
+            else:
+                branches = re.findall(r'(?:^|\s)branch=(\S*)', body) + re.findall(r'"branch"\s*:\s*"([^"]*)"', body)
+                if not branches or any(b == self.base or unknown(b) for b in branches):
+                    self.catch(push_to(self.base))
+        if names(rf'^{REPO}/issues(/[^/]+(/labels)?)?$'):
+            if body is None:
+                self.catch(UNREADABLE, afk_only=True)
+            elif 'label' in body:
+                labels = [f.split('=', 1)[1] for f in fields if re.match(r'labels(\[\])?=', f)]
+                if labels_add_afk(labels) or re.search('lane:afk', literal(body), re.I) or (
+                        unknown(body) and 'labels' in body):
+                    self.catch(UNATTENDED_AFK, afk_only=True)
+
+    def graphql(self, fields, inputs, command, cwd):
+        texts = []
+        for query in (f.split('=', 1)[1] for f in fields if f.startswith('query=')):
+            if query.startswith('@'):
+                texts.append(self.read_file(query[1:], cwd))  # in a file, `$name` is a GraphQL variable
+            else:
+                texts.append(readable_query(query))
+        texts += [command.stdin if name == '-' else self.read_file(name, cwd) for name in inputs]
+        if not texts or None in texts or (any(f.startswith('operationName=') for f in fields) and any(
+                unknown(f) for f in fields)):
             return self.catch(UNKNOWN_QUERY)
-        query, variables = '\n'.join(text), ' '.join(fields)
+        query = '\n'.join(texts)
+        values = [f for f in fields if not f.startswith('query=')]
+        variables = literal(' '.join(values))
         if GRAPHQL_OWNER.search(query) or (GRAPHQL_APPROVE.search(query) and 'APPROVE' in query + variables):
             self.catch(MERGE_IS_OWNERS)
         if GRAPHQL_SECURITY.search(query):
             self.catch(SECURITY)
-        if GRAPHQL_PUSH.search(query) and re.search(rf'(^|[\s"=:/]){re.escape(self.base)}\b', query + ' ' + variables):
-            self.catch(push_to(self.base))
+        if GRAPHQL_PUSH.search(query):
+            target = query + ' ' + variables
+            if re.search(rf'(^|[\s"=:/]){re.escape(self.base)}\b', target):
+                self.catch(push_to(self.base))
+            elif any(unknown(v) for v in values) or not re.search(r'\b(branchName|qualifiedName)\b|refs/heads/',
+                                                                  target):
+                self.catch(UNREADABLE)  # a ref named by id or by a value the guard can't read
 
     # ------------------------------------------------------------------ git
 
-    def git(self, args, cwd):
+    def git(self, args, cwd, nested):
         args, directory = list(args), cwd
         while args and args[0].startswith('-'):
             flag = args.pop(0)
             if flag in ('-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path') and args:
                 value = args.pop(0)
                 if flag == '-C':
-                    directory = str(Path(directory or '.').joinpath(value).resolve()) if '$' not in value else None
+                    directory = None if unknown(value) or directory is None else self.path(value, directory)
+                elif flag == '-c':
+                    key, _, setting = value.partition('=')
+                    self.git_setting(key, setting, cwd, nested)
         if not args or '--help' in args or '-h' in args:
             return
         sub, rest = args[0], args[1:]
         if sub == 'push':
             self.git_push(rest, directory)
-        elif sub in ('switch', 'checkout') and directory and self.is_main(directory):
+        elif sub == 'config':
+            settings = positionals(rest, {'-f', '--file', '--blob', '--type', '--default', '--comment'})
+            settings = settings[1:] if settings[:1] in (['set'], ['add']) else settings
+            if len(settings) >= 2:
+                self.git_setting(settings[0], settings[1], cwd, nested)
+        elif sub in ('switch', 'checkout') and self.is_main(directory or self.origin):
             if not (sub == 'checkout' and ('--' in rest or '-p' in rest or '--patch' in rest)):
                 self.catch(OWN_WORKTREE)
+
+    def git_setting(self, key, value, cwd, nested):
+        """An alias runs its command; a remote's push refspec is where a bare `git push` goes."""
+        key = key.lower()
+        if key.startswith('alias.'):
+            line = literal(value)
+            self.text(line[1:] if line.startswith('!') else 'git ' + line, cwd, nested + 1)
+        elif re.fullmatch(r'remote\..+\.push', key):
+            self.git_push(['origin', value], cwd)
 
     def git_push(self, args, directory):
         if '--all' in args or '--mirror' in args:
@@ -630,20 +812,20 @@ class Judge:
         targets = positionals(args, valued)[1:] or ['HEAD']
         for refspec in targets:
             destination = refspec.lstrip('+').split(':')[-1]
-            if destination == 'HEAD':
-                destination = current_branch(directory) if directory else None
-            if destination is None or '$' in destination:
+            if destination in ('HEAD', '@'):
+                destination = current_branch(directory or self.origin)
+            if destination is None or unknown(destination):
                 self.catch(UNREADABLE)
-            elif destination.removeprefix('refs/heads/') == self.base:
+            elif re.sub(r'^(refs/)?heads/', '', destination) == self.base:
                 self.catch(push_to(self.base))
 
 
 def refusal(command, unattended=True, extra=(), base='main', cwd=None, is_main_checkout=None):
     """The first reason a shell command is caught, or None."""
-    judge = Judge(unattended, extra, base, is_main_checkout)
+    judge = Judge(unattended, extra, base, is_main_checkout, cwd or os.getcwd())
     try:
         judge.text(command, cwd or os.getcwd())
-    except (Unparsable, IndexError, RecursionError) as error:
+    except (ValueError, IndexError, RecursionError) as error:  # Unparsable, or a NUL byte in a path
         return f'{UNREADABLE} ({error})'
     return judge.findings[0] if judge.findings else None
 
