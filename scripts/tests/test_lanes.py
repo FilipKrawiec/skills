@@ -212,6 +212,17 @@ class AutomergeTests(unittest.TestCase):
         lesson = pr(["docs/a.md"], labels=[{"name": "review:owner"}])
         self.assertEqual(lanes.merge_refusal(lesson, CONFIG), "for the owner: labelled review:owner")
 
+    def test_the_owners_approval_passes_only_the_owner_rules(self) -> None:
+        def lesson(**overrides):
+            return pr(["AGENTS.md"], **{"labels": [{"name": "review:owner"}], "reviews": [], "comments": [],
+                                        "headRefOid": "a" * 40, **overrides})
+        self.assertIn("for the owner", lanes.merge_refusal(lesson(), CONFIG))
+        self.assertIsNone(lanes.merge_refusal(lesson(), CONFIG, owner_approved=True))
+        blocked = {"author": {"login": "alice"}, "state": "CHANGES_REQUESTED", "submittedAt": "2026-10-01T10:00:00Z"}
+        for held in [lesson(isDraft=True), lesson(headRepositoryOwner={"login": "fork"}),
+                     lesson(unresolvedThreads=[thread()]), lesson(reviews=[blocked])]:
+            self.assertIsNotNone(lanes.merge_refusal(held, CONFIG, owner_approved=True))
+
 
 def sized(*files):
     """A PR whose files carry (path, additions, deletions)."""

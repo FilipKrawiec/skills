@@ -10,6 +10,8 @@ Usage: lanes.py next                 # the next eligible AFK issue; in flight, s
        lanes.py triage PR            # owner (and the rule it matched), chore or reviewed
        lanes.py merge PR             # merge PR on green checks (auto-merge) unless an owner
                                      # rule matches or a review holds it
+       lanes.py merge PR --owner-approved  # the same past the owner rules; the guard lets it run
+                                     # only where the host asks the owner (manual permission mode)
        lanes.py hold PR              # switch PR's auto-merge off: a review found blocking issues
        lanes.py blockers PR          # every reason PR can't merge now (exit 1 when any); read-only,
                                      # needs no lanes.json
@@ -292,9 +294,9 @@ def review_refusal(pr, config):
     return None
 
 
-def merge_refusal(pr, config, scope=None):
+def merge_refusal(pr, config, scope=None, owner_approved=False):
     """Why the PR may not merge on green checks, or None. An owner rule hands it to
-    the owner; a review can hold anything that is not a chore."""
+    the owner unless the owner approved it; a review can hold anything that is not a chore."""
     if pr['state'] != 'OPEN' or pr['isDraft']:
         return 'not an open, ready PR'
     if pr['baseRefName'] != config['base'] or pr['headRepositoryOwner']['login'] != config['repo'].split('/')[0]:
@@ -302,7 +304,7 @@ def merge_refusal(pr, config, scope=None):
     if open_threads(pr):
         return open_threads(pr)
     kind, why = triage(pr, config, scope)
-    if kind == 'owner':
+    if kind == 'owner' and not owner_approved:
         return 'for the owner: ' + why
     if kind == 'chore':
         return None
@@ -566,7 +568,7 @@ def cmd_triage(repo, args):
 def cmd_merge(repo, args):
     number = args[0]
     pr, scope = read_pr(repo, number)
-    reason = merge_refusal(pr, repo.config, scope)
+    reason = merge_refusal(pr, repo.config, scope, owner_approved='--owner-approved' in args[1:])
     if reason:
         print(f'#{number} waits: {reason}')
         return

@@ -46,7 +46,7 @@ Each lesson becomes an issue and a PR, except one that targets `.github/lanes.js
 
 1. Invoke `spec` (phase 1) with the target repository (`-R <owner/repo>` for an upstream skill library) to open an issue carrying the target file and the wording.
 2. Make a worktree of the target repository from its fetched base branch, on branch `<branchPrefix>lesson-<N>-<slug>` (`<branchPrefix>` from the target's lanes.json, default `agent/afk-`); for another repository, clone it into the host's temporary directory instead. Apply the wording and pass the target's verification gate.
-3. Push, then open it through board.md's Open PR step, its body also linking the `## Lessons` comment.
+3. Push, then open it through board.md's Open PR step, its body also linking the `## Lessons` comment. With the owner in a session in manual permission mode, once they approve the lessons' wording, merge each lesson PR that `lanes.py triage` hands to the owner with `lanes.py merge <pr> --owner-approved`; the host asks the owner to confirm each one.
 4. Link the issue and the PR from the `## Lessons` comment (or the run's output), and remove a temporary clone.
 
 **Exit gate:** the `## Lessons` comment (or the run's output) linking an issue and a PR for each lesson, or naming why it stays a proposal.

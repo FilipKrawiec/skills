@@ -176,6 +176,36 @@ class GuardHookTests(unittest.TestCase):
                 self.assertEqual(refused.returncode, 2, (mode, path))
                 self.assertIn("manual permission mode", refused.stderr)
 
+    def test_the_owner_approves_a_merge_past_the_owner_rules_only_in_manual_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            (Path(tmp) / ".github").mkdir()
+            (Path(tmp) / ".github/lanes.json").write_text(json.dumps({"repo": "o/r"}))
+            scheduled = str(Path(transcript(tmp, '<scheduled-task name="afk">run')).rename(Path(tmp) / "s.jsonl"))
+            attended = transcript(tmp, "Merge the lessons I approved")
+
+            def run(command, mode, transcript_path):
+                event = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": tmp,
+                         "permission_mode": mode, "transcript_path": transcript_path}
+                return subprocess.run([sys.executable, str(GUARD)], input=json.dumps(event),
+                                      capture_output=True, text=True)
+
+            for command in ("python3 lanes.py merge 12 --owner-approved", 'python3 lanes.py merge 12 --owner-"approved"'):
+                asked = run(command, "default", attended)
+                self.assertEqual(asked.returncode, 0, command)
+                decision = json.loads(asked.stdout)["hookSpecificOutput"]
+                self.assertEqual(decision["permissionDecision"], "ask")
+                self.assertIn("#12", decision["permissionDecisionReason"])
+            for mode, path in (("acceptEdits", attended), ("auto", attended), ("bypassPermissions", attended),
+                               ("default", scheduled), ("default", None), (None, attended)):
+                refused = run("python3 lanes.py merge 12 --owner-approved", mode, path)
+                self.assertEqual(refused.returncode, 2, (mode, path))
+                self.assertIn("manual permission mode", refused.stderr)
+            plain = run("python3 lanes.py merge 12", "auto", attended)
+            self.assertEqual((plain.returncode, plain.stdout), (0, ""))
+            elsewhere = run("python3 lanes.py merge 12 && echo owner-approved", "auto", attended)
+            self.assertEqual(elsewhere.returncode, 0)
+
     def test_hook_keeps_edits_and_branch_switches_out_of_the_main_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root, linked = Path(tmp) / "root", Path(tmp) / "root/.worktrees/5-x"
