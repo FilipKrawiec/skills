@@ -5,6 +5,7 @@
 - Unit runner/style: Kotest on the JUnit Platform.
 - Component-or-higher fallback: JUnit Jupiter when a framework extension owns the test lifecycle.
 - Assertions: Kotest matchers.
+- Mutation: PIT (pitest) on JVM targets.
 - Mocks: MockK on JVM; use Mokkery or Mockative for Kotlin Multiplatform.
 - Acceptance: Cucumber JVM only when shared Gherkin scenarios are useful.
 

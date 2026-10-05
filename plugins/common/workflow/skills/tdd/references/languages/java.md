@@ -4,6 +4,7 @@
 
 - Runner: JUnit Jupiter.
 - Assertions: AssertJ.
+- Mutation: PIT (pitest).
 - Mocks: Mockito, only for outbound ports or slow/external collaborators.
 - Acceptance: Cucumber JVM when feature files add value; otherwise JUnit acceptance classes.
 

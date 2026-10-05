@@ -45,7 +45,7 @@ Output generation tokens are significantly more expensive and slower than input 
 - **Direct Symbol & File Links**: Link to modified paths (e.g. `[filename](file:///path/to/file#L10-L20)`) instead of echoing file bodies in chat.
 - **Evidence-First Output**: Emit compact outputs: exact commands executed, terminal exit code status, and concrete decision points.
 - **Decisive Tool Execution**: Batch tool calls logically; eliminate redundant exploratory roundtrips.
-- **Code Anti-Overengineering**: Enforce the Rule of Two Adapters (an interface once two implementations exist; a port's test fake counts), YAGNI, and Chicago-style state verification over mock combinatorics.
+- **Code Anti-Overengineering**: Enforce the Rule of Two Adapters (an interface once two implementations exist; a port's test fake counts, and so does each case of a repeated conditional), YAGNI, and Chicago-style state verification over mock combinatorics.
 
 ## Universal Diagramming & Formatting Standard
 
