@@ -347,9 +347,9 @@ STARTS_PROCESSES = {
     'node': r'\bchild_process\b|\bBun\.spawn\b|\bDeno\.(run|Command)\b',
 }
 # Each interpreter's flag that takes the program as text, and its flags that take a value: the script is
-# the first other operand.
-# A cluster holds only flags without a value (`perl -ne`, not `ruby -rdate`).
-CODE_FLAGS = {'python': r'-[bBdEhiIOPqsSuvVx]*c', 'node': r'-e|--eval|-p|--print|-pe',
+# the first other operand. A cluster holds only flags without a value (`perl -ne`, not `ruby -rdate`).
+PYTHON_SWITCHES = '[bBdEhiIOPqsSuvVx]*'
+CODE_FLAGS = {'python': rf'-{PYTHON_SWITCHES}c', 'node': r'-e|--eval|-p|--print|-pe',
               'perl': r'-[aclnpsStTuUwWxX0-9]*[eE]', 'ruby': r'-[acdlnpsvwWxy]*e', 'php': r'-r', 'osascript': r'-e',
               'other': r'-c|-e|--eval'}
 PROGRAM_VALUES = {'python': {'-W', '-X', '--check-hash-based-pycs'}, 'ruby': {'-I', '-r', '-C', '-E', '-F'},
@@ -357,10 +357,15 @@ PROGRAM_VALUES = {'python': {'-W', '-X', '--check-hash-based-pycs'}, 'ruby': {'-
                   'node': {'-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions',
                            '--input-type'}}
 QUOTED = re.compile(r'"[+<>]*([^"\s\\]+)"|\'[+<>]*([^\'\s\\]+)\'')  # a file a program may name (perl `">m.sh"`)
-WRITES = re.compile(r'\bopen\s*\([^)]*(,\s*|mode\s*=\s*)["\'][^"\']*[wax+]|(?<!stdout)\.write|\bwrite_?(text|bytes|file)|'
-                    r'appendFile|createWriteStream|\bdump\(|\b(shutil|fs|os|FileUtils)\.(copy|move|rename|symlink|cp|mv)'
-                    r'|\.(rename|symlink_to)\(|\bFile\.new\(|["\']\s*>|file_put_contents|fputs',
-                    re.IGNORECASE)  # a program that may write a file
+# a program that may write a file
+WRITES = re.compile(r'\bopen\s*\([^)]*(,\s*|mode\s*=\s*)["\'][^"\']*[wax+]|(?<!stdout)\.write|'
+                    r'\bwrite_?(text|bytes|file)|appendFile|createWriteStream|\bdump\(|'
+                    r'\b(shutil|fs|os|FileUtils)\.(copy|move|rename|symlink|cp|mv)|\.(rename|symlink_to)\(|'
+                    r'\bFile\.new\(|["\']\s*>|file_put_contents|fputs', re.IGNORECASE)
+# Each downloader's option for the file it writes (`-` is stdout), and curl's for the file the URL names;
+# wget writes the file the URL names without one, in its `-P` directory.
+DOWNLOADS = {'curl': (r'-[a-np-zA-Z]*o(.*)|--output(?:=(.*))?', r'-[a-zA-Z]*O|--remote-name(-all)?'),
+             'wget': (r'-[a-zA-NP-Z]*O(.*)|--output-document(?:=(.*))?', None)}
 # A string a program compares is text, not a command line it runs; so is one it edits or prints.
 COMPARES = re.compile(r'\bassert\b|["\']\s+(not\s+)?in\s+\w|\.(startswith|endswith|find|index|count|includes)\(')
 TEXT_USE = re.compile(COMPARES.pattern + r'|\.(replace|write|write_text|sub|split|join)\(|\bprint\b')
@@ -647,23 +652,25 @@ class Judge:
             self.written[self.path(files[1], cwd)] = self.written.get(source) or Written(self.read_file(files[0], cwd))
 
     def note_downloads(self, name, args, cwd):
-        """A download is unreadable: curl's `-o file` (`-sSo file`), and with `-O`, or wget without `-O`, the
-        file named by the URL."""
-        output = r'-[a-zA-Z]*o|--output' if name == 'curl' else r'-[a-zA-Z]*O|--output-document'
-        named = name == 'wget'
+        """A downloaded file is unreadable."""
+        output, remote = DOWNLOADS[name]
+        named, directory = remote is None, ''
         for i, arg in enumerate(args):
-            value = re.fullmatch(rf'({output})(=(.*))?', arg)
+            value = re.fullmatch(output, arg, re.DOTALL)
             if value:
-                path = value.group(3) if value.group(2) else args[i + 1] if i + 1 < len(args) else '-'
+                path = value.group(1) or value.group(2) or (args[i + 1] if i + 1 < len(args) else '-')
                 if path != '-':
                     self.written[self.path(path, cwd)] = Written(None)
-                named = False
-            elif name == 'curl' and re.fullmatch(r'-[a-zA-Z]*O|--remote-name', arg):
+                named = named and remote is not None
+            elif remote and re.fullmatch(remote, arg):
                 named = True
+            elif name == 'wget' and re.fullmatch(r'-P(.*)|--directory-prefix(?:=(.*))?', arg):
+                prefix = re.fullmatch(r'-P(.*)|--directory-prefix(?:=(.*))?', arg)
+                directory = prefix.group(1) or prefix.group(2) or (args[i + 1] if i + 1 < len(args) else '')
         for arg in args if named else ():
             url = re.fullmatch(r'\w+://[^/]+/(?:.*/)?([^/?#]+)(?:[?#].*)?', arg)
             if url:
-                self.written[self.path(url.group(1), cwd)] = Written(None)
+                self.written[self.path(os.path.join(directory, url.group(1)), cwd)] = Written(None)
 
     def note_program(self, code, cwd):
         """Each file an inline program that writes names may be one it writes, from its code. A writer often
@@ -784,19 +791,21 @@ class Judge:
         for i, arg in enumerate(args):
             if i in taken or i and args[i - 1] in values:
                 continue
-            attached = re.fullmatch(r'(--[\w-]+)=(.*)', arg, re.DOTALL)  # `--eval=...`
-            if code_flag.fullmatch(attached.group(1) if attached else arg):
-                code.append(attached.group(2) if attached else args[i + 1] if i + 1 < len(args) else None)
+            attached = re.fullmatch(rf'(?:{CODE_FLAGS[kind]})=?(.+)', arg, re.DOTALL)  # `-c"..."`, `--eval=...`
+            if code_flag.fullmatch(arg):
+                code.append(args[i + 1] if i + 1 < len(args) else None)
                 taken.add(i + 1)
-                continue  # `osascript -e a -e b` runs both
-            if code:
-                break
-            module = re.fullmatch(r'-[bBdEhiIOPqsSuvVx]*m(.*)', arg) if kind == 'python' else None
-            if module:
+            elif attached:
+                code.append(attached.group(1))
+            elif arg == '-' or not arg.startswith('-'):
+                break  # the script (`-` for stdin); after code, the program's arguments
+            elif not code and kind == 'python' and (module := re.fullmatch(rf'-{PYTHON_SWITCHES}m(.*)', arg)):
                 module = module.group(1) or (args[i + 1] if i + 1 < len(args) else '')
                 return self.runnable(module.replace('.', '/') + '.py', cwd)  # installed, unless this call wrote it
-            if arg == '-' or not arg.startswith('-'):
-                break  # the script (`-` for stdin); the arguments after it are the script's
+            else:
+                continue
+            if kind == 'python':
+                break  # the rest are the program's arguments; `perl -e a -w -e b` runs both
         else:
             arg = '-'
         if code:
@@ -824,8 +833,9 @@ class Judge:
     def string_commands(self, code, cwd, text_use):
         """Judge the gh and git command lines in a program's strings; a statement that only uses its strings
         as `text_use` text runs none."""
-        for statement in re.split(r'[\n;]', literal(code)):
-            if re.search(r'["\'](\s|\\[nt])*(gh|git)\b', statement) and not text_use.search(statement):
+        code = literal(code).replace('\\n', '\n').replace('\\t', ' ')  # a string's lines are lines it writes
+        for statement in re.split(r'\n|;|&&|\|\|', code):
+            if re.search(r'(^|["\'])\s*(gh|git)\b', statement) and not text_use.search(statement):
                 self.command_line(statement, cwd)
 
     def process_call(self, code, call, cwd):
