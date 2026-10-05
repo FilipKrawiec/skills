@@ -7,7 +7,7 @@
 - State Management & Routing: use the override and test hooks of the state-management and router packages the project already has; stub application use cases at the presentation boundary.
 - Mocks & Fakes: In-memory fake ports (e.g. `MemoryUsers implements Users`) preferred over mock packages (Chicago-style state verification).
 - Integration: backend SDK and database adapters are integration-suite territory (local emulator or real local database); unit and widget suites use in-memory adapters of the same port.
-- Time: production code reads `clock.now()` (`package:clock`) so `testWidgets` fake time controls it; `DateTime.now()` makes timer-based tests flaky under load.
+- Time: production code reads `clock.now()` (`package:clock`) so `testWidgets` fake time controls it; `DateTime.now()` makes timer-based tests flaky under load. Plain `test` cases that need time use `fakeAsync` (`package:fake_async`) instead of awaiting a real `Future.delayed`.
 
 ## Scenario Shape
 
@@ -25,7 +25,9 @@
 - In widget tests, find elements by semantic properties, keys, or localized text rather than deep widget tree structure; `find.byType` on layout primitives (`Container`, `Padding`, `SizedBox`), `findsNWidgets` counts of them, and reads of an internal widget's property (`AnimatedOpacity.opacity`) pin structure, not behaviour.
 - Every `testWidgets` file lives under the widget folder, even when it checks one value; `test/unit/` holds only plain `test` cases.
 - Value types are records, or classes with generated equality where the project has a generator; a hand-written `==`/`hashCode`/`copyWith` is tested only through the behaviour it enables (a `Set` deduplicates, an equal state does not notify listeners).
-- Assert layout as relations (centres aligned, equal gutters, sizes equal to theme tokens, `greaterThanOrEqualTo(kMinInteractiveDimension)`) instead of pixel literals.
-- Treat the "would not hit test" warning as a missed tap: bring the target into view (`Scrollable.ensureVisible(..., alignment: 0.5)`) before tapping.
+- Assert layout as relations (centres aligned, equal gutters, sizes equal to theme tokens, `greaterThanOrEqualTo(kMinInteractiveDimension)`) instead of pixel literals; `closeTo(36.0)`, `moreOrLessEquals(28.0)` and a literal compared with `constraints.maxWidth` are pixel literals too.
+- Treat the "would not hit test" warning as a missed tap: bring the target into view (`Scrollable.ensureVisible(..., alignment: 0.5)`) before tapping, and leave `warnIfMissed` at its default.
+- Mount the narrowest widget that owns the behaviour, through the project's shared pump helper and fakes; boot the whole app only for the few journeys that cross screens.
+- Tests do not exercise production code that detects tests (`WidgetsBinding.instance` type checks); the widget takes the switch as a parameter and the test passes it.
 - `tester.drag` / `tester.tap` default to touch; pass `kind: PointerDeviceKind.mouse` when exercising desktop pointer paths.
 - Assert presentation state changes and user interaction handling (e.g. tapping buttons, entering text, validating loading/error states).

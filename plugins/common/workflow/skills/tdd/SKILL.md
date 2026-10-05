@@ -61,6 +61,12 @@ Report longer failure detail only when GREEN cannot be reached, as: root cause (
 - Coverage is a byproduct of behaviour tests. When the gate flags an uncovered line, write the test whose failure a user or caller would notice, or delete the line; a test named after a method's branches, one that exercises a test double, and one that only walks `==`, `hashCode`, `copyWith` or `toString` prove nothing and stay out of the suite. Prefer language value equality (records, data classes, generated equality) over hand-written equality whose lines would need such tests.
 - In REFACTOR, delete production API that only tests call, together with those tests.
 - For a function whose mistake would corrupt data or mislead the user, flip one of its conditions or constants and run its tests: at least one must fail, or add the boundary case that makes it fail.
+- Name a test after the behaviour it protects. A name or comment citing coverage, a branch or a line number, and a lint suppression or current-time argument that forces runtime construction, mark a test written for the gate.
+- End each test on an assertion of the outcome after its last action. A test that acts without asserting, or silences the runner's missed-interaction warning, proves only that nothing threw.
+- Test a documented range, unit or format at each edge and across its wrap-around (a duration past one hour, a delta at its half-way point, a multiplier below one).
+- Drive time through the project's fake clock or fake async scheduler; a test that waits on real time is slow and flakes under load.
+- Prove an adapter contract once and run it against every implementation, including a deliberately broken one the contract must reject.
+- A verification gate is code: give each rule one passing and one failing fixture, and match parsed syntax or types rather than one spelling, so an equivalent spelling cannot slip past.
 - File each test by what it boots: a test that renders UI belongs with the UI tests even when it checks one value.
 - Exclude integration, system, and acceptance tests from coverage calculations; treat them as verification suites, not coverage sources.
 
@@ -73,6 +79,7 @@ Report longer failure detail only when GREEN cannot be reached, as: root cause (
 - Read [integration-testing.md](references/integration-testing.md) when testing inter-service communication boundaries.
 - Read [system-testing.md](references/system-testing.md) when implementing end-to-end black-box system tests.
 - Read [acceptance-testing.md](references/acceptance-testing.md) when introducing new features or acceptance criteria.
+- Read [mutation-testing.md](references/mutation-testing.md) when checking whether tests catch defects, beyond the one-flip check above, or auditing a suite's effectiveness.
 - Read [java.md](references/languages/java.md) when implementing tests in Java.
 - Read [kotlin.md](references/languages/kotlin.md) when implementing tests in Kotlin.
 - Read [javascript.md](references/languages/javascript.md) when implementing tests in JavaScript or TypeScript.

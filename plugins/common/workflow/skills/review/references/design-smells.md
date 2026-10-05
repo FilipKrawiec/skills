@@ -15,6 +15,21 @@ A diff review sees one change; these smells grow across many. When the review co
 | Reimplemented generic | A second hand-rolled undo stack, cache, debounce or retry next to a generic one the codebase already has | Reuse the generic; delete the copy and its tests |
 | Compatibility shims | Passthrough getters or setters "for backwards compatibility" with no production caller | Delete them and the tests that only call them |
 | Static utility sprawl | Static helper classes whose every method takes the same domain type as first argument | *Move Method* onto that type, or an extension on it |
+| Flag-branched class | The same boolean, platform or mode check opens several methods of one class (`if (isWeb)` in five methods) | A Strategy: one implementation per variant, chosen once where the object is built |
+| Primitives beside value objects | A state or settings type stores raw numbers and strings while value objects for the same quantities exist unused | Hold the value objects, so bounds and validation live once |
+| Test-aware production code | Production code asks whether it runs under a test (runtime type names, environment variables, test-binding probes) | Inject the behaviour as a parameter or port; a test passes the variant it needs |
+| Partial equality | `==` compares a subset of fields (a count, an id) while selectors, memoization or diffing rely on it | Compare every field observers depend on; one test where only the omitted field differs |
+
+## Hot Paths
+
+| Smell | Signal to search for | Fix |
+| --- | --- | --- |
+| Recompute per event | Derivable data (normalized search text, joined content, parsed tokens, regexes) rebuilt per keystroke, frame or render | Compute once per value change and cache it on the value; debounce input |
+| Quadratic accumulation | An immutable collection copied whole on every append (a gesture's points per move, full snapshots per undo step) | Accumulate in a buffer while the gesture runs and commit once; store bounded deltas |
+| Allocating change check | An equality or "should update" check that builds strings or flattens lists | Compare fields or identities, or a version counter |
+| Timer-driven motion | A periodic wall-clock timer moving an animation or scroll | Advance on the frame clock by velocity × elapsed time |
+| Broad notification | One item's change rebuilds or notifies the whole screen or list (a shared index passed to every item, a transient pulse held in screen state) | Each item subscribes to its own derived value; a transient event reaches only the listener that shows it |
+| Serial startup | Independent initialisations awaited one after another before the first screen | Start them together and await all; defer what the first screen does not need |
 
 ## Test Rigor
 
@@ -26,7 +41,14 @@ A diff review sees one change; these smells grow across many. When the review co
 | Structure-coupled | Finding or counting layout primitives (`Container`, `Padding`, `Row`), reading animation or style properties of internal widgets, asserting tuning constants | Assert through semantics, keys, visible text, relations between rendered boxes, or the domain value behind the look |
 | Misfiled level | UI-booting tests in the unit folder; UI tests checking pure logic | Move pumped tests to the UI suite; extract the logic and unit test it |
 | Surviving mutant | Flip one condition or constant in an important function; no test fails | Add the boundary or failure-path case that kills it |
+| Act without assert | No assertion at all, interactions after the last assertion, or a silenced missed-interaction warning | End on an assertion of the outcome; let a missed interaction fail |
+| Documented edge untested | A documented range, unit or format whose ends and wrap-around have no case (hours in a duration, the half-way delta) | A table test at each documented edge |
+| Real-time wait | Sleeps or real delays in tests | Fake clock or fake async scheduler |
+| Copied harness | The same setup builder, fake or whole test file repeated across files | One shared helper or fake; delete the copies |
+| Untested or evadable gate | A verification script with no fixture tests, or a text pattern an equivalent spelling slips past (`closeTo(36)` for `36`) | A passing and a failing fixture per rule; match parsed syntax |
 
 ## Report
+
+Sample mutants on the area's domain files as the `tdd` skill's mutation testing reference describes, and report the per-file score next to line coverage.
 
 For each smell found: the count, the three strongest examples, the refactoring, and an estimate (S, M, L). Rank by defects or rework it is likely to cause, not by count.
