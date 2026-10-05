@@ -57,6 +57,8 @@ Follow the phases in order; each skill's exit gate is the next step's entry.
 
 Park with one question, the options and a recommendation whenever the issue is ambiguous or contradicts project rules, needs a path outside its scope packet or a protected path, needs an undecided product or model choice, stays red after two honest fix attempts, still has a verified blocking finding after the second review round, or needs credentials, settings or a device.
 
+An issue's stop condition holds only once its stated fact is verified: trace a crash or a red check to the call that raises it, and list in the park every fix found that keeps all criteria.
+
 **Exit gate:** a PR URL with its auto-merge verdict, or a parked issue.
 
 ## 5. Housekeeping
