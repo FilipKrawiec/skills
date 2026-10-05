@@ -11,12 +11,15 @@ Usage: lanes.py next                 # the next eligible AFK issue; in flight, s
        lanes.py merge PR             # merge PR on green checks (auto-merge) unless an owner
                                      # rule matches or a review holds it
        lanes.py hold PR              # switch PR's auto-merge off: a review found blocking issues
+       lanes.py blockers PR          # every reason PR can't merge now (exit 1 when any); read-only,
+                                     # needs no lanes.json
 Standard library only; needs git and an authenticated gh.
 """
 import json
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -186,7 +189,7 @@ def renamed(pr):
 def open_threads(pr):
     """Why unresolved review threads hold a PR, or None. A base branch that requires
     resolved conversations reports such a PR only as BLOCKED, so name the cause."""
-    count = pr.get('unresolvedThreads') or 0
+    count = len(pr.get('unresolvedThreads') or [])
     if not count:
         return None
     return f"{count} unresolved review thread{'s' if count > 1 else ''}: answer, then resolve each"
@@ -259,16 +262,21 @@ def latest_agent_review(pr, reviewer):
     return max(found, key=lambda f: f[3]) if found else None
 
 
+def requesting_changes(pr):
+    """Reviewers whose newest approval, change request or dismissal requests changes."""
+    latest = {}  # a person's later comment leaves their approval or change request standing
+    for r in sorted(pr['reviews'], key=lambda r: r.get('submittedAt') or ''):
+        if r['state'] in ('APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'):
+            latest[r['author']['login']] = r['state']
+    return sorted(login for login, state in latest.items() if state == 'CHANGES_REQUESTED')
+
+
 def review_refusal(pr, config):
     """Why a PR no owner rule matches must not merge on green checks, or None. The
     session that opened it reviewed it first; a later review holds it when it
     requests changes, when the newest agent review finds problems at the head, or
     when a person commented after that review."""
-    latest = {}  # a person's later comment leaves their approval or change request standing
-    for r in sorted(pr['reviews'], key=lambda r: r.get('submittedAt') or ''):
-        if r['state'] in ('APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'):
-            latest[r['author']['login']] = r['state']
-    if 'CHANGES_REQUESTED' in latest.values():
+    if requesting_changes(pr):
         return 'a review requests changes'
     review = latest_agent_review(pr, config['owner'])
     if review is None:
@@ -301,6 +309,70 @@ def merge_refusal(pr, config, scope=None):
     return review_refusal(pr, config)
 
 
+PASSED = ('SUCCESS', 'NEUTRAL', 'SKIPPED')
+
+
+def check_state(check):
+    """'pass', 'pending' or 'fail' for one entry of a PR's statusCheckRollup."""
+    if check.get('__typename') == 'StatusContext':
+        return {'SUCCESS': 'pass', 'PENDING': 'pending', 'EXPECTED': 'pending'}.get(check.get('state'), 'fail')
+    if check.get('status') != 'COMPLETED':
+        return 'pending'
+    return 'pass' if check.get('conclusion') in PASSED else 'fail'
+
+
+def latest_checks(rollup):
+    """The newest run of each check; a re-run or a second event leaves the older one in the
+    rollup. A run not started yet is the newest."""
+    newest = {}
+    for c in rollup or []:
+        key = (c.get('workflowName') or '', c.get('name') or c.get('context'))
+        started = c.get('startedAt') or ''
+        started = '9999' if not started or started.startswith('0001') else started
+        if key not in newest or started >= newest[key][0]:
+            newest[key] = (started, c)
+    return [c for _, c in newest.values()]
+
+
+def first_line(text):
+    return next((l.strip() for l in (text or '').splitlines() if l.strip()), '')[:100]
+
+
+def blockers(pr):
+    """Every reason the PR can't merge now; empty when nothing holds it. GitHub reports
+    most of them only as BLOCKED, so an attended session reads them here before it
+    calls the PR ready, hands it over, switches on auto-merge or merges it."""
+    if pr['state'] != 'OPEN':
+        return [f"not open: {pr['state']}"]
+    base, found = pr['baseRefName'], []
+    if pr['isDraft']:
+        found.append('draft: mark it ready for review')
+    states = [(check_state(c), c.get('name') or c.get('context')) for c in latest_checks(pr.get('statusCheckRollup'))]
+    found += [f'check failing: {name}' for state, name in states if state == 'fail']
+    found += [f'check pending: {name}' for state, name in states if state == 'pending']
+    merge_state = pr.get('mergeStateStatus')
+    if pr.get('mergeable') == 'CONFLICTING' or merge_state == 'DIRTY':
+        found.append(f'conflicts with {base}: merge origin/{base} and resolve')
+    elif merge_state == 'BEHIND':
+        found.append(f'behind {base}: update the branch')
+    elif pr.get('mergeable') == 'UNKNOWN' or merge_state == 'UNKNOWN':
+        found.append('mergeability not computed yet: run again')
+    if open_threads(pr):
+        found.append(open_threads(pr))
+        for t in pr['unresolvedThreads']:
+            where = t['path'] + (f":{t['line']}" if t.get('line') else '')
+            writer = 'agent-written' if AGENT_FOOTER.search(t.get('body') or '') else f"@{t['author']}"
+            if t.get('outdated'):
+                writer = 'outdated, ' + writer
+            found.append(f"  {where} ({writer}): {first_line(t.get('body'))}")
+    found += [f'changes requested by @{login}' for login in requesting_changes(pr)]
+    if pr.get('reviewDecision') == 'REVIEW_REQUIRED':
+        found.append('review required: an approval the base branch requires is missing')
+    if not found and merge_state == 'BLOCKED':
+        found.append('blocked by a rule of the base branch this command does not read (a required review?)')
+    return found
+
+
 def afk_in_flight(issues, with_pr):
     """AFK claims still being built; person-led starts never hold the queue."""
     return [i for i in issues if CLAIMED in names(i) and i['number'] not in with_pr]
@@ -322,16 +394,26 @@ def gh_json(*args):
 
 
 THREADS = ('query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) '
-           '{ pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved } } } } }')
+           '{ pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved isOutdated path line '
+           'originalLine comments(first: 1) { nodes { body author { login } } } } } } } }')
+
+
+def thread_entry(node):
+    """{path, line, outdated, body, author} of a review thread's first comment. An outdated
+    thread keeps the line it was written on; a deleted account reads as ghost."""
+    first = (node['comments']['nodes'] or [{}])[0]
+    return {'path': node['path'], 'line': node.get('line') or node.get('originalLine'),
+            'outdated': bool(node.get('isOutdated')), 'body': first.get('body') or '',
+            'author': (first.get('author') or {}).get('login', 'ghost')}
 
 
 def unresolved_threads(repo_name, number):
-    """How many of the PR's review threads are still open; `gh pr view` doesn't report them."""
+    """The PR's open review threads as thread_entry dicts; `gh pr view` doesn't report them."""
     owner, name = repo_name.split('/')
     data = gh_json('api', 'graphql', '-f', f'query={THREADS}', '-F', f'owner={owner}',
                    '-F', f'name={name}', '-F', f'number={number}')
     threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
-    return sum(1 for t in threads if not t['isResolved'])
+    return [thread_entry(t) for t in threads if not t['isResolved']]
 
 
 class Repo:
@@ -513,11 +595,47 @@ def cmd_hold(repo, args):
     print(f'#{number} holds: auto-merge switched off until `lanes.py merge` runs again')
 
 
+BLOCKER_FIELDS = 'url,state,isDraft,baseRefName,mergeable,mergeStateStatus,statusCheckRollup,reviews,reviewDecision'
+
+
+def pr_ref(url):
+    """('owner/name', 'number') of a pull request URL."""
+    owner, name, _, number = url.rstrip('/').split('/')[-4:]
+    return f'{owner}/{name}', number
+
+
+def read_blockers(ref):
+    """The PR with its open threads; GitHub computes mergeability a few seconds after a push."""
+    for _ in range(3):
+        pr = gh_json('pr', 'view', ref, '--json', BLOCKER_FIELDS)
+        if pr.get('mergeable') != 'UNKNOWN':
+            break
+        time.sleep(5)
+    pr['unresolvedThreads'] = unresolved_threads(*pr_ref(pr['url']))
+    return pr
+
+
+def cmd_blockers(_repo, args):
+    """Read-only, and works in any repository gh can read: no lanes.json needed."""
+    if not args:
+        sys.exit(__doc__)
+    try:
+        pr = read_blockers(args[0])
+    except subprocess.CalledProcessError as error:
+        sys.exit(f'cannot read {args[0]}: {error.stderr.strip()} (outside its repository, pass the PR URL)')
+    found = blockers(pr)
+    for line in found:
+        print(line)
+    if found:
+        sys.exit(1)
+
+
 # `automerge` and `merge-reviewed` are the names older wrappers call.
 COMMANDS = {'next': cmd_next, 'scope': cmd_scope, 'triage': cmd_triage, 'merge': cmd_merge, 'hold': cmd_hold,
-            'automerge': cmd_merge, 'merge-reviewed': cmd_merge}
+            'blockers': cmd_blockers, 'automerge': cmd_merge, 'merge-reviewed': cmd_merge}
+WITHOUT_REPO = {'blockers'}
 
 if __name__ == '__main__':
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:
         sys.exit(__doc__)
-    COMMANDS[sys.argv[1]](Repo(), sys.argv[2:])
+    COMMANDS[sys.argv[1]](None if sys.argv[1] in WITHOUT_REPO else Repo(), sys.argv[2:])
