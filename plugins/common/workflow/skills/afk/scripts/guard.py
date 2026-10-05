@@ -377,9 +377,11 @@ COMPARES = re.compile(r'\bassert\b|["\']\s+(not\s+)?in\s+\w|\.(startswith|endswi
 TEXT_USE = re.compile(COMPARES.pattern + r'|\.(replace|write|write_text|sub|split|join)\(|\bprint\b|'
                       r'\bconsole\.\w+|\blogg(ing|er)\.|\.(debug|info|warning|warn|error)\(|\braise\b|'
                       r'\bthrow\b|\bsys\.exit\b')
-# A program's string (`f'...'` too), and the end of a statement outside one.
-STRING = re.compile(r'(?:(?<!\w)[fbrFBR])?("(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\')')
-STATEMENT_END = re.compile(STRING.pattern + r'|(\n|;|&&|\|\|)')
+# A program's string (`f'...'`, `\'\'\'...\'\'\'` too); a bracket, or the end of a statement, outside one.
+STRING = re.compile(r'(?:(?<!\w)[fbrFBR]{1,2})?(\'\'\'(?:[^\\]|\\.)*?\'\'\'|"""(?:[^\\]|\\.)*?"""|'
+                    r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\')', re.DOTALL)
+STATEMENT_PART = re.compile(STRING.pattern + r'|([\[({])|([\])}])|(\n|;|&&|\|\|)', re.DOTALL)
+GH_OR_GIT = re.compile(r'\b(gh|git)\b')
 # A string that runs a gh or git command: one it starts, or one past a shell separator (`'ls; gh …'`).
 SHELL_COMMAND = re.compile(r'(^|[;&|\n(`]|\$\()\s*(gh|git)\b')
 # Commands that run none of their arguments; `tee` writes files, but a file it writes runs nothing.
@@ -399,6 +401,7 @@ REPO = r'(?:repos/[^/\s]+/[^/\s]+|repositories/[^/\s]+)'
 EXPANSION = re.compile(r'\$\(…\)|\$\{[^}]*\}|\$\w+|\$[@*]|\$')
 MISREAD = (ValueError, IndexError, RecursionError)  # Unparsable, or a NUL byte in a path
 MAX_NESTING = 8  # shells, evals and substitutions within one another; deeper is unreadable
+STRING_NESTING = MAX_NESTING // 2  # a program's string may start shells within shells, a few deep
 
 # (path pattern, reason): API writes caught whatever their body; pushes to the base branch are judged per call.
 API_RULES = [
@@ -452,43 +455,69 @@ def unwrap(argv):
 
 
 def statements(code):
-    """A program's statements, split at its newlines, `;`, `&&` and `||` outside its strings."""
-    found, start = [], 0
-    for match in STATEMENT_END.finditer(code):
-        if match.group(2):
+    """A program's statements, split at its newlines, `;`, `&&` and `||` outside its strings and brackets."""
+    found, start, depth = [], 0, 0
+    for match in STATEMENT_PART.finditer(code):
+        depth = max(0, depth + bool(match.group(2)) - bool(match.group(3)))
+        if match.group(4) and not depth:
             found.append(code[start:match.start()])
             start = match.end()
     return found + [code[start:]]
 
 
 def statements_running(code, text_use):
-    """A program's statements, except those that only use their strings as `text_use` text."""
-    return (statement for statement in statements(literal(code)) if not text_use.search(statement))
+    """A program's statements, except those that only use their strings as `text_use` text, or are only a
+    string (a docstring)."""
+    return (statement for statement in statements(literal(code))
+            if not text_use.search(statement) and not re.fullmatch(rf'\s*{STRING.pattern}\s*', statement, re.DOTALL))
 
 
 def string_text(string):
     """The text a program's string literal holds: `\\n` is a line break."""
+    quotes = 3 if string[:3] in ("'''", '"""') and len(string) >= 6 else 1
     return re.sub(r'\\(.)', lambda escape: {'n': '\n', 't': ' '}.get(escape.group(1), escape.group(1)),
-                  string[1:-1])
+                  string[quotes:-quotes])
 
 
 def code_words(code):
-    """Program code as plain words: quotes, brackets, commas and `\\n` dropped."""
-    return re.sub(r'["\'\[\](),]+|\\[nt]', ' ', code)
+    """Program code as plain words: quotes, backquotes, brackets, commas and `\\n` dropped."""
+    return re.sub(r'["\'`\[\](),]+|\\[nt]', ' ', code)
+
+
+def joining(before, previous, text):
+    """How the code `before` a string `text` joins it to the command line of the string `previous`:
+    'argument' after a comma or a keyword (`, input=`), unless in a list it starts a command of its own
+    (`['ls', 'gh …']`, not `['-m', 'gh …']`); 'joined' or 'text' after a concatenation (`+`, `.`, `..` or
+    none) with nothing or code between; else None, a command line of its own."""
+    if re.search(r',\s*(?!(args|cmd|command)\b)\w+\s*=\s*$', before):
+        return 'argument'
+    if re.search(r',[\s\[(]*$', before):
+        return None if re.match(r'\s*(gh|git)\s', text) and not previous.startswith('-') else 'argument'
+    if re.fullmatch(r'\s*(\+|\.\.?)?\s*', before):
+        return 'joined'
+    if re.match(r'\s*(\+|\.\.?\s)', before) or re.search(r'(\+|\s\.\.?)\s*$', before):
+        return 'text'
+    return None
 
 
 def spelled(code):
-    """The command lines program code spells. Each string starts one, as shell text, except a string after a
-    comma: that is one argument (`['git', 'commit', '-m', 'x; y']`). The words between strings stay."""
-    lines, end = [''], 0
+    """The command lines program code spells: each string is shell text on a line of its own, except one that
+    is an argument (`['git', 'commit', '-m', 'x; y']`) or joins another (`'gh pr ' + 'merge 1'`). The
+    words between strings stay."""
+    lines, end, previous = [''], 0, None
     for match in STRING.finditer(code):
         before, text = code[end:match.start()], string_text(match.group(1))
-        lines[-1] += code_words(before)
-        if re.search(r',[\s\[(]*$', before):
-            lines[-1] += ' ' + shlex.quote(text)
+        how = previous is not None and joining(before, previous, text)
+        if how == 'argument':
+            lines[-1] += code_words(before) + ' ' + shlex.quote(text)
+        elif how == 'joined':
+            lines[-1] += text
+        elif how == 'text':
+            lines[-1] += re.sub(r'(?<!\S)(\+|\.\.?)(?!\S)', ' ', code_words(before)) + text
         else:
+            lines[-1] += code_words(before)
             lines.append(text)
-        end = match.end()
+        end, previous = match.end(), text
     lines[-1] += code_words(code[end:])
     return lines
 
@@ -907,8 +936,8 @@ class Judge:
         for statement in statements_running(code, COMPARES):
             for string in STRING.finditer(statement):
                 text = string_text(string.group(1))
-                if re.search(r'\b(gh|git)\b', text):
-                    self.sure(lambda judge, text=text: judge.text(text, cwd, MAX_NESTING - 1))
+                if GH_OR_GIT.search(text):
+                    self.sure(lambda judge, text=text: judge.text(text, cwd, STRING_NESTING))
 
     def process_call(self, code, call, cwd):
         """Judge the command line a program's process call could run: the call's own arguments."""
@@ -930,13 +959,11 @@ class Judge:
         """Judge program code as the command lines it spells; code before its first string, from its first gh
         or git (`qx{gh …}`)."""
         self.project_rules(' '.join(code_words(code).split()))
-        lines = spelled(code)
-        start = re.search(r'\b(gh|git)\b', lines[0])
-        lines[0] = lines[0][start.start():] if start else ''
-        for line in lines:
-            if re.search(r'\b(gh|git)\b', line):
-                # Judged near the deepest nesting: a shell the fragment starts is read, one within it not.
-                self.sure(lambda judge, line=line: judge.text(line, cwd, MAX_NESTING - 1))
+        head, *lines = spelled(code)
+        start = GH_OR_GIT.search(head)
+        for line in ([head[start.start():]] if start else []) + lines:
+            if GH_OR_GIT.search(line):
+                self.sure(lambda judge, line=line: judge.text(line, cwd, STRING_NESTING))
 
     # ------------------------------------------------------------------ gh
 

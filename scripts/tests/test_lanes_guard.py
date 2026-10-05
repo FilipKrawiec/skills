@@ -171,6 +171,23 @@ HIDDEN = [
     "python3 - <<'EOF'\nimport subprocess\ncmd = 'ls; gh pr merge 1'\nsubprocess.run(cmd, shell=True)\nEOF",
     "node -e \"const c='ls && gh pr merge 1'; require('child_process').execSync(c)\"",
     "python3 -c \"import subprocess; subprocess.run(['sh','-c','gh pr merge 1'])\"", "perl -e 'qx{gh pr merge 1}'",
+    "python3 -c \"import os; os.system('git push ' + 'origin main')\"",
+    "python3 -c \"import os; os.system('gh pr ' 'merge 1')\"",
+    "node -e \"require('child_process').execSync('gh pr ' + 'merge 1')\"",
+    "perl -e 'system(\"gh pr \" . \"merge 1\")'",
+    "python3 - <<'EOF'\nopen('m.sh','w').write('''#!/bin/sh\ngh pr merge 1\n''')\nEOF\nbash m.sh",
+    "python3 - <<'EOF'\nopen('m.sh','w').write(\"\"\"#!/bin/sh\ngh pr merge 1\n\"\"\")\nEOF\nbash m.sh",
+    "python3 - <<'EOF'\nfrom pathlib import Path\nPath('m.sh').write_text('''#!/bin/sh\ngh pr merge 1\n''')\nEOF\nsh "
+    "m.sh",
+    "python3 - <<'EOF'\nimport subprocess\ncmd = '''\ngh pr merge 1\n'''\nsubprocess.run(cmd, shell=True)\nEOF",
+    "node -e \"require('child_process').execSync(`gh pr merge 1`)\"",
+    "node -e \"const cp=require('child_process'); for (const c of ['ls', 'gh pr merge 1']) cp.execSync(c)\"",
+    "python3 -c \"import subprocess\ncmds = ['ls', 'git push origin main']\nfor c in cmds: subprocess.run(c, "
+    "shell=True)\"",
+    "python3 -c \"import os\nfor c in ('git fetch', 'gh pr merge 1'): os.system(c)\"",
+    "python3 -c \"import subprocess; subprocess.run(['bash','-c','bash -c \\\"gh pr merge 1\\\"'])\"",
+    "python3 -c \"import os; os.system('gh pr merge %s' % n)\"",
+    "python3 -c \"import os; os.system(f'gh pr merge {n}')\"",
 ]
 # Calls the guard caught in real runs although they ship nothing.
 READS_AND_WRITING = [
@@ -246,6 +263,15 @@ READS_AND_WRITING = [
     "python3 -c \"import subprocess, logging; logging.info('gh pr merge 1'); subprocess.run(['ls'])\"",
     "node -e \"const cp=require('child_process'); console.log('gh pr merge 1'); cp.execSync('ls')\"",
     "python3 -c \"import subprocess, sys; sys.exit('gh pr merge 1 is the owner')\"",
+    "python3 - <<'EOF'\nimport subprocess\nsubprocess.run([\n    'git', 'commit', '-m',\n    'Guard: x\\n\\ngh pr "
+    "merge is now refused',\n])\nEOF",
+    "python3 -c \"import subprocess; subprocess.run(['git','commit','-F','-'], input='Fix\\n\\ngh pr merge 1')\"",
+    "python3 -c \"import subprocess; subprocess.run(['git','commit','-m','''x\ngh pr merge is now refused\n'''])\"",
+    "python3 -c \"import subprocess; subprocess.run(['gh','issue','create','--title','gh pr merge fails on forks'])\"",
+    "python3 -c \"import subprocess; subprocess.run(['git','commit','-m','git push to main is blocked'])\"",
+    "python3 -c \"print(', '.join(['a', 'b']))\"",
+    "python3 - <<'EOF'\nimport subprocess\nout = subprocess.run(['git', 'log', '--format=%s'], capture_output=True, "
+    "text=True).stdout\nprint(out.count('\\n'))\nEOF",
     "perl -e 'system(\"git\",\"commit\",\"-m\",\"x\\n\\ngit push origin main later\")'",
     "python3 - <<'EOF'\n\"\"\"Release notes.\n\n    git push origin main\n\"\"\"\n"
     "import subprocess\nsubprocess.run(['ls'])\nEOF",
