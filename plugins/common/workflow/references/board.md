@@ -17,6 +17,15 @@ To pause or hand off, release it.
 
 A session holds one open PR. It claims or starts the next issue only once that PR has merged, or has passed the Merge gate and waits only on the owner while the next issue touches none of its files. While its PR waits, the session keeps it mergeable: whenever the base moves or a review posts a thread, it runs the Merge gate again and fixes what that prints before going on with the next issue. With the owner present, it asks for that merge before starting the next issue, rather than gathering PRs for one review. A finding outside the issue's scope becomes a new issue through `spec` and does not grow the open PR. Dependent changes merge in dependency order, each before the next one opens: a shared library or plugin change and its release go before the change that uses them. Every PR then starts from the merged base, and none conflicts with an earlier one.
 
+## Reporting to the owner
+
+Every message to the owner (a session's reply, a run's output, a park's question, a review's hand-off) holds two parts and nothing else:
+
+1. **Summary**: the outcome in one or two lines, linking the PR, issue or `file:line` that carries the detail.
+2. **Decision**: what the owner must decide or do, each with its options and your recommendation, or "Nothing needed."
+
+A session's reply fits in five lines; a run's or a review pass's report takes one line per item that changed. Steps taken, commands run and reasoning stay in the PR, issue or log the summary links.
+
 ## States
 
 The seven phases plus Ready and Closed. "Claimed" means the issue has `state:claimed` or `state:started`; the scope packet is the issue's ```` ```scope ```` block whose JSON parses.

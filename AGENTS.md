@@ -41,6 +41,7 @@ Verification must be deterministic, proportionate, and strictly deduplicated:
 
 Output generation tokens are significantly more expensive and slower than input context tokens. Agents must adhere to high-density communication and anti-overengineering invariants:
 
+- **Owner Reports**: An executive summary plus the decision needed, or "Nothing needed" (Reporting to the owner in `plugins/common/workflow/references/board.md`).
 - **Zero Conversational Preamble**: Jump directly to action, command execution, or verification evidence.
 - **Direct Symbol & File Links**: Link to modified paths (e.g. `[filename](file:///path/to/file#L10-L20)`) instead of echoing file bodies in chat.
 - **Evidence-First Output**: Emit compact outputs: exact commands executed, terminal exit code status, and concrete decision points.

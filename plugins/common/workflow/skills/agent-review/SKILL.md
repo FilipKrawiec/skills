@@ -64,6 +64,6 @@ When the runner reports during a pass, review the PRs it names with phases 2–4
 
 ## 6. Report
 
-Send the owner one short message only when something needs them or something shipped, in this order: PRs ready for or needing the owner (linked, with the reason); issues the runner parked (question and recommendation); follow-ups the runner found (each needing the owner's yes to become an issue); lessons: the runner's lesson PRs, plus, each with the file it should change and the proposed wording, any finding this reviewer raised on two or more PRs, which belongs in a rule rather than another review; one line naming PRs merged since the last report. Repeat an item only when it changed. Remove the scratch worktrees.
+Send the owner one message in [board.md](../../references/board.md)'s Reporting form, only when something needs them or something shipped, in this order: PRs ready for or needing the owner (linked, with the reason); issues the runner parked (question and recommendation); follow-ups the runner found (each needing the owner's yes to become an issue); lessons: the runner's lesson PRs, plus, each with the file it should change and the proposed wording, any finding this reviewer raised on two or more PRs, which belongs in a rule rather than another review; one line naming PRs merged since the last report. Repeat an item only when it changed. Remove the scratch worktrees.
 
 **Exit gate:** the message sent, or nothing to report, and no worktree left.
