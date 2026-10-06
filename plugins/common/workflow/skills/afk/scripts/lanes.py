@@ -53,6 +53,7 @@ DEFAULTS = {
 
 PACKET = re.compile(r'```(?:scope|factory)\s*(\{.*?\})\s*```', re.S)
 ACCEPTANCE = re.compile(r'^#+\s*Acceptance criteria\s*\n+\s*\S', re.M | re.I)
+CLOSES = re.compile(r'\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+#(\d+)\b', re.I)
 
 
 def load_config(root):
@@ -458,10 +459,14 @@ class Repo:
                        '--json', 'number,stateReason')
 
     def issues_with_open_prs(self):
-        """Numbers of the issues an open PR closes."""
+        """Numbers of the issues an open PR closes. GitHub links them only for a PR into the
+        default branch, so a stacked PR counts the issues its body closes until it is retargeted."""
         prs = gh_json('pr', 'list', '-R', self.name, '-s', 'open', '-L', '200',
-                      '--json', 'closingIssuesReferences')
-        return {ref['number'] for pr in prs for ref in pr['closingIssuesReferences']}
+                      '--json', 'closingIssuesReferences,baseRefName,body')
+        linked = {ref['number'] for pr in prs for ref in pr['closingIssuesReferences']}
+        stacked = {int(n) for pr in prs if pr['baseRefName'] != self.config['base']
+                   for n in CLOSES.findall(pr.get('body') or '')}
+        return linked | stacked
 
     def board_priorities(self):
         """Issue number -> the board's Priority value; empty without a board."""

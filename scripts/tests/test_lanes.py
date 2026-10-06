@@ -290,6 +290,22 @@ class QueueTests(unittest.TestCase):
         self.assertEqual([i["number"] for i in lanes.afk_in_flight(issues, set())], [5])
         self.assertEqual(lanes.afk_in_flight(issues, {5}), [])
 
+    def test_a_stacked_pr_holds_the_issue_its_body_closes(self) -> None:
+        repo = object.__new__(lanes.Repo)
+        repo.config, repo.name = CONFIG, f"{OWNER}/app"
+        prs = [
+            {"baseRefName": "main", "closingIssuesReferences": [{"number": 3}], "body": "Closes #3"},
+            {"baseRefName": "main", "closingIssuesReferences": [], "body": "Fixes #9"},
+            {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [],
+             "body": "Closes #5\n\nStacked on #3; depends on #4."},
+            {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [], "body": None},
+        ]
+        original, lanes.gh_json = lanes.gh_json, lambda *args: prs
+        try:
+            self.assertEqual(repo.issues_with_open_prs(), {3, 5})
+        finally:
+            lanes.gh_json = original
+
 
 SHA = "a" * 40
 
