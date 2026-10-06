@@ -42,4 +42,4 @@ Post the approved plan as one issue comment headed `## Plan`. When resuming, or 
 
 ## Output
 
-One line: the plan comment link and its step count, or the reason the issue went back.
+In [board.md](../../references/board.md)'s Reporting to the owner form. Summary, one line: the plan comment link and its step count, or the reason the issue went back.

@@ -1,5 +1,5 @@
 {
-  "description": "Lanes guard: in projects with .github/lanes.json, catches the commands a call runs (not the text it writes or reads) that merge or approve PRs, push to the base branch, release, dispatch workflows or change settings, plus edits to lanes.json, edits and branch switches in the main checkout, and unattended lane:afk. An attended session asks the owner, except in bypass mode; a scheduled run is refused.",
+  "description": "Lanes guard: in projects with .github/lanes.json, catches the commands a call runs (not the text it writes or reads) that merge or approve PRs, push to the base branch, release, dispatch workflows or change settings, plus edits to lanes.json, edits and branch switches in the main checkout, and unattended lane:afk. An attended session asks the owner, except in bypass mode; a scheduled run is refused. Owner reports: at session start, loads board.md's Reporting to the owner section so every reply carries a summary and the decision needed.",
   "hooks": {
     "PreToolUse": [
       {
@@ -8,6 +8,16 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/skills/afk/scripts/guard.py\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "awk '/^## /{p=($0==\"## Reporting to the owner\")} p' \"${CLAUDE_PLUGIN_ROOT}/references/board.md\""
           }
         ]
       }

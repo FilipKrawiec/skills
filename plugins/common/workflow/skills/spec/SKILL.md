@@ -72,4 +72,4 @@ An issue is AFK-ready when all five hold:
 
 ## Output
 
-One table (issue, lane, failing checks or "ready"), then the issues awaiting the owner's lane decision.
+In [board.md](../../references/board.md)'s Reporting to the owner form. Summary: one table (issue, lane, failing checks or "ready"). Decision: the issues awaiting the owner's lane, each with your recommended lane.

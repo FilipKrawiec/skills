@@ -83,4 +83,4 @@ Every run ends with:
 
 ## Output
 
-In [board.md](../../references/board.md)'s Reporting form, one line per item that changed: base branch health and issues shipped, PRs tended, issue and PR (or "queue empty"), auto-merge verdict, anything parked with its question, follow-ups found, lesson PRs (or proposals) with their target file, housekeeping counts.
+In [board.md](../../references/board.md)'s Reporting to the owner form. Summary lines, for items that changed: base branch health and issues shipped, PRs tended, issue and PR (or "queue empty"), auto-merge verdict, lesson PRs with their target file, housekeeping counts. Decision lines: anything parked with its question, follow-ups found, lessons that stay proposals.
