@@ -17,6 +17,15 @@ To pause or hand off, release it.
 
 A session holds one open PR. It claims or starts the next issue only once that PR has merged, or has passed the Merge gate and waits only on the owner while the next issue touches none of its files. While its PR waits, the session keeps it mergeable: whenever the base moves or a review posts a thread, it runs the Merge gate again and fixes what that prints before going on with the next issue. With the owner present, it asks for that merge before starting the next issue, rather than gathering PRs for one review. A finding outside the issue's scope becomes a new issue through `spec` and does not grow the open PR. Dependent changes merge in dependency order, each before the next one opens: a shared library or plugin change and its release go before the change that uses them. Every PR then starts from the merged base, and none conflicts with an earlier one.
 
+## Reporting to the owner
+
+Every message to the owner (a session's reply, a run's or a review pass's report, a park comment) holds exactly two parts:
+
+1. **Summary**: the outcome, linking the PR, issue or `file:line` that carries the detail. A skill's Output section names what its Summary lines hold.
+2. **Decision**: what the owner must decide or do, each with its options and a recommendation, or "Nothing needed."
+
+A session's reply fits in five lines, the Decision included; a run's or a review pass's report fits in eight, one line per item that changed. Steps taken, commands run and reasoning go in the PR, issue or log the Summary links. Output one agent hands another (a `review` verdict, a `tdd` or `vcs` envelope) keeps its own envelope.
+
 ## States
 
 The seven phases plus Ready and Closed. "Claimed" means the issue has `state:claimed` or `state:started`; the scope packet is the issue's ```` ```scope ```` block whose JSON parses.
@@ -127,7 +136,7 @@ Each issue works in its own worktree; `<root>` keeps its branch, since it may ho
 | Start (attended) | `git fetch origin <base>`. Reuse the worktree that `git worktree list --porcelain` shows on the issue's branch; else make one from `origin/<base>` on the project's attended branch name (`vcs`'s `<category>/<description>` by default): through the host's worktree switch, renaming the branch it makes, or with `git worktree add <root>/.worktrees/<N>-<slug> -b <branch> origin/<base>`. Then `gh issue edit <N> --add-label state:started`, removing `state:parked`. | In progress |
 | Open PR | Once every review finding is fixed, push the branch, then `gh pr create` titled `<type>(<area>): <outcome>` per the project's PR template, its body starting `Closes #<N>`, linking the `## Plan` comment and quoting the review's verdict and each finding with the commit that fixed it; it lists the checks the agent ran and leaves device checks to the owner. When the PR changes what users see, its body shows before and after captures of each change, and a later commit that changes something visible adds its own to the PR body before the PR is reported ready again. Open it ready for review, so its checks run and it can merge; when the host opens drafts by default, follow with `gh pr ready <pr>`. Run `lanes.py triage <pr>` and report its line: `review:owner` goes on only when it prints `owner`; otherwise run `lanes.py merge <pr>`, which switches on auto-merge so the PR lands when its checks pass, and report its line too. Pass the Merge gate below before `lanes.py merge` and again before reporting the PR. Then Release. | Review (workflow) |
 | Release | Remove `state:claimed` or `state:started`. | Todo, or unchanged while its PR is open |
-| Park | Push the branch when it holds useful work. Remove `lane:afk` and `state:claimed` or `state:started`, add `lane:owner,state:parked`, then one comment: the question, the options and a recommendation. | Todo, or unchanged while its PR is open |
+| Park | Push the branch when it holds useful work. Remove `lane:afk` and `state:claimed` or `state:started`, add `lane:owner,state:parked`, then one comment in Reporting to the owner's form: where the work stopped, then the question with its options and a recommendation. | Todo, or unchanged while its PR is open |
 | Tidy | For each worktree in `git worktree list --porcelain` other than the current one, whose branch starts with `<branchPrefix>`, wherever it lives: when `gh pr list --head <branch> --state all --json state` lists no OPEN PR and at least one MERGED or CLOSED, `git -C <worktree> status --porcelain` is empty, and `lsof -a -d cwd +D <worktree>` exits 1 without printing anything, so no process has its working directory there: `git worktree remove <worktree>` and `git branch -D <branch>`. Leave every other checkout, including one where `lsof` exits otherwise or is missing; a later run tidies it. | |
 
 Re-applying `lane:afk` hands a parked issue back, and its next claim reuses the branch it stopped on.

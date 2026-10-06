@@ -52,4 +52,4 @@ Then close as completed (`gh issue close <N> --reason completed`) each open `typ
 
 ## Output
 
-One line: base state at its head, the revert PR or the culprit (range or `unknown`), the issues confirmed shipped and the epics closed.
+In [board.md](../../references/board.md)'s Reporting to the owner form. Summary, one line: base state at its head, the revert PR or the culprit (range or `unknown`), the issues confirmed shipped and the epics closed. Decision: the revert PR to merge, or the red base with its failing checks and culprit, or "Nothing needed."

@@ -41,9 +41,10 @@ Verification must be deterministic, proportionate, and strictly deduplicated:
 
 Output generation tokens are significantly more expensive and slower than input context tokens. Agents must adhere to high-density communication and anti-overengineering invariants:
 
+- **Owner Reports**: Follow Reporting to the owner in `plugins/common/workflow/references/board.md`.
 - **Zero Conversational Preamble**: Jump directly to action, command execution, or verification evidence.
 - **Direct Symbol & File Links**: Link to modified paths (e.g. `[filename](file:///path/to/file#L10-L20)`) instead of echoing file bodies in chat.
-- **Evidence-First Output**: Emit compact outputs: exact commands executed, terminal exit code status, and concrete decision points.
+- **Evidence-First Output**: In PRs, logs and agent-to-agent output, emit compact evidence: exact commands executed, terminal exit code status, and concrete decision points.
 - **Decisive Tool Execution**: Batch tool calls logically; eliminate redundant exploratory roundtrips.
 - **Code Anti-Overengineering**: Enforce the Rule of Two Adapters (an interface once two implementations exist; a port's test fake counts, and so does each case of a repeated conditional), YAGNI, and Chicago-style state verification over mock combinatorics.
 
