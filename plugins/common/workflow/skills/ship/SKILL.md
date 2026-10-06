@@ -19,10 +19,10 @@ When the project has a board, move to Todo each card in Review whose issue is op
 ```bash
 git fetch origin <base>
 gh run list --branch <base> --event push --limit 200 \
-  --json headSha,displayTitle,conclusion,status,workflowName,url
+  --json databaseId,headSha,displayTitle,conclusion,status,workflowName,url
 ```
 
-Ignore cancelled runs. Keep each run's `url`: phase 3 links the head's run from this listing, never a second query. The head is the newest commit on `origin/<base>` that has runs; commits after it had none, so CI skipped them. Judge each workflow by its own runs, newest first: it is red when its newest completed run failed, pending while its newest run is not completed, and green otherwise. A workflow that only runs for some paths keeps the state of its newest run, even when that run is on a commit older than the head. The base is red when any workflow is red, else pending when any is pending, else green.
+Ignore cancelled runs. Before judging a workflow red, read its newest failed run's jobs (`gh run view <databaseId> --json jobs`): when every job ended `cancelled`, as when no runner picked it up, none of its checks ran, so ignore it like a cancelled run. Keep each run's `url`: phase 3 links the head's run from this listing, never a second query. The head is the newest commit on `origin/<base>` that has runs; commits after it had none, so CI skipped them. Judge each workflow by its own runs, newest first: it is red when its newest completed run failed, pending while its newest run is not completed, and green otherwise. A workflow that only runs for some paths keeps the state of its newest run, even when that run is on a commit older than the head. The base is red when any workflow is red, else pending when any is pending, else green.
 
 - Base green → phase 3.
 - Base pending, or no runs at all → nothing to confirm yet; report it.
