@@ -54,4 +54,4 @@ Each lesson becomes an issue and a PR, except one that targets `.github/lanes.js
 
 ## Output
 
-In [board.md](../../references/board.md)'s Reporting to the owner form. Summary, one line per lesson: target file, the change in a few words and its PR, or why it stays a proposal; or "no lessons".
+In [board.md](../../references/board.md)'s Reporting to the owner form. Summary, one line per lesson PR: target file, the change in a few words and its PR; or "no lessons". Decision: each lesson that stays a proposal, with its target file and why.
