@@ -44,11 +44,11 @@ Any other red base branch belongs to the owner: report the failing checks and th
 
 ## 3. Confirm
 
-The base is green, so every merge up to its head shipped. For each issue in 06 Ship ([board.md](../../references/board.md)'s States) whose PR #M has its merge commit in the head's history (`gh pr view <M> --json mergeCommit`, then `git merge-base --is-ancestor <sha> <head>`), comment `## Shipped #M`, then the head commit and its CI run link. A reverted merge reopened its issue and its retry is the newer PR, so only the retry is ever confirmed.
+The base is green, so every merge up to its head shipped. For each issue in 06 Ship ([board.md](../../references/board.md)'s States) whose PR #M has its merge commit in the head's history (`gh pr view <M> --json mergeCommit`, then `git merge-base --is-ancestor <sha> <head>`), remove any `state:` label it still has (a closed issue keeps none), then comment `## Shipped #M`, the head commit and its CI run link. A reverted merge reopened its issue and its retry is the newer PR, so only the retry is ever confirmed.
 
 Then close as completed (`gh issue close <N> --reason completed`) each open `type:epic` issue that has sub-issues, all closed and none in 06 Ship (sub-issues as in board.md's Epics); its card moves to Done.
 
-**Exit gate:** the issues confirmed and the epics closed, or none.
+**Exit gate:** the issues confirmed, each with no `state:` label, and the epics closed, or none.
 
 ## Output
 
