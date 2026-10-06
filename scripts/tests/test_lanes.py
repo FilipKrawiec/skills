@@ -281,6 +281,17 @@ class TriageTests(unittest.TestCase):
     def test_docs_and_tests_count_toward_neither_size_nor_scope(self) -> None:
         self.assertEqual(self.triage(sized(("docs/huge.md", 900, 0), ("src/stage/a.py", 5, 0)))[0], "reviewed")
 
+    def test_a_stacked_pr_takes_the_scope_of_the_issue_its_body_closes(self) -> None:
+        repo = object.__new__(lanes.Repo)
+        repo.config, repo.name = CONFIG, f"{OWNER}/app"
+        original, lanes.gh_json = lanes.gh_json, lambda *args: {"body": issue(int(args[2]))["body"]}
+        stacked = {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [], "body": "Closes #5"}
+        try:
+            self.assertEqual(lanes.closing_scope(repo, stacked), ["src/stage/", "tests/"])
+            self.assertIsNone(lanes.closing_scope(repo, {**stacked, "baseRefName": "main"}))
+        finally:
+            lanes.gh_json = original
+
 
 class QueueTests(unittest.TestCase):
     def test_only_afk_claims_hold_the_one_at_a_time_queue(self) -> None:
@@ -298,11 +309,16 @@ class QueueTests(unittest.TestCase):
             {"baseRefName": "main", "closingIssuesReferences": [], "body": "Fixes #9"},
             {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [],
              "body": "Closes #5\n\nStacked on #3; depends on #4."},
+            {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [],
+             "body": "Closes: #6, resolved #7 and prefixes #8. Fixed\n#13."},
+            {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [],
+             "body": f"Closes {OWNER}/app#10, fixes https://github.com/{OWNER}/app/issues/11, "
+                     f"closes {OWNER}/other#12."},
             {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [], "body": None},
         ]
         original, lanes.gh_json = lanes.gh_json, lambda *args: prs
         try:
-            self.assertEqual(repo.issues_with_open_prs(), {3, 5})
+            self.assertEqual(repo.issues_with_open_prs(), {3, 5, 6, 7, 10, 11})
         finally:
             lanes.gh_json = original
 
