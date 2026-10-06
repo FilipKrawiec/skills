@@ -53,6 +53,8 @@ DEFAULTS = {
 
 PACKET = re.compile(r'```(?:scope|factory)\s*(\{.*?\})\s*```', re.S)
 ACCEPTANCE = re.compile(r'^#+\s*Acceptance criteria\s*\n+\s*\S', re.M | re.I)
+CLOSES = re.compile(r'\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?[ \t]+'
+                    r'(?:https://github\.com/([\w.-]+/[\w.-]+)/issues/|([\w.-]+/[\w.-]+)?#)(\d+)\b', re.I)
 
 
 def load_config(root):
@@ -375,6 +377,18 @@ def blockers(pr):
     return found
 
 
+def issues_closed_by(pr, config):
+    """Numbers of the issues a PR closes. GitHub links them only for a PR into the default
+    branch, which lanes.json's `base` names, so a stacked PR, based on another branch,
+    counts the issues its body closes with GitHub's closing keywords until it is retargeted."""
+    linked = {ref['number'] for ref in pr.get('closingIssuesReferences') or []}
+    if pr.get('baseRefName') == config['base']:
+        return linked
+    repo = config['repo'].lower()
+    return linked | {int(n) for url_repo, ref_repo, n in CLOSES.findall(pr.get('body') or '')
+                     if (url_repo or ref_repo or repo).lower() == repo}
+
+
 def afk_in_flight(issues, with_pr):
     """AFK claims still being built; person-led starts never hold the queue."""
     return [i for i in issues if CLAIMED in names(i) and i['number'] not in with_pr]
@@ -460,8 +474,8 @@ class Repo:
     def issues_with_open_prs(self):
         """Numbers of the issues an open PR closes."""
         prs = gh_json('pr', 'list', '-R', self.name, '-s', 'open', '-L', '200',
-                      '--json', 'closingIssuesReferences')
-        return {ref['number'] for pr in prs for ref in pr['closingIssuesReferences']}
+                      '--json', 'closingIssuesReferences,baseRefName,body')
+        return {n for pr in prs for n in issues_closed_by(pr, self.config)}
 
     def board_priorities(self):
         """Issue number -> the board's Priority value; empty without a board."""
@@ -539,12 +553,12 @@ PR_FIELDS = ('state,isDraft,baseRefName,headRefName,headRefOid,headRepositoryOwn
 
 def closing_scope(repo, pr):
     """The union of the scope packets of the issues the PR closes, or None."""
-    refs = pr.get('closingIssuesReferences') or []
-    if not refs:
+    numbers = sorted(issues_closed_by(pr, repo.config))
+    if not numbers:
         return None
     scope = []
-    for ref in refs:
-        body = gh_json('issue', 'view', str(ref['number']), '-R', repo.name, '--json', 'body')['body']
+    for number in numbers:
+        body = gh_json('issue', 'view', str(number), '-R', repo.name, '--json', 'body')['body']
         found = packet(body)
         if found is None or not found['paths']:
             return None
