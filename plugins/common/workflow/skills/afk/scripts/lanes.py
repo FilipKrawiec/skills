@@ -377,7 +377,7 @@ def blockers(pr):
     return found
 
 
-def closed_issues(pr, config):
+def issues_closed_by(pr, config):
     """Numbers of the issues a PR closes. GitHub links them only for a PR into the default
     branch, which lanes.json's `base` names, so a stacked PR, based on another branch,
     counts the issues its body closes with GitHub's closing keywords until it is retargeted."""
@@ -475,7 +475,7 @@ class Repo:
         """Numbers of the issues an open PR closes."""
         prs = gh_json('pr', 'list', '-R', self.name, '-s', 'open', '-L', '200',
                       '--json', 'closingIssuesReferences,baseRefName,body')
-        return {n for pr in prs for n in closed_issues(pr, self.config)}
+        return {n for pr in prs for n in issues_closed_by(pr, self.config)}
 
     def board_priorities(self):
         """Issue number -> the board's Priority value; empty without a board."""
@@ -553,7 +553,7 @@ PR_FIELDS = ('state,isDraft,baseRefName,headRefName,headRefOid,headRepositoryOwn
 
 def closing_scope(repo, pr):
     """The union of the scope packets of the issues the PR closes, or None."""
-    numbers = sorted(closed_issues(pr, repo.config))
+    numbers = sorted(issues_closed_by(pr, repo.config))
     if not numbers:
         return None
     scope = []

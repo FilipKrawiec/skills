@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "plugins/common/workflow/skills/afk/scripts/lanes.py"
@@ -31,6 +32,13 @@ def config(**overrides):
 
 
 CONFIG = config()
+
+
+def fake_repo(repo_config=CONFIG):
+    """A Repo that reads no checkout; patch `lanes.gh_json` for what it asks GitHub."""
+    repo = object.__new__(lanes.Repo)
+    repo.config, repo.name = repo_config, repo_config["repo"]
+    return repo
 
 
 def issue(number=1, labels=("lane:afk",), body=None, state="OPEN"):
@@ -119,21 +127,17 @@ class EligibilityTests(unittest.TestCase):
         self.assertEqual([i["number"] for i in sorted(issues, key=lambda i: lanes.rank(i, board))], [9, 5, 3])
 
     def test_board_priorities_read_this_repositorys_issues_only(self) -> None:
-        repo = object.__new__(lanes.Repo)
-        repo.config, repo.name = config(project={"owner": OWNER, "number": 3}), f"{OWNER}/app"
+        repo = fake_repo(config(project={"owner": OWNER, "number": 3}))
         items = {"items": [
             {"content": {"type": "Issue", "number": 4, "repository": f"{OWNER}/app"}, "priority": "P0"},
             {"content": {"type": "Issue", "number": 4, "repository": f"{OWNER}/other"}, "priority": "P2"},
             {"content": {"type": "PullRequest", "number": 6, "repository": f"{OWNER}/app"}, "priority": "P1"},
             {"content": {"type": "DraftIssue"}},
         ]}
-        original, lanes.gh_json = lanes.gh_json, lambda *args: items
-        try:
+        with mock.patch.object(lanes, "gh_json", lambda *args: items):
             self.assertEqual(repo.board_priorities(), {4: "P0"})
             repo.config = config()
             self.assertEqual(repo.board_priorities(), {})
-        finally:
-            lanes.gh_json = original
 
 
 class ScopeTests(unittest.TestCase):
@@ -282,15 +286,10 @@ class TriageTests(unittest.TestCase):
         self.assertEqual(self.triage(sized(("docs/huge.md", 900, 0), ("src/stage/a.py", 5, 0)))[0], "reviewed")
 
     def test_a_stacked_pr_takes_the_scope_of_the_issue_its_body_closes(self) -> None:
-        repo = object.__new__(lanes.Repo)
-        repo.config, repo.name = CONFIG, f"{OWNER}/app"
-        original, lanes.gh_json = lanes.gh_json, lambda *args: {"body": issue(int(args[2]))["body"]}
         stacked = {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [], "body": "Closes #5"}
-        try:
-            self.assertEqual(lanes.closing_scope(repo, stacked), ["src/stage/", "tests/"])
-            self.assertIsNone(lanes.closing_scope(repo, {**stacked, "baseRefName": "main"}))
-        finally:
-            lanes.gh_json = original
+        with mock.patch.object(lanes, "gh_json", lambda *args: {"body": issue(int(args[2]))["body"]}):
+            self.assertEqual(lanes.closing_scope(fake_repo(), stacked), ["src/stage/", "tests/"])
+            self.assertIsNone(lanes.closing_scope(fake_repo(), {**stacked, "baseRefName": "main"}))
 
 
 class QueueTests(unittest.TestCase):
@@ -302,13 +301,11 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(lanes.afk_in_flight(issues, {5}), [])
 
     def test_a_stacked_pr_holds_the_issue_its_body_closes(self) -> None:
-        repo = object.__new__(lanes.Repo)
-        repo.config, repo.name = CONFIG, f"{OWNER}/app"
         prs = [
             {"baseRefName": "main", "closingIssuesReferences": [{"number": 3}], "body": "Closes #3"},
             {"baseRefName": "main", "closingIssuesReferences": [], "body": "Fixes #9"},
             {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [],
-             "body": "Closes #5\n\nStacked on #3; depends on #4."},
+             "body": "Closes #5\n\nStacked on #14; depends on #4."},
             {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [],
              "body": "Closes: #6, resolved #7 and prefixes #8. Fixed\n#13."},
             {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [],
@@ -316,11 +313,8 @@ class QueueTests(unittest.TestCase):
                      f"closes {OWNER}/other#12."},
             {"baseRefName": "agent/afk-3-thing", "closingIssuesReferences": [], "body": None},
         ]
-        original, lanes.gh_json = lanes.gh_json, lambda *args: prs
-        try:
-            self.assertEqual(repo.issues_with_open_prs(), {3, 5, 6, 7, 10, 11})
-        finally:
-            lanes.gh_json = original
+        with mock.patch.object(lanes, "gh_json", lambda *args: prs):
+            self.assertEqual(fake_repo().issues_with_open_prs(), {3, 5, 6, 7, 10, 11})
 
 
 SHA = "a" * 40
