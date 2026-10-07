@@ -1,50 +1,21 @@
 name: Release
 
+# The owner cuts a release locally with `just release`, which bumps, tags and pushes as admin.
+# This workflow only publishes the GitHub Release for the pushed tag.
 on:
   push:
-    branches:
-      - main
-
-concurrency:
-  group: release
-  cancel-in-progress: false
+    tags:
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
   release:
-    name: Automated Semantic Release
+    name: Publish GitHub Release
     runs-on: ubuntu-latest
-    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
     steps:
-      - name: Checkout repository with full history
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Python
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
-        with:
-          python-version: "3.11"
-
-      - name: Configure Git Author
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Run Pre-Release Verifications
-        run: |
-          python3 -m pip install pyyaml
-          python3 -m unittest discover -s scripts/tests
-          python3 scripts/validate-plugin-definitions.py
-
-      - name: Execute Release & Tag
+      - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python3 scripts/release.py auto
-          git push origin main --follow-tags
-          RELEASE_TAG=$(git describe --tags --abbrev=0)
-          gh release create "${RELEASE_TAG}" --generate-notes --title "${RELEASE_TAG}"
+        run: gh release create "${GITHUB_REF_NAME}" -R "${GITHUB_REPOSITORY}" --verify-tag --generate-notes --title "${GITHUB_REF_NAME}"

@@ -18,9 +18,13 @@ sync-manifests:
 release-check:
     python3 scripts/validate-plugin-definitions.py
 
-# Perform automated semantic release (bumps version, syncs manifests, commits, and tags)
-release bump="auto":
+# Owner only: verify, then on a clean main level with origin bump, sync manifests, commit, tag and push both atomically
+release bump="auto": verify
+    #!/usr/bin/env bash
+    set -euo pipefail
     python3 scripts/release.py {{bump}}
+    tag="$(git describe --exact-match --tags HEAD)"
+    git push --atomic origin HEAD:main "refs/tags/${tag}"
 
 # Display verifier status and detected lifecycle tasks
 status:

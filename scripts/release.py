@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Automated semantic release workflow for the skills repository."""
+"""The owner's local release: bump from conventional commits, sync manifests, commit and tag.
+
+`just release` runs `just verify` first and pushes the commit and tag afterwards; the tag push
+starts `.github/workflows/release.yml`, which only publishes the GitHub Release.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -156,9 +159,6 @@ def get_manifest_paths(root: Path) -> list[str]:
 
 def refresh_environments(root: Path) -> None:
     """Synchronize plugins into local Antigravity IDE and CLI caches."""
-    if os.environ.get("CI") == "true":
-        return
-
     target_dir = Path(root.parent / ".gemini" / "config" / "plugins").expanduser()
     if not target_dir.exists():
         target_dir = Path.home() / ".gemini" / "config" / "plugins"
@@ -212,12 +212,27 @@ def refresh_environments(root: Path) -> None:
                 subprocess.run(["claude", "plugin", "update", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
 
 
+def ensure_releasable(root: Path) -> None:
+    """Refuse unless on a clean `main` level with a freshly fetched `origin/main`."""
+    git("fetch", "--quiet", "--tags", "origin", cwd=root)
+    branch = git("branch", "--show-current", cwd=root)
+    if branch != "main":
+        fail(f"release only from main, not '{branch or 'a detached HEAD'}'")
+    status = git("status", "--porcelain", cwd=root)
+    if status:
+        fail(f"cannot release with dirty working tree:\n{status}")
+    if git("rev-parse", "HEAD", cwd=root) != git("rev-parse", "origin/main", cwd=root):
+        fail("main is not level with origin/main; pull or push first")
+
+
 def perform_release(
     bump_type: str = "auto",
     message: str | None = None,
     dry_run: bool = False,
     root: Path = ROOT,
 ) -> str:
+    if not dry_run:
+        ensure_releasable(root)
     latest_tag = get_latest_release_tag(root)
     # Without tags (a shallow or fresh clone) the manifests carry the released version.
     current_version = parse_semver(latest_tag) if latest_tag else manifest_version(root)
@@ -236,11 +251,6 @@ def perform_release(
     if dry_run:
         print(f"[dry-run] Would bump version to {next_version} and create tag {tag_name}")
         return next_version
-
-    # Ensure working tree is clean before modifying files
-    initial_status = git("status", "--porcelain", cwd=root)
-    if initial_status:
-        fail(f"cannot release with dirty working tree:\n{initial_status}")
 
     # 1. Update package metadata & sync manifests
     bump_package_metadata(root, next_version)

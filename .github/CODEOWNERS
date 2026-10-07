@@ -1,0 +1,8 @@
+# Changes here need the owner's review (branch protection: code owner review).
+/.github/                                   @FilipKrawiec
+/scripts/                                   @FilipKrawiec
+/justfile                                   @FilipKrawiec
+/AGENTS.md                                  @FilipKrawiec
+/plugins/common/workflow/skills/afk/scripts/ @FilipKrawiec
+**/.claude-plugin/                          @FilipKrawiec
+**/hooks.json                               @FilipKrawiec
