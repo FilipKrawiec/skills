@@ -36,10 +36,31 @@ Minimal example:
 | Step | Command or setting |
 | --- | --- |
 | Labels | `gh label create <name> --color <hex> --description "<text>"` for each label below that the repository lacks. |
-| Board | Optional. Give the Project's Status field the columns in [board.md](../../../references/board.md), turn on the workflows it lists, add its Priority field and create its views (Views there). On a board with other Status options, add the new ones, move each card to its state's column, then delete the old options, so no card loses its Status. The token that runs agents needs the `project` scope: `gh auth refresh -s project`. |
+| Board | Optional; see Board below. |
 | Protection | Require the CI check, linear history, squash merges and auto-merge in the repository settings; the guard leaves merging to `lanes.py merge` and the owner. |
 | Guard | Hosts that load plugin hooks run `scripts/guard.py` before every shell command, file edit and GitHub tool call once the plugin is enabled; on other hosts the skill text is the guard. It refuses a caught call in a scheduled run and asks the owner in an attended session, except in a bypass permission mode, which approves asks unseen. |
 | Rules | Add one line to the project's agent rules: issues, lanes, the board, worktrees, branches, PRs, reviews and merges follow the workflow plugin's skills, with a link to the project's workflow page, which holds only the project's values. |
+
+## Board
+
+Give the Project's Status field the five columns in [board.md](../../../references/board.md) and a single-select Priority field (P0, P1, P2). On a board with other Status options, add the new ones, move each card to its state's column, then delete the old options, so no card loses its Status. The token that runs agents needs the `project` scope: `gh auth refresh -s project`.
+
+Turn on these built-in workflows in the board's Workflows settings:
+
+| Workflow | Setting |
+| --- | --- |
+| Auto-add to project | This repository, filter `is:issue`. |
+| Item added to project | Issues only; Status Backlog. |
+| Pull request linked to issue | Status Review (a draft PR counts too). |
+| Item closed | Status Done. |
+| Item reopened | Status Todo. |
+
+Status options and workflows serve every item, so epics stay on this board and views keep them apart. Create the views in this order, so the first is the default:
+
+| View | Layout | Filter | Fields shown |
+| --- | --- | --- | --- |
+| Epics | Table | `label:"type:epic" -status:Done` | Title, Status, Priority, Sub-issues progress, Parent issue |
+| Board | Board by Status | `-label:"type:epic"` | Title, Labels, Priority, Parent issue, Linked pull requests |
 
 ## Labels
 
@@ -55,8 +76,6 @@ Minimal example:
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | The issue's type, exactly one per issue; Issue types in [board.md](../../../references/board.md) says which. |
 
 Priority, the board's columns, the commands that move a card and the claim, park and tidy steps are in [board.md](../../../references/board.md).
-
-With `agentReview`, the reviewer adds `review:owner` to a PR when `lanes.py triage` prints `owner` or the review rounds run out, and removes it when it asks for fixes again.
 
 ## Unattended runs
 

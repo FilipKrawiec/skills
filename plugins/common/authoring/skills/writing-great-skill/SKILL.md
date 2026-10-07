@@ -50,11 +50,6 @@ Output tokens are significantly more expensive and slower than input tokens. Def
 
 Use clean standard ASCII / Unicode box-drawing diagrams and structured Markdown tables; they render in every terminal pager and editor viewer, where Mermaid does not.
 
-## Code Anti-Overengineering Invariants
-
-- **Rule of Two Adapters**: Create an interface or abstraction layer once two implementations exist in the active codebase. A hexagonal port's test fake or in-memory adapter counts as its second implementation, so a port with one production adapter qualifies. The rule guards against speculative layers, not against polymorphism: variants that already exist as the cases of a repeated conditional count as implementations, so moving that behaviour onto an interface, sealed type or mixin satisfies it.
-- **YAGNI & Deep Modules**: Favor deep modules with small interfaces over shallow file proliferation. Pass domain types directly rather than creating speculative DTO chains.
-
 ## Information Hierarchy
 
 - Put required **steps** in `SKILL.md`.

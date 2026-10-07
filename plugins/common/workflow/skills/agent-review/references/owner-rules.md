@@ -14,4 +14,4 @@
 | 8 | changes code but closes no issue with a scope packet | |
 | 9 | changes code outside its issues' scope packets and `alwaysInScope` | `alwaysInScope` |
 
-A finding is not an owner rule: blocking findings go back for fixes (`fixes`), and only findings still open in the last round add `review:owner` (`rounds`). A project makes its own risk areas owner rules by listing their paths in `ownerPaths`.
+A project makes its own risk areas owner rules by listing their paths in `ownerPaths`.

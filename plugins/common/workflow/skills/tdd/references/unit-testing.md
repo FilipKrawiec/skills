@@ -6,8 +6,7 @@
 
 ## 2. Structural Independence
 - Organize tests around business capabilities and aggregates rather than coupling them 1:1 to production code components or directory layouts. Test structures can differ completely from production layouts.
-- Exercise behavior through a public interface or other externally observable seam; keep tests independent of private methods and collaborator topology.
-- Derive expected values from an independent source of truth, as SKILL.md's RED phase requires.
+- Keep tests independent of collaborator topology.
 
 ## 3. Chicago Strategy (Mandatory)
 - Use real collaborating objects, structs, entities, value objects, and domain components in test setups (sociable testing); domain models always appear as themselves.

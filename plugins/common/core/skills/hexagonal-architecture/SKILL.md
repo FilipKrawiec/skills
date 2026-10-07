@@ -6,11 +6,9 @@ allowed-tools: Read
 
 # Hexagonal Architecture (Ports & Adapters)
 
-Use these steps to preserve dependency direction and encapsulation.
-
 ## Steps
 
-1. Check context pointers to load the specific language reference ([kotlin.md](references/languages/kotlin.md) for Kotlin, [java.md](references/languages/java.md) for Java, [typescript.md](references/languages/typescript.md) for TypeScript, [dart.md](references/languages/dart.md) for Dart and Flutter) and layer reference (`references/`) relevant to the current task before designing or writing code. **Exit gate:** the language and layer references for the task are loaded.
+1. Before designing or writing code, read the language profile and the layer reference below that match the task. **Exit gate:** both are loaded.
 2. Keep the Domain layer free of framework and infrastructure dependencies (zero web, database, or serialization imports). All outer layers can use domain objects, but must not influence their form.
 3. Use feature-first package/directory boundaries with the layer layout the language profile prescribes.
 4. Apply domain port naming parity: omit `Port`/`Repository` suffixes on domain ports (`Users`, `ApplicationMetadatas`); prepend technology names on adapters (`JpaUsers`, `AgroalApplicationMetadatas`, `PrismaUsers`, `FirestoreUsers`).
@@ -27,7 +25,4 @@ Use these steps to preserve dependency direction and encapsulation.
 - Read [application-layer.md](references/application-layer.md) when creating application use-cases, commands/queries, or application-level outbound ports (like email/SMS integration clients).
 - Read [api-layer.md](references/api-layer.md) when writing inbound adapters (like HTTP/gRPC controllers, Kafka event consumers).
 - Read [infrastructure-layer.md](references/infrastructure-layer.md) when writing outbound adapters (like database repositories, API clients) and managing encapsulation.
-- Read [kotlin.md](references/languages/kotlin.md) when applying these boundaries in a Kotlin codebase.
-- Read [java.md](references/languages/java.md) when applying these boundaries in a Java codebase.
-- Read [typescript.md](references/languages/typescript.md) when applying these boundaries in a TypeScript codebase.
-- Read [dart.md](references/languages/dart.md) when applying these boundaries in a Dart or Flutter codebase.
+- Read the language profile for the codebase: [kotlin.md](references/languages/kotlin.md), [java.md](references/languages/java.md), [typescript.md](references/languages/typescript.md), [dart.md](references/languages/dart.md) (Dart or Flutter).

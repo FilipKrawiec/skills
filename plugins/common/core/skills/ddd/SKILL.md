@@ -6,11 +6,11 @@ allowed-tools: Read Edit
 
 # Domain-Driven Design (DDD)
 
-Use DDD for active domain modeling: establish and sharpen language, boundaries, and invariants before implementation. Reading an existing `docs/context.md` only to reuse its vocabulary is passive consumption; invoke this skill when the model itself needs to change.
+Establish and sharpen language, boundaries and invariants before implementation. Reusing the vocabulary of an existing `docs/context.md` needs no skill; invoke this one when the model itself changes.
 
 ## Steps
 
-1. Check context pointers to read the specific reference file (e.g. [ubiquitous-language.md](references/ubiquitous-language.md) for glossary work, [strategic-design.md](references/strategic-design.md) for context mapping) relevant to your modeling task. **Exit gate:** the reference for the task is loaded.
+1. Read the one reference below that matches the modeling task. **Exit gate:** that reference is loaded.
 2. When introducing a new business workflow or bounded context, run an EventStorming session before choosing aggregates or components. Capture the in-scope facts that can happen, order them into workflows and variants, and trace their commands, actors, policies, and external interactions. Record the result in `docs/event-storming.md`. **Exit gate:** every in-scope event has an owner in the coverage table.
 3. Challenge ambiguous business terms with domain experts and cross-check them against the code. Record each resolved term in `docs/context.md`, in business language only (code paths, tables and framework classes belong in code). **Exit gate:** each term used in the change has one glossary entry.
 4. Partition the domain into bounded contexts with independent models; use event ownership, invariants, and policy handoffs as evidence. Record integrations in `docs/context-map.md`, choose explicit relationships, and classify proposed sharing as Shared Kernel, Published Language/ACL, layer-specific technical reuse, or local duplication; infrastructure and connectivity logic stays inside the context it serves. **Exit gate:** each integration has a named relationship.

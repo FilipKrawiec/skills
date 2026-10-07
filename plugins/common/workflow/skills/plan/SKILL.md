@@ -6,9 +6,7 @@ allowed-tools: Read Bash(gh:*,git:*)
 
 # Plan (03)
 
-Prepare a concrete plan, grounded in the actual repository, that execution follows without re-planning the basics. The plan lives on the issue so the next session resumes from facts, not recollection. Its only output is the `## Plan` comment.
-
-The issue is claimed or started (03 Plan in [board.md](../../references/board.md)) before this skill runs.
+Post a plan, grounded in the actual repository, that execution follows without re-planning the basics; the next session resumes from it. The issue is claimed or started (03 Plan in [board.md](../../references/board.md)) before this skill runs.
 
 **With the owner:** every phase. **Unattended:** the same, with `lane:afk` standing in for approval in phase 3 and a park in place of any question.
 
@@ -19,8 +17,6 @@ Read the issue, its acceptance criteria, scope packet, parent and linked decisio
 **Exit gate:** each acceptance criterion maps to code and tests you have read.
 
 ## 2. Draft
-
-Draft the plan:
 
 - Files likely to change, inside the scope packet.
 - For each acceptance criterion, the failing test that proves it.
@@ -33,13 +29,10 @@ When the plan needs a path outside the scope packet or a protected path, or an a
 
 ## 3. Approve and post
 
-- Attended: show the draft and wait for the owner to approve or adjust it.
-- Unattended: the owner's `lane:afk` approval of the specified issue stands in.
-
-Post the approved plan as one issue comment headed `## Plan`. When resuming, or whenever execution departs from it, edit that comment in place: `gh api -X PATCH repos/<owner/repo>/issues/comments/<id> -F body=@<file>`, where `<id>` is the number after `#issuecomment-` in its url (`gh issue view <N> --json comments`); `gh issue comment --edit-last` may edit another session's newer comment.
+Attended, show the draft and wait for the owner to approve or adjust it. Post the approved plan as one issue comment headed `## Plan`. When resuming, or whenever execution departs from it, edit that comment in place: `gh api -X PATCH repos/<owner/repo>/issues/comments/<id> -F body=@<file>`, where `<id>` is the number after `#issuecomment-` in its url (`gh issue view <N> --json comments`); `gh issue comment --edit-last` may edit another session's newer comment.
 
 **Exit gate:** the `## Plan` comment link.
 
 ## Output
 
-In [board.md](../../references/board.md)'s Reporting to the owner form. Summary, one line: the plan comment link and its step count. Decision: the plan to approve when attended, or the reason the issue went back with its question.
+In board.md's Reporting to the owner form. Summary, one line: the plan comment link and its step count. Decision: the plan to approve when attended, or the reason the issue went back with its question.
