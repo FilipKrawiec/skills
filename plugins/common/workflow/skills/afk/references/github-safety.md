@@ -10,7 +10,7 @@ GitHub enforces what agents may do; no hook or skill text is the boundary. Run `
 | Implementer (`afk`, attended sessions that push) | machine user | Write | classic PAT: `repo`, `project`; never `workflow`, `admin:*` |
 | Reviewer (`agent-review`) | a second machine user | Write | classic PAT: `repo`, `project` |
 
-- Add both machine users as collaborators with Write and as Write collaborators on the board's Project.
+- Add both machine users as collaborators with Write and as Write collaborators on the board's Project; name them in lanes.json's `implementer` and `reviewer`.
 - Each agent host authenticates `gh` and `git` as its machine user (`GH_TOKEN`, a credential helper scoped to the repository). Never give an agent the owner's token.
 - Without `workflow` scope a push that changes `.github/workflows/` fails, so an agent cannot rewrite CI.
 
@@ -32,9 +32,9 @@ GitHub enforces what agents may do; no hook or skill text is the boundary. Run `
 - Squash merge only, auto-merge allowed, delete head branches on merge.
 - Actions: default workflow token read-only; Actions may not approve pull requests.
 - No repository-level secrets; deploy and release secrets live in environments.
-- Each environment either requires the owner as reviewer, or deploys only from the base branch and from tags.
+- Each environment requires the owner as reviewer, or custom deployment policies naming only the base branch and `v*` tags.
 - An active tag ruleset keeps `v*` tags to admins, so only the owner can start a tag deploy.
-- Create the machine users first. Required approvals with only the owner's account would leave the owner unable to merge their own PRs; `apply` skips reviews until both users exist.
+- Create the machine users first: `apply` skips required reviews until both exist, else the owner could not merge their own PRs.
 
 ## `.github/CODEOWNERS` (owner-only, on the base branch)
 
@@ -50,7 +50,7 @@ Add every path the owner must see: security rules, stored data shapes, migration
 
 | Action | Who can |
 | --- | --- |
-| Merge a PR touching an owner path | after the owner approves |
+| Merge a PR an owner rule matches | after the owner approves |
 | Merge any other agent PR | the reviewer, when it judges the owner unneeded: it approves, then merges once checks pass; otherwise it withholds approval and adds `review:owner` |
 | Merge the owner's own PR | the owner, bypassing review as admin, or after the reviewer approves |
 | Push to the base branch, change settings, protection or collaborators | owner only |

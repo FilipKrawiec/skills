@@ -21,14 +21,26 @@ report() { # report <name> <actual> <expected>
 }
 exists() { gh api "users/$1" --silent 2>/dev/null; }
 json_list() { local out="" item; for item in "$@"; do out+="${out:+,}\"$item\""; done; echo "[$out]"; }
-tag_ruleset() { gh api "repos/$repo/rulesets" --jq '[.[] | select(.target == "tag" and .enforcement == "active")] | length'; }
+# yes when an active tag ruleset covers refs/tags/v*, blocks creation, update and deletion,
+# and lets only admins (role 5) bypass it. The list endpoint omits conditions, so read each.
+tag_ruleset() {
+  local id
+  for id in $(gh api "repos/$repo/rulesets" --jq '.[] | select(.target == "tag" and .enforcement == "active") | .id'); do
+    if [ "$(gh api "repos/$repo/rulesets/$id" --jq '(.conditions.ref_name.include | index("refs/tags/v*") != null)
+        and ([.rules[].type] | contains(["creation", "update", "deletion"]))
+        and ([.bypass_actors[]? | select(.actor_type != "RepositoryRole" or .actor_id != 5)] | length == 0)')" = true ]; then
+      echo yes; return
+    fi
+  done
+  echo no
+}
 
 if [ "$mode" = apply ]; then
   gh api -X PATCH "repos/$repo" -F allow_squash_merge=true -F allow_merge_commit=false \
     -F allow_rebase_merge=false -F allow_auto_merge=true -F delete_branch_on_merge=true >/dev/null
   gh api -X PUT "repos/$repo/actions/permissions/workflow" -f default_workflow_permissions=read \
     -F can_approve_pull_request_reviews=false >/dev/null
-  if [ "$(tag_ruleset)" = 0 ]; then
+  if [ "$(tag_ruleset)" = no ]; then
     gh api -X POST "repos/$repo/rulesets" --input - >/dev/null <<'EOF'
 {"name": "release tags", "target": "tag", "enforcement": "active",
  "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
@@ -55,7 +67,8 @@ fi
 
 report "merge methods" "$(gh api "repos/$repo" --jq '[.allow_squash_merge,.allow_merge_commit,.allow_rebase_merge,.allow_auto_merge,.delete_branch_on_merge] | @csv')" "true,false,false,true,true"
 report "actions token" "$(gh api "repos/$repo/actions/permissions/workflow" --jq '[.default_workflow_permissions,.can_approve_pull_request_reviews] | @csv')" '"read",false'
-report "release tag ruleset" "$(tag_ruleset)" "1"
+tags=$(tag_ruleset)
+report "release tag ruleset for v*" "$tags" yes
 report "$owner role" "$(gh api "repos/$repo/collaborators/$owner/permission" --jq .role_name)" "admin"
 for user in "$implementer" "$reviewer"; do
   role=$(gh api "repos/$repo/collaborators/$user/permission" --jq .role_name 2>/dev/null) || role=none
@@ -70,23 +83,41 @@ done
 
 protection() { gh api "repos/$repo/branches/$base/protection" --jq "$1" 2>/dev/null || echo missing; }
 report "$base reviews" "$(protection '.required_pull_request_reviews | [.required_approving_review_count, .require_code_owner_reviews, .require_last_push_approval, .dismiss_stale_reviews] | @csv')" "1,true,true,true"
-report "$base status checks" "$(protection '.required_status_checks.contexts | sort | join(",")')" "$(printf '%s\n' "${checks[@]}" | sort | paste -sd, -)"
+report "$base status checks" "$(protection '.required_status_checks.contexts[]' | LC_ALL=C sort | paste -sd, -)" \
+  "$(printf '%s\n' "${checks[@]}" | LC_ALL=C sort | paste -sd, -)"
 report "$base history and threads" "$(protection '[.required_linear_history.enabled, .required_conversation_resolution.enabled] | @csv')" "true,true"
 report "$base force pushes and deletions" "$(protection '[.allow_force_pushes.enabled, .allow_deletions.enabled] | @csv')" "false,false"
 report "$base admins excluded" "$(protection '.enforce_admins.enabled')" "false"
 report "repository secrets" "$(gh api "repos/$repo/actions/secrets" --jq .total_count)" "0"
 
-# An environment is safe when the owner must approve it, or it deploys only from the base branch
-# and from tags the release tag ruleset keeps to the owner.
-for env in $(gh api "repos/$repo/environments" --jq '.environments[].name'); do
-  reviewed=$(gh api "repos/$repo/environments/$env" --jq "[.protection_rules[]? | select(.type == \"required_reviewers\") | .reviewers[].reviewer.login] | index(\"$owner\") != null")
-  others=$(gh api "repos/$repo/environments/$env/deployment-branch-policies" --jq "[.branch_policies[] | select((.type == \"branch\" and .name == \"$base\") or .type == \"tag\" | not)] | length" 2>/dev/null) || others=unrestricted
-  if [ "$reviewed" = true ] || { [ "$others" = 0 ] && [ "$(tag_ruleset)" -ge 1 ]; }; then report "environment $env" safe safe
-  else report "environment $env" "deploys from other refs without owner review" safe; fi
-done
+# An environment is safe when the owner must approve it, or it deploys only through custom
+# policies naming the base branch and tags under v*, which the release tag ruleset keeps to admins.
+# Without a policy, or with "protected branches", any branch a Write user can push may deploy.
+while IFS=$'\t' read -r env policy reviewed; do
+  [ -n "$env" ] || continue
+  if [ "$reviewed" = true ]; then report "environment $env" safe safe; continue; fi
+  if [ "$policy" != custom ]; then report "environment $env" "deploys from $policy without owner review" safe; continue; fi
+  others=$(gh api "repos/$repo/environments/$(jq -rn --arg e "$env" '$e | @uri')/deployment-branch-policies" \
+    --jq "[.branch_policies[] | select((.type == \"branch\" and .name == \"$base\") or (.type == \"tag\" and (.name | startswith(\"v\"))) | not) | .name] | join(\",\")" 2>/dev/null) \
+    || others=unreadable
+  if [ -z "$others" ] && [ "$tags" = yes ]; then report "environment $env" safe safe
+  else report "environment $env" "deploys from '${others:-v* tags without the ruleset}' without owner review" safe; fi
+done < <(gh api "repos/$repo/environments" --jq ".environments[] | [.name,
+  (.deployment_branch_policy | if . == null then \"any branch\" elif .custom_branch_policies then \"custom\" else \"protected branches\" end),
+  ([.protection_rules[]? | select(.type == \"required_reviewers\") | .reviewers[] | select(.type == \"User\") | .reviewer.login | ascii_downcase] | index(\"$owner\" | ascii_downcase) != null)] | @tsv")
 
-codeowners=$(gh api "repos/$repo/contents/.github/CODEOWNERS?ref=$base" --jq .content 2>/dev/null | base64 --decode 2>/dev/null || true)
-case "$codeowners" in *"/.github/"*"@$owner"*) report "CODEOWNERS owns /.github/" yes yes ;;
-  *) report "CODEOWNERS owns /.github/" no yes ;; esac
+# GitHub reads the first CODEOWNERS of .github/, the root and docs/. The owner must be listed on
+# the last rule covering all of /.github/ and on every narrower /.github/ rule, as a whole token.
+codeowners=""
+for path in .github/CODEOWNERS CODEOWNERS docs/CODEOWNERS; do
+  codeowners=$(gh api "repos/$repo/contents/$path?ref=$base" --jq .content 2>/dev/null | base64 --decode 2>/dev/null) && break
+  codeowners=""
+done
+report "CODEOWNERS owns /.github/" "$(printf '%s\n' "$codeowners" | awk -v o="@$owner" '
+  { sub(/#.*/, ""); if (NF == 0) next
+    has = 0; for (i = 2; i <= NF; i++) if (tolower($i) == tolower(o)) has = 1
+    if ($1 ~ /^(\*|\*\*|\/\*\*|\/?\.github\/(\*\*)?)$/) whole = has
+    else if ($1 ~ /^\/?\.github\//) bad = bad || !has }
+  END { print (whole && !bad) ? "yes" : "no" }')" yes
 
 exit "$drift"
