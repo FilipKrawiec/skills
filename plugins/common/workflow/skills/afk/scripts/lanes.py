@@ -342,6 +342,21 @@ def first_line(text):
     return next((l.strip() for l in (text or '').splitlines() if l.strip()), '')[:100]
 
 
+def review_holds(pr):
+    """Each unresolved review thread and standing change request on the PR: what reviewers posted,
+    which a session learns of only by asking."""
+    found = []
+    if open_threads(pr):
+        found.append(open_threads(pr))
+        for t in pr['unresolvedThreads']:
+            where = t['path'] + (f":{t['line']}" if t.get('line') else '')
+            writer = 'agent-written' if AGENT_FOOTER.search(t.get('body') or '') else f"@{t['author']}"
+            if t.get('outdated'):
+                writer = 'outdated, ' + writer
+            found.append(f"  {where} ({writer}): {first_line(t.get('body'))}")
+    return found + [f'changes requested by @{login}' for login in requesting_changes(pr)]
+
+
 def blockers(pr):
     """Every reason the PR can't merge now; empty when nothing holds it. GitHub reports
     most of them only as BLOCKED, so an attended session reads them here before it
@@ -361,15 +376,7 @@ def blockers(pr):
         found.append(f'behind {base}: update the branch')
     elif pr.get('mergeable') == 'UNKNOWN' or merge_state == 'UNKNOWN':
         found.append('mergeability not computed yet: run again')
-    if open_threads(pr):
-        found.append(open_threads(pr))
-        for t in pr['unresolvedThreads']:
-            where = t['path'] + (f":{t['line']}" if t.get('line') else '')
-            writer = 'agent-written' if AGENT_FOOTER.search(t.get('body') or '') else f"@{t['author']}"
-            if t.get('outdated'):
-                writer = 'outdated, ' + writer
-            found.append(f"  {where} ({writer}): {first_line(t.get('body'))}")
-    found += [f'changes requested by @{login}' for login in requesting_changes(pr)]
+    found += review_holds(pr)
     if pr.get('reviewDecision') == 'REVIEW_REQUIRED':
         found.append('review required: an approval the base branch requires is missing')
     if not found and merge_state == 'BLOCKED':
