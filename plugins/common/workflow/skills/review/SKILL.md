@@ -42,7 +42,7 @@ Take the diff (the branch against its base, `git diff HEAD~1`, or staged changes
 
 1. Every acceptance criterion is proven by an observable test.
 2. Runtime defects the tests miss: boundary and empty-collection cases, unchecked nil and swallowed errors, races and missing `await`, resources released on every exit path, repeated commands that duplicate side effects.
-3. Tests assert state transitions and domain events rather than mock calls, take expected values from an independent source, cover failure and invalid-input paths, and would fail if a behaviour a user or caller relies on broke. When the diff changes tests, read the Test Rigor table in [design-smells.md](references/design-smells.md) and report each smell it shows.
+3. Tests assert state transitions and domain events rather than mock calls, take expected values from an independent source, cover failure and invalid-input paths, and would fail if a behaviour a user or caller relies on broke; a coverage-only test (existence-only assertions, a test double as its subject, equality or copy walked branch by branch), an assertion coupled to layout structure, and a test that reaches around the design (a test-only hook, driving private state) are blocking findings. When the diff changes tests, read the Test Rigor table in [design-smells.md](references/design-smells.md) and report each smell it shows.
 4. Unasked-for modifications are scope creep.
 
 *Exit gate*: as in phase 2.
