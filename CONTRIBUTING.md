@@ -112,5 +112,5 @@ Every common package and agent overlay shares a unified repository-wide release 
 
 Only the owner releases; agents never do (`main` requires an approved PR, and only admins may create `v*` tags).
 
-1. On an up-to-date, clean `main`, run `just release` (or `just release minor|patch|major`). It computes the bump from conventional commits, updates package metadata, synchronizes manifests and marketplace catalogs, commits, tags `v<version>`, refreshes installed plugins and pushes `main` with `--follow-tags`, as admin past branch protection.
+1. On an up-to-date, clean `main`, run `just release` (or `just release minor|patch|major`). It runs `just verify`, refuses unless `main` is clean and level with a freshly fetched `origin/main`, computes the bump from conventional commits, updates package metadata, synchronizes manifests and marketplace catalogs, commits, tags `v<version>`, refreshes installed plugins and pushes the commit and tag in one atomic push (`git push --atomic origin HEAD:main refs/tags/v<version>`), as admin past branch protection.
 2. The tag push runs `.github/workflows/release.yml`, which publishes the GitHub Release.

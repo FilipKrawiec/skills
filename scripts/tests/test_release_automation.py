@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import shutil
 import subprocess
@@ -79,28 +81,69 @@ class ReleaseAutomationTests(unittest.TestCase):
         finally:
             sys.path.pop(0)
 
-    def test_perform_release_aborts_on_dirty_worktree(self) -> None:
+    def test_perform_release_refuses_a_dirty_worktree(self) -> None:
+        with released_clone() as root:
+            (root / "unrelated.txt").write_text("dirty content", encoding="utf-8")
+            self.assertRefused(root, "dirty working tree")
+
+    def test_perform_release_refuses_a_branch_other_than_main(self) -> None:
+        with released_clone() as root:
+            run_git(root, "switch", "-c", "feature")
+            self.assertRefused(root, "only from main")
+
+    def test_perform_release_refuses_main_behind_origin(self) -> None:
+        with released_clone() as root:
+            other = root.parent / "other"
+            run_git(root.parent, "clone", "-q", str(root.parent / "origin.git"), str(other))
+            commit(other, "feat: someone else's change")
+            run_git(other, "push", "-q", "origin", "HEAD:main")
+            self.assertRefused(root, "not level with origin/main")
+
+    def test_perform_release_refuses_main_ahead_of_origin(self) -> None:
+        with released_clone() as root:
+            commit(root, "feat: unpushed change")
+            self.assertRefused(root, "not level with origin/main")
+
+    def assertRefused(self, root: Path, reason: str) -> None:
         sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
         try:
             import release
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                root = Path(tmp_dir)
-                subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True)
-                subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
-                subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=root, check=True)
-                (root / "file.txt").write_text("initial", encoding="utf-8")
-                subprocess.run(["git", "add", "."], cwd=root, check=True)
-                subprocess.run(["git", "commit", "-m", "chore: initial"], cwd=root, check=True)
-                subprocess.run(["git", "tag", "-a", "v8.3.0", "-m", "v8.3.0"], cwd=root, check=True)
-
-                # Make worktree dirty
-                (root / "unrelated.txt").write_text("dirty content", encoding="utf-8")
-
-                with self.assertRaises(SystemExit):
-                    release.perform_release("patch", root=root)
+            stderr = io.StringIO()
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(stderr):
+                release.perform_release("patch", root=root)
+            self.assertIn(reason, stderr.getvalue())
+            self.assertEqual(run_git(root, "tag", "--list"), "v8.3.0")
         finally:
             sys.path.pop(0)
 
+
+def run_git(cwd: Path, *arguments: str) -> str:
+    return subprocess.run(
+        ["git", *arguments], cwd=cwd, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def commit(root: Path, message: str) -> None:
+    run_git(root, "config", "user.name", "Test")
+    run_git(root, "config", "user.email", "test@test.com")
+    (root / "file.txt").write_text(message, encoding="utf-8")
+    run_git(root, "add", ".")
+    run_git(root, "commit", "-q", "-m", message)
+
+
+@contextlib.contextmanager
+def released_clone():
+    """A clone of a bare origin whose main carries the release tag v8.3.0."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base = Path(tmp_dir)
+        run_git(base, "init", "-q", "--bare", "-b", "main", "origin.git")
+        root = base / "clone"
+        run_git(base, "clone", "-q", str(base / "origin.git"), str(root))
+        run_git(root, "switch", "-q", "-C", "main")
+        commit(root, "chore: initial")
+        run_git(root, "tag", "-a", "v8.3.0", "-m", "v8.3.0")
+        run_git(root, "push", "-q", "origin", "main", "v8.3.0")
+        yield root
 
 if __name__ == "__main__":
     unittest.main()

@@ -88,10 +88,12 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertNotIn("branches:", release_wf)
         self.assertNotIn("git push", release_wf)
 
-    def test_the_owner_release_pushes_the_tag(self) -> None:
+    def test_the_owner_release_verifies_then_pushes_main_and_the_tag_atomically(self) -> None:
         justfile = (ROOT / "justfile").read_text(encoding="utf-8")
 
-        self.assertIn("python3 scripts/release.py {{bump}}\n    git push origin main --follow-tags", justfile)
+        self.assertIn('release bump="auto": verify\n', justfile)
+        self.assertIn('git push --atomic origin HEAD:main "refs/tags/${tag}"', justfile)
+        self.assertNotIn("--follow-tags", justfile)
 
     def test_all_docs_and_adrs_are_indexed_in_docs_index(self) -> None:
         docs_index = (ROOT / "docs" / "index.md").read_text(encoding="utf-8")
