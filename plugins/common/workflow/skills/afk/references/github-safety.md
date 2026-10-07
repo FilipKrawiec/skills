@@ -51,7 +51,8 @@ Add every path the owner must see: security rules, stored data shapes, migration
 | Action | Who can |
 | --- | --- |
 | Merge a PR touching an owner path | after the owner approves |
-| Merge any other PR | after the reviewer approves and checks pass; the implementer enables `gh pr merge --auto --squash` |
+| Merge any other agent PR | the reviewer, when it judges the owner unneeded: it approves, then merges once checks pass; otherwise it withholds approval and adds `review:owner` |
+| Merge the owner's own PR | the owner, bypassing review as admin, or after the reviewer approves |
 | Push to the base branch, change settings, protection or collaborators | owner only |
 | Change CI workflows | owner only (token scope plus CODEOWNERS) |
 | Read deploy secrets, release, deploy | from a merged base branch, an owner tag, or the owner's environment approval |
