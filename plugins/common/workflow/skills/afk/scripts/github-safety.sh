@@ -59,6 +59,10 @@ report "release tag ruleset" "$(tag_ruleset)" "1"
 report "$owner role" "$(gh api "repos/$repo/collaborators/$owner/permission" --jq .role_name)" "admin"
 for user in "$implementer" "$reviewer"; do
   role=$(gh api "repos/$repo/collaborators/$user/permission" --jq .role_name 2>/dev/null) || role=none
+  if [ -z "$role" ] || [ "$role" = none ]; then
+    [ -n "$(gh api "repos/$repo/invitations" --jq ".[] | select(.invitee.login == \"$user\") | .id")" ] \
+      && role="invited, not yet accepted"
+  fi
   report "$user role" "$role" "write"
 done
 [ "$implementer" != "$reviewer" ] && [ "$implementer" != "$owner" ] && [ "$reviewer" != "$owner" ] \
