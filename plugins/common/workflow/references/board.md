@@ -64,7 +64,7 @@ Every open board issue has Priority P0–P2, a slice its epic's. `lanes.py next`
 
 - **Claim (AFK)** → In progress: `git fetch origin <base>`; reuse the worktree or unmerged `<branchPrefix><N>-*` branch, else `git worktree add <root>/.worktrees/afk-<N> -b <branchPrefix><N>-<slug> origin/<base>` (host-confined: `git switch` its clean worktree). Add `state:claimed`, remove `lane:owner`, comment ``Claimed by an AFK run on `<branch>`.``
 - **Start (attended)** → In progress: same, on a `vcs` branch name; add `state:started`.
-- **Open PR** → Review: push; `gh pr create`: issue's title; body `Closes #<N>`, plan link, review verdict with fixing commits, checks run, before/after captures of visible changes. Owner-only leftovers become linked `lane:owner` issues. Open ready. Merge gate; `lanes.py triage <pr>`: `owner` → add `review:owner`, else `lanes.py merge <pr>`. Report both; Release.
+- **Open PR** → Review: push; `gh pr create`: issue's title; body `Closes #<N>`, plan link, review verdict with fixing commits, checks run, before/after captures of visible changes. Owner-only leftovers become linked `lane:owner` issues. Open it ready, never as a draft, whatever the host defaults to. Merge gate; `lanes.py triage <pr>`: `owner` → add `review:owner`, else `lanes.py merge <pr>`. Report both; Release.
 - **Release**: remove `state:claimed`/`state:started`; card to Todo unless a PR is open.
 - **Park**: push useful work; replace `lane:afk` and `state:*` with `lane:owner`; comment per Reporting to the owner.
 - **Tidy**: remove other `<branchPrefix>` worktrees and branches whose PR merged or closed, if clean and `lsof -a -d cwd +D <wt>` exits 1.
@@ -77,4 +77,4 @@ Run after every push to an open PR, when the base moves, and before reporting or
 2. Fix each open thread (`vcs` phase 3), replying with the fixing commit. Then dispatch an isolated reviewer worker with no implementation context: it resolves threads it confirms fixed and hands open ones back; fix, dispatch afresh. A person's threads stay theirs: name each to the owner.
 3. Fix failing checks and conflicts.
 
-Ready only on exit 0, no output; auto-merge may go on with only `check pending` left. Report remaining lines as why the PR waits.
+Ready only on exit 0, no output; auto-merge may go on with only `check pending` left. Ask the owner to approve or merge a PR only when it is ready; until then report the remaining lines as why it waits, not as a request.
