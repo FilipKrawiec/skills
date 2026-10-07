@@ -25,7 +25,7 @@ Invoke `ship`.
 
 ## 2. Tend
 
-For each open `branchPrefix` PR whose issue has `lane:afk`, in its worktree: run board.md's Merge gate; fix unanswered blocking reviews, then `gh pr merge <pr> --squash --auto`. Verify fully before every push. Park on a product decision or two failed fixes.
+For each open `branchPrefix` PR whose issue has `lane:afk`, in its worktree: run board.md's Merge gate; fix unanswered blocking reviews; keep auto-merge on (`gh pr merge <pr> --squash --auto`), never off. Verify fully before every push. Park on a product decision or two failed fixes.
 
 **Exit gate:** each own PR green and conflict-free, or parked.
 
