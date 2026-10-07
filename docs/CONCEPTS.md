@@ -9,7 +9,7 @@ This document provides a comprehensive guide to the architectural design, core c
 The `skills` repository is designed around six foundational principles:
 
 1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
-2. **Affirmative State Machines**: Skills structure instructions as unidirectional linear phases with positive actions and concrete exit gates. Negative "Do/Don't" phrasing is kept to explicit safety boundaries to limit negative prompt priming.
+2. **System-Prompt Style under Word Budgets**: Skills are direct orders to an agent, one rule per bullet, numbered phases with checkable exit gates, and nothing the agent would do untold. The validator enforces budgets: description ≤ 300 characters, `SKILL.md` body ≤ 400 words, reference ≤ 600, shared package reference ≤ 800.
 3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
 4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for direct changes alongside the Delivery Cycle (`spec` ➔ `plan` ➔ `tdd` ➔ `review` ➔ `ship` ➔ `improve`) for tracked work, attended or AFK.
 5. **Deterministic Verification**: AI agents validate all work against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
@@ -24,7 +24,7 @@ A **skill** is a compact, reusable package of instructions, scripts, and context
 ```
 plugins/common/<package>/skills/<skill-name>/
 ├── SKILL.md                 # Primary instruction entrypoint with frontmatter
-├── references/              # Context pointers loaded on-demand (<300 lines)
+├── references/              # Context pointers loaded on-demand (≤600 words)
 │   └── domain-details.md
 ├── scripts/                 # Non-interactive CLI helper tools
 └── assets/                  # Templates, boilerplate, or visual assets
@@ -40,8 +40,8 @@ plugins/common/<package>/skills/<skill-name>/
   ---
   ```
   For human-triggered workflows, add `disable-model-invocation: true`.
-* **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent, and specify clear trigger boundaries under 1024 characters.
-* **Affirmative Phase Sequencing**: Steps are organized into sequential numbered phases, each pairing a single affirmative action with an observable exit gate (such as a command exit code 0 or diff block).
+* **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent, and specify clear trigger boundaries within 300 characters.
+* **Phase Sequencing**: Steps are numbered phases, each ending in an exit gate the agent can check (a command's exit code, a file, a label, a PR or CI state).
 * **Explicit Output Envelopes**: Every phase defines the exact compact Markdown template the agent should emit, preventing conversational wandering.
 * **Universal ASCII Diagram Standard**: Uses clean ASCII/Unicode box diagrams and Markdown tables; Mermaid code blocks are prohibited to guarantee rendering across all editor environments.
 * **On-Demand Doctrine Chaining**: Flow skills (`tdd`, `review`) invoke Doctrine skills (`ddd`, `hexagonal-architecture`) via native `Skill` tool calls on demand, preventing startup context clutter.
@@ -88,14 +88,14 @@ Delivery follows seven phases, each with a skill. The optional board doesn't mir
 | Phase | Skill | Leaves behind |
 | :--- | :--- | :--- |
 | 01 Define | `spec` | An issue with intent and open questions |
-| 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane |
-| 03 Plan | `plan` | A `## Plan` comment on the issue |
+| 02 Spec | `spec` | Acceptance criteria and one lane; an estimate and a scope packet for AFK |
+| 03 Plan | `plan` | An owner-approved plan, posted as a `## Plan` comment for AFK or multi-session work |
 | 04 Execute | `tdd`, `vcs`, `review` (fresh-context worker) | Tested commits on a task branch, reviewed, and a PR |
 | 05 Review | `agent-review`, or the owner | A reviewed, mergeable PR |
 | 06 Ship | `ship` | A green base branch and a `## Shipped` comment, a revert PR, or an escalation |
-| 07 Improve | `improve` | A `## Lessons` comment, and an issue and a `review:owner` PR per lesson |
+| 07 Improve | `improve` | A `## Lessons` comment, and one issue and PR per target repository for lessons whose failure repeated |
 
-06 Ship and 07 Improve run after the merge, so their record is an issue comment rather than a column. `plugins/common/workflow/references/board.md` is the one source for each issue state and its column, which skill works it, the board workflows to turn on, and the `gh project` commands for the few moves the skills make themselves. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `automerge`, `merge-reviewed`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
+06 Ship and 07 Improve run after the merge, so their record is an issue comment rather than a column. `plugins/common/workflow/references/board.md` is the one source for each issue state and its column, which skill works it, the board workflows to turn on, and the `gh project` commands for the few moves the skills make themselves. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `triage`, `merge`, `hold`, `blockers`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
 
 ### Worktree Provenance & Safety
 
@@ -111,9 +111,9 @@ GitHub Issues are the only queue. A repository opts in with `.github/lanes.json`
 | `lane:proposed` | Agent recommends AFK | `spec` triage |
 | `lane:owner` | Needs a decision, credentials, settings or a device | Anyone |
 
-An `afk` run carries the cycle while the owner is away. It first invokes `ship`, which checks the base branch, opens a revert PR when an AFK merge turned it red, and confirms shipped issues. Then it tends its own PRs. It takes at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) through `plan`, `tdd` and a fresh-context `review`, and opens a PR, or parks the issue back to `lane:owner` with one question. It ends by invoking `improve`, which opens each lesson as a PR that waits for the owner's merge. Docs, tests and Dependabot dependency PRs auto-merge on green checks; everything else waits for the owner. The workflow plugin's pre-tool-use guard (`skills/afk/scripts/guard.py`, on hosts that load plugin hooks) parses each shell command and catches the merges, approvals, base-branch pushes, releases, workflow dispatches and settings changes it runs, never text it merely writes or reads, and `lane:afk` in scheduled runs. A scheduled run is refused; an attended session asks the owner, except in bypass mode. Runs never touch the checkout they start in: queue decisions read the fetched base branch.
+An `afk` run carries the cycle while the owner is away. It first invokes `ship`, which checks the base branch, opens a revert PR when an AFK merge turned it red, and confirms shipped issues. Then it tends its own PRs. It takes at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) through `plan`, `tdd` and a fresh-context `review`, and opens a PR, or parks the issue back to `lane:owner` with one question. It ends by invoking `improve`, which turns a failure seen twice into a PR that waits for the owner's merge. A PR that matches none of the closed list of owner rules auto-merges on green checks unless a review holds it; the rest wait for the owner. The workflow plugin's pre-tool-use guard (`skills/afk/scripts/guard.py`, on hosts that load plugin hooks) parses each shell command and catches the merges, approvals, base-branch pushes, releases, workflow dispatches and settings changes it runs, never text it merely writes or reads, and `lane:afk` in scheduled runs. A scheduled run is refused; an attended session asks the owner, except in bypass mode. Runs never touch the checkout they start in: queue decisions read the fetched base branch.
 
-With `agentReview` in lanes.json, `agent-review` reviews every open PR once per head commit, the runner fixes its findings for up to `reviewRounds` rounds, and `lanes.py merge-reviewed` merges an AFK PR the reviewer judged ready and not critical; critical PRs go to the owner with `review:owner`.
+With `agentReview` in lanes.json, `agent-review` reviews every open PR once per head commit, the runner fixes its findings for up to `reviewRounds` rounds, and `lanes.py merge` lands a PR the reviewer judged ready that matches no owner rule; the others go to the owner with `review:owner`.
 
 ---
 

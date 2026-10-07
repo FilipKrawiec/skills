@@ -1,69 +1,28 @@
-# TypeScript Hexagonal Architecture
+# TypeScript
 
-Use this as a TypeScript-specific delta on top of the generic Domain, Application, API, and Infrastructure references. It prescribes no framework: match the one the codebase already uses.
+No framework is prescribed: use the codebase's.
 
-## 1. Package and Module Boundaries
+## Layout
 
-- Use feature-first directories nested under `src/` with layer directories: `src/<bounded-context>/domain/`, `src/<bounded-context>/app/`, `src/<bounded-context>/api/`, and `src/<bounded-context>/infra/` (e.g., `src/users/domain`).
-- Separate reuse by intent. A `src/shared/domain` directory contains shared domain primitives (e.g., base Domain Event types or common Value Objects) only when named contexts jointly own them. Do not place application, API, database, or serialization types there.
-- Domain directories must not import from `app`, `api`, `infra`, web frameworks, database ORMs, or serialization/validation libraries.
-- Enforce boundaries with tooling such as [Dependency Cruiser](https://github.com/sverweij/dependency-cruiser), ESLint import restrictions (e.g., `eslint-plugin-import` path rules), or monorepo workspace packages (e.g., `pnpm-workspace.yaml`).
-- If the project uses a monorepo structure, the `@project/users-domain` package must have no dependencies on app, api, infra, or framework packages.
+- `src/<context>/{domain,app,api,infra}/`; in a monorepo, `@project/<context>-domain` depends on no app, api, infra or framework package.
+- Enforce imports with dependency-cruiser or ESLint import-path rules.
+- Domain imports no ORM, web framework, or validation/serialization library (Zod included).
+- Name the aggregate file after its port (`src/users/domain/users.ts`), holding its creation function, union outcomes, events, value types and `interface Users` when they belong only to it.
 
-## 2. Aggregate Boundary Files
+## Domain idioms
 
-- Default aggregate file name to the plural repository port when the file stays readable: `src/users/domain/users.ts`.
-- Keep one aggregate root type/interface per boundary file.
-- Co-locate aggregate-local creation functions, union outcomes/errors, events, value types, and the repository port interface (`Users`) in the aggregate file when they belong exclusively to that aggregate context.
-- Move large business policies, cross-aggregate processes, or shared language to separate files/directories.
-- `Users` is the repository port interface. Technology-specific implementations use prefixes/suffixes such as `PrismaUsers` or `TypeOrmUsers`.
+- No classes for entities or aggregates: `readonly` types plus pure functions that take state and return the new state and events.
+- Branded types for IDs and small values (`type UserId = string & { readonly __brand: unique symbol }`); one parser (`userId(raw)`) is the only place the brand is applied.
+- Expected failures are discriminated unions (`{ type: "Unchanged" } | { type: "Changed"; user: User; event: UserEmailChanged }`), never throws.
+- Domain functions never return a `Promise`.
+- Creation is a pure `createUser(...)` in the aggregate file. Without `Clock`/`UserIds` ports, the use case passes `new Date()` and `crypto.randomUUID()` in.
 
-## 3. Domain Modeling Idioms
+## Application and adapters
 
-- Domain models must use read-only interfaces or types (e.g., `readonly` modifier or `Readonly<T>`) to guarantee immutability.
-- Do not use classes for mutable Entities or Aggregate Roots. Use pure data-oriented interfaces.
-- Protect domain invariants using pure functions that accept the current state and parameters, then return a new state representation along with any generated domain events.
-- Use branded/opaque types (`type UserId = string & { readonly __brand: unique symbol }`) for identity and small value types, each produced by one validating parser function (`userId(raw)`) that is the only place the brand is applied.
-- Model expected business failures as discriminated union outcomes/errors (e.g., `type Outcome = { type: "Unchanged" } | { type: "Changed"; user: User; event: UserEmailChanged }`), not exceptions; the whole domain uses one form.
-- Domain functions should be synchronous and free of IO. Do not return `Promise` values from domain logic functions.
+- Use cases return union results (`{ type: "Success" } | { type: "UserNotFound" }`); catch database errors in the adapter.
+- Don't export adapter helpers or schemas outside their `infra` directory; only ports are public.
+- DI decorators are allowed in use cases when the codebase uses them, never in the domain.
 
-## 4. Creation, Time, and Randomness
+## Tests
 
-- Aggregate creation should live in the aggregate file as a pure function prefixing the aggregate name (e.g., `createUser(...)`).
-- Use a separate factory function only when creation needs injected collaborators (identity or clock ports, policies).
-- Inject a `Clock` or `UserIds` port when time or identity must be deterministic in tests or coordinated externally; otherwise pass `new Date()` and `crypto.randomUUID()` in from the use case so domain functions stay pure.
-
-## 5. Application Layer
-
-- Maintain transactions, authorization, domain event dispatch, and application orchestrations in this layer.
-- Inbound API adapters (routes, controllers, consumers) must always invoke use cases/handlers (consistency over simplicity); never bypass the application layer to call repositories or query ports directly.
-- Use case functions load data via ports, execute pure domain state transition functions, save updated states back through ports, and publish resulting domain events.
-- Return explicit application results using union types (e.g., `{ type: "Success" } | { type: "UserNotFound" } | { type: "Unchanged" }`) for expected failures; do not throw or let database exceptions leak up.
-
-## 6. Query Ports and Read Models
-
-- Use repository ports for write models and commands that need aggregate invariants.
-- Use query ports for read models that should not load or mutate aggregates.
-- Name domain-owned query ports with the `Queries` suffix (e.g., `UserQueries`).
-- Return read models shaped for the specific use case, not raw ORM entities and not API DTOs.
-
-## 7. API and Infrastructure Models
-
-- API packages own request and response DTO types and their schema validation.
-- Infrastructure packages own persistence structures (types matching the DB schema, ORM metadata), database clients, and mappers.
-- Never expose Domain types as API DTOs, and never pass ORM-mapped records inward to the Application or Domain layers.
-- Persistence shape is not expected to be 1:1 with Domain shape.
-
-## 8. Adapters, DAOs, and Framework Wiring
-
-- Concrete adapter implementations (functions or classes) are internal to the infrastructure layer; domain/application ports remain public.
-- Helper functions and schema definitions should not be exported outside their infra file or directory.
-- Match the host framework already used by the codebase; this reference introduces none.
-- Put framework wiring and container configuration in composition roots. Domain models have zero framework/DI decorators; Application use cases may use the host framework's DI decorators when established, while avoiding concrete infrastructure adapter imports.
-
-## 9. Testing Rules
-
-- Domain tests import pure model creators and transition functions and assert changes. They must not load or boot a framework container.
-- Application tests use stubbed or mock objects for outbound ports to assert coordination, result mapping, and event dispatch.
-- API tests verify routing, serialization, validation, status codes, and DTO mappings without asserting internal domain rules.
-- Infrastructure tests verify query mappings, schema validations, migrations, and database adapter behavior using real databases (e.g., using localized instances or Testcontainers).
+- Domain tests import pure functions and boot no container. Doubles: `tdd`'s JavaScript profile.

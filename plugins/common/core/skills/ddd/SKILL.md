@@ -6,24 +6,24 @@ allowed-tools: Read Edit
 
 # Domain-Driven Design (DDD)
 
-Use DDD for active domain modeling: establish and sharpen language, boundaries, and invariants before implementation. Reading an existing `docs/context.md` only to reuse its vocabulary is passive consumption; invoke this skill when the model itself needs to change.
+Reusing the vocabulary of an existing `docs/context.md` needs no skill; use this one when the model itself changes.
 
 ## Steps
 
-1. Check context pointers to read the specific reference file (e.g. [ubiquitous-language.md](references/ubiquitous-language.md) for glossary work, [strategic-design.md](references/strategic-design.md) for context mapping) relevant to your modeling task. **Exit gate:** the reference for the task is loaded.
-2. When introducing a new business workflow or bounded context, run an EventStorming session before choosing aggregates or components. Capture the in-scope facts that can happen, order them into workflows and variants, and trace their commands, actors, policies, and external interactions. Record the result in `docs/event-storming.md`. **Exit gate:** every in-scope event has an owner in the coverage table.
-3. Challenge ambiguous business terms with domain experts and cross-check them against the code. Record each resolved term in `docs/context.md`, in business language only (code paths, tables and framework classes belong in code). **Exit gate:** each term used in the change has one glossary entry.
-4. Partition the domain into bounded contexts with independent models; use event ownership, invariants, and policy handoffs as evidence. Record integrations in `docs/context-map.md`, choose explicit relationships, and classify proposed sharing as Shared Kernel, Published Language/ACL, layer-specific technical reuse, or local duplication; infrastructure and connectivity logic stays inside the context it serves. **Exit gate:** each integration has a named relationship.
-5. Derive responsibilities from the event flow: aggregates protect invariant-bearing decisions, application services handle commands, policies react to events, and each aggregate has one creation entry (a separate factory only when creation needs collaborators). Type every entity attribute, method parameter and domain event payload as a Value Object in the encoding the language profile prescribes (class, record, branded or extension type); where this skill and a language profile differ on encoding, the profile wins and this skill carries only the rule. **Exit gate:** the domain compiles with no raw `String`, `Double`, `Int` or `UUID` on a public domain signature.
+1. Read the one reference below that matches the task. **Exit gate:** it is loaded.
+2. For a new business workflow or bounded context, run EventStorming before choosing aggregates or components; record it in `docs/event-storming.md`. **Exit gate:** every in-scope event has an owner in the coverage table.
+3. Challenge ambiguous terms against domain experts and the code; record each resolved term in `docs/context.md` in business language only. **Exit gate:** each term the change uses has one glossary entry.
+4. Partition into bounded contexts using event ownership, invariants and policy handoffs as evidence. Record each integration in `docs/context-map.md` with a named relationship, and classify any sharing as Shared Kernel, Published Language/ACL, layer-specific technical reuse or local duplication. **Exit gate:** each integration has a named relationship.
+5. Derive responsibilities from the event flow: aggregates own invariant-bearing decisions, application services handle commands, policies react to events, and each aggregate has one creation entry. Type every entity attribute, domain method parameter and event payload as a Value Object, encoded as the `hexagonal-architecture` language profile prescribes (the profile wins on encoding). **Exit gate:** no raw `String`, `double`, `int` or UUID on a public domain signature.
 
 ## Context Pointers
 
-- Read [ubiquitous-language.md](references/ubiquitous-language.md) when updating or establishing glossary terms in `docs/context.md`.
-- Read [event-storming.md](references/event-storming.md) when refining a business workflow, discovering domain events, or deriving context and component responsibilities from behavior.
-- Read [strategic-design.md](references/strategic-design.md) when defining bounded contexts, mapping integrations (ACL, OHS/PL, Shared Kernel), or translating external schemas.
-- Read [entities.md](references/entities.md) when modeling regular or local entities (enforcing strict Value-Object field and parameter typing).
-- Read [value-objects.md](references/value-objects.md) when modeling concepts without identity (one validating creation entry per Value Object, zero primitive leakage in domain models).
-- Read [aggregates-and-repositories.md](references/aggregates-and-repositories.md) when defining aggregate roots, repository ports, and anti-corruption layer persistence boundaries.
-- Read [services.md](references/services.md) when implementing domain, application, or infrastructure services.
-- Read [factories.md](references/factories.md) when creating aggregates (one creation entry per aggregate, when a separate factory is justified, creation versus reconstitution).
-- Read [events-and-event-sourcing.md](references/events-and-event-sourcing.md) when dispatching domain events or designing event-sourced systems.
+- Read [ubiquitous-language.md](references/ubiquitous-language.md) when writing `docs/context.md` entries.
+- Read [event-storming.md](references/event-storming.md) when discovering events or deriving responsibilities from a workflow.
+- Read [strategic-design.md](references/strategic-design.md) when drawing context boundaries or choosing an integration or sharing pattern.
+- Read [entities.md](references/entities.md) when modeling an entity or aggregate root's identity, fields and methods.
+- Read [value-objects.md](references/value-objects.md) when modeling a concept without identity.
+- Read [aggregates-and-repositories.md](references/aggregates-and-repositories.md) when sizing an aggregate or designing repository and query ports.
+- Read [services.md](references/services.md) when deciding where an operation that fits no single object lives.
+- Read [factories.md](references/factories.md) when writing an aggregate's creation entry.
+- Read [events-and-event-sourcing.md](references/events-and-event-sourcing.md) when dispatching domain events or event-sourcing an aggregate.

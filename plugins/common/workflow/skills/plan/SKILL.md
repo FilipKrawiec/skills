@@ -1,45 +1,40 @@
 ---
 name: plan
-description: Use when an issue is specified and needs its implementation plan posted before code changes (03 Plan), or when resuming work from a posted plan.
+description: Use when an issue is specified and needs its implementation plan before code changes (03 Plan), or when resuming work from a posted plan.
 allowed-tools: Read Bash(gh:*,git:*)
 ---
 
 # Plan (03)
 
-Prepare a concrete plan, grounded in the actual repository, that execution follows without re-planning the basics. The plan lives on the issue so the next session resumes from facts, not recollection. Its only output is the `## Plan` comment.
+Write a plan, grounded in the repository, that execution follows without re-planning. The issue is claimed or started first ([board.md](../../references/board.md)'s Issue steps).
 
-The issue is claimed or started (03 Plan in [board.md](../../references/board.md)) before this skill runs.
-
-**With the owner:** every phase. **Unattended:** the same, with `lane:afk` standing in for approval in phase 3 and a park in place of any question.
+**Unattended:** the same phases; `lane:afk` stands in for approval, and a park replaces every question.
 
 ## 1. Read
 
-Read the issue, its acceptance criteria, scope packet, parent and linked decisions; then the code, tests and contracts near the scope paths, and the project's agent rules. When the issue already has a `## Plan` comment, read it and the branch to see where work stopped.
+Read the issue, its acceptance criteria, scope packet, parent and linked decisions; then the code, tests and agent rules it touches. When a `## Plan` comment exists, read it and the branch to find where work stopped.
 
 **Exit gate:** each acceptance criterion maps to code and tests you have read.
 
 ## 2. Draft
 
-Draft the plan:
+- Files to change, inside the scope packet when there is one.
+- Per acceptance criterion, the failing test that proves it.
+- Ordered steps, each small and verifiable.
+- Risks and assumptions that could send the work back to `spec`.
 
-- Files likely to change, inside the scope packet.
-- For each acceptance criterion, the failing test that proves it.
-- Ordered implementation steps, each small and verifiable.
-- Risks, assumptions and anything that could send the work back to `spec`.
+A path outside the scope packet, a protected path or an ambiguous criterion stops the plan: unattended, Park; attended, Release and return to `spec`.
 
-When the plan needs a path outside the scope packet or a protected path, or an acceptance criterion turns out ambiguous, stop: unattended runs park the issue; attended sessions release it and return to `spec`.
-
-**Exit gate:** a draft that stays inside the scope packet.
+**Exit gate:** a draft inside the scope packet, or a parked or released issue.
 
 ## 3. Approve and post
 
-- Attended: show the draft and wait for the owner to approve or adjust it.
-- Unattended: the owner's `lane:afk` approval of the specified issue stands in.
+- Attended: show the draft; wait for approval or changes.
+- Post it as one issue comment headed `## Plan` only in `lane:afk` or when the work may outlive the session.
+- When resuming or departing from it, edit that comment in place: `gh api -X PATCH repos/<owner/repo>/issues/comments/<id> -F body=@<file>` (`<id>` follows `#issuecomment-` in its url from `gh issue view <N> --json comments`). Never `gh issue comment --edit-last`; it may hit another session's comment.
 
-Post the approved plan as one issue comment headed `## Plan`. When resuming, or whenever execution departs from it, edit that comment in place: `gh api -X PATCH repos/<owner/repo>/issues/comments/<id> -F body=@<file>`, where `<id>` is the number after `#issuecomment-` in its url (`gh issue view <N> --json comments`); `gh issue comment --edit-last` may edit another session's newer comment.
-
-**Exit gate:** the `## Plan` comment link.
+**Exit gate:** the `## Plan` comment link, or the owner's approval in the session.
 
 ## Output
 
-In [board.md](../../references/board.md)'s Reporting to the owner form. Summary, one line: the plan comment link and its step count. Decision: the plan to approve when attended, or the reason the issue went back with its question.
+Reporting to the owner form. Summary: step count, and the comment link when posted. Decision: the plan to approve (attended), or why the issue went back and its question.

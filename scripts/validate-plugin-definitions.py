@@ -28,7 +28,18 @@ ALLOWED_FRONTMATTER_KEYS = {
     "disable-model-invocation",
     "allowed-tools",
 }
-MAX_REFERENCE_LINES = 300
+MAX_DESCRIPTION_CHARS = 300
+MAX_SKILL_WORDS = 400
+MAX_REFERENCE_WORDS = 600
+MAX_PACKAGE_REFERENCE_WORDS = 800
+
+
+def word_count(text: str) -> int:
+    if text.startswith("---\n"):
+        end = text.find("\n---", 4)
+        if end != -1:
+            text = text[end + 4:]
+    return len(text.split())
 
 # Skills stay provider-neutral: they say "agent" or "AI", never a vendor or product.
 # Host manifests (.claude-plugin/, .codex-plugin/) and agent overlays are exempt.
@@ -165,8 +176,11 @@ def validate_skill_spec(skill_dir: Path) -> None:
     description = frontmatter.get("description")
     if not isinstance(description, str) or not description:
         fail(f"{rel(skill_file)} must define a non-empty description")
-    if len(description) > 1024:
-        fail(f"{rel(skill_file)} description exceeds 1024 characters")
+    if len(description) > MAX_DESCRIPTION_CHARS:
+        fail(f"{rel(skill_file)} description exceeds {MAX_DESCRIPTION_CHARS} characters ({len(description)})")
+    skill_words = word_count(skill_file.read_text(encoding="utf-8"))
+    if skill_words > MAX_SKILL_WORDS:
+        fail(f"{rel(skill_file)} body exceeds {MAX_SKILL_WORDS} words ({skill_words} words)")
     is_user_invoked = frontmatter.get("disable-model-invocation") in (True, "true", "True")
     if not is_user_invoked and not description.startswith("Use when"):
         fail(f"{rel(skill_file)} description must begin with 'Use when...': '{description[:30]}...'")
@@ -194,9 +208,9 @@ def validate_skill_spec(skill_dir: Path) -> None:
             if not REFERENCE_NAME_RE.fullmatch(reference.name):
                 fail(f"reference file must be lowercase kebab-case.md: {rel_ref}")
             ref_text = reference.read_text(encoding="utf-8")
-            ref_lines = len(ref_text.splitlines())
-            if ref_lines > MAX_REFERENCE_LINES:
-                fail(f"reference file {rel_ref} exceeds {MAX_REFERENCE_LINES} lines ({ref_lines} lines)")
+            ref_words = word_count(ref_text)
+            if ref_words > MAX_REFERENCE_WORDS:
+                fail(f"reference file {rel_ref} exceeds {MAX_REFERENCE_WORDS} words ({ref_words} words)")
             if re.search(r"^##\s+(?:Contents|Table of Contents)", ref_text, re.MULTILINE | re.IGNORECASE):
                 fail(f"reference file {rel_ref} must not include a Table of Contents (TOC)")
             validate_markdown_links(reference)
@@ -283,9 +297,9 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
             if not REFERENCE_NAME_RE.fullmatch(ref.name):
                 fail(f"package reference file must be lowercase kebab-case.md: {rel(ref)}")
             ref_text = ref.read_text(encoding="utf-8")
-            ref_lines = len(ref_text.splitlines())
-            if ref_lines > MAX_REFERENCE_LINES:
-                fail(f"package reference file {rel(ref)} exceeds {MAX_REFERENCE_LINES} lines ({ref_lines} lines)")
+            ref_words = word_count(ref_text)
+            if ref_words > MAX_PACKAGE_REFERENCE_WORDS:
+                fail(f"package reference file {rel(ref)} exceeds {MAX_PACKAGE_REFERENCE_WORDS} words ({ref_words} words)")
             if re.search(r"^##\s+(?:Contents|Table of Contents)", ref_text, re.MULTILINE | re.IGNORECASE):
                 fail(f"package reference file {rel(ref)} must not include a Table of Contents (TOC)")
             validate_markdown_links(ref)

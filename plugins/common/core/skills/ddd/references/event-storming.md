@@ -1,28 +1,20 @@
-# EventStorming for DDD Refinement
+# EventStorming
 
-Use EventStorming to discover behavior before designing the model. Its output is evidence for the DDD model, not an implementation design or an event-sourcing decision.
+The output is evidence for the model, not an implementation design or an event-sourcing decision.
 
-## Session flow
+1. Fix the business scope: outcome, actors, workflows. Defer technical concerns.
+2. Collect every in-scope business fact as a past-tense event in the ubiquitous language, including rejection, cancellation, timeout, retry and correction paths.
+3. Order them in time; add commands, the actors or policies issuing them, reactions, external systems, read-model needs and open questions. Name no framework or database.
+4. Resolve hotspots with domain experts. Split a flow only where language, ownership or consistency rules differ.
+5. Derive responsibilities: each event has one owning context; commands enforcing the same immediate rule share an aggregate; a policy or process manager exists only to coordinate a later decision across aggregates or contexts; consumers and projections never own the event.
 
-1. Set a business scope and time boundary. State the outcome, actors, and workflows in scope; postpone cross-cutting technical concerns.
-2. With domain experts, collect every meaningful in-scope business fact that has happened. Name each event in the past tense and the ubiquitous language (`OrderPlaced`, `PaymentDeclined`). Include normal, rejection, cancellation, timeout, retry, and correction paths that matter to the business.
-3. Arrange events in time order, then add commands that cause them, the people or policies that issue those commands, and reactions to those events. Mark external systems, read-model needs, and unresolved questions without translating them into framework or database choices.
-4. Resolve hotspots with domain experts. Split flows only when the language, ownership, or consistency rules genuinely differ.
-5. Derive responsibilities from the completed flow:
-   - An event has one owning bounded context and one source of truth.
-   - Commands that must enforce the same immediate business rule belong behind the same Aggregate boundary.
-   - A policy, process manager, or application service is justified when it reacts to an event and coordinates a later decision across aggregate or context boundaries.
-   - Consumers, projections, and integrations are downstream responsibilities; they do not own the originating event.
+## Record
 
-## Record the coverage
+In `docs/event-storming.md` keep the timeline and a coverage table with one row per event: trigger, owner context, aggregate or decision, reacting policy/consumer, integration impact, open question.
 
-Keep the event timeline and a coverage table in `docs/event-storming.md`. For each event, record its trigger, owner context, invariant-bearing decision or Aggregate, reacting policy/consumer, integration impact, and open question. The table should make it possible to see that every in-scope event has an accountable owner and that each proposed component exists to cover a responsibility in the flow.
+## Checks
 
-## Quality checks
-
-- Events describe facts in the past, rather than commands, intentions, or UI actions.
-- The timeline covers meaningful alternate and failure paths, not only the happy path.
-- Context boundaries follow language and ownership evidence from the flow; they do not mirror teams, services, tables, or queues by default.
-- Do not create one component per event. Keep a responsibility within its Aggregate or application service unless a separate policy, integration, or read model is needed.
-
-After the session, update `docs/context.md`, `docs/context-map.md`, and the relevant aggregate and event models with the decisions that survived challenge.
+- Events are facts, not commands, intentions or UI actions.
+- Boundaries follow language and ownership, not teams, services, tables or queues.
+- No component per event; add a policy, integration or read model only when the flow needs one.
+- Afterwards, update `docs/context.md`, `docs/context-map.md` and the aggregate and event models.

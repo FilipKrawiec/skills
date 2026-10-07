@@ -6,52 +6,40 @@ allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,python3:*,just:*)
 
 # Improve (07)
 
-Close the cycle by making the system learn: remove friction at its source instead of relying on anyone's memory. Each lesson arrives as a PR and lands like any other: the owner sees it when an owner rule matches (a lesson for agent rules or automation touches protected paths), and can close any lesson to reject it.
-
-**With the owner:** every phase; the owner may drop a lesson before phase 4. **Unattended:** every phase; the owner decides on each lesson's PR later.
-
 ## 1. Collect
 
-For the shipped issue (07 Improve in [board.md](../../references/board.md)'s States) or the current session, gather what slowed the cycle or caused rework: parks and their questions, failed fix attempts, review findings (especially ones raised on two or more PRs), red pipelines after merge, owner corrections (including ones an agent saved to its own memory), missing commands or docs.
+For the shipped issue (07 Improve in [board.md](../../references/board.md)'s States) or this session, list parks, failed fixes, review findings, red base, owner corrections (agent memory too), missing commands or docs, and rules that cost time without preventing a failure. Find earlier occurrences with `gh search issues "## Lessons" -R <owner/repo>`.
 
-**Exit gate:** a list of friction points with their evidence (links or `file:line`), or none.
+**Exit gate:** friction points with evidence and earlier occurrences, or none.
 
 ## 2. Place
 
-For each friction point, name where the lesson belongs and the proposed wording:
+- A lesson needs two linked occurrences or the owner's request; one occurrence is an observation only.
+- Prefer a script or gate that makes the failure impossible, then editing or deleting a rule, then a new rule.
+- One target per lesson: the skill owning the phase (rules holding in any project); project agent rules (project-only); `.github/lanes.json` (scope, protection, merge); issue template or `spec` (unbuildable issues); docs or assets. Delete a rule that cost more than it prevented.
+- Lessons go into skills or project rules, never agent memory; replace text or memory restating a skill with a link.
+- Scrub secrets, internal hostnames, client names and local paths.
 
-| Lesson | Belongs in |
-| --- | --- |
-| An agent skipped or misread a step, or a rule would hold in any project | The skill that owns that phase |
-| A rule only this project needs was missing (its paths, commands, tools, product rules) | The project's agent rules (`AGENTS.md` or equivalent) |
-| A scope, protection or merge rule misfired | `.github/lanes.json` |
-| An issue arrived unbuildable | The issue template, or the `spec` checks |
-| Users or developers lacked information | Application docs or assets |
-
-A project's agent rules and workflow doc hold only the project's own values and link the skill for each step. When one of them, or an agent's saved memory, restates or contradicts a skill, the same lesson replaces that text with a link to the skill.
-
-Keep only lessons that change future behavior. Before writing it, scrub secrets, internal hostnames, client names and local paths.
-
-**Exit gate:** each lesson has one target file and its proposed change.
+**Exit gate:** each lesson has a target file and wording.
 
 ## 3. Record
 
-Post the lessons as one comment on the shipped issue headed `## Lessons` ("no lessons" when there are none), each with its target file and proposed wording. Lessons from a run's own friction, with no shipped issue to hold them, go in the run's output.
+Comment `## Lessons` on the shipped issue ("no lessons" when none): lessons with occurrences, target, wording; observations one line each. No shipped issue: use the output.
 
-**Exit gate:** the `## Lessons` comment link, or the lessons in the output.
+**Exit gate:** the comment link, or the output.
 
 ## 4. Propose
 
-Each lesson becomes an issue and a PR, except one that targets `.github/lanes.json` (hand the owner the exact line; in an attended session outside bypass mode the edit itself goes to the owner for approval), needs a product or design decision, or matches an open issue or PR (link that one). For each of the rest:
+One issue and PR per target repository. Leave out lessons for `.github/lanes.json` (hand the owner the exact line), needing a product decision, or matching an open issue or PR (link it).
 
-1. Invoke `spec` (phase 1) with the target repository (`-R <owner/repo>` for an upstream skill library) to open an issue carrying the target file and the wording.
-2. Make a worktree of the target repository from its fetched base branch, on branch `<branchPrefix>lesson-<N>-<slug>` (`<branchPrefix>` from the target's lanes.json, default `agent/afk-`); for another repository, clone it into the host's temporary directory instead. Apply the wording and pass the target's verification gate.
-3. Push, then open it through board.md's Open PR step, its body also linking the `## Lessons` comment.
-4. When the owner approved the `## Lessons` wording in this session and `triage` hands a lesson PR to the owner, run `python3 "<the afk skill's directory>/scripts/lanes.py" merge <pr> --owner-approved` for it; the host asks the owner to confirm each one.
-5. Link the issue and the PR from the `## Lessons` comment (or the run's output), and remove a temporary clone.
+1. Invoke `spec` (`-R <owner/repo>`) for an issue carrying targets and wordings.
+2. Worktree from the target's base on `<branchPrefix>lesson-<N>-<slug>` (another repository: clone to the host's temp directory). Invoke `writing-great-skill` and write the change to its standard; pass the target's verification gate (word budgets included).
+3. Open the PR via board.md's Open PR, linking the `## Lessons` comment.
+4. Owner approved the wording this session and triage prints `owner`: `python3 "<the afk skill's directory>/scripts/lanes.py" merge <pr> --owner-approved`.
+5. Link issue and PR from `## Lessons` (or output); remove a temp clone.
 
-**Exit gate:** the `## Lessons` comment (or the run's output) linking an issue and a PR for each lesson, or naming why it stays a proposal.
+**Exit gate:** each lesson linked to its PR, or a proposal with its reason.
 
 ## Output
 
-In [board.md](../../references/board.md)'s Reporting to the owner form. Summary, one line per lesson PR: target file, the change in a few words and its PR; or "no lessons". Decision: each lesson that stays a proposal, with its target file and why.
+board.md's Reporting to the owner form. Summary: each lesson PR with targets and change, or "no lessons" and the observation count. Decision: proposals left, with target and reason.

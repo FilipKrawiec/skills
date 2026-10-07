@@ -254,6 +254,11 @@ class TriageTests(unittest.TestCase):
     def triage(self, candidate, scope=SCOPE):
         return lanes.triage(candidate, self.CFG, scope)
 
+    def test_the_implementer_machine_user_is_not_an_owner_rule(self) -> None:
+        cfg = config(implementer="acme-bot")
+        self.assertIsNone(lanes.owner_rule(pr(["src/stage/a.py"], author="acme-bot"), cfg, self.SCOPE))
+        self.assertIn("neither the owner", lanes.owner_rule(pr(["src/stage/a.py"], author="acme-bot"), self.CFG, self.SCOPE))
+
     def test_every_owner_rule_names_itself(self) -> None:
         moved = pr(["src/stage/a.py"])
         moved["files"][0]["changeType"] = "RENAMED"
@@ -352,6 +357,12 @@ class ReviewedMergeTests(unittest.TestCase):
         stranger = reviewed_pr(verdict="fixes")
         stranger["reviews"][0]["author"] = {"login": "stranger"}
         self.assertIsNone(self.refusal(stranger))
+
+    def test_the_configured_reviewer_account_holds_it(self) -> None:
+        bot = reviewed_pr(verdict="fixes")
+        bot["reviews"][0]["author"] = {"login": "acme-reviewer"}
+        self.assertIn("says fixes", self.refusal(bot, config(agentReview=True, reviewer="acme-reviewer")))
+        self.assertIsNone(self.refusal(reviewed_pr(verdict="fixes"), config(agentReview=True, reviewer="acme-reviewer")))
 
     def test_pending_reviews_without_a_time_are_ignored(self) -> None:
         pending = {"author": {"login": OWNER}, "state": "PENDING", "body": "", "submittedAt": None}

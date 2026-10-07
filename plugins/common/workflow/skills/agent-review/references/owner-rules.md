@@ -1,11 +1,11 @@
 # Owner Rules
 
-`lanes.py triage <pr>` checks these in order and prints the first that matches. The list is closed: a PR that matches none lands without the owner on green checks, through the auto-merge the Open PR step switches on; a review that finds blocking issues holds anything that is not a chore (only docs, tests and Dependabot dependency files). Each rule reads data on the PR; none asks for judgement.
+`lanes.py triage <pr>` checks these in order and prints the first match. The list is closed: a PR matching none merges on green checks unless a review holds it with blocking findings.
 
 | # | The PR | Configured by |
 | --- | --- | --- |
-| 1 | carries `review:owner` (the owner asked for it, or the review rounds ran out) | |
-| 2 | has an author other than the owner or Dependabot | `owner` |
+| 1 | carries `review:owner` | |
+| 2 | has an author other than the owner, the implementer or Dependabot | `owner`, `implementer` |
 | 3 | lists no files, 100 or more, or a renamed or copied file | |
 | 4 | touches a protected or owner path (automation, agent rules, security rules, stored data) | `protected`, `ownerPaths` |
 | 5 | carries a label that ships or deploys on merge | `ownerLabels` |
@@ -14,4 +14,13 @@
 | 8 | changes code but closes no issue with a scope packet | |
 | 9 | changes code outside its issues' scope packets and `alwaysInScope` | `alwaysInScope` |
 
-A finding is not an owner rule: blocking findings go back for fixes (`fixes`), and only findings still open in the last round add `review:owner` (`rounds`). A project makes its own risk areas owner rules by listing their paths in `ownerPaths`.
+## Verdicts
+
+| `verdict=` | When | Review | `review:owner` |
+| --- | --- | --- | --- |
+| `ready` | No blocking finding or open thread; triage not `owner`. | APPROVE, then merge | remove |
+| `owner` | No blocking finding; triage printed `owner` (quote the rule), or a thread waits on an owner check (device, credential). | COMMENT | add |
+| `fixes` | Blocking findings, rounds left. | COMMENT | remove |
+| `rounds` | Blocking findings in the last round. | COMMENT | add |
+
+A verdict handing the owner a user-visible change links before and after captures of each change.

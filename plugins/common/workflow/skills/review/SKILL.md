@@ -4,65 +4,51 @@ description: Use when auditing a diff, branch, PR, staged changes, or a whole co
 allowed-tools: Skill Read Bash(git:*)
 ---
 
-# Solution Architect & Tech Lead Code Review
+# Code Review
 
-Review the active diff (`git diff HEAD~1`, the branch against its base, or staged changes) on two axes: Standards (a Solution Architect guarding boundaries and design) and Spec (a Tech Lead guarding the acceptance criteria, runtime behaviour and test rigor). The same review serves an owner's session and an unattended run.
+Review on two axes, A Standards and B Spec; report only what gates miss. For a whole area, run the Area Audit in [design-smells.md](references/design-smells.md) instead.
 
-## Severity Policy
+## Severity
 
-- **Blocker** (runtime defect, unhandled edge case, architectural boundary breach, hollow or failing test) → `REQUEST_CHANGES`.
-- **Major** (smell or design issue likely to cause a defect or rework in this area soon) → `REQUEST_CHANGES` only when the diff introduces it.
-- **Minor** (style, naming, optional refactoring) → listed as suggestions; the decision stays `APPROVED`.
+- **Blocker** (`REQUEST_CHANGES`): runtime defect, unhandled edge, boundary breach, hollow or failing test.
+- **Major** (`REQUEST_CHANGES` when the diff introduces it): smell likely to cause a defect or rework soon.
+- **Minor** (`APPROVED`, as suggestions): style, naming, optional refactor.
 
-The verdict decides whether the change may proceed, not which findings get fixed: the caller fixes every finding, Minors included, before the Open PR step, and re-reviews the fix. A finding that needs an owner decision goes to the owner as a question.
+*Blocking* means `REQUEST_CHANGES`. Before the PR opens, fix every finding, Minors included, and re-review; after, Minors never hold it. Ask the owner what needs an owner decision.
 
-A finding is *blocking* when it maps to `REQUEST_CHANGES`; `afk` and `agent-review` use that word with this meaning.
+## 1. Scope
 
-Report only what the project's automated gates leave unchecked; skip findings a linter, formatter, or quality gate already enforces.
+Take the diff (branch against base, `git diff HEAD~1`, or staged) and the issue's criteria. Give each axis a fresh-context worker holding only diff, issue and axis; without workers, run them in order.
 
-## Two Axes
+*Exit gate*: diff and criteria in hand; each axis assigned.
 
-Run the two axes as two parallel fresh-context workers when the host offers them (the caller passes each worker only the diff, the issue and its axis below); otherwise take them in order in one pass. Each worker emits findings in the output envelope; the caller merges them, blocking first.
+## 2. Axis A: Standards
 
-### Axis A: Standards (Solution Architect)
+1. `domain/` imports no outer layer and carries no framework, ORM or serialization annotations; inbound adapters always call a use case.
+2. Aggregate children change only through their root; one aggregate per transaction; cross-aggregate changes are domain events.
+3. An interface needs two implementations (a test fake counts); no 1:1 DTO chains or passthrough modules.
+4. An outer layer maps a domain enum in one mapper; exhaustive matching on a sealed data type is fine.
+5. Changed presentation keeps its semantics, accessibility and layout.
+6. Smells from [design-smells.md](references/design-smells.md), with their fix. Invoke `ddd` or `hexagonal-architecture` for modeling or layering doubts.
 
-1. Dependencies point inward: `domain/` imports nothing from `application/`, `infrastructure/`, or `api/`, and domain objects carry no framework, ORM, or serialization annotations.
-2. Inbound adapters call an application use case, even for trivial queries.
-3. Aggregate children change only through their root; one transaction touches one aggregate; cross-aggregate changes travel as domain events.
-4. Abstractions earn their place: an interface needs two implementations (Rule of Two Adapters; a port's test fake counts, and so does each case of a conditional repeated across files, as in A.5), adjacent layers pass domain types instead of 1:1 DTO chains, and modules are deep rather than passthrough wrappers.
-5. Behaviour that varies by kind lives on the kind, within one layer: when one layer switches on the same enum, type tag or string set in several files to vary the same behaviour, that behaviour moves onto the type as an enum member, a sealed-class method, an interface its variants implement, or a mixin its components share (*Replace Conditional with Polymorphism*). A mapping owned by an outer layer (a label, colour or icon for a domain enum) lives in that layer as one mapper or extension. Exhaustive matching on a sealed type whose cases are data (outcomes, results, events, syntax nodes), with each operation in its own module, is the intended use of that type.
-6. One concept, one model: a concept parsed, validated or formatted from raw primitives in two places becomes one value object, and a generic the codebase already has (an undo history, a cache, a retry policy) is reused instead of a second hand-rolled copy.
-7. A cross-cutting capability of a component (help text, analytics name, accessibility label) is declared by the component that owns its meaning, through an interface or mixin, rather than wrapped around it at each call site; the same control rebuilt on several screens to carry such a wrapper is a missing reusable component.
-8. When presentation code changes, semantic structure, accessibility attributes, and layout stay intact.
-9. Design smells that will cause defects or rework in this area, each with the Fowler refactoring that removes it (e.g. *Introduce Value Object* for primitive obsession, *Move Method* for feature envy). When auditing a whole codebase or area rather than one diff, read [design-smells.md](references/design-smells.md), invoke `tdd` to sample mutants on the area's domain files, and report in the area audit envelope.
-10. When a finding hinges on domain modeling or layer placement, invoke `ddd` or `hexagonal-architecture` for the governing rule.
+*Exit gate*: each finding has severity, `file:line`, a failure scenario and one remedy.
 
-### Axis B: Spec (Tech Lead)
+## 3. Axis B: Spec
 
-1. Every acceptance criterion of the issue is proven by an observable test.
-2. Runtime defects the tests miss: boundary and empty-collection cases, unchecked nil and swallowed errors, races and missing `await`, resources released on every exit path, and repeated commands or messages that duplicate side effects.
-3. Tests assert state transitions and domain events (Chicago style) rather than mock calls; expected values come from an independent source, not the production algorithm.
-4. Failure and invalid-input paths are tested; assertions can fail, and each test ends on one after its last action.
-5. Every test would fail if a behaviour a user or caller relies on broke; a coverage-only test (existence-only assertions, a test double as its subject, equality or copy methods walked branch by branch) asserts the behaviour its line serves instead, and production API that only tests call is deleted with those tests.
-6. Tests pin observable behaviour, not structure: locating or counting framework layout primitives, reading a private animation or style value, or asserting a tuning constant breaks on refactor without catching a defect.
-7. Unasked-for modifications are scope creep.
+1. An observable test proves every criterion.
+2. Hunt runtime defects: empty and boundary cases, unchecked nil, swallowed errors, races, missing `await`, leaks on an exit path, repeated commands duplicating side effects.
+3. Tests assert state and events, not mock calls, with independently sourced expected values and failure paths.
+4. **Blocker on every diff:** a coverage-only test, a structure-coupled assertion, or a test reaching around the design (test-only hook, private state, lowered threshold, new exemption). When tests change, check every Test Rigor row in [design-smells.md](references/design-smells.md).
+5. Unasked-for changes are scope creep.
 
-### Verdict
+*Exit gate*: as in phase 2.
 
-Derive `APPROVED` or `REQUEST_CHANGES` from the severity policy over both axes. Give each Blocker and Major one concrete remedy.
+## 4. Verdict
 
-## Output Envelope
-
-Emit issues only, ranked most severe first, each tagged with its axis; axes with nothing to report stay silent. Target ≤ 15 lines total.
+Merge both axes, most severe first; ≤ 15 lines; omit a silent axis.
 
 ```text
 Decision: APPROVED | REQUEST_CHANGES
-- [Blocker|Major|Minor] [A|B] <file:line> — <defect or smell & failure scenario> → <remedy>
+- [Blocker|Major|Minor] [A|B] <file:line> — <defect & failure scenario> → <remedy>
 Scope: clean | creep: <files>
-```
-
-Area audit (A.9): one row per smell found, ranked by the defects or rework it is likely to cause, then the per-file mutation table from `tdd`; no line cap.
-
-```text
-| Smell | Count | Strongest examples (3 × file:line) | Refactoring | Estimate S/M/L |
 ```
