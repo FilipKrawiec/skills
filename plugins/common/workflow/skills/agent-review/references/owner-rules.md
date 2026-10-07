@@ -24,3 +24,13 @@
 | `rounds` | Blocking findings in the last round. | COMMENT | add |
 
 A verdict handing the owner a user-visible change links before and after captures of each change.
+
+## Resolving a thread
+
+Resolve with exactly this command, so a host permission rule can allow it and nothing broader:
+
+```sh
+gh api graphql -F thread=<thread id> -f query='mutation($thread:ID!){resolveReviewThread(input:{threadId:$thread}){thread{isResolved}}}'
+```
+
+A thread is agent-written when its first comment ends with the attribution footer or its author is the reviewer machine user.
