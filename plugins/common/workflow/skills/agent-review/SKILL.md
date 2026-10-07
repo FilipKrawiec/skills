@@ -7,61 +7,51 @@ allowed-tools: Skill Read Bash(python3:*,git:*,gh:*)
 
 # Agent Review
 
-One pass reviews every open PR at its head commit, holds the PRs with blocking findings, hands the owner only the PRs that `LANES triage` or the review rounds send there, lets the rest merge, and wakes the AFK runner, which fixes findings on its own PRs. Each PR gets at most lanes.json's `reviewRounds` reviews (default 3).
-
-`LANES` means `python3 <the afk skill's directory>/scripts/lanes.py`. GitHub writes are limited to: one review per PR per head commit, replies on review threads and resolving the agent-written ones it verified fixed, the `review:owner` label, `LANES hold` and `LANES merge`.
+- `LANES` = `python3 <the afk skill's directory>/scripts/lanes.py`.
+- Write to GitHub only reviews, thread replies and resolutions, `review:owner`, `LANES hold`, `LANES merge`.
 
 ## 1. Collect
 
-List open PRs, drafts included, except Dependabot's. For each, read its reviews and find agent reviews by their first line, `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->` (plus any legacy marker the caller names), and read its unresolved review threads (GraphQL `reviewThreads { isResolved }`; `gh pr view` doesn't list them).
+List open PRs (drafts too, not Dependabot's). Agent reviews start `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->` (or a legacy marker the caller names). Read threads via GraphQL `reviewThreads { isResolved }`.
 
-- An agent review at the current head → skip to phase 4.
-- The newest agent review used the last round → skip.
-- Otherwise its round is 1 plus the count of earlier agent reviews.
+- Agent review at the head → phase 4.
+- Newest used round `reviewRounds` (default 3) → skip.
+- Else round = 1 + earlier agent reviews.
 
-**Exit gate:** a list of PRs to review, oldest updated first, at most 4.
+**Exit gate:** at most 4 PRs, oldest updated first.
 
 ## 2. Review
 
-Run one isolated worker per PR, in parallel, at medium reasoning when the host offers a choice. Each checks out the PR head in a scratch worktree, reads the acceptance criteria of the issue the PR closes, runs `review`'s two axes on the PR's own diff against its base, and checks every unresolved review thread, whoever opened it: fixed at the head, with the fixing commit, or still open, which makes it a blocking finding again. Workers report a verdict and findings with `file:line` and a failure scenario, post nothing, and quote no copyrighted or personal content from the repository.
+One isolated worker per PR, in parallel, in a scratch worktree at the head: `review`'s two axes on the PR diff against the closed issue's acceptance criteria; each unresolved thread fixed (with commit) or still open (blocking). Workers post nothing and quote no copyrighted or personal content.
 
-Verify every blocking finding against the code yourself, then re-read the PR's head SHA; a moved head goes back to phase 1 next pass.
+Verify each blocking finding yourself; skip a PR whose head moved.
 
-**Exit gate:** verified findings for each PR at an unchanged head.
+**Exit gate:** verified findings per PR at an unchanged head.
 
 ## 3. Post
 
-Run `LANES triage <pr>`; it prints `owner` with the matching rule from [owner-rules.md](references/owner-rules.md), `chore` or `reviewed`. Pick the verdict:
+Run `LANES triage <pr>`; pick verdict and label from [owner-rules.md](references/owner-rules.md)'s Verdicts.
 
-| Verdict | When | Marker `verdict=` | `review:owner` |
-| --- | --- | --- | --- |
-| Ready to merge | No blocking finding and no open thread; triage did not print `owner`. | `ready` | removed |
-| Ready for the owner's review | No blocking finding; triage printed `owner`. Quote its rule. | `owner` | added |
-| Needs fixes first | Blocking findings, round below the last. | `fixes` | removed |
-| Needs the owner: review rounds used | Blocking findings in the last round. | `rounds` | added |
+- One COMMENT review on the head: blocking findings inline; body = marker, verdict, findings (blocking first, optional marked; `file:line` and failure scenario each), every open thread, attribution footer.
+- Write back the full label set. Not `ready` → `LANES hold <pr>`.
+- Reply on each thread the head fixes, naming the commit; resolve only agent-written threads (first comment ends with the footer). A person's thread stays theirs.
 
-Post one review with event COMMENT on the head commit: blocking findings as inline comments, and a body of the marker line, the verdict, the findings (blocking first, optional ones marked optional, each with `file:line` and its failure scenario) and the host's attribution footer. When the verdict hands the owner a PR that changes what users see, the body links before and after captures of each named change. Then set the label, writing back the PR's full label set, and for any verdict other than `ready` run `LANES hold <pr>`, which switches its auto-merge off.
-
-Reply on each unresolved thread the head fixes, naming the commit, and resolve it when its first comment is agent-written (it ends with the host's attribution footer); a person's thread stays for that person. Name each thread still open in the review body; one that waits on an owner check (a device, a credential) makes the verdict `owner`.
-
-**Exit gate:** each reviewed PR shows the new review and the right label, and every thread still open is named in its review body.
+**Exit gate:** each PR has the review and right label.
 
 ## 4. Merge
 
-For each open PR whose newest agent review says `ready` at its head, run `LANES merge <pr>`. It merges, or switches auto-merge back on, only when no owner rule matches, no review requests changes, no person commented after the review and no thread is open; otherwise it prints why it waits. A host without the GitHub CLI applies the same checks with its own GitHub tools and squash-merges at the reviewed head. After a merge, comment one line on the PR naming the round, with the attribution footer. Report a failed merge once.
+Each PR `ready` at its head: `LANES merge <pr>`; after a merge, comment the round, with footer. Report a failed merge once.
 
-**Exit gate:** each candidate's printed result.
+**Exit gate:** each printed result.
 
 ## 5. Wake the runner
 
-Wake the AFK runner once, as the caller describes, with instructions that start "Scheduled AFK run." and name the AFK PRs that need fixes, have failing checks or conflict. When the runner's host is offline, count consecutive offline passes and tell the owner once at three.
+Wake the AFK runner as the caller describes: "Scheduled AFK run." plus AFK PRs needing fixes, failing or conflicting. Tell the owner once after three consecutive offline passes. Review PRs the runner reports via phases 2–4.
 
-When the runner reports during a pass, review the PRs it names with phases 2–4 and fold its parked issues, follow-ups and lessons into phase 6.
-
-**Exit gate:** the runner woke, or the offline count.
+**Exit gate:** runner woken, or the offline count.
 
 ## 6. Report
 
-Send the owner one message in [board.md](../../references/board.md)'s Reporting to the owner form, only when something needs them or something shipped. Summary lines: PRs merged since the last report, in one line; the runner's lesson PRs. Decision lines, in this order: PRs ready for or needing the owner (linked, with the reason); issues the runner parked (question and recommendation); follow-ups the runner found (each needing the owner's yes to become an issue); any finding this reviewer raised on two or more PRs, with the file it should change and the review that raised it linked. Repeat an item only when it changed. Remove the scratch worktrees.
+Only when something needs the owner or shipped, in [board.md](../../references/board.md)'s Reporting to the owner form. Summary: PRs merged; runner's lesson PRs. Decision: PRs for the owner with reason; runner parks and follow-ups; findings raised on two or more PRs, with target file. Repeat only changed items. Remove scratch worktrees.
 
-**Exit gate:** the message sent, or nothing to report, and no worktree left.
+**Exit gate:** sent or nothing to report; worktrees removed.

@@ -9,7 +9,7 @@ This document provides a comprehensive guide to the architectural design, core c
 The `skills` repository is designed around six foundational principles:
 
 1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
-2. **Affirmative State Machines**: Skills structure instructions as unidirectional linear phases with positive actions and concrete exit gates. Negative "Do/Don't" phrasing is kept to explicit safety boundaries to limit negative prompt priming.
+2. **System-Prompt Style under Word Budgets**: Skills are direct orders to an agent, one rule per bullet, numbered phases with checkable exit gates, and nothing the agent would do untold. The validator enforces budgets: description ≤ 300 characters, `SKILL.md` body ≤ 400 words, reference ≤ 600, shared package reference ≤ 800.
 3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
 4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for direct changes alongside the Delivery Cycle (`spec` ➔ `plan` ➔ `tdd` ➔ `review` ➔ `ship` ➔ `improve`) for tracked work, attended or AFK.
 5. **Deterministic Verification**: AI agents validate all work against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
@@ -24,7 +24,7 @@ A **skill** is a compact, reusable package of instructions, scripts, and context
 ```
 plugins/common/<package>/skills/<skill-name>/
 ├── SKILL.md                 # Primary instruction entrypoint with frontmatter
-├── references/              # Context pointers loaded on-demand (<300 lines)
+├── references/              # Context pointers loaded on-demand (≤600 words)
 │   └── domain-details.md
 ├── scripts/                 # Non-interactive CLI helper tools
 └── assets/                  # Templates, boilerplate, or visual assets
@@ -40,8 +40,8 @@ plugins/common/<package>/skills/<skill-name>/
   ---
   ```
   For human-triggered workflows, add `disable-model-invocation: true`.
-* **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent, and specify clear trigger boundaries under 1024 characters.
-* **Affirmative Phase Sequencing**: Steps are organized into sequential numbered phases, each pairing a single affirmative action with an observable exit gate (such as a command exit code 0 or diff block).
+* **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent, and specify clear trigger boundaries within 300 characters.
+* **Phase Sequencing**: Steps are numbered phases, each ending in an exit gate the agent can check (a command's exit code, a file, a label, a PR or CI state).
 * **Explicit Output Envelopes**: Every phase defines the exact compact Markdown template the agent should emit, preventing conversational wandering.
 * **Universal ASCII Diagram Standard**: Uses clean ASCII/Unicode box diagrams and Markdown tables; Mermaid code blocks are prohibited to guarantee rendering across all editor environments.
 * **On-Demand Doctrine Chaining**: Flow skills (`tdd`, `review`) invoke Doctrine skills (`ddd`, `hexagonal-architecture`) via native `Skill` tool calls on demand, preventing startup context clutter.

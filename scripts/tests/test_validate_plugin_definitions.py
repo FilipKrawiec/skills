@@ -104,22 +104,28 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
                 v.validate_skill_spec(skill_dir)
             self.assertIn("description must begin with 'Use when...'", str(ctx.exception))
 
-            # Rejects description > 1024 chars
-            long_desc = "Use when " + ("x" * 1020)
+            # Rejects description > 300 chars
+            long_desc = "Use when " + ("x" * 300)
             skill_file.write_text(f"---\nname: sample-skill\ndescription: {long_desc}\nallowed-tools: Read\n---\n", encoding="utf-8")
             with self.assertRaises(v.ValidationError) as ctx:
                 v.validate_skill_spec(skill_dir)
-            self.assertIn("description exceeds 1024 characters", str(ctx.exception))
+            self.assertIn("description exceeds 300 characters", str(ctx.exception))
 
-            # Rejects reference > 300 lines
+            # Rejects a body over 400 words
+            skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: Read\n---\n" + "word " * 401, encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_skill_spec(skill_dir)
+            self.assertIn("body exceeds 400 words", str(ctx.exception))
+
+            # Rejects reference > 600 words
             skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: Read\n---\n", encoding="utf-8")
             ref_dir = skill_dir / "references"
             ref_dir.mkdir()
             ref_file = ref_dir / "oversized.md"
-            ref_file.write_text("\n".join(f"line {i}" for i in range(305)) + "\n", encoding="utf-8")
+            ref_file.write_text("word " * 601, encoding="utf-8")
             with self.assertRaises(v.ValidationError) as ctx:
                 v.validate_skill_spec(skill_dir)
-            self.assertIn("exceeds 300 lines", str(ctx.exception))
+            self.assertIn("exceeds 600 words", str(ctx.exception))
 
             # Rejects reference with Table of Contents (TOC)
             ref_file.write_text("## Contents\n- [Section 1](#1-section-1)\n## 1. Section 1\n", encoding="utf-8")
@@ -127,7 +133,7 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
                 v.validate_skill_spec(skill_dir)
             self.assertIn("must not include a Table of Contents (TOC)", str(ctx.exception))
 
-            # Accepts valid reference <= 300 lines without TOC
+            # Accepts valid reference <= 600 words without TOC
             ref_file.write_text("\n".join(f"line {i}" for i in range(250)) + "\n", encoding="utf-8")
             v.validate_skill_spec(skill_dir)
 

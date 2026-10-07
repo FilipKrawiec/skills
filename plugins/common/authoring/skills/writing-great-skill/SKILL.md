@@ -1,94 +1,35 @@
 ---
 name: writing-great-skill
-description: Use when creating, modifying, editing, or validating skills, agent rules (AGENTS.md), or plugin manifests in this repository.
+description: Use when creating, editing, shortening or reviewing skills, agent rules (AGENTS.md) or plugin manifests in this repository.
 allowed-tools: Skill Read Edit Bash(python3:*,just:*)
 ---
 
 # Writing Great Skill
 
-A skill should make agent behavior more predictable. Bold terms are defined in `references/glossary.md`.
+A skill is a system-prompt fragment: direct orders to an agent that already knows its craft.
 
-## Invocation & Cross-Skill Calling
+## Steps
 
-- **Frontmatter Tool Allowance (`allowed-tools`)**: Every skill MUST declare its permitted tool capabilities as a space-delimited string in YAML frontmatter (e.g. `allowed-tools: Skill Read Edit Bash(git:*)`). Declare `Skill` when the workflow invokes downstream skills.
-- **Model Invocation**: Use when the agent must discover the skill autonomously.
-- **User Invocation**: Use when the human triggers the workflow explicitly. Set `disable-model-invocation: true` in YAML frontmatter and keep the description as a terse human-facing label.
-- **Dual Invocation Modes**:
-  - **Inline Chaining**: Caller borrows domain rules directly into the active turn context (e.g. `tdd` invoking `ddd` or `hexagonal-architecture`). Phrase as: "When designing domain models, invoke `ddd`."
-  - **Delegated Subagent Invocation**: Orchestrator dispatches an isolated subagent with a dedicated task packet and active skill bundle (e.g. `agent-review` dispatching an isolated `review` worker per PR).
-- **Composition Invariants**:
-  - **Strict DAG**: Skill dependency graphs form a Directed Acyclic Graph with max depth <= 2; every call chain ends.
-  - **Deterministic Exit Gates**: Every callee skill must produce a verified exit gate before yielding control back to the caller.
+1. Name the failure the change prevents: an observed run, a review comment or an owner correction. No failure, no rule.
+2. Write each rule as one bullet, one or two sentences, imperative ("Run X.", "Never Y; do Z instead."). Add a reason clause only where the rule would be misapplied without it.
+3. Cut every line the agent would follow untold: definitions, general best practice, motivation, history, restatements of another skill or of a tooling gate.
+4. Run `just verify`; its word budgets are a ceiling, not a target.
 
-## Description Craft
+## Rules
 
-A model-invoked **description** is always in startup context. It must earn that cost.
+- **Budgets:** description ≤ 300 characters; `SKILL.md` body ≤ 400 words; a reference ≤ 600 words; a package-shared reference ≤ 800 words. Over budget, move a branch to a reference or split the skill.
+- **Frontmatter:** a model-invoked description starts "Use when" and names user intents, not mechanics; a user-invoked skill sets `disable-model-invocation: true` and a one-line label. `allowed-tools` is a space-delimited string, with `Skill` when it invokes another skill.
+- **Steps:** number the phases. End each with an **Exit gate** the agent can check: a command's exit code, a file, a label, a PR or CI state.
+- **Conditions:** data the agent can read ("the issue has a scope packet"), never another skill's history ("after `spec` ran").
+- **One home per rule.** Another skill points to it by name in backticks; skills in one plugin share one package reference at `../../references/<name>.md`.
+- **References:** one topic each, tables and checklists over prose, no table of contents. Point to each from `SKILL.md` as "Read `<file>` when <condition>", with conditions that do not overlap.
+- **Emphasis:** CAPS or "IMPORTANT" only on the rule runs keep breaking; emphasis everywhere weights nothing.
+- **Hedges:** delete "consider", "should generally", "where appropriate". State the default, then the exception.
+- **Examples:** one good/bad pair beats a paragraph.
+- **Output:** every phase that talks to a human or agent gets an envelope: its fields and a line limit.
+- **Calls:** at most two deep, no cycles; a callee returns its exit gate.
+- **Names:** say "agent", "AI" or "host"; product names only in host overlays (`plugins/<agent>/`). Directories and references are lowercase kebab-case; scripts in `scripts/` run non-interactively.
 
-- Start with "Use when..." and describe user intent, not implementation.
-- Include distinct trigger branches; collapse synonyms.
-- Keep the boundary clear enough to avoid near-miss false triggers.
-- Stay under 1024 characters.
+## Context pointer
 
-For user-invoked skills (`disable-model-invocation: true`), keep the description as a one-line human summary.
-
-## Instruction Wording & Affirmative State Machines
-
-Structure skills as **unidirectional affirmative state machines**:
-- Divide workflows into sequential numbered phases.
-- State only the single desired affirmative action in each phase. Omit negative phrasing ("Don't do X", "Never do Y") to prevent negative prompt priming.
-- Pair each phase with a concrete **Exit Gate** (test output, command exit code 0, or file diff).
-- Write every condition an agent must detect as a check on data it can read: a label, a comment heading, a PR or CI state, or file content ("the issue has a scope packet", rather than "`spec` finished it").
-
-## Size & Semantic Payload Output Envelopes
-
-Output tokens are significantly more expensive and slower than input tokens. Define an **Explicit Output Envelope** for each phase or turn to eliminate unsolicited narrative essays and token bloat:
-- **Size & Brevity Limits**: Enforce strict upper bounds on line count and token budget (e.g. <= 5 lines per interaction round, zero conversational preamble).
-- **Semantic Payload Boundaries**: Specify required dimensions (facts, trade-offs, recommendations, exit criteria) rather than prescribing rigid literal text framing.
-- **Native Host Interaction**: Frame envelopes so host environments can fulfill them using native affordances (such as interactive tool modals like `ask_question`, artifact review panes, or high-density CLI output).
-
-## Diagramming Standard
-
-Use clean standard ASCII / Unicode box-drawing diagrams and structured Markdown tables; they render in every terminal pager and editor viewer, where Mermaid does not.
-
-## Information Hierarchy
-
-- Put required **steps** in `SKILL.md`.
-- Move branch-specific reference behind a clear **context pointer**: "Read X when Y."
-  - **Path Rule (Local)**: `X` must be a relative link targeting a file inside the skill's own local `references/` directory (e.g., `[glossary.md](references/glossary.md)` or `[subtopic.md](references/category/subtopic.md)`).
-  - **Path Rule (Shared Package Authority)**: Skills shipped together in one plugin MAY use a relative link to one package-local authority outside their own directory (e.g., `[shared.md](../../references/shared.md)` from a skill directory). Verify that link from the installed package; do not copy the authority per skill.
-  - **Rule**: Links are relative and stay inside the installed plugin. Reference other skills textually using backticks (e.g., `` `other-skill` ``) unless using the shared-authority exception.
-- **Reference Scope & Sizing**:
-  - Keep each reference file focused on a single topic, domain model, language profile, or specification.
-  - Prioritize scannable reference formats: tables, checklists, and minimal self-contained code examples. Keep reference files under 300 lines (~1,500 tokens).
-  - Let headings carry the structure of a reference file; agents parse them directly, so a table of contents adds text without changing behavior.
-  - Keep procedural steps and execution workflows in `SKILL.md` only; reference files hold the material those steps point to.
-- **Lazy Loading Guardrail**:
-  - Write explicit, disjoint trigger conditions for context pointers to prevent eager pre-fetching.
-  - Load only the specific reference required for the active branch; do not preload the entire `references/` directory.
-- **Cross-Reference Hygiene**:
-  - Reference files may link to sibling reference files via relative paths. Keep reference graphs flat and avoid circular reference chains.
-- Keep each meaning in one source of truth.
-- Evaluate instruction cost, shared-contract dependency cost, and observed run cost separately; static contract size alone is not a skill-quality failure.
-
-## Provider-Neutral Wording
-
-Name the actor generically: "agent", "AI" or "host". Product and vendor names belong only in host manifest directories and agent overlays (`plugins/<agent>/`); the validator rejects them in skill content.
-
-## Naming Conventions
-
-- **Skill Directory**: Must use `lowercase-kebab-case` (e.g., `ddd`).
-- **Main Instruction File**: Must be named exactly `SKILL.md` (all uppercase).
-- **Reference Files**: Must use `lowercase-kebab-case.md` (e.g., `ubiquitous-language.md`), and reside within a local `references/` subdirectory (or nested subdirectories like `references/languages/`) or the verified shared package authority.
-- **Assets**: Store templates and static resources in `assets/`.
-- **Scripts**: Store executable helper code in `scripts/`; scripts must be non-interactive and document usage.
-
-## Pruning
-
-Delete lines that are generic, duplicated, stale, or do not change behavior. When a skill feels long, first look for reference that can move down the hierarchy, then look for branches that should split.
-
----
-
-## Context Pointers
-
-- Read [glossary.md](references/glossary.md) when looking up definitions of bold terms.
-- Read [agentskills-guide.md](references/agentskills-guide.md) when designing, optimizing, testing, or specification-validating a skill or custom script.
+- Read [evaluating.md](references/evaluating.md) when testing whether a skill triggers or changes a run.

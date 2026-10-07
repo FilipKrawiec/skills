@@ -1,75 +1,36 @@
-# Kotlin Hexagonal Architecture
+# Kotlin
 
-Use this as a Kotlin-specific delta on top of the generic Domain, Application, API, and Infrastructure references. It prescribes no framework: match the one the codebase already uses.
+No framework is prescribed: use the codebase's.
 
-## 1. Package and Module Boundaries
+## Layout
 
-- Use feature-first packages with layer suffixes: `users.domain`, `users.app`, `users.api`, `users.infra`.
-- Separate reuse by intent. A `shared-domain` module is a DDD Shared Kernel only when named contexts jointly own its business language. A context-neutral `platform-domain` module may contain pure technical primitives, but must not import or expose Application, API, Infrastructure, or framework types; do not call it a Shared Kernel.
-- Domain packages must not depend on `app`, `api`, `infra`, web frameworks, persistence, serialization, or database libraries.
-- Kotlin `internal` is module-wide, not package-private. In a single Gradle module, enforce boundaries with architecture tests such as Konsist, ArchUnit, or project-specific import rules.
-- If the project has multiple Gradle modules, Domain must not depend on Application, API, Infrastructure, or framework modules.
+- Feature-first packages: `users.domain`, `users.app`, `users.api`, `users.infra`.
+- `internal` is module-wide, not package-private: in a single Gradle module enforce layer imports with Konsist or ArchUnit; with several modules, the domain module depends on no other layer or framework module.
+- A `platform-domain` module may hold pure technical primitives; it is not a Shared Kernel.
+- Name the aggregate file after its port (`users/domain/Users.kt`), one root per file, with its creation, sealed outcomes, events, value types and port when they belong only to it.
+- `Users` never extends a generic `Repository<User>`.
 
-## 2. Aggregate Boundary Files
+## Domain idioms
 
-- Default Kotlin aggregate file name to the plural repository port when the file stays readable: `users/domain/Users.kt`.
-- Keep one aggregate root per boundary file.
-- Co-locate aggregate-local creation logic, sealed outcomes/errors, events, value types, and repository port (`Users`) when they belong only to that aggregate.
-- Move large policies, cross-aggregate concepts, or shared language out to separate files/packages.
-- `Users` is the domain repository port interface. It is not a concrete adapter and should not extend a generic `Repository<User>` abstraction. Concrete implementations use technology prefixes (e.g., `JpaUsers`, `ExposedUsers`, `JdbcUsers`).
+- Never use `data class` for entities or aggregate roots: `copy`, structural equality and destructuring bypass invariants.
+- Use `@JvmInline value class UserId(val value: String)` for IDs and small values.
+- Expected failures are `sealed interface` outcomes, not exceptions.
+- Nullable types only where absence is domain language.
+- Domain functions are not `suspend`; `suspend` belongs to ports, adapters and use cases.
+- An optional pure `BaseEntity<ID>` is fine; never make it a universal base carrying policy.
 
-## 3. Domain Modeling Idioms
+## Creation
 
-- Entities own their identity semantics. An optional pure `platform.domain.BaseEntity<ID>` is acceptable when it does not impose business policy; never make it the universal base class.
-- Do not use Kotlin `data class` for mutable Entities or Aggregate Roots; generated `copy`, structural equality, and destructuring can bypass invariants.
-- Use Kotlin value classes (`@JvmInline value class UserId(val value: String)`) for small identity and value types when they preserve domain meaning.
-- Model expected business failures as sealed domain errors or sealed domain outcomes (`sealed interface Outcome`), not exceptions; the whole domain uses one form.
-- Use nullable types only when absence is part of the domain language; otherwise enforce construction through value objects, factories, or aggregate methods.
-- Domain methods should usually be synchronous and free of IO. Put `suspend` on application, port, or adapter functions only when IO requires it.
+- Simple creation is `create` on the root's companion object.
+- `UserId.new()` only for local, uncoordinated IDs; inject `UserIds` or `Clock` when deterministic or coordinated.
 
-## 4. Creation, Time, and Randomness
+## Adapters
 
-- Put simple aggregate creation logic on the Aggregate Root companion object as a `create` method.
-- Use a separate aggregate factory only when creation needs injected collaborators, external components, clocks, randomness, or domain ports.
-- Separate factories should usually expose a single `create` method.
-- `UserId.new()` is acceptable only for local, pure, uncoordinated ID generation.
-- Inject ports such as `UserIds` or `Clock` when IDs or time must be deterministic in tests or are coordinated externally.
+- Concrete adapters are `internal`; DAOs and mappers file-private, `internal` only when framework wiring must see them.
+- A framework DAO sits behind the adapter (`JpaUsers(private val dao: UserDao) : Users`), never as the port.
+- API DTOs may carry OpenAPI/JSON/validation annotations; persistence records may carry ORM annotations; the domain carries none.
+- Publish externally through after-commit hooks or an outbox.
 
-## 5. Application Layer
- 
- - Keep transactions, authorization, idempotency, domain event dispatch, and application workflow in this layer.
- - Inbound API adapters (routes, controllers, consumers) must always invoke use cases/handlers (consistency over simplicity); never bypass the application layer to call repositories or query ports directly.
- - Load aggregates, call domain methods, save through domain ports, then dispatch typed domain events after state is saved.
- - For external publication reliability, use after-commit hooks or a transactional outbox instead of publishing directly from inside aggregates.
- - Return explicit application results (`sealed interface Result`) for expected failures; do not silently return on missing aggregates.
+## Tests
 
-## 6. Query Ports and Read Models
-
-- Use aggregate repositories for commands that need aggregate invariants.
-- Use query ports for read models that should not load or mutate aggregates.
-- Name domain-owned query ports with the `Queries` suffix (e.g., `UserQueries`).
-- Return read models shaped for the use case, not ORM entities and not API DTOs.
-
-## 7. API and Infrastructure Models
-
-- API packages own request and response DTOs. DTOs may carry OpenAPI, JSON, validation, or serialization annotations.
-- Infrastructure packages own persistence records, DAOs, mappers, and external client models. Persistence records may carry ORM annotations.
-- Never expose Domain models as API DTOs, and never pass ORM entities inward.
-- Persistence shape is not expected to be 1:1 with Domain shape.
-
-## 8. Adapters, DAOs, and Framework Wiring
-
-- Concrete adapters are usually `internal`; domain/application ports remain public.
-- DAOs and mapper helpers should be file-private when possible.
-- Make helper types `internal` only when framework wiring must reference them from a visible factory method.
-- Match the host framework already used by the codebase; this reference introduces none.
-- Put framework wiring in composition root/configuration code. Domain has zero framework annotations; Application services may use the host framework's transaction or DI annotations when standard in the codebase.
-- A framework-generated DAO may sit behind the concrete adapter (`JpaUsers(private val dao: UserDao) : Users`); it never becomes the port.
-
-## 9. Testing Rules
-
-- Domain tests instantiate aggregates and value objects directly; they should not start a framework container.
-- Application tests use fake or in-memory ports and assert orchestration, transaction boundaries, result mapping, and domain event dispatch.
-- API tests verify routing, serialization, validation, DTO mapping, and status codes without asserting domain internals.
-- Infrastructure tests verify mapping, annotations, queries, migrations, and adapter behavior with the real persistence stack or Testcontainers when risk justifies it.
-- Add architecture tests to enforce imports when package or module boundaries are not enforced by Gradle modules.
+- Domain tests start no framework container; application tests use in-memory ports. Doubles: `tdd`'s Kotlin profile.

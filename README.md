@@ -76,7 +76,7 @@ This library supports two complementary execution loops depending on the scope o
 
 For full details, read the comprehensive [Concepts & Architecture Guide](docs/CONCEPTS.md).
 
-* **Affirmative State Machines**: Skills are structured as unidirectional linear phases with explicit affirmative actions and concrete exit gates, with prohibitions kept to safety boundaries.
+* **System-Prompt Style under Word Budgets**: Skills are direct orders in numbered phases with checkable exit gates; the validator caps each `SKILL.md` at 400 words and each reference at 600.
 * **Zero-Waste Output Economics**: Every skill phase defines explicit output envelopes, high-density token efficiency, and code anti-overengineering (Rule of Two Adapters).
 * **Provider-Neutral & Sovereign Git-Native**: Pure Git clone/submodule distribution across harnesses (Claude Code, Codex, Antigravity) without SaaS registry dependencies.
 * **Delivery Cycle**: Seven phases (01 Define to 07 Improve), one skill each, on an optional Project board (epics only in an Epics view, every other issue in a Board view) with standard columns that GitHub's built-in workflows mostly move.
@@ -100,7 +100,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`improve`](plugins/common/workflow/skills/improve/SKILL.md) | Model | 07 Improve: Turn a failure seen twice into a lesson PR for skills, agent rules, docs or assets. |
 | | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | User (scheduler invokes by name) | Unattended Delivery: Runs the cycle for one approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
 | | [`agent-review`](plugins/common/workflow/skills/agent-review/SKILL.md) | User (scheduler invokes by name) | Agent Review: Review each open PR per head commit, hand critical PRs to the owner, merge reviewed AFK PRs, wake the runner. |
-| **`filipkrawiec-authoring`** | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring affirmative state machines, output contracts, and token budgets. |
+| **`filipkrawiec-authoring`** | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring skills as system-prompt orders within word budgets. |
 
 ---
 
