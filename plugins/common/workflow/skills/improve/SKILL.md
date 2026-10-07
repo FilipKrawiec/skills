@@ -17,7 +17,7 @@ For the shipped issue (07 Improve in [board.md](../../references/board.md)'s Sta
 - A lesson needs two linked occurrences or the owner's request; one occurrence is an observation only.
 - Prefer a script or gate that makes the failure impossible, then editing or deleting a rule, then a new rule.
 - One target per lesson: the skill owning the phase (rules holding in any project); project agent rules (project-only); `.github/lanes.json` (scope, protection, merge); issue template or `spec` (unbuildable issues); docs or assets. Delete a rule that cost more than it prevented.
-- Never record a lesson in agent memory; it goes into a skill or project rule. Replace project text or memory restating a skill with a link to it.
+- Lessons go into skills or project rules, never agent memory; replace text or memory restating a skill with a link.
 - Scrub secrets, internal hostnames, client names and local paths.
 
 **Exit gate:** each lesson has a target file and wording.
