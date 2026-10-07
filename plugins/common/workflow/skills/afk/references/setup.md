@@ -2,31 +2,26 @@
 
 ## Configuration: `.github/lanes.json`
 
-Its presence opts the repository in. Lists extend `scripts/lanes.py`'s defaults; scalars replace them. Only `repo` is required.
+Its presence opts the repository in; agents read it from the base branch themselves. Only `repo` is required. Agents ignore keys no longer read (`protected`, `chores`, `dependencyFiles`, `guard`): owner paths belong in CODEOWNERS.
 
 | Key | Meaning |
 | --- | --- |
 | `repo` | `owner/name`. |
-| `owner` | Login whose PRs may auto-merge; default the repository owner. |
+| `owner` | The owner's login; default the repository owner. |
 | `implementer`, `reviewer` | [Machine users](github-safety.md); default `owner`. |
 | `base` | Default `main`. |
 | `project` | `{"owner": "<login>", "number": <n>}`: the board. |
-| `protected` | Path regexes AFK work may not change (adds to dot-directories, `AGENTS.md`, justfile, Makefile); add the host's instruction file. |
 | `alwaysInScope` | Path prefixes every AFK change may touch. |
-| `chores` | Path regexes that auto-merge on green (adds to `^docs/`, `\.md$`, tests). |
-| `dependencyFiles` | Manifests and lockfiles Dependabot may auto-merge, except across a major (or sub-1.0 minor) version. |
 | `branchPrefix`, `staleClaimHours` | Defaults `agent/afk-`, `3`. |
 | `agentReview`, `reviewRounds` | `true` when `agent-review` reviews open PRs; rounds cap per PR. Defaults `false`, `3`. |
-| `ownerPaths`, `ownerLabels`, `ownerLines` | Owner rules: paths, ship-on-merge labels, line limit (800). |
-| `guard` | `[{"pattern": "<regex>", "reason": "<why>"}]`: extra commands the guard catches. |
+| `ownerPaths`, `ownerLabels`, `ownerLines` | `agent-review`'s owner rules: paths beyond CODEOWNERS, ship-on-merge labels, line limit (800). |
 
 ```json
 {
   "repo": "acme/app",
   "project": {"owner": "acme", "number": 3},
-  "protected": ["^infra/"],
   "alwaysInScope": ["docs/"],
-  "guard": [{"pattern": "\\bnpm\\s+run\\s+deploy\\b", "reason": "Deploys run from CI."}]
+  "agentReview": true
 }
 ```
 
@@ -56,7 +51,7 @@ Its presence opts the repository in. Lists extend `scripts/lanes.py`'s defaults;
 | `lane:proposed` | Agent recommends AFK; owner decides. |
 | `lane:owner` | Needs the owner. |
 | `state:claimed`, `state:started` | An AFK run, or another session, is on it. |
-| `review:owner` | PR for the owner; `lanes.py merge` skips it. |
+| `review:owner` | PR for the owner; `agent-review` withholds approval. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue (board.md's Issue types). |
 
 ## Unattended runs
@@ -66,8 +61,9 @@ Schedule runs in the main checkout so they never overlap. Prompt:
 ```text
 Preflight, stop and report on any failure:
 1. The working directory is inside <owner>/<repo>.
-2. `gh pr merge --help` is refused by the lanes guard; if it prints help,
-   the guard is not loaded, so stop.
+2. `gh api user --jq .login` prints lanes.json's `implementer`, and
+   `git remote get-url origin` starts `https://`; else pushes and PRs
+   run as someone else, so stop.
 3. With a board in lanes.json, `gh project view <number> --owner <owner>`
    succeeds; otherwise the token lacks the `project` scope, so stop.
 Then invoke the `afk` skill by name (it is user-invoked only, so owner sessions

@@ -6,7 +6,7 @@ The optional board is lanes.json's `project`, columns Backlog, Todo, In progress
 
 Attended: `spec` → Start when the owner asks → `plan`, approved in session → `tdd`, `vcs`, `review` → Open PR.
 
-Resuming or unattended: run the first matching States row's skill, moving the card, until the issue waits on someone. Unattended, claim only what `lanes.py next` prints. Never work an epic.
+Resuming or unattended: run the first matching States row's skill, moving the card, until the issue waits on someone. Never work an epic.
 
 ### Work in progress
 
@@ -52,7 +52,7 @@ Only epics have sub-issues, holding all remaining work. Never claim or PR one. C
 
 ## Priority
 
-Every open board issue has Priority P0–P2, a slice its epic's. `lanes.py next` ranks by it.
+Every open board issue has Priority P0–P2, a slice its epic's.
 
 ## Issue form
 
@@ -64,7 +64,7 @@ Every open board issue has Priority P0–P2, a slice its epic's. `lanes.py next`
 
 - **Claim (AFK)** → In progress: `git fetch origin <base>`; reuse the worktree or unmerged `<branchPrefix><N>-*` branch, else `git worktree add <root>/.worktrees/afk-<N> -b <branchPrefix><N>-<slug> origin/<base>` (host-confined: `git switch` its clean worktree). Add `state:claimed`, remove `lane:owner`, comment ``Claimed by an AFK run on `<branch>`.``
 - **Start (attended)** → In progress: same, on a `vcs` branch name; add `state:started`.
-- **Open PR** → Review: push; `gh pr create`: issue's title; body `Closes #<N>`, plan link, review verdict with fixing commits, checks run, before/after captures of visible changes. Owner-only leftovers become linked `lane:owner` issues. Open it ready, never a draft, whatever the host's default. Merge gate; `lanes.py triage <pr>`: `owner` → add `review:owner`, else `lanes.py merge <pr>`, landing on `agent-review`'s approval. Report both; Release.
+- **Open PR** → Review: push (`vcs`); `gh pr create`: issue's title; body `Closes #<N>`, plan link, review verdict with fixing commits, checks run, before/after captures of visible changes. Owner-only leftovers become linked `lane:owner` issues. Open it ready, never a draft, whatever the host's default. Merge gate; `gh pr merge <pr> --squash --auto`, landing on the required approval (`agent-review`'s or the owner's). Report it; Release.
 - **Release**: remove `state:claimed`/`state:started`; card to Todo unless a PR is open.
 - **Park**: push useful work; replace `lane:afk` and `state:*` with `lane:owner`; comment per Reporting to the owner.
 - **Tidy**: remove other `<branchPrefix>` worktrees and branches whose PR merged or closed, if clean and `lsof -a -d cwd +D <wt>` exits 1.
@@ -73,8 +73,8 @@ Every open board issue has Priority P0–P2, a slice its epic's. `lanes.py next`
 
 Run after every push to an open PR, when the base moves, and before reporting or merging it.
 
-1. `lanes.py blockers <pr>` lists merge blockers, exiting 1 while any remain.
+1. Read `gh pr view <pr> --json isDraft,mergeable,mergeStateStatus,reviewDecision`, `gh pr checks <pr>` and `gh api graphql -f query='{repository(owner:"<o>",name:"<r>"){pullRequest(number:<pr>){reviewThreads(first:100){nodes{isResolved path line comments(first:1){nodes{author{login} body}}}}}}}'`. Blockers: draft; failing or pending checks; `CONFLICTING`, `DIRTY`, `BEHIND` (merge `origin/<base>`); unresolved threads; `CHANGES_REQUESTED`.
 2. Fix each open thread (`vcs` phase 3), replying with the fixing commit. Then dispatch an isolated reviewer worker with no implementation context; it never edits, commits or pushes, only resolves threads it confirms fixed and hands open ones back; fix, dispatch afresh. A person's threads stay theirs: name each to the owner.
 3. Fix failing checks and conflicts.
 
-Ready only on exit 0, no output; auto-merge may go on with only `check pending` left. Ask the owner to approve or merge a PR only when it is ready; until then report the remaining lines as why it waits, not as a request.
+Ready when no blocker but pending checks remains; only then ask the owner to approve or merge. Until then report the blockers as why it waits, not as a request.

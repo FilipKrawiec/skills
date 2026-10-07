@@ -1,7 +1,7 @@
 ---
 name: vcs
 description: Use when committing, branching, rebasing, pushing or moving files with Git.
-allowed-tools: Bash(git:*,gh:*,python3:*) Read
+allowed-tools: Bash(git:*,gh:*) Read
 ---
 
 # Version Control
@@ -33,6 +33,7 @@ Run `git status --short --branch`; work in the task's worktree and leave the ses
 ## 4. Sync and push
 
 - Before the PR opens: `git fetch origin && git rebase origin/<base>`. Once open: `git merge origin/<base>`, never rebase. Rerun required checks after resolving conflicts.
+- Push and run `gh` as the implementer machine user, as the host's setup says: an HTTPS remote whose credential helper and `GH_TOKEN` hold its token. Never push over SSH, which pushes as the key's owner; never print a token.
 - `git push -u origin <branch>`; after a rebase, `--force-with-lease`.
 - After every push to an open PR, run board.md's Merge gate.
 
@@ -40,4 +41,4 @@ Run `git status --short --branch`; work in the task's worktree and leave the ses
 
 ## Merge Authority
 
-Commit, push task branches and open or update PRs freely. Merge, approve, or force-push a protected or default branch only on the owner's explicit word; `lanes.py merge` (board.md's Open PR step) is that word for a PR no owner rule matches, and `agent-review` approves only a `ready` PR, as the reviewer.
+Commit, push task branches and open or update PRs freely. Merge, approve, or force-push a protected or default branch only on the owner's explicit word; branch protection and CODEOWNERS enforce it on GitHub (afk's `github-safety.md`). Auto-merge on your own PR (board.md's Open PR) is allowed: it lands only on the required approval.
