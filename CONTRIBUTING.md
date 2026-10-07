@@ -108,18 +108,9 @@ just link-agy          # Symlink plugins to ~/.gemini/config/plugins
 
 Every common package and agent overlay shares a unified repository-wide release version defined by an annotated Git tag (`v<semver>`).
 
-### Automated Semantic Release
+### Owner Release
 
-Releases are automated from conventional commits via GitHub Actions or locally via `just release`:
+Only the owner releases; agents never do (`main` requires an approved PR, and only admins may create `v*` tags).
 
-1. **Automated CI Release**:
-   * Pushes to `main` with conventional commits (`feat:`, `fix:`, `feat!:`, `BREAKING CHANGE:`) automatically trigger `.github/workflows/release.yml`.
-   * The workflow runs tests, calculates the semver bump, synchronizes plugin manifests, commits the version bump, creates an annotated tag, and publishes a GitHub Release.
-
-2. **Local Release Execution**:
-   * Maintainers can trigger a local semantic release:
-     ```bash
-     just release           # Automated semver bump based on conventional commits
-     # or: just release minor / just release patch / just release major
-     ```
-   * The release script verifies a clean working tree, updates package metadata, synchronizes manifests and marketplace catalogs, commits, tags the commit, and refreshes installed plugins. It pushes nothing: follow it with `git push origin main --follow-tags`. CI is the normal path; use the local release only when CI is unavailable, since both acting on the same commit would tag twice.
+1. On an up-to-date, clean `main`, run `just release` (or `just release minor|patch|major`). It computes the bump from conventional commits, updates package metadata, synchronizes manifests and marketplace catalogs, commits, tags `v<version>`, refreshes installed plugins and pushes `main` with `--follow-tags`, as admin past branch protection.
+2. The tag push runs `.github/workflows/release.yml`, which publishes the GitHub Release.

@@ -18,9 +18,10 @@ sync-manifests:
 release-check:
     python3 scripts/validate-plugin-definitions.py
 
-# Perform automated semantic release (bumps version, syncs manifests, commits, and tags)
+# Owner only: bump the version from conventional commits, sync manifests, commit, tag and push to main
 release bump="auto":
     python3 scripts/release.py {{bump}}
+    git push origin main --follow-tags
 
 # Display verifier status and detected lifecycle tasks
 status:

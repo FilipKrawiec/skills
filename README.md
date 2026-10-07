@@ -166,7 +166,7 @@ just verify       # unit tests plus the validator; python3 scripts/project-verif
 just release-check
 
 # Perform automated semantic release (bumps version, syncs manifests, commits, and tags)
-just release      # or: python3 scripts/release.py auto
+just release      # owner only: bumps, tags and pushes main
 ```
 
 ---
@@ -178,7 +178,7 @@ Want to add a new skill, update plugin manifests, or prepare a release tag? Read
 ### Release Procedure Summary
 
 * **Pre-merge**: Run `just verify` and open a pull request. This stage does not claim a release tag, published version, or completed release.
-* **Post-merge / Ship**: Every push to `main` runs `.github/workflows/release.yml`, which computes the semver bump from conventional commits, synchronizes all plugin manifests, commits, creates the annotated tag (`v<version>`), pushes with `--follow-tags` and publishes the GitHub Release. `just release` does the same locally up to the tag; follow it with `git push origin main --follow-tags` when CI is unavailable.
+* **Release**: the owner runs `just release` on an up-to-date `main`: it computes the semver bump from conventional commits, synchronizes all plugin manifests, commits, tags `v<version>` and pushes past branch protection as admin. The tag push runs `.github/workflows/release.yml`, which publishes the GitHub Release. Agents never release: `main` requires an approved PR and only admins may create `v*` tags.
 
 ---
 
