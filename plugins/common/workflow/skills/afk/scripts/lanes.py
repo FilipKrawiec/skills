@@ -68,6 +68,9 @@ def parse_config(text):
         if isinstance(default, list):
             config[key] = default + list(data.get(key, []))
     config.setdefault('owner', config['repo'].split('/')[0])
+    # The machine users of github-safety.md; without them the owner's account does both jobs.
+    config.setdefault('implementer', config['owner'])
+    config.setdefault('reviewer', config['owner'])
     return config
 
 
@@ -211,8 +214,8 @@ def owner_rule(pr, config, scope):
     files = [f['path'] for f in pr['files']]
     if OWNER_REVIEW in labels:
         return f'labelled {OWNER_REVIEW}'
-    if author != config['owner'] and author not in DEPENDABOT:
-        return f'author {author} is neither the owner nor Dependabot'
+    if author not in (config['owner'], config['implementer']) and author not in DEPENDABOT:
+        return f'author {author} is neither the owner, the implementer nor Dependabot'
     if not files or len(files) >= 100:
         return 'file list is empty or truncated'
     if renamed(pr):
@@ -282,7 +285,7 @@ def review_refusal(pr, config):
     when a person commented after that review."""
     if requesting_changes(pr):
         return 'a review requests changes'
-    review = latest_agent_review(pr, config['owner'])
+    review = latest_agent_review(pr, config['reviewer'])
     if review is None:
         return None
     sha, _, verdict, reviewed_at = review

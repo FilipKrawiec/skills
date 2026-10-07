@@ -8,6 +8,7 @@ Its presence opts the repository in. Lists extend `scripts/lanes.py`'s defaults;
 | --- | --- |
 | `repo` | `owner/name`. |
 | `owner` | Login whose PRs may auto-merge; default the repository owner. |
+| `implementer`, `reviewer` | [Machine users](github-safety.md); default `owner`. |
 | `base` | Default `main`. |
 | `project` | `{"owner": "<login>", "number": <n>}`: the board. |
 | `protected` | Path regexes AFK work may not change (adds to dot-directories, `AGENTS.md`, justfile, Makefile); add the host's instruction file. |
@@ -32,12 +33,12 @@ Its presence opts the repository in. Lists extend `scripts/lanes.py`'s defaults;
 ## One-time setup
 
 - Create each missing label below with `gh label create <name> --color <hex> --description "<text>"`.
-- GitHub: apply [github-safety.md](github-safety.md); `scripts/github-safety.sh check` must exit 0 before the first unattended run.
+- GitHub: apply [github-safety.md](github-safety.md); `scripts/github-safety.sh check` exits 0 before unattended runs.
 - Add one line to the project's agent rules: delivery follows the workflow plugin's skills, linking the project's workflow page of project values only.
 
 ## Board
 
-- Status: the five columns in [board.md](../../../references/board.md); single-select Priority (P0, P1, P2). On an existing board, add options, move every card, then delete old options.
+- Status: the five columns in [board.md](../../../references/board.md); single-select Priority (P0, P1, P2). Existing board: add options, move every card, delete old options.
 - `gh auth refresh -s project`.
 - Workflows: Auto-add (`is:issue`); Item added → Backlog; PR linked → Review; closed → Done; reopened → Todo.
 - Views, first is default:
@@ -55,7 +56,7 @@ Its presence opts the repository in. Lists extend `scripts/lanes.py`'s defaults;
 | `lane:proposed` | Agent recommends AFK; owner decides. |
 | `lane:owner` | Needs the owner. |
 | `state:claimed`, `state:started` | An AFK run, or another session, is on it. |
-| `review:owner` | PR for the owner; `lanes.py merge` leaves it. |
+| `review:owner` | PR for the owner; `lanes.py merge` skips it. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue (board.md's Issue types). |
 
 ## Unattended runs
@@ -75,4 +76,4 @@ switch, pull, reset or stash this checkout: it may hold the owner's work.
 ```
 
 - With `agentReview`, schedule a task invoking `agent-review`, naming the repository, how to wake the runner and any legacy review marker.
-- Approve the task's tool prompts on its first run.
+- Approve its tool prompts on the first run.

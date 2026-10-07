@@ -5,7 +5,7 @@
 | # | The PR | Configured by |
 | --- | --- | --- |
 | 1 | carries `review:owner` | |
-| 2 | has an author other than the owner or Dependabot | `owner` |
+| 2 | has an author other than the owner, the implementer or Dependabot | `owner`, `implementer` |
 | 3 | lists no files, 100 or more, or a renamed or copied file | |
 | 4 | touches a protected or owner path (automation, agent rules, security rules, stored data) | `protected`, `ownerPaths` |
 | 5 | carries a label that ships or deploys on merge | `ownerLabels` |
@@ -16,11 +16,11 @@
 
 ## Verdicts
 
-| `verdict=` | When | `review:owner` |
-| --- | --- | --- |
-| `ready` | No blocking finding or open thread; triage not `owner`. | remove |
-| `owner` | No blocking finding; triage printed `owner` (quote the rule), or a thread waits on an owner check (device, credential). | add |
-| `fixes` | Blocking findings, rounds left. | remove |
-| `rounds` | Blocking findings in the last round. | add |
+| `verdict=` | When | Review | `review:owner` |
+| --- | --- | --- | --- |
+| `ready` | No blocking finding or open thread; triage not `owner`. | APPROVE, then merge | remove |
+| `owner` | No blocking finding; triage printed `owner` (quote the rule), or a thread waits on an owner check (device, credential). | COMMENT | add |
+| `fixes` | Blocking findings, rounds left. | COMMENT | remove |
+| `rounds` | Blocking findings in the last round. | COMMENT | add |
 
 A verdict handing the owner a user-visible change links before and after captures of each change.

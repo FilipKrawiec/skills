@@ -11,7 +11,7 @@ Resuming or unattended: run the first matching States row's skill, moving the ca
 ### Work in progress
 
 - Hold one open PR; start another issue only once it merged, or passed the Merge gate and waits only on the owner, sharing no files.
-- Out-of-scope findings become new issues via `spec`.
+- Out-of-scope findings become new issues via `spec` (unattended: listed in the run's output).
 - Merge dependent changes in dependency order.
 
 ## Reporting to the owner
@@ -64,7 +64,7 @@ Every open board issue has Priority P0–P2, a slice its epic's. `lanes.py next`
 
 - **Claim (AFK)** → In progress: `git fetch origin <base>`; reuse the worktree or unmerged `<branchPrefix><N>-*` branch, else `git worktree add <root>/.worktrees/afk-<N> -b <branchPrefix><N>-<slug> origin/<base>` (host-confined: `git switch` its clean worktree). Add `state:claimed`, remove `lane:owner`, comment ``Claimed by an AFK run on `<branch>`.``
 - **Start (attended)** → In progress: same, on a `vcs` branch name; add `state:started`.
-- **Open PR** → Review: push; `gh pr create`: issue's title; body `Closes #<N>`, plan link, review verdict with fixing commits, checks run, before/after captures of visible changes. Owner-only leftovers become linked `lane:owner` issues. Open it ready, never as a draft, whatever the host defaults to. Merge gate; `lanes.py triage <pr>`: `owner` → add `review:owner`, else `lanes.py merge <pr>`. Report both; Release.
+- **Open PR** → Review: push; `gh pr create`: issue's title; body `Closes #<N>`, plan link, review verdict with fixing commits, checks run, before/after captures of visible changes. Owner-only leftovers become linked `lane:owner` issues. Open it ready, never a draft, whatever the host's default. Merge gate; `lanes.py triage <pr>`: `owner` → add `review:owner`, else `lanes.py merge <pr>`, landing on `agent-review`'s approval. Report both; Release.
 - **Release**: remove `state:claimed`/`state:started`; card to Todo unless a PR is open.
 - **Park**: push useful work; replace `lane:afk` and `state:*` with `lane:owner`; comment per Reporting to the owner.
 - **Tidy**: remove other `<branchPrefix>` worktrees and branches whose PR merged or closed, if clean and `lsof -a -d cwd +D <wt>` exits 1.

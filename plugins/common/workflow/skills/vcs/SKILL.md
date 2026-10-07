@@ -40,4 +40,4 @@ Run `git status --short --branch`; work in the task's worktree and leave the ses
 
 ## Merge Authority
 
-Commit, push task branches and open or update PRs freely. Merge, approve, or force-push a protected or default branch only on the owner's explicit word; `lanes.py merge` (board.md's Open PR step) is that word for a PR no owner rule matches.
+Commit, push task branches and open or update PRs freely. Merge, approve, or force-push a protected or default branch only on the owner's explicit word; `lanes.py merge` (board.md's Open PR step) is that word for a PR no owner rule matches, and `agent-review` approves only a `ready` PR, as the reviewer.
