@@ -10,7 +10,7 @@ An issue may take `lane:proposed` or `lane:afk` only when every check holds or t
 | Small | `### Estimate` is S or M, with one sentence on the main unknown. Split an L into slices (unattended: propose the slices in the triage comment). |
 | Bounded | A scope packet lists every path it may change and every issue it builds on, including ones named only in prose (see below). When the main unknown is how existing code handles real input, a run on a real sample shows the work stays inside those paths. |
 | Decided | No open product, design or model question; new UI has a mockup or names an existing pattern. When the issue promises no visible change, every control a criterion moves or replaces shows where and as it does today on every layout; otherwise it is an open design question. |
-| Unprivileged | Touches nothing lanes.json protects: automation, agent instructions, infrastructure, credentials, settings, releases, deploys. |
+| Unprivileged | Touches nothing CODEOWNERS gives the owner: automation, agent instructions, infrastructure, credentials, settings, releases, deploys. |
 
 ## Scope packet
 
@@ -21,7 +21,7 @@ An issue may take `lane:proposed` or `lane:afk` only when every check holds or t
 ````
 
 - A trailing `/` allows a subtree. Add the package manifest and lockfile when a criterion needs a library the project lacks.
-- `lanes.py next` claims nothing without a packet; a code-changing PR without one goes to the owner to merge.
+- `afk` claims nothing without a packet; `agent-review` hands a code-changing PR without one to the owner.
 
 ## Triage
 

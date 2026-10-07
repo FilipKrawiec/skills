@@ -80,7 +80,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 * **Zero-Waste Output Economics**: Every skill phase defines explicit output envelopes, high-density token efficiency, and code anti-overengineering (Rule of Two Adapters).
 * **Provider-Neutral & Sovereign Git-Native**: Pure Git clone/submodule distribution across harnesses (Claude Code, Codex, Antigravity) without SaaS registry dependencies.
 * **Delivery Cycle**: Seven phases (01 Define to 07 Improve), one skill each, on an optional Project board (epics only in an Epics view, every other issue in a Board view) with standard columns that GitHub's built-in workflows mostly move.
-* **Issue Lanes & AFK Delivery**: `spec` gives every GitHub issue one lane (`lane:afk`, `lane:proposed`, `lane:owner`); `afk` carries owner-approved issues through plan, execute, review, ship and improve unattended, one at a time, behind a guard hook that keeps merges, releases and settings with the owner.
+* **Issue Lanes & AFK Delivery**: `spec` gives every GitHub issue one lane (`lane:afk`, `lane:proposed`, `lane:owner`); `afk` carries owner-approved issues through plan, execute, review, ship and improve unattended, one at a time, while GitHub branch protection, CODEOWNERS and two machine users keep merges, releases and settings with the owner.
 * **Deterministic Verification**: `scripts/project-verify.py` acts as a zero-dependency, deterministic gate for code verification and git hygiene.
 
 ---
