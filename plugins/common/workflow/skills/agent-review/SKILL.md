@@ -32,15 +32,15 @@ Verify blocking findings; skip PRs whose head moved.
 
 Run `LANES triage <pr>`; pick verdict and label from [owner-rules.md](references/owner-rules.md)'s Verdicts.
 
-- One review on the head, APPROVE when `ready`, else COMMENT: blocking findings inline; body = marker, verdict, findings (blocking first, optional marked; `file:line` and failure scenario each), every open thread, attribution footer.
-- Write back the full label set. Not `ready` → `LANES hold <pr>`.
-- Reply on each thread the head fixes, naming the commit; resolve only agent-written threads (first comment ends with the footer). A person's thread stays theirs.
+- One review on the head: APPROVE when `ready` and not your own PR, else COMMENT. Blocking findings inline; body = marker, verdict, findings (blocking first, optional marked; `file:line` and failure scenario each), every open thread, attribution footer.
+- Write the full label set. Not `ready` → `LANES hold <pr>`.
+- Reply on each thread the head fixes, naming the commit; resolve only agent-written threads (first comment ends with the footer).
 
 **Exit gate:** each PR has the review and right label.
 
 ## 4. Merge
 
-Each PR `ready` at its head: `LANES merge <pr>`; after a merge, comment the round, with footer. Report failed merges once.
+Each PR you approved at its head: `LANES merge <pr>`; the owner merges the rest; after a merge, comment the round, with footer. Report failed merges once.
 
 **Exit gate:** each printed result.
 
@@ -52,6 +52,6 @@ Wake the AFK runner as the caller describes: "Scheduled AFK run." plus AFK PRs n
 
 ## 6. Report
 
-When something needs the owner or shipped, in [board.md](../../references/board.md)'s Reporting to the owner form. Summary: PRs merged; runner's lesson PRs. Decision: PRs for the owner with reason; runner parks and follow-ups; findings raised on two or more PRs, with target file. Repeat only changed items; remove scratch worktrees.
+When something needs the owner or shipped, in [board.md](../../references/board.md)'s Reporting to the owner form. Summary: PRs merged; runner's lesson PRs. Decision: PRs for the owner with reason; runner parks and follow-ups; findings raised on two or more PRs, with target file. Repeat only changed items.
 
-**Exit gate:** sent or nothing to report; worktrees removed.
+**Exit gate:** sent or nothing to report; scratch worktrees removed.
