@@ -72,7 +72,8 @@ report "release tag ruleset for v*" "$tags" yes
 report "$owner role" "$(gh api "repos/$repo/collaborators/$owner/permission" --jq .role_name)" "admin"
 for user in "$implementer" "$reviewer"; do
   role=$(gh api "repos/$repo/collaborators/$user/permission" --jq .role_name 2>/dev/null) || role=none
-  if [ -z "$role" ] || [ "$role" = none ]; then
+  # A public repository reports `read` for anyone, so a pending invitation can hide behind it.
+  if [ "$role" != write ]; then
     [ -n "$(gh api "repos/$repo/invitations" --jq ".[] | select(.invitee.login == \"$user\") | .id")" ] \
       && role="invited, not yet accepted"
   fi
@@ -81,7 +82,9 @@ done
 [ "$implementer" != "$reviewer" ] && [ "$implementer" != "$owner" ] && [ "$reviewer" != "$owner" ] \
   || { echo "DRIFT  identities: owner, implementer and reviewer must be three accounts"; drift=1; }
 
-protection() { gh api "repos/$repo/branches/$base/protection" --jq "$1" 2>/dev/null || echo missing; }
+# gh writes an error's JSON body to stdout, so read the protection once and keep only a success.
+protected=$(gh api "repos/$repo/branches/$base/protection" 2>/dev/null) || protected=""
+protection() { if [ -n "$protected" ]; then jq -r "$1" <<<"$protected"; else echo missing; fi; }
 report "$base reviews" "$(protection '.required_pull_request_reviews | [.required_approving_review_count, .require_code_owner_reviews, .require_last_push_approval, .dismiss_stale_reviews] | @csv')" "1,true,true,true"
 report "$base status checks" "$(protection '.required_status_checks.contexts[]' | LC_ALL=C sort | paste -sd, -)" \
   "$(printf '%s\n' "${checks[@]}" | LC_ALL=C sort | paste -sd, -)"
@@ -107,7 +110,8 @@ done < <(gh api "repos/$repo/environments" --jq ".environments[] | [.name,
   ([.protection_rules[]? | select(.type == \"required_reviewers\") | .reviewers[] | select(.type == \"User\") | .reviewer.login | ascii_downcase] | index(\"$owner\" | ascii_downcase) != null)] | @tsv")
 
 # GitHub reads the first CODEOWNERS of .github/, the root and docs/. The owner must be listed on
-# the last rule covering all of /.github/ and on every narrower /.github/ rule, as a whole token.
+# the last rule covering all of /.github/, on every narrower /.github/ rule, and, since the last
+# match wins, on every later rule that can match at any depth (`*.yml`, `**/x`), as a whole token.
 codeowners=""
 for path in .github/CODEOWNERS CODEOWNERS docs/CODEOWNERS; do
   codeowners=$(gh api "repos/$repo/contents/$path?ref=$base" --jq .content 2>/dev/null | base64 --decode 2>/dev/null) && break
@@ -116,8 +120,9 @@ done
 report "CODEOWNERS owns /.github/" "$(printf '%s\n' "$codeowners" | awk -v o="@$owner" '
   { sub(/#.*/, ""); if (NF == 0) next
     has = 0; for (i = 2; i <= NF; i++) if (tolower($i) == tolower(o)) has = 1
-    if ($1 ~ /^(\*|\*\*|\/\*\*|\/?\.github\/(\*\*)?)$/) whole = has
-    else if ($1 ~ /^\/?\.github\//) bad = bad || !has }
-  END { print (whole && !bad) ? "yes" : "no" }')" yes
+    if ($1 ~ /^(\*|\*\*|\/\*\*|\/?\.github\/(\*\*)?)$/) { whole = has; later = 0 }
+    else if ($1 ~ /^\/?\.github\//) bad = bad || !has
+    else if ($1 ~ /^\/?\*\*\// || $1 !~ /\/./) later = later || !has }
+  END { print (whole && !bad && !later) ? "yes" : "no" }')" yes
 
 exit "$drift"
