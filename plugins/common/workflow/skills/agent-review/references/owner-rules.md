@@ -18,7 +18,7 @@
 
 | `verdict=` | When | Review | `review:owner` |
 | --- | --- | --- | --- |
-| `ready` | No blocking finding or open thread; triage not `owner`. | APPROVE, then merge | remove |
+| `ready` | No blocking finding or open thread; triage not `owner`. | APPROVE, then merge; COMMENT when the reviewer authored the PR, and the owner merges | remove |
 | `owner` | No blocking finding; triage printed `owner` (quote the rule), or a thread waits on an owner check (device, credential). | COMMENT | add |
 | `fixes` | Blocking findings, rounds left. | COMMENT | remove |
 | `rounds` | Blocking findings in the last round. | COMMENT | add |
