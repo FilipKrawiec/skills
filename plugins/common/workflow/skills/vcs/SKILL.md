@@ -42,3 +42,5 @@ Run `git status --short --branch`; work in the task's worktree and leave the ses
 ## Merge Authority
 
 Commit, push task branches and open or update PRs freely. Merge, approve, or force-push a protected or default branch only on the owner's explicit word; branch protection and CODEOWNERS enforce it on GitHub (afk's `github-safety.md`). Auto-merge on your own PR (board.md's Open PR) is allowed: it lands only on the required approval.
+
+- Never dispatch workflows, create, edit or delete releases, write secrets or variables, or delete branches, tags or repositories other than your own merged head; GitHub does not stop all of these.

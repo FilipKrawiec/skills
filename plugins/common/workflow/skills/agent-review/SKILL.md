@@ -12,7 +12,7 @@ allowed-tools: Skill Read Bash(git:*,gh:*)
 
 ## 1. Collect
 
-List open PRs. Agent reviews start `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->` (or a legacy marker the caller names). Read threads via GraphQL `reviewThreads { isResolved }`.
+List open PRs. Agent reviews are the reviewer account's reviews starting `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->` (or a legacy marker the caller names). Read threads via GraphQL `reviewThreads { isResolved }`.
 
 - Agent review at the head → phase 4.
 - Newest used round `reviewRounds` (default 3) → skip.
@@ -33,10 +33,10 @@ Verify blocking findings; skip PRs whose head moved.
 Pick each PR's verdict from [owner-rules.md](references/owner-rules.md).
 
 - One review on the head: APPROVE when `ready` and not your own PR, else COMMENT. Blocking findings inline; body = marker, verdict, findings (blocking first, optional marked; `file:line` and failure scenario each), every open thread, attribution footer.
-- Set `review:owner` and auto-merge per the verdict.
+- Set `review:owner` per the verdict.
 - Reply on each thread the head fixes, naming the commit; resolve only agent-written threads (first comment ends with the footer).
 
-**Exit gate:** each PR has its review, label and auto-merge state.
+**Exit gate:** each PR has its review and label.
 
 ## 4. Merge
 
