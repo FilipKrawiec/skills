@@ -111,7 +111,8 @@ done < <(gh api "repos/$repo/environments" --jq ".environments[] | [.name,
 
 # GitHub reads the first CODEOWNERS of .github/, the root and docs/. The owner must be listed on
 # the last rule covering all of /.github/, on every narrower /.github/ rule, and, since the last
-# match wins, on every later rule that can match at any depth (`*.yml`, `**/x`), as a whole token.
+# match wins, as a whole token on every later rule that can reach .github/: one that matches at any
+# depth (`*.yml`, `docs/`) or whose first segment is not a literal directory (`*/workflows/`, `/.git*`).
 codeowners=""
 for path in .github/CODEOWNERS CODEOWNERS docs/CODEOWNERS; do
   codeowners=$(gh api "repos/$repo/contents/$path?ref=$base" --jq .content 2>/dev/null | base64 --decode 2>/dev/null) && break
@@ -121,8 +122,8 @@ report "CODEOWNERS owns /.github/" "$(printf '%s\n' "$codeowners" | awk -v o="@$
   { sub(/#.*/, ""); if (NF == 0) next
     has = 0; for (i = 2; i <= NF; i++) if (tolower($i) == tolower(o)) has = 1
     if ($1 ~ /^(\*|\*\*|\/\*\*|\/?\.github\/(\*\*)?)$/) { whole = has; later = 0 }
-    else if ($1 ~ /^\/?\.github\//) bad = bad || !has
-    else if ($1 ~ /^\/?\*\*\// || $1 !~ /\/./) later = later || !has }
+    else if ($1 ~ /^\/?\.github(\/|$)/) bad = bad || !has
+    else if ($1 !~ /^\/?[^*?[\\\/]+(\/|$)/ || $1 !~ /\/./) later = later || !has }
   END { print (whole && !bad && !later) ? "yes" : "no" }')" yes
 
 exit "$drift"
