@@ -31,7 +31,10 @@ GitHub enforces what agents may do; no hook or skill text is the boundary. Run `
 
 - Squash merge only, auto-merge allowed, delete head branches on merge.
 - Actions: default workflow token read-only; Actions may not approve pull requests.
-- No repository-level secrets. Deploy and release secrets live in environments whose protection rule requires the owner as reviewer, so any workflow, dispatched or pushed, waits for the owner before it reads them.
+- No repository-level secrets; deploy and release secrets live in environments.
+- Each environment either requires the owner as reviewer, or deploys only from the base branch and from tags.
+- An active tag ruleset keeps `v*` tags to admins, so only the owner can start a tag deploy.
+- Create the machine users first. Required approvals with only the owner's account would leave the owner unable to merge their own PRs; `apply` skips reviews until both users exist.
 
 ## `.github/CODEOWNERS` (owner-only, on the base branch)
 
@@ -51,6 +54,6 @@ Add every path the owner must see: security rules, stored data shapes, migration
 | Merge any other PR | after the reviewer approves and checks pass; the implementer enables `gh pr merge --auto --squash` |
 | Push to the base branch, change settings, protection or collaborators | owner only |
 | Change CI workflows | owner only (token scope plus CODEOWNERS) |
-| Read deploy secrets, release, deploy | after the owner approves the environment |
+| Read deploy secrets, release, deploy | from a merged base branch, an owner tag, or the owner's environment approval |
 
 Local safety (never editing the owner's main checkout) is not GitHub's; every session works in its own worktree as `board.md`'s Start here says.
