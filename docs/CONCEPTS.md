@@ -88,14 +88,14 @@ Delivery follows seven phases, each with a skill. The optional board doesn't mir
 | Phase | Skill | Leaves behind |
 | :--- | :--- | :--- |
 | 01 Define | `spec` | An issue with intent and open questions |
-| 02 Spec | `spec` | Acceptance criteria, non-goals, estimate, scope packet, one lane |
-| 03 Plan | `plan` | A `## Plan` comment on the issue |
+| 02 Spec | `spec` | Acceptance criteria and one lane; an estimate and a scope packet for AFK |
+| 03 Plan | `plan` | An owner-approved plan, posted as a `## Plan` comment for AFK or multi-session work |
 | 04 Execute | `tdd`, `vcs`, `review` (fresh-context worker) | Tested commits on a task branch, reviewed, and a PR |
 | 05 Review | `agent-review`, or the owner | A reviewed, mergeable PR |
 | 06 Ship | `ship` | A green base branch and a `## Shipped` comment, a revert PR, or an escalation |
-| 07 Improve | `improve` | A `## Lessons` comment, and an issue and a `review:owner` PR per lesson |
+| 07 Improve | `improve` | A `## Lessons` comment, and one issue and PR per target repository for lessons whose failure repeated |
 
-06 Ship and 07 Improve run after the merge, so their record is an issue comment rather than a column. `plugins/common/workflow/references/board.md` is the one source for each issue state and its column, which skill works it, the board workflows to turn on, and the `gh project` commands for the few moves the skills make themselves. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `automerge`, `merge-reviewed`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
+06 Ship and 07 Improve run after the merge, so their record is an issue comment rather than a column. `plugins/common/workflow/references/board.md` is the one source for each issue state and its column, which skill works it, the board workflows to turn on, and the `gh project` commands for the few moves the skills make themselves. Lanes stay labels, so a card's labels show who acts next. `lanes.py` keeps only the gates an agent must not judge for itself (`next`, `scope`, `triage`, `merge`, `hold`, `blockers`); claiming, parking and tidying are plain `gh` and `git` steps in the same reference.
 
 ### Worktree Provenance & Safety
 
@@ -111,9 +111,9 @@ GitHub Issues are the only queue. A repository opts in with `.github/lanes.json`
 | `lane:proposed` | Agent recommends AFK | `spec` triage |
 | `lane:owner` | Needs a decision, credentials, settings or a device | Anyone |
 
-An `afk` run carries the cycle while the owner is away. It first invokes `ship`, which checks the base branch, opens a revert PR when an AFK merge turned it red, and confirms shipped issues. Then it tends its own PRs. It takes at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) through `plan`, `tdd` and a fresh-context `review`, and opens a PR, or parks the issue back to `lane:owner` with one question. It ends by invoking `improve`, which opens each lesson as a PR that waits for the owner's merge. Docs, tests and Dependabot dependency PRs auto-merge on green checks; everything else waits for the owner. The workflow plugin's pre-tool-use guard (`skills/afk/scripts/guard.py`, on hosts that load plugin hooks) parses each shell command and catches the merges, approvals, base-branch pushes, releases, workflow dispatches and settings changes it runs, never text it merely writes or reads, and `lane:afk` in scheduled runs. A scheduled run is refused; an attended session asks the owner, except in bypass mode. Runs never touch the checkout they start in: queue decisions read the fetched base branch.
+An `afk` run carries the cycle while the owner is away. It first invokes `ship`, which checks the base branch, opens a revert PR when an AFK merge turned it red, and confirms shipped issues. Then it tends its own PRs. It takes at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) through `plan`, `tdd` and a fresh-context `review`, and opens a PR, or parks the issue back to `lane:owner` with one question. It ends by invoking `improve`, which turns a failure seen twice into a PR that waits for the owner's merge. A PR that matches none of the closed list of owner rules auto-merges on green checks unless a review holds it; the rest wait for the owner. The workflow plugin's pre-tool-use guard (`skills/afk/scripts/guard.py`, on hosts that load plugin hooks) parses each shell command and catches the merges, approvals, base-branch pushes, releases, workflow dispatches and settings changes it runs, never text it merely writes or reads, and `lane:afk` in scheduled runs. A scheduled run is refused; an attended session asks the owner, except in bypass mode. Runs never touch the checkout they start in: queue decisions read the fetched base branch.
 
-With `agentReview` in lanes.json, `agent-review` reviews every open PR once per head commit, the runner fixes its findings for up to `reviewRounds` rounds, and `lanes.py merge-reviewed` merges an AFK PR the reviewer judged ready and not critical; critical PRs go to the owner with `review:owner`.
+With `agentReview` in lanes.json, `agent-review` reviews every open PR once per head commit, the runner fixes its findings for up to `reviewRounds` rounds, and `lanes.py merge` lands a PR the reviewer judged ready that matches no owner rule; the others go to the owner with `review:owner`.
 
 ---
 

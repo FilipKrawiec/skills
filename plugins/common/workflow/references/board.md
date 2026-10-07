@@ -4,18 +4,21 @@ The optional board is one GitHub Project, lanes.json's `project`, holding every 
 
 ## Start here
 
-Working on an issue, attended or not:
+With the owner present, an issue takes one path:
 
-1. Find its state: the first row of States below that matches it. With a board, move its card to that row's column when it sits elsewhere. A `type:epic` issue takes its column from Epics below and is never worked here.
-2. In Ready: claim it only when `lanes.py next` prints it; with the owner present, start it on their go-ahead (Issue steps below).
-3. Invoke the state's skill and finish its exit gate. 04 Execute ends with the Open PR step; a `type:task` ends with its finding recorded and the issue closed.
-4. Repeat from 1 until the issue waits on someone else: Ready with `lane:owner`, in 05 Review, or closed. After a merge, `ship` and `improve` pick it up again.
+1. `spec`: an issue with its type, outcome, `### Acceptance criteria` and one lane.
+2. Start (Issue steps below) once the owner asks for the issue.
+3. `plan`: the owner approves the plan in the session; it is posted only when the work may outlive the session.
+4. `tdd` per step, `vcs` per green slice, then `review`.
+5. Open PR, which ends with the Merge gate and `lanes.py triage`/`merge`; the owner merges what triage hands them.
 
-To pause or hand off, Release it.
+`ship` and `improve` run after the merge, in an AFK run or when the owner asks. A `type:task` ends with its finding recorded and the issue closed instead of a PR.
+
+Resuming an issue, or working one unattended: find its state, the first matching row of States below, and move its card to that row's column. Unattended, claim a Ready issue only when `lanes.py next` prints it. Run the state's skill to its exit gate and repeat until the issue waits on someone else: Ready with `lane:owner`, in 05 Review, or closed. A `type:epic` issue takes its column from Epics below and is never worked here. To pause or hand off, Release it.
 
 ### Work in progress
 
-A session holds one open PR. It claims or starts the next issue only once that PR has merged, or has passed the Merge gate and waits only on the owner while the next issue touches none of its files. With the owner present, it asks for that merge before starting the next issue. A finding outside the issue's scope becomes a new issue through `spec` instead of growing the open PR. Dependent changes merge in dependency order, each before the next one opens: a shared library or plugin change and its release go before the change that uses them.
+A session holds one open PR. It claims or starts the next issue only once that PR has merged, or has passed the Merge gate and waits only on the owner while the next issue touches none of its files. With the owner present, it asks for that merge before starting the next issue. A finding outside the issue's scope becomes a new issue through `spec` (unattended: a follow-up in the run's output) instead of growing the open PR. Dependent changes merge in dependency order, each before the next one opens: a shared library or plugin change and its release go before the change that uses them.
 
 ## Reporting to the owner
 
@@ -34,10 +37,9 @@ A session's reply fits in five lines; a run's or a review pass's report fits in 
 | --- | --- | --- | --- |
 | 05 Review | It is open and an open PR closes it. | `agent-review`, or the owner; a session hands it over through the Merge gate | Review |
 | 01 Define | It is open with no `### Acceptance criteria`. | `spec` | Backlog |
-| 02 Spec | It is open with acceptance criteria and no scope packet or no lane. | `spec` | Backlog |
-| 03 Plan | It is open, claimed, and has no `## Plan` comment. | `plan` | In progress |
-| 04 Execute | It is open, claimed, and has a `## Plan` comment. | `tdd`, `vcs`, `review`, then Open PR | In progress |
-| Ready | It is open, unclaimed, with acceptance criteria, a scope packet and a lane: specced, parked, or its PR closed unmerged. | a claim or start | Todo |
+| 02 Spec | It is open with acceptance criteria and no lane, or with `lane:afk` or `lane:proposed` and no scope packet. | `spec` | Backlog |
+| 03 Plan, 04 Execute | It is open and claimed. | `plan` unless a `## Plan` comment exists or the owner approved the plan in this session; then `tdd`, `vcs`, `review`, Open PR | In progress |
+| Ready | It is open, unclaimed, with acceptance criteria and a lane (and a scope packet in an AFK lane): specced, parked, or its PR closed unmerged. | a claim or start | Todo |
 | 06 Ship | It closed as completed, #M is the newest merged PR that closes it, and no `## Shipped #M` comment exists. | `ship` | Done |
 | 07 Improve | It closed as completed and its newest `## Shipped` comment is newer than any `## Lessons` comment. | `improve` | Done |
 | Closed | Any other closed issue: lessons recorded, or closed as not planned. | | Done |
@@ -46,7 +48,7 @@ A session's reply fits in five lines; a run's or a review pass's report fits in 
 
 ## Moving a card
 
-The board's built-in workflows add each issue to Backlog, move it to Review when a PR links it, to Done when it closes and to Todo when it reopens. The skills make the remaining moves: the Card column of Issue steps below, `spec`'s move to Todo, and Start here's step 1 wherever a card sits in the wrong column. A pull request card is removed from the board (`gh project item-delete <P> --owner <O> --id <item-id>`); its issue's card shows the PR.
+The board's built-in workflows add each issue to Backlog, move it to Review when a PR links it, to Done when it closes and to Todo when it reopens. The skills make the remaining moves: the Card column of Issue steps below, `spec`'s move to Todo, and Start here's move of a card in the wrong column. A pull request card is removed from the board (`gh project item-delete <P> --owner <O> --id <item-id>`); its issue's card shows the PR.
 
 `<P>` is lanes.json's `project.number` and `<O>` its `project.owner`. Read the ids once per session and reuse them; the token needs the `project` scope (`gh auth refresh -s project`).
 
@@ -77,7 +79,7 @@ Every issue carries exactly one type label, and its title is `<type>(<area>): <o
 
 ## Epics
 
-Only an epic has sub-issues: an issue that needs slices gets `type:epic`, and every piece of its remaining work is a sub-issue, because `ship` closes it once all of them have shipped. List them with `gh api repos/<owner/repo>/issues/<N>/sub_issues --paginate --jq '.[] | {number, state, state_reason}'`. An epic is never claimed and never gets its own PR; its card sits in Backlog while it has no sub-issues, In progress once it has some (`spec` moves it when it links the first), and Done when closed. Start here's step 1 moves a reopened epic from Todo back to In progress.
+Only an epic has sub-issues: an issue that needs slices gets `type:epic`, and every piece of its remaining work is a sub-issue, because `ship` closes it once all of them have shipped. List them with `gh api repos/<owner/repo>/issues/<N>/sub_issues --paginate --jq '.[] | {number, state, state_reason}'`. An epic is never claimed and never gets its own PR; its card sits in Backlog while it has no sub-issues, In progress once it has some (`spec` moves it when it links the first), and Done when closed. Start here moves a reopened epic from Todo back to In progress.
 
 ## Priority
 
@@ -91,7 +93,7 @@ With a board, every open issue has a value in its single-select Priority field (
 | --- | --- | --- |
 | Type | Exactly one type label, and the title as Issue types says, stating what is true afterwards rather than an instruction. | Agent: the label from the issue's content, the title reworded from its own outcome. Owner: a type the content leaves open. |
 | Lane | An open issue has exactly one lane label; a closed one has no `state:` label. | Agent, by Triage in `spec`. |
-| Sections | Acceptance criteria, estimate and scope packet sit under the headings the project's issue form writes (`### Acceptance criteria`, `### Estimate`, a ```` ```scope ```` block), so the States checks find them; a task's acceptance criteria name its finding. | Agent: rename a heading, content unchanged. Missing content is 02 Spec. |
+| Sections | Acceptance criteria sit under `### Acceptance criteria`, and a task's name its finding. An issue in `lane:afk` or `lane:proposed` also has `### Estimate` and a ```` ```scope ```` block, so `lanes.py` and the States checks find them. | Agent: rename a heading, content unchanged. Missing content is 02 Spec. |
 | Parent | A slice is a sub-issue of its epic; an issue with sub-issues is an epic. | Owner: whether a parent becomes an epic or its sub-issues move. |
 | Card | With a board: each open issue has one card in its state's column with a Priority, a closed issue's card is in Done, and no pull request has a card. | Agent: add or move a card, remove a pull request card, give a slice its epic's Priority. Owner: any other Priority. |
 
@@ -103,18 +105,18 @@ Each issue works in its own worktree; `<root>` keeps its branch, since it may ho
 
 | Step | Commands | Card |
 | --- | --- | --- |
-| Claim (AFK) | `git fetch origin <base>`. Reuse the worktree that `git worktree list --porcelain` shows on a `<branchPrefix><N>-` branch whose PR did not merge, wherever the host put it; else `git worktree add <root>/.worktrees/afk-<N> <branch>` for an existing `origin/<branchPrefix><N>-*` branch whose PR did not merge; else `git worktree add <root>/.worktrees/afk-<N> -b <branchPrefix><N>-<slug> origin/<base>`. When the host refuses edits outside the session's own linked worktree (its `.git` is a file) and that worktree is clean, switch it to the branch instead: `git switch <branch>` for an existing one, else `git switch -c <branchPrefix><N>-<slug> origin/<base>`. Then `gh issue edit <N> --add-label state:claimed`, removing `state:parked` and `lane:owner`, and a one-line claim comment, ``Claimed by an AFK run on `<branch>`.``, adding only where it resumes; never a host, user name or local path. | In progress |
-| Start (attended) | `git fetch origin <base>`. Reuse the worktree that `git worktree list --porcelain` shows on the issue's branch; else make one from `origin/<base>` on the project's attended branch name (`vcs`'s `<category>/<description>` by default): through the host's worktree switch, renaming the branch it makes, or with `git worktree add <root>/.worktrees/<N>-<slug> -b <branch> origin/<base>`. Then `gh issue edit <N> --add-label state:started`, removing `state:parked`. | In progress |
-| Open PR | Once every review finding is fixed, push the branch, then `gh pr create` titled `<type>(<area>): <outcome>` per the project's PR template, its body starting `Closes #<N>`, linking the `## Plan` comment, quoting the review's verdict and each finding with the commit that fixed it, and listing the checks the agent ran; device checks stay with the owner. A part of the issue the PR leaves to the owner (an edit to a protected path, a setting it cannot change) becomes its own `lane:owner` issue through `spec`, linked from the PR body, so each step outlives the merge; an unattended run parks the issue instead. When the PR changes what users see, its body shows before and after captures of each change, and a later commit that changes something visible adds its own before the PR is reported ready again. Open it ready for review (follow a host's default draft with `gh pr ready <pr>`). Pass the Merge gate, then run `lanes.py triage <pr>`: `review:owner` goes on only when it prints `owner`; otherwise run `lanes.py merge <pr>`, which switches on auto-merge. Report both lines. Then Release. | Review (workflow) |
+| Claim (AFK) | `git fetch origin <base>`. Reuse the worktree that `git worktree list --porcelain` shows on a `<branchPrefix><N>-` branch whose PR did not merge, wherever the host put it; else `git worktree add <root>/.worktrees/afk-<N> <branch>` for an existing `origin/<branchPrefix><N>-*` branch whose PR did not merge; else `git worktree add <root>/.worktrees/afk-<N> -b <branchPrefix><N>-<slug> origin/<base>`. When the host refuses edits outside the session's own linked worktree (its `.git` is a file) and that worktree is clean, switch it to the branch instead: `git switch <branch>` for an existing one, else `git switch -c <branchPrefix><N>-<slug> origin/<base>`. Then `gh issue edit <N> --add-label state:claimed`, removing `lane:owner`, and a one-line claim comment, ``Claimed by an AFK run on `<branch>`.``, adding only where it resumes; never a host, user name or local path. | In progress |
+| Start (attended) | `git fetch origin <base>`. Reuse the worktree that `git worktree list --porcelain` shows on the issue's branch; else make one from `origin/<base>` on the project's attended branch name (`vcs`'s `<category>/<description>` by default): through the host's worktree switch, renaming the branch it makes, or with `git worktree add <root>/.worktrees/<N>-<slug> -b <branch> origin/<base>`. Then `gh issue edit <N> --add-label state:started`. | In progress |
+| Open PR | Once every review finding is fixed, push the branch, then `gh pr create` titled `<type>(<area>): <outcome>` per the project's PR template, its body starting `Closes #<N>`, linking the `## Plan` comment when there is one, quoting the review's verdict and each finding with the commit that fixed it, and listing the checks the agent ran; device checks stay with the owner. A part of the issue the PR leaves to the owner (an edit to a protected path, a setting it cannot change) becomes its own `lane:owner` issue through `spec`, linked from the PR body, so each step outlives the merge; an unattended run parks the issue instead. When the PR changes what users see, its body shows before and after captures of each change, and a later commit that changes something visible adds its own before the PR is reported ready again. Open it ready for review (follow a host's default draft with `gh pr ready <pr>`). Pass the Merge gate, then run `lanes.py triage <pr>`: `review:owner` goes on only when it prints `owner`; otherwise run `lanes.py merge <pr>`, which switches on auto-merge. Report both lines. Then Release. | Review (workflow) |
 | Release | Remove `state:claimed` or `state:started`. | Todo, or unchanged while its PR is open |
-| Park | Push the branch when it holds useful work. Remove `lane:afk` and `state:claimed` or `state:started`, add `lane:owner,state:parked`, then one comment in Reporting to the owner's form: where the work stopped, then the question with its options and a recommendation. | Todo, or unchanged while its PR is open |
+| Park | Push the branch when it holds useful work. Remove `lane:afk` and `state:claimed` or `state:started`, add `lane:owner`, then one comment in Reporting to the owner's form: where the work stopped, then the question with its options and a recommendation. | Todo, or unchanged while its PR is open |
 | Tidy | For each worktree in `git worktree list --porcelain` other than the current one, whose branch starts with `<branchPrefix>`, wherever it lives: when `gh pr list --head <branch> --state all --json state` lists no OPEN PR and at least one MERGED or CLOSED, `git -C <worktree> status --porcelain` is empty, and `lsof -a -d cwd +D <worktree>` exits 1 without printing anything, so no process has its working directory there: `git worktree remove <worktree>` and `git branch -D <branch>`. Leave every other checkout, including one where `lsof` exits otherwise or is missing; a later run tidies it. | |
 
-Re-applying `lane:afk` hands a parked issue back, and its next claim reuses the branch it stopped on.
+Replacing `lane:owner` with `lane:afk` hands a parked issue back, and its next claim reuses the branch it stopped on.
 
 ## Merge gate
 
-GitHub reports a PR that misses a required check, an up-to-date branch or a resolved conversation only as `BLOCKED`, and a reviewer can open a thread after a session last looked. So a session runs this gate after every push to an open PR, draft or ready (the plugin's post-push hook prints the open threads beside the push), whenever the base moves while the PR waits, and before every report that names the PR, hands it to the owner, switches on auto-merge or merges it.
+A session runs this gate after every push to an open PR, draft or ready (the plugin's post-push hook prints the open threads beside the push), whenever the base moves while the PR waits, and before every report that names the PR, hands it to the owner, switches on auto-merge or merges it.
 
 1. Run `lanes.py blockers <pr>`; it only reads and needs no lanes.json (outside the PR's repository, pass the PR URL). It prints every reason the PR can't merge now and exits 1 while any remains. A `mergeability not computed yet` line clears within a minute of a push; run it again then.
 2. Settle each thread. Fix what the head leaves open (`vcs` phase 3), then reply on each thread naming the fixing commit. Then dispatch one isolated reviewer worker with no implementation context, given only the PR, its head and the agent-written threads: it checks each thread against the head, resolves each one it confirms fixed, and hands each one still open back to the implementing session as a finding, which fixes it and dispatches a fresh reviewer again. A person's thread and a person's change request stay for that person: name each to the owner with its first line.

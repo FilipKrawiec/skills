@@ -71,7 +71,6 @@ Status options and workflows serve every item, so epics stay on this board and v
 | `lane:owner` | Needs the owner: a decision, credentials, settings or a device. |
 | `state:claimed` | An AFK run is working on it now. |
 | `state:started` | Another session is working on it now. |
-| `state:parked` | An AFK run handed it back with a question. |
 | `review:owner` | PR: an owner rule matched (`lanes.py triage` printed `owner`) or the review rounds ran out; `lanes.py merge` leaves it. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | The issue's type, exactly one per issue; Issue types in [board.md](../../../references/board.md) says which. |
 

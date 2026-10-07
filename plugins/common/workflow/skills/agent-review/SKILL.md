@@ -35,7 +35,7 @@ Run `LANES triage <pr>`; it prints `owner` with the matching rule from [owner-ru
 
 | Verdict | When | Marker `verdict=` | `review:owner` |
 | --- | --- | --- | --- |
-| Ready to merge | No finding to fix and no open thread; triage did not print `owner`. | `ready` | removed |
+| Ready to merge | No blocking finding and no open thread; triage did not print `owner`. | `ready` | removed |
 | Ready for the owner's review | No blocking finding; triage printed `owner`. Quote its rule. | `owner` | added |
 | Needs fixes first | Blocking findings, round below the last. | `fixes` | removed |
 | Needs the owner: review rounds used | Blocking findings in the last round. | `rounds` | added |

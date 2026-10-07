@@ -16,7 +16,7 @@ Review a change on two axes: A, Standards (boundaries and design), and B, Spec (
 | Major | Smell or design issue likely to cause a defect or rework in this area soon | `REQUEST_CHANGES` when the diff introduces it |
 | Minor | Style, naming, optional refactoring | `APPROVED`, listed as suggestions |
 
-A finding is *blocking* when it maps to `REQUEST_CHANGES`; `afk` and `agent-review` use the word this way. The verdict decides whether the change may proceed; the caller fixes every finding, Minors included, before the Open PR step and re-reviews the fix. A finding that needs an owner decision goes to the owner as a question.
+A finding is *blocking* when it maps to `REQUEST_CHANGES`; `afk` and `agent-review` use the word this way. Before the Open PR step, the implementing session fixes every finding, Minors included, and re-reviews the fix; once the PR is open, a Minor is optional and never holds it. A finding that needs an owner decision goes to the owner as a question.
 
 ## 1. Scope
 

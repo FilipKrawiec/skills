@@ -25,7 +25,7 @@ Invoke `ship` for the base branch.
 
 ## 2. Tend
 
-For each open PR on a branch starting with lanes.json's `branchPrefix` whose issue is not parked (`state:parked` without `lane:afk`; when the owner re-applied `lane:afk`, remove `state:parked` and tend it), work in its worktree (recreate it from the branch when tidied) and run board.md's Merge gate. For an unanswered review that requests changes (a person's, or an automated reviewer's marked blocking), fix each finding, then run `LANES merge <pr>` to switch auto-merge back on.
+For each open PR on a branch starting with lanes.json's `branchPrefix` whose issue carries `lane:afk` (a parked one carries `lane:owner` until the owner hands it back), work in its worktree (recreate it from the branch when tidied) and run board.md's Merge gate. For an unanswered review that requests changes (a person's, or an automated reviewer's marked blocking), fix each finding, then run `LANES merge <pr>` to switch auto-merge back on.
 
 Run the project's full verification gate before each push. Park the PR's issue when a finding needs a product decision or stays red after two honest fix attempts.
 
@@ -70,7 +70,7 @@ New work starts as an issue, not in a run: name any follow-up in the output.
 1. Invoke `improve` for each issue in 07 Improve, and for this run's own friction.
 2. Tidy AFK runs' own worktrees and branches.
 
-**Exit gate:** a PR or the reason it stays a proposal for each lesson (or "no lessons"), and the worktrees removed.
+**Exit gate:** `improve`'s exit gate for each issue and this run, and the worktrees removed.
 
 ## Output
 
