@@ -36,6 +36,7 @@ A diff review sees one change; these smells grow across many. When the review co
 | Smell | Signal to search for | Remedy |
 | --- | --- | --- |
 | Coverage test | Test names with "covers", "branches", "coverage", "equality and hash"; existence-only assertions (not null, does not throw, finds the element just rendered) | Assert the behaviour the covered line serves, or delete the line |
+| Test reaches around the design | Production members widened or annotated only for tests, backdoor setters, tests driving private state with invented inputs, a lowered coverage threshold or a new coverage exemption in the diff | Redesign the code: extract the logic into a type a test drives through its public interface, inject the dependency, or delete the unreachable line; keep the threshold |
 | Testing the double | A test that constructs and exercises a fake or stub defined in the test | Delete it; the fake is proven by the tests that use it |
 | Boilerplate tests | Tests for hand-written equality, hash, copy and string-conversion methods | Use language value equality (records, data classes, generated equality), or reach equality through behaviour (a set deduplicates, an equal state does not notify) |
 | Structure-coupled | Finding or counting layout primitives (generic boxes, padding, rows), reading animation or style properties of internal widgets, asserting tuning constants | Assert through semantics, keys, visible text, relations between rendered boxes, or the domain value behind the look |
