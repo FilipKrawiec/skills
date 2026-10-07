@@ -8,11 +8,11 @@ allowed-tools: Skill Read Bash(python3:*,git:*,gh:*)
 # Agent Review
 
 - `LANES` = `python3 <the afk skill's directory>/scripts/lanes.py`.
-- Write to GitHub only reviews, thread replies and resolutions, `review:owner`, `LANES hold`, `LANES merge`.
+- Never contribute: no commits, pushes or edits; fixes are the implementer's. Write to GitHub only reviews, thread replies and resolutions, `review:owner`, `LANES hold`, `LANES merge`.
 
 ## 1. Collect
 
-List open PRs (drafts too, not Dependabot's). Agent reviews start `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->` (or a legacy marker the caller names). Read threads via GraphQL `reviewThreads { isResolved }`.
+List open PRs (not Dependabot's). Agent reviews start `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->` (or a legacy marker the caller names). Read threads via GraphQL `reviewThreads { isResolved }`.
 
 - Agent review at the head → phase 4.
 - Newest used round `reviewRounds` (default 3) → skip.
@@ -22,9 +22,9 @@ List open PRs (drafts too, not Dependabot's). Agent reviews start `<!-- agent-re
 
 ## 2. Review
 
-One isolated worker per PR, in parallel, in a scratch worktree at the head: `review`'s two axes on the PR diff against the closed issue's acceptance criteria; each unresolved thread fixed (with commit) or still open (blocking). Workers post nothing and quote no copyrighted or personal content.
+One isolated worker per PR, in parallel, in a scratch worktree at the head: `review`'s two axes on the diff against the closed issue's acceptance criteria; each unresolved thread fixed (with commit) or still open (blocking). Workers post nothing.
 
-Verify each blocking finding yourself; skip a PR whose head moved.
+Verify blocking findings; skip PRs whose head moved.
 
 **Exit gate:** verified findings per PR at an unchanged head.
 
@@ -32,7 +32,7 @@ Verify each blocking finding yourself; skip a PR whose head moved.
 
 Run `LANES triage <pr>`; pick verdict and label from [owner-rules.md](references/owner-rules.md)'s Verdicts.
 
-- One COMMENT review on the head: blocking findings inline; body = marker, verdict, findings (blocking first, optional marked; `file:line` and failure scenario each), every open thread, attribution footer.
+- One review on the head, APPROVE when `ready`, else COMMENT: blocking findings inline; body = marker, verdict, findings (blocking first, optional marked; `file:line` and failure scenario each), every open thread, attribution footer.
 - Write back the full label set. Not `ready` → `LANES hold <pr>`.
 - Reply on each thread the head fixes, naming the commit; resolve only agent-written threads (first comment ends with the footer). A person's thread stays theirs.
 
@@ -40,18 +40,18 @@ Run `LANES triage <pr>`; pick verdict and label from [owner-rules.md](references
 
 ## 4. Merge
 
-Each PR `ready` at its head: `LANES merge <pr>`; after a merge, comment the round, with footer. Report a failed merge once.
+Each PR `ready` at its head: `LANES merge <pr>`; after a merge, comment the round, with footer. Report failed merges once.
 
 **Exit gate:** each printed result.
 
 ## 5. Wake the runner
 
-Wake the AFK runner as the caller describes: "Scheduled AFK run." plus AFK PRs needing fixes, failing or conflicting. Tell the owner once after three consecutive offline passes. Review PRs the runner reports via phases 2–4.
+Wake the AFK runner as the caller describes: "Scheduled AFK run." plus AFK PRs needing fixes, failing or conflicting. Tell the owner after three offline passes. Review PRs the runner reports via phases 2–4.
 
 **Exit gate:** runner woken, or the offline count.
 
 ## 6. Report
 
-Only when something needs the owner or shipped, in [board.md](../../references/board.md)'s Reporting to the owner form. Summary: PRs merged; runner's lesson PRs. Decision: PRs for the owner with reason; runner parks and follow-ups; findings raised on two or more PRs, with target file. Repeat only changed items. Remove scratch worktrees.
+When something needs the owner or shipped, in [board.md](../../references/board.md)'s Reporting to the owner form. Summary: PRs merged; runner's lesson PRs. Decision: PRs for the owner with reason; runner parks and follow-ups; findings raised on two or more PRs, with target file. Repeat only changed items; remove scratch worktrees.
 
 **Exit gate:** sent or nothing to report; worktrees removed.

@@ -74,7 +74,7 @@ Every open board issue has Priority P0–P2, a slice its epic's. `lanes.py next`
 Run after every push to an open PR, when the base moves, and before reporting or merging it.
 
 1. `lanes.py blockers <pr>` lists merge blockers, exiting 1 while any remain.
-2. Fix each open thread (`vcs` phase 3), replying with the fixing commit. Then dispatch an isolated reviewer worker with no implementation context: it resolves threads it confirms fixed and hands open ones back; fix, dispatch afresh. A person's threads stay theirs: name each to the owner.
+2. Fix each open thread (`vcs` phase 3), replying with the fixing commit. Then dispatch an isolated reviewer worker with no implementation context; it never edits, commits or pushes, only resolves threads it confirms fixed and hands open ones back; fix, dispatch afresh. A person's threads stay theirs: name each to the owner.
 3. Fix failing checks and conflicts.
 
 Ready only on exit 0, no output; auto-merge may go on with only `check pending` left. Ask the owner to approve or merge a PR only when it is ready; until then report the remaining lines as why it waits, not as a request.
