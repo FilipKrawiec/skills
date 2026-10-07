@@ -34,7 +34,7 @@ Run `LANES triage <pr>`; pick verdict and label from [owner-rules.md](references
 
 - One review on the head, APPROVE when `ready`, else COMMENT: blocking findings inline; body = marker, verdict, findings (blocking first, optional marked; `file:line` and failure scenario each), every open thread, attribution footer.
 - Write back the full label set. Not `ready` → `LANES hold <pr>`.
-- Reply on each thread the head fixes, naming the commit; resolve only agent-written threads, with owner-rules.md's command. A person's thread stays theirs.
+- Reply on each thread the head fixes, naming the commit; resolve only agent-written threads (first comment ends with the footer). A person's thread stays theirs.
 
 **Exit gate:** each PR has the review and right label.
 
