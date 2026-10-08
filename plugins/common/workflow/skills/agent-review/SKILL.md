@@ -7,7 +7,7 @@ allowed-tools: Skill Read Bash(git:*,gh:*)
 
 # Agent Review
 
-- Run every `gh` command with the reviewer machine user's token as `GH_TOKEN`, as the host's setup says; never print it.
+- Run every `gh` command as lanes.json's `reviewer`: `GH_TOKEN=$(gh auth token --user <reviewer>) gh ...`; never print the token.
 - Never commit, push or edit; fixes are the implementer's. Write to GitHub only reviews, thread replies and resolutions, `review:owner` and auto-merge.
 
 ## 1. Collect

@@ -11,7 +11,8 @@ GitHub enforces what agents may do; no hook or skill text is the boundary. Run `
 | Reviewer (`agent-review`) | a second machine user | Write | classic PAT: `repo`, `project` |
 
 - Add both machine users as collaborators with Write and as Write collaborators on the board's Project; name them in lanes.json's `implementer` and `reviewer`.
-- Each agent host authenticates `gh` and `git` as its machine user (`GH_TOKEN`, a credential helper scoped to the repository). Never give an agent the owner's token.
+- Agents act as the implementer: `GH_CONFIG_DIR=<dir> gh auth login` both machine users (implementer active); agents set `GH_CONFIG_DIR=<dir>` and (`GIT_CONFIG_COUNT`) `url.https://github.com/.pushInsteadOf=git@github.com:`, `credential.https://github.com.helper=` then `!gh auth git-credential`.
+- Never give an agent the owner's token.
 - Without `workflow` scope a push that changes `.github/workflows/` fails, so an agent cannot rewrite CI.
 
 ## Branch protection on the base branch
