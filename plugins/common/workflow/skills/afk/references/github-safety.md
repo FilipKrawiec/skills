@@ -7,11 +7,11 @@ GitHub enforces what agents may do; no hook or skill text is the boundary. Run `
 | Who | Account | Repository role | Token |
 | --- | --- | --- | --- |
 | Owner | the owner's account | Admin, code owner | the owner's own |
-| Implementer (`afk`, attended sessions that push) | machine user | Write | classic PAT: `repo`, `project`; never `workflow`, `admin:*` |
-| Reviewer (`agent-review`) | a second machine user | Write | classic PAT: `repo`, `project` |
+| Implementer (`afk`, attended sessions that push) | machine user | Write | classic PAT: `repo`, `project`, `read:org`; never `workflow`, `admin:*` |
+| Reviewer (`agent-review`) | a second machine user | Write | classic PAT: `repo`, `project`, `read:org` |
 
 - Add both machine users as collaborators with Write and as Write collaborators on the board's Project; name them in lanes.json's `implementer` and `reviewer`.
-- Agents act as the implementer: `GH_CONFIG_DIR=<dir> gh auth login` both machine users (implementer active); agents set `GH_CONFIG_DIR=<dir>` and (`GIT_CONFIG_COUNT`) `url.https://github.com/.pushInsteadOf=git@github.com:`, `credential.https://github.com.helper=` then `!gh auth git-credential`.
+- Agents act as implementer: `GH_CONFIG_DIR=<dir> gh auth login --with-token` both machine users (implementer last); agents set `GH_CONFIG_DIR=<dir>`, `GIT_CONFIG_COUNT`: `url.https://github.com/.pushInsteadOf=git@github.com:`, `credential.https://github.com.helper=`, `!gh auth git-credential`.
 - Never give an agent the owner's token.
 - Without `workflow` scope a push that changes `.github/workflows/` fails, so an agent cannot rewrite CI.
 
