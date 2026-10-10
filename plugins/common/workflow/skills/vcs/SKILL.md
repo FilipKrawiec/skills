@@ -30,12 +30,22 @@ Pass the verify gate (the project's `verify` task) before each push. Push over H
 
 ## 4. Open the PR
 
-- Ready, never a draft: a draft never auto-merges. For an issue, its title and this body (drop a section that does not apply):
+- Ready, never a draft: a draft never auto-merges. For an issue, use its title. Every PR uses this body envelope (omit inapplicable sections): summary ≤ 3 sentences; scope, risks and decision one line each. Keep blockers, unfixed findings and owner choices visible, with options and a recommendation when needed. Collapse evidence with `<details>` / `<summary>` and blank lines around Markdown. Use no CSS or scripts. Add fenced `mermaid` with text only when a diagram clarifies a flow or relationship.
 
   ```markdown
+  ## Executive summary
+  A second reservation previously persisted; it now fails before saving.
+
+  **Scope:** reservation service and unit tests; API unchanged.
+  **Risks:** concurrent requests remain outside this change.
+  **Decision:** Required owner approval pending; recommend approval.
+
   Closes #42
 
-  Plan: https://github.com/<repo>/issues/42#issuecomment-123
+  Plan: https://github.com/example/project/issues/42#issuecomment-123
+
+  <details>
+  <summary>Review and checks</summary>
 
   ## Review
   APPROVED after round 2; findings fixed in 1a2b3c4, 5d6e7f8.
@@ -43,11 +53,19 @@ Pass the verify gate (the project's `verify` task) before each push. Push over H
   ## Checks
   `just verify` exit 0.
 
+  </details>
+
+  <details>
+  <summary>Before / after evidence</summary>
+
   ## Before / after
-  <captures of each visible change>
+  `test_duplicate_is_rejected`: second call fails; one reservation persists.
+
+  </details>
   ```
 
 - For a revert: title `revert: <subject>`; body `Reverts #<M>` and the failing checks, never `Closes`, which would close the reverted issue.
+- Include before/after captures for each visible change in the evidence section.
 - List unfixed findings under Decision; open one as a `lane:owner` issue only on the owner's yes.
 - Every PR, attended or not, revert and lesson PRs too: `gh pr merge <pr> --squash --auto`; auto-merge still waits for required approvals and checks. Remove the `state:` label.
 
