@@ -22,7 +22,7 @@ With a board, move Review cards whose open issue has no open PR to Todo. Then re
 
 When an AFK merge broke the base and no open PR has head `<branchPrefix>revert-<short-sha>`:
 
-1. In a new worktree on that branch from `origin/<base>`, `git revert --no-edit <sha>` and pass full verification.
+1. In a new worktree on that branch from `origin/<base>`, `git revert --no-edit <sha>` and pass the verify gate (the project's `verify` task).
 2. Invoke `vcs` to open the revert PR `revert: <subject>` and make it ready to merge.
 3. Reopen its issue and park it: replace `lane:afk` and `state:*` with `lane:owner`; comment the failing checks, the revert PR and a retry recommendation in ≤ 5 lines.
 

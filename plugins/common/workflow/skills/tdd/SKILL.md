@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Bash
 
 # Test-Driven Development (Chicago School)
 
-Run Red-Green-Refactor per behaviour slice; `vcs` commits. Project rules override commands, layout and coverage here. First name the targeted test command and the completion gate.
+Run Red-Green-Refactor per behaviour slice; `vcs` commits. Project rules override commands, layout and coverage here. First name the targeted test command and the verify gate (the project's `verify` task).
 
 ## Phases
 
@@ -26,7 +26,7 @@ Improve structure; use glossary names; delete production API only tests call, wi
 *Exit gate*: all tests pass.
 
 ### 4. VERIFY
-Run the completion gate once, at the end.
+Run the verify gate once, at the end; re-running it on unchanged code proves nothing.
 
 *Exit gate*: exit 0. *Output*: `<gate>: pass`, or its excerpt (≤20 lines) and the remedy.
 

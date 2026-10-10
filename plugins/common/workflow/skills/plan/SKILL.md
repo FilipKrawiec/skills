@@ -12,7 +12,7 @@ Write a plan execution follows without re-planning. Unless the issue carries `st
 
 ## 1. Read
 
-Read the issue, its acceptance criteria, scope packet, parent and linked decisions; then the code, tests and agent rules it touches. When a `## Plan` comment exists, read it and the branch to find where work stopped.
+Read the issue, its acceptance criteria, scope packet (its ```` ```scope ```` block of paths the work may touch), parent and linked decisions; then the code, tests and agent rules it touches. When a `## Plan` comment exists, read it and the branch to find where work stopped.
 
 **Exit gate:** each acceptance criterion maps to code and tests you have read.
 

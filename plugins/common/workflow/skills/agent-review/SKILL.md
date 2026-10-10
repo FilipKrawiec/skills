@@ -13,7 +13,11 @@ allowed-tools: Skill Read Bash(git:*,gh:*)
 
 ## 1. Collect
 
-Agent reviews are the reviewer's reviews starting `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->`. Per open PR: an agent review at the head → phase 4; round `reviewRounds` used → skip; else round = 1 + earlier agent reviews.
+Agent reviews are the reviewer's reviews starting `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->`. Per open PR, first case that fits:
+
+1. An agent review exists at the head: go to phase 4.
+2. Its newest agent review used round `reviewRounds`: skip it.
+3. Otherwise: review it as round 1 + its earlier agent reviews.
 
 **Exit gate:** at most 4 PRs, oldest updated first.
 
@@ -34,7 +38,7 @@ Owner rules, checked in order; quote the first match. The list is closed: a PR m
 5. carries an `ownerLabels` label;
 6. is a Dependabot update across a major version, or a minor one below 1.0 (read the title and `Bumps`/`Updates` lines);
 7. changes more than `ownerLines` lines of code;
-8. changes code but closes no issue with a scope packet;
+8. changes code but closes no issue with a scope packet (a ```` ```scope ```` block of allowed paths);
 9. changes code outside its issues' scope packets and `alwaysInScope`.
 
 Docs (`docs/`, `*.md`), tests and Dependabot's manifests and lockfiles are not code for rules 7–9.

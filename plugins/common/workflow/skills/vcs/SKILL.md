@@ -24,13 +24,30 @@ Stage only the task's paths. One Conventional Commit per green slice; squash `wi
 
 ## 3. Push
 
-Run the full verification before each push. Push over HTTPS as the host's machine user, never SSH: SSH pushes as the key's owner. Before the PR opens, rebase on `origin/<base>` and push `--force-with-lease`; once it is open, merge `origin/<base>`, never rebase.
+Pass the verify gate (the project's `verify` task) before each push. Push over HTTPS as the host's machine user, never SSH: SSH pushes as the key's owner. Before the PR opens, rebase on `origin/<base>` and push `--force-with-lease`; once it is open, merge `origin/<base>`, never rebase: a rewritten history detaches review threads and races the reviewer.
 
 **Exit gate:** the push exits 0.
 
 ## 4. Open the PR
 
-- Ready, never a draft. For an issue: its title; body `Closes #<N>`, the `## Plan` link, the review verdict with its fixing commits, checks run, before and after captures of visible changes. For a revert: body `Reverts #<M>` and the failing checks, never `Closes`.
+- Ready, never a draft: a draft never auto-merges. For an issue, its title and this body (drop a section that does not apply):
+
+  ```markdown
+  Closes #42
+
+  Plan: https://github.com/<repo>/issues/42#issuecomment-123
+
+  ## Review
+  APPROVED after round 2; findings fixed in 1a2b3c4, 5d6e7f8.
+
+  ## Checks
+  `just verify` exit 0.
+
+  ## Before / after
+  <captures of each visible change>
+  ```
+
+- For a revert: title `revert: <subject>`; body `Reverts #<M>` and the failing checks, never `Closes`, which would close the reverted issue.
 - List unfixed findings under Decision; open one as a `lane:owner` issue only on the owner's yes.
 - `gh pr merge --squash --auto`; remove the `state:` label.
 

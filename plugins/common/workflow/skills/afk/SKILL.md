@@ -30,7 +30,11 @@ For each open `branchPrefix` PR whose issue has `lane:afk`: invoke `vcs` to make
 
 ## 3. Pick
 
-Base red → phase 5. A `state:claimed` issue without an open PR → phase 5; park it first when its newest claim is older than `staleClaimHours`.
+First case that fits:
+
+1. Base red: go to phase 5.
+2. A `state:claimed` issue has no open PR: another run is delivering it. Park it if its newest claim is older than `staleClaimHours`; go to phase 5 either way.
+3. Otherwise pick the top candidate.
 
 Candidates are open `lane:afk` issues with no `state:` label, acceptance criteria and a scope packet (a ```` ```scope ```` block); not `type:epic` or `type:task`; no open PR closing them (a stacked PR names `Closes #<N>` only in its body); every packet dependency closed as completed; no packet path in an open `branchPrefix` PR's files. Rank by the board's Priority, else a `priority:P*` label, then lowest number.
 
@@ -39,8 +43,8 @@ Candidates are open `lane:afk` issues with no `state:` label, acceptance criteri
 ## 4. Deliver
 
 1. Invoke `vcs` to start the issue; on `blocked by #<pr>`, go to phase 5.
-2. Invoke `plan`, then `tdd` for each step and `vcs` to commit it; update docs the change makes stale. Pass the scope check and full verification.
-3. Two fresh-context workers, given only issue and diff, each invoke `review` for one axis; fix their findings; two rounds max.
+2. Invoke `plan`, then `tdd` for each step and `vcs` to commit it; update docs the change makes stale. Pass the scope check and the verify gate (the project's `verify` task).
+3. Two fresh-context workers, given only issue and diff, each invoke `review` for one axis; fix their findings. Say `review round <n> of 2` before each round; stop after round 2 and list what is left under Decision.
 4. Invoke `vcs` to open the PR.
 
 Scope check: every path in `git diff --name-only --no-renames $(git merge-base origin/<base> HEAD)` and `git ls-files -o --exclude-standard` equals a packet path, or sits under a packet path ending in `/` or an `alwaysInScope` prefix. Revert any other path, or park when the issue needs it.

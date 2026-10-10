@@ -6,13 +6,20 @@ allowed-tools: Skill Read Bash(git:*)
 
 # Code Review
 
-Review on two axes, A Standards and B Spec; report only what gates miss. Read [hot-paths.md](references/hot-paths.md) for an area audit, or when the code runs per event, frame, keystroke or render, or at startup.
+Review on two axes, A Standards and B Spec. Report only what gates miss: never a defect on an unchanged line, what a linter, compiler or CI catches, style no rule here names, or anything you did not confirm by reading the code. Noise buries the findings that matter. Read [hot-paths.md](references/hot-paths.md) for an area audit, or when the code runs per event, frame, keystroke or render, or at startup.
 
 Severity: **Blocker** (`REQUEST_CHANGES`) is a runtime defect, unhandled edge, boundary breach, hollow or failing test; **Major** (`REQUEST_CHANGES` when the diff introduces it) a smell likely to cause a defect or rework soon; **Minor** (suggestion) style, naming, optional refactor. *Blocking* means `REQUEST_CHANGES`.
 
 ## 1. Scope
 
-Take the diff and the issue's criteria. Give each axis a fresh-context worker holding only diff, issue and axis; without workers, run them in order.
+Take the diff and the issue's criteria. Give each axis a fresh-context worker; without workers, run the axes in order. The brief is all the worker knows:
+
+```text
+Review axis <A|B> of <PR URL or branch> against issue <URL>.
+Diff: git diff origin/<base>...HEAD
+Invoke `review` and run only phase <2|3>. Return findings in the phase 4
+format. Post nothing, edit nothing.
+```
 
 *Exit gate*: diff and criteria in hand; each axis assigned.
 

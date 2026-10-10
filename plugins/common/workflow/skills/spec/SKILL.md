@@ -47,7 +47,7 @@ Read [afk-ready.md](references/afk-ready.md) when proposing, approving or triagi
 - Merged PRs already meet the criteria: comment one PR link per criterion and propose closing; the owner closes.
 - With a board, move each issue now Ready (meets the issue form, no `state:` label) to Todo.
 
-Issue form: one type label and the matching title; one lane when open, no `state:` label when closed; `### Acceptance criteria`, plus `### Estimate` and a scope packet in `lane:afk` and `lane:proposed`; slices under their epic; a card with Priority P0–P2, a slice taking its epic's; an epic's card In progress once it has sub-issues.
+Issue form: one type label and the matching title; one lane when open, no `state:` label when closed; `### Acceptance criteria`, plus `### Estimate` and a scope packet (a ```` ```scope ```` block of the paths the work may touch) in `lane:afk` and `lane:proposed`; slices under their epic; a card with Priority P0–P2, a slice taking its epic's; an epic's card In progress once it has sub-issues.
 
 **Exit gate:** each issue has one lane, at most one new comment.
 

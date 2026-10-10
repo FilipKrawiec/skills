@@ -28,40 +28,30 @@ build_tools:
 
 # Agent Guidance
 
-## Deterministic & Proportionate Verification Protocol
+## Verification
 
-Verification must be deterministic, proportionate, and strictly deduplicated:
+- Before editing, name the targeted test or validator; run it while you work. Run a full suite before starting only to reproduce a bug or set a baseline.
+- Run the verify gate (`just verify`) once when the change is done. Never re-run it on unchanged code; a second pass proves nothing.
+- Read-only analysis, plan-only work and doc edits without runnable scripts need no verification.
+- Make a change asked for in chat in place, with focused tests. Dispatch workers, open issues or write plans only when asked or when the work spans several slices.
 
-- **Targeted Feedback During Iteration**: Identify the relevant verification gate before modifying code. Run focused, proportionate checks (e.g. specific test case, targeted validator, or single component suite) during implementation. Do NOT execute full project-wide verification suites before starting work unless reproducing an existing bug or establishing a diagnostic baseline.
-- **Completion Gate & Deduplication**: Run the project's configured verifier (`scripts/project-verify.py` or configured task) once upon completing the change to guarantee zero regressions. Never re-run identical full verification suites if code has not changed since the last passing run.
-- **Direct Execution Efficiency**: When the user requests a change or fix directly in chat, execute it directly in place with focused testing. Do not trigger multi-agent dispatch cascades, redundant tracker tickets, or speculative planning artifacts unless explicitly requested or handling complex multi-slice architectural work.
-- **Exemptions**: Read-only analysis, documentation edits without runnable scripts, and explicitly requested plan-only work are exempt from running verification gates.
+## Output
 
-## High-Density Output & Token Efficiency Protocol
+- Every owner message has a **Summary** (the outcome, linking the PR, issue or `file:line` with the detail) and a **Decision** (what the owner must decide, with options and a recommendation, or "Nothing needed."). A session reply ≤ 5 lines; a run or review report ≤ 8.
+- Start with the action or its evidence, not a preamble. Link changed files instead of pasting them.
+- In PRs, logs and agent-to-agent output, give the commands run, their exit codes and the decisions left.
+- Add an interface only once two implementations exist (a test fake counts, and so does each case of a repeated conditional). Verify state, not mock calls.
 
-Output generation tokens are significantly more expensive and slower than input context tokens. Agents must adhere to high-density communication and anti-overengineering invariants:
+## Diagrams
 
-- **Owner Reports**: Every owner message has a **Summary** (the outcome, linking the PR, issue or `file:line` with the detail) and a **Decision** (what the owner must decide, with options and a recommendation, or "Nothing needed."); a session reply ≤ 5 lines, a run or review report ≤ 8.
-- **Zero Conversational Preamble**: Jump directly to action, command execution, or verification evidence.
-- **Direct Symbol & File Links**: Link to modified paths (e.g. `[filename](file:///path/to/file#L10-L20)`) instead of echoing file bodies in chat.
-- **Evidence-First Output**: In PRs, logs and agent-to-agent output, emit compact evidence: exact commands executed, terminal exit code status, and concrete decision points.
-- **Decisive Tool Execution**: Batch tool calls logically; eliminate redundant exploratory roundtrips.
-- **Code Anti-Overengineering**: Enforce the Rule of Two Adapters (an interface once two implementations exist; a port's test fake counts, and so does each case of a repeated conditional), YAGNI, and Chicago-style state verification over mock combinatorics.
+Never use Mermaid in skills or docs; it renders unreliably across viewers. Use ASCII or Unicode box drawings and Markdown tables.
 
-## Universal Diagramming & Formatting Standard
+## Doctrine
 
-Do not use Mermaid diagrams in skills or documentation files (renders unreliably across editor viewers). Use clean standard ASCII / Unicode box-drawing diagrams and structured Markdown tables.
-
-## Codebase Area Governance & Doctrine Invocations
-
-When performing implementation or review tasks in specific codebase directories, invoke the corresponding foundational doctrine:
-- When writing domain logic, entities, or value objects under `domain/`, invoke the `ddd` skill.
-- When defining application ports or infrastructure adapters under `infrastructure/` or `api/`, invoke the `hexagonal-architecture` skill.
-- When writing tests under `tests/`, invoke the `tdd` skill.
-
-## Mandatory Skill Editing Workflow
-
-CRITICAL: Read `plugins/common/authoring/skills/writing-great-skill/SKILL.md` before any edit to the packaged skill directories. Treat `writing-great-skill` as the local source of truth for invocation, description craft, information hierarchy, output envelopes, and pruning.
+- Writing domain logic, entities or value objects under `domain/`: invoke `ddd`.
+- Defining ports or adapters under `infrastructure/` or `api/`: invoke `hexagonal-architecture`.
+- Writing tests under `tests/`: invoke `tdd`.
+- Editing anything under `plugins/`: invoke `writing-great-skill` first; it is the standard every skill, description and envelope here follows.
 
 ## Goal
 
@@ -85,7 +75,6 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 
 - Update the relevant skill and its references together.
 - Keep what every run needs in `SKILL.md`; move to `references/` only a branch some runs skip.
-- Run `python3 scripts/validate-plugin-definitions.py` after changing skills or plugin manifests.
 - Change the board's Status columns, or which issues it holds, in the workflow skills and `plugins/common/workflow/skills/afk/references/setup.md` together with FilipKrawiec/devcontainer's `dev issuetracker`, which reads them, in a companion PR.
 - Preserve existing user changes outside the requested scope.
 
