@@ -37,6 +37,7 @@ build_tools:
 
 ## Output
 
+- Take the recommended option on every decision and say which you took; put a decision to the owner only when it changes what users see or do, adds cost, or departs from software best practice or the codebase's design patterns.
 - Every owner message has a **Summary** (the outcome, linking the PR, issue or `file:line` with the detail) and a **Decision** (what the owner must decide, with options and a recommendation, or "Nothing needed."). A session reply ≤ 5 lines; a run or review report ≤ 8.
 - Start with the action or its evidence, not a preamble. Link changed files instead of pasting them.
 - In PRs, logs and agent-to-agent output, give the commands run, their exit codes and the decisions left.

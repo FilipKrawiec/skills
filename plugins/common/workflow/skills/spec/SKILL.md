@@ -10,8 +10,9 @@ Turn a need into one issue another agent can plan from without guessing.
 
 **With the owner:** every phase. **Unattended:** phase 4, plus phase 1 when `improve` opens a lesson issue; other follow-ups go in its output.
 
-- Every open issue has one lane: `lane:afk` (owner approved), `lane:proposed` (you recommend AFK) or `lane:owner` (needs a decision, credentials, a device, or the owner steers it).
+- Every open issue has one lane: `lane:afk` (owner approved), `lane:proposed` (you recommend AFK) or `lane:owner` (needs an owner decision, credentials, a device, or the owner steers it).
 - Apply `lane:afk` only on the owner's yes in the current session.
+- Take the recommended option on every decision and record it as decided; ask the owner only when the choice changes what users see or do, adds cost (spend, quota, paid services), or departs from software best practice or the codebase's design patterns. Unattended, such a decision moves the issue to `lane:owner` with the question.
 - With a board (`.github/lanes.json` `project`), move cards with `gh project item-edit`; without one, use `priority:P*` labels instead of the Priority field.
 
 ## 1. Define
@@ -32,7 +33,7 @@ Read the code, tests, agent rules and ADRs until the open decisions are clear; c
 
 ## 3. Grill
 
-- Ask one open decision per round in ≤ 5 lines (question, trade-offs, recommendation).
+- Settle each open decision on your recommendation; ask the owner the ones the rule above names, one per round in ≤ 5 lines (question, trade-offs, recommendation).
 - Write answers into the issue: intent, non-goals, and `### Acceptance criteria` each provable by a test or a described render. ADRs only for architectural decisions.
 - More than one PR: on the owner's yes, one sub-issue per vertical slice under a `type:epic`. Only epics have sub-issues, and they hold all its remaining work; nobody claims or opens a PR for an epic. Slices sharing a file name the one slice owning it.
 

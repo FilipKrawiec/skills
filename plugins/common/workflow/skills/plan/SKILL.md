@@ -6,7 +6,9 @@ allowed-tools: Skill Read Bash(gh:*,git:*)
 
 # Plan (03)
 
-Write a plan execution follows without re-planning. Unless the issue carries `state:claimed` or `state:started`, first invoke `vcs` to start it.
+Write a plan execution follows without re-planning. Take the recommended option on every decision and record it as decided; ask the owner only when the choice changes what users see or do, adds cost (spend, quota, paid services), or departs from software best practice or the codebase's design patterns.
+
+Unless the issue carries `state:claimed` or `state:started`, first invoke `vcs` to start it.
 
 **Unattended:** the same phases; `lane:afk` stands in for approval, and a park replaces every question: replace `lane:afk` and `state:*` with `lane:owner`, and comment the question, options and recommendation in ≤ 5 lines.
 
@@ -30,12 +32,12 @@ A path outside the scope packet, a path `.github/CODEOWNERS` or lanes.json `owne
 
 ## 3. Approve and post
 
-- Attended: show the draft; wait for approval or changes.
+- Attended: show the draft; wait for approval only when it takes a decision the owner must make (UX, cost, departing from best practice or the codebase's patterns), else continue.
 - Post it as one issue comment headed `## Plan` only in `lane:afk` or when the work may outlive the session.
 - When resuming or departing from it, edit that comment in place by its id (`gh api -X PATCH`). Never `gh issue comment --edit-last`; it may hit another session's comment.
 
-**Exit gate:** the `## Plan` comment link, or the owner's approval in the session.
+**Exit gate:** the `## Plan` comment link, the owner's approval in the session, or the draft shown with no owner decision in it.
 
 ## Output
 
-≤ 5 lines. **Summary:** step count, and the comment link when posted. **Decision:** the plan to approve (attended), or why the issue went back and its question, with a recommendation.
+≤ 5 lines. **Summary:** step count, and the comment link when posted. **Decision:** the plan to approve when it takes an owner decision, or why the issue went back and its question, with a recommendation.
