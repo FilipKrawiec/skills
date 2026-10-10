@@ -23,9 +23,9 @@ Write the minimal passing code; re-run.
 *Exit gate*: targeted tests pass. *Output*: `🔴→🟢 <test> · <command> · <failure ≤80 chars> → pass`; if stuck: root cause, failing assertion (≤5 lines), next step.
 
 ### 3. REFACTOR
-Improve structure; use glossary names; delete production API only tests call, with those tests.
+Improve structure; use glossary names; delete production API only tests call, with those tests. Before deleting or splitting a test, move each check it made to another test unless the code no longer has that behaviour.
 
-*Exit gate*: all tests pass.
+*Exit gate*: all tests pass; every check a deleted or split test made still has a test.
 
 ### 4. VERIFY
 Run the verify gate once, at the end; re-running it on unchanged code proves nothing.
