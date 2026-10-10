@@ -19,22 +19,20 @@ allowed-tools: Bash(git:*,gh:*,lsof:*) Read
 
 ## 2. Stage
 
-- `git add <paths>` the task changed only; leave unrelated changes unstaged. Move with `git mv`, delete with `git rm`.
-- Read `git diff --staged`.
+`git add <paths>` the task changed only; leave unrelated changes unstaged. Read `git diff --staged`.
 
 **Exit gate:** the staged diff holds only task changes.
 
 ## 3. Commit
 
-- One Conventional Commit per green slice: `<type>[(<scope>)][!]: <imperative description>`; pair `!` with a `BREAKING CHANGE:` footer.
-- Squash `wip:` commits before the PR opens.
+One Conventional Commit per green slice; squash `wip:` commits before the PR opens.
 
 **Exit gate and output:** `📦 <short-sha> <type>: <description>`.
 
 ## 4. Push
 
 - Before the PR opens: `git fetch origin && git rebase origin/<base>`, then push with `--force-with-lease`. Once it is open: `git merge origin/<base>`, never rebase. Rerun required checks after resolving conflicts.
-- Push and run `gh` as the implementer machine user the host set up: an HTTPS remote whose credential helper and `GH_TOKEN` hold its token. Never push over SSH, which pushes as the key's owner; never print a token.
+- Push and run `gh` as the implementer machine user the host set up, over HTTPS. Never push over SSH, which pushes as the key's owner; never print a token.
 
 **Exit gate:** `git push -u origin <branch>` exits 0.
 

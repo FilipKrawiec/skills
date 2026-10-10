@@ -50,7 +50,7 @@ Base red → phase 5. Else:
 
 Scope check: list `git diff --name-only --no-renames $(git merge-base origin/<base> HEAD)` and `git ls-files -o --exclude-standard`. Each path equals a packet path, sits under a packet path ending in `/`, or under an `alwaysInScope` prefix. Revert any other path, or park when the issue needs it.
 
-Park when the issue is ambiguous or contradicts rules, needs an out-of-scope path or one `.github/CODEOWNERS` or lanes.json `ownerPaths` gives the owner, an undecided product or model choice, credentials, settings or a device, or stays red or blocked after two attempts. Verify first: trace the failure to its raising call; list fixes keeping all criteria.
+Park when the issue is ambiguous or contradicts rules; needs a path outside its packet or one `.github/CODEOWNERS` or `ownerPaths` gives the owner, a product or model decision, credentials, settings or a device; or stays red or blocked after two attempts. Before parking a failure, trace it to its raising call and list fixes keeping all criteria.
 
 **Exit gate:** PR URL with auto-merge on, or a parked issue.
 

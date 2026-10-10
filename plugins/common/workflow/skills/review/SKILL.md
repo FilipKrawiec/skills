@@ -44,17 +44,17 @@ Take the diff (branch against base, `git diff HEAD~1`, or staged) and the issue'
 ## 3. Axis B: Spec
 
 1. An observable test proves every criterion.
-2. Hunt runtime defects: empty and boundary cases, unchecked nil, swallowed errors, races, missing `await`, leaks on an exit path, repeated commands duplicating side effects.
-3. Tests assert state and events, not mock calls, with independently sourced expected values and failure paths, and end on an outcome assertion.
+2. Runtime defects: boundaries, unchecked nil, swallowed errors, races, missing `await`, leaks on an exit path, a repeated command duplicating side effects.
+3. Tests assert state and events, not mock calls; expected values are sourced independently; failure paths are tested; each test ends on an outcome assertion.
 4. **Blocker on every diff:** a test named after coverage or asserting mere existence; a test reaching around the design (widened member, backdoor setter, private state, lowered threshold, new exemption), whose fix is a production redesign; a structure-coupled assertion (layout primitives, internal style, tuning constants).
-5. When tests change, also flag: a test of its own fake or of hand-written equality, hash, copy or toString; UI tests of pure logic or in the unit folder; a documented range without a case at each edge; sleeps instead of a fake clock; a setup or fake copied across files; a gate without a pass and a fail fixture per rule, or one another spelling slips past; a flipped condition that fails no test.
+5. When tests change, also flag: tests of a fake or of hand-written equality, hash, copy or toString; UI tests of pure logic or in the unit folder; an untested range edge; sleeps instead of a fake clock; a copied setup or fake; a gate without a pass and a fail fixture per rule; a flipped condition that fails no test.
 6. Unasked-for changes are scope creep.
 
 *Exit gate*: as in phase 2.
 
 ## 4. Verdict
 
-Merge both axes, most severe first; ≤ 15 lines; omit a silent axis.
+Both axes, most severe first; ≤ 15 lines; omit a silent axis.
 
 ```text
 Decision: APPROVED | REQUEST_CHANGES

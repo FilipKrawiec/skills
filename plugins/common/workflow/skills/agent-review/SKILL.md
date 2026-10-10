@@ -9,7 +9,7 @@ allowed-tools: Skill Read Bash(git:*,gh:*)
 
 - `<repo>`, `owner`, `implementer`, `reviewer`, `reviewRounds` (default 3), `alwaysInScope`, `ownerPaths`, `ownerLabels`, `ownerLines` (default 800): `.github/lanes.json`.
 - Run every `gh` command as `reviewer`: `GH_TOKEN=$(gh auth token --user <reviewer>) gh ...`; never print the token.
-- Never commit, push or edit; fixes are the implementer's. Write to GitHub only reviews, thread replies and resolutions, `review:owner` and auto-merge.
+- Never commit, push or edit. Write to GitHub only reviews, thread replies and resolutions, `review:owner` and auto-merge.
 
 ## 1. Collect
 
@@ -53,7 +53,7 @@ Docs (`docs/`, `*.md`), tests and Dependabot's manifests and lockfiles are not c
 | `rounds` | Blocking findings in the last round. | COMMENT | add |
 
 - Post one review on the head. Blocking findings inline; body = marker, verdict (quoting the owner rule), findings (blocking first, optional marked; `file:line` and failure scenario each), every open thread, before and after captures of each user-visible change for `owner`, attribution footer.
-- Label with `gh pr edit <pr> --add-label review:owner` or `--remove-label review:owner`.
+- Add or remove `review:owner` per the table.
 - Reply on each thread the head fixes, naming the commit; resolve only agent-written threads (first comment ends with the footer).
 
 **Exit gate:** each PR has its review and label.
