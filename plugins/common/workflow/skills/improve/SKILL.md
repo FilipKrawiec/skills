@@ -8,7 +8,7 @@ allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,python3:*,just:*)
 
 ## 1. Collect
 
-For each issue awaiting lessons (closed as completed in the last 30 days, its newest `## Shipped` comment newer than any `## Lessons`) and for this session, list parks, failed fixes, review findings, red base, owner corrections, missing commands or docs, and rules that cost time without preventing a failure. Find earlier occurrences in past `## Lessons` comments.
+For each issue awaiting lessons (closed as completed in the last 30 days, its newest `## Shipped` comment newer than any `## Lessons`) and for this session, list parks, failed fixes, review findings, red base, owner corrections (agent memory too), missing commands or docs, and rules that cost time without preventing a failure. Find earlier occurrences in past `## Lessons` comments.
 
 **Exit gate:** friction points with evidence and earlier occurrences, or none.
 
@@ -34,7 +34,8 @@ One issue and PR per target repository. Leave out lessons for lanes.json or CODE
 1. Invoke `spec` to open an issue carrying the targets and wordings.
 2. Invoke `vcs` to start branch `<branchPrefix>lesson-<N>-<slug>` (another repository: clone it to a temp directory first). Invoke `writing-great-skill` and write the change to its standard; pass the target's verification.
 3. Invoke `vcs` to open the PR, linking the `## Lessons` comment.
-4. Link issue and PR from `## Lessons` or the output; remove a temp clone.
+4. When the owner approved the wording this session, ask them to approve the PR on GitHub.
+5. Link issue and PR from `## Lessons` or the output; remove a temp clone.
 
 **Exit gate:** each lesson linked to its PR, or a proposal with its reason.
 

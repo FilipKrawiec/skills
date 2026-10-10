@@ -10,7 +10,7 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 One run delivers **at most one** `lane:afk` issue; park instead of asking.
 
 - `<base>` (default `main`), `branchPrefix` (default `agent/afk-`), `staleClaimHours` (default 3), `alwaysInScope`, `project`: `.github/lanes.json` on `origin/<base>`.
-- Work only in worktrees. Run only commands named here and in the skills you invoke; others stall on permission prompts.
+- Never touch the starting checkout; work only in worktrees. Run only `git`, `gh`, `just`, `python3` and `lsof`, one command at a time; compound shell stalls on permission prompts.
 - **Park** an issue: push useful work; replace `lane:afk` and `state:*` with `lane:owner`; comment the question, options and recommendation in ≤ 5 lines.
 - Reasoning: high `spec`; medium `plan`, `review`, `improve`; low `tdd`; lowest otherwise; raise after two failures.
 - Read [setup.md](references/setup.md) without `.github/lanes.json` or when scheduling runs.

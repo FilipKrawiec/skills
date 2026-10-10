@@ -32,7 +32,7 @@ Owner rules, checked in order; quote the first match. The list is closed: a PR m
 3. lists no files, or 3000 (the API's cap);
 4. touches a path `.github/CODEOWNERS` or `ownerPaths` gives the owner (a rename counts both paths);
 5. carries an `ownerLabels` label;
-6. is a Dependabot update across a major version, or a minor one below 1.0;
+6. is a Dependabot update across a major version, or a minor one below 1.0 (read the title and `Bumps`/`Updates` lines);
 7. changes more than `ownerLines` lines of code;
 8. changes code but closes no issue with a scope packet;
 9. changes code outside its issues' scope packets and `alwaysInScope`.
@@ -46,7 +46,7 @@ Docs (`docs/`, `*.md`), tests and Dependabot's manifests and lockfiles are not c
 | `fixes` | Blocking findings, rounds left. | COMMENT | remove |
 | `rounds` | Blocking findings in the last round. | COMMENT | add |
 
-Post one review on the head: blocking findings inline; body = marker, verdict (quoting the owner rule), findings (blocking first; `file:line` and failure scenario each), open threads, before and after captures of user-visible changes for `owner`, attribution footer. Reply on each thread the head fixes, naming the commit; resolve only agent-written threads.
+Post one review on the head: blocking findings inline; body = marker, verdict (quoting the owner rule), findings (blocking first; `file:line` and failure scenario each), open threads, before and after captures of user-visible changes for `owner`, attribution footer. Reply on each thread the head fixes, naming the commit; resolve only agent-written threads (first comment ends with the footer).
 
 **Exit gate:** each PR has its review and label.
 

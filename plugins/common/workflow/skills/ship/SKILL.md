@@ -12,7 +12,7 @@ Revert only AFK merges. `<base>` and `<branchPrefix>` come from `.github/lanes.j
 
 With a board, move Review cards whose open issue has no open PR to Todo. Then read push runs on `<base>`: `gh run list --branch <base> --event push --limit 200`.
 
-- Ignore cancelled runs and failed runs whose jobs all have empty `steps`.
+- Head = newest fetched `origin/<base>` commit with runs. Ignore cancelled runs and failed runs whose jobs all have empty `steps`.
 - Judge each workflow by its own newest run, even on an older commit: red if the newest completed one failed, pending if the newest is incomplete, else green. Base: red if any is red, else pending if any is, else green. Green → phase 3; pending or no runs → report only.
 - Red → per red workflow, newest green commit G, oldest red R after it. The culprit is R only when `git log --first-parent <G>..<R>` lists exactly R; else the range is ambiguous; no green run → `unknown`. It is AFK when its PR's head branch starts with `<branchPrefix>`.
 
@@ -32,7 +32,7 @@ Otherwise report it to the owner, naming a fix forward as a follow-up.
 
 ## 3. Confirm
 
-For each issue closed as completed in the last 30 days whose newest merged closing PR #M has no `## Shipped #M` comment, and whose merge commit is an ancestor of the base head: remove `state:` labels; comment `## Shipped #M` with the head commit and run link.
+For each issue closed as completed in the last 30 days whose newest merged closing PR #M has no `## Shipped #M` comment, and whose merge commit is an ancestor of the head: remove `state:` labels; comment `## Shipped #M` with the head commit and run link.
 
 Close each open `type:epic` whose sub-issues are all closed with a `## Shipped` comment.
 

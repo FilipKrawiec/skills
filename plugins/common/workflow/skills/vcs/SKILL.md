@@ -11,7 +11,7 @@ allowed-tools: Bash(git:*,gh:*,lsof:*) Read
 ## 1. Start
 
 - Start an issue only when each of your open PRs is ready to merge (phase 5) and shares no files with it; otherwise return `blocked by #<pr>`.
-- Reuse the issue's worktree or unmerged branch; else branch from `origin/<base>`: unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>` (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
+- Reuse the issue's worktree or unmerged branch; else branch from `origin/<base>`: unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
 - Unattended: add `state:claimed` and comment ``Claimed by an AFK run on `<branch>`.``. Attended: add `state:started`. Card to In progress.
 
 **Exit gate:** on the task's branch, the issue labelled; or `blocked by #<pr>`.
@@ -40,7 +40,7 @@ Run the full verification before each push. Push over HTTPS as the host's machin
 
 Run after every push, when `<base>` moves, and before calling a PR ready.
 
-1. Fix failing checks, conflicts and every review finding with a clear fix, optional ones too; reply on each thread naming the commit.
+1. Blockers: draft, failing checks, conflicts or `BEHIND`, unresolved threads, `CHANGES_REQUESTED`. Fix them and every review finding with a clear fix, optional ones too; reply on each thread naming the commit.
 2. A fresh-context worker that never edits resolves the threads it confirms fixed. A person's threads stay theirs; name them to the owner.
 3. Repeat until only pending checks or the required approval remain.
 
@@ -50,10 +50,10 @@ Run after every push, when `<base>` moves, and before calling a PR ready.
 
 ## 6. Tidy
 
-Remove your `<branchPrefix>` worktrees and branches whose PR merged or closed, when clean and `lsof -a -d cwd +D <worktree>` exits 1 (no session inside).
+Remove other `<branchPrefix>` worktrees and branches whose PR merged or closed, when clean and `lsof -a -d cwd +D <worktree>` exits 1 (no session inside).
 
 **Exit gate:** `git worktree list` shows none.
 
 ## Authority
 
-Merge, approve or force-push a protected branch only on the owner's word. Never dispatch workflows, touch releases, secrets or variables, or delete branches, tags or repositories other than your own merged head.
+Merge, approve or force-push a protected or default branch only on the owner's word. Never dispatch workflows, touch releases, secrets or variables, or delete branches, tags or repositories other than your own merged head.
