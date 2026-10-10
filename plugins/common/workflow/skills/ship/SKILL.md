@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Use after a merge to check base-branch CI, revert the merge that broke it and confirm issues shipped.
+description: Use when a change merged, to check base-branch CI, revert the merge that broke it and confirm issues shipped.
 allowed-tools: Skill Read Bash(python3:*,git:*,gh:*,just:*)
 ---
 
