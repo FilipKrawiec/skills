@@ -104,6 +104,18 @@ class ReleaseAutomationTests(unittest.TestCase):
             commit(root, "feat: unpushed change")
             self.assertRefused(root, "not level with origin/main")
 
+    def test_perform_release_does_nothing_when_the_last_tag_is_head(self) -> None:
+        with released_clone() as root:
+            sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
+            try:
+                import release
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertIsNone(release.perform_release("auto", root=root))
+                self.assertEqual(run_git(root, "tag", "--list"), "v8.3.0")
+                self.assertEqual(run_git(root, "status", "--porcelain"), "")
+            finally:
+                sys.path.pop(0)
+
     def assertRefused(self, root: Path, reason: str) -> None:
         sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
         try:

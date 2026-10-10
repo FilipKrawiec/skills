@@ -105,9 +105,10 @@ just link-agy          # Symlink plugins to ~/.gemini/config/plugins
 
 Every common package shares a unified repository-wide release version defined by an annotated Git tag (`v<semver>`).
 
-### Owner Release
+### Release on Merge
 
-Only the owner releases; agents never do (`main` requires an approved PR, and only admins may create `v*` tags).
+Merging to `main` releases; nobody runs a release by hand (`main` requires an approved PR, and only admins may create `v*` tags).
 
-1. On an up-to-date, clean `main`, run `just release` (or `just release minor|patch|major`). It runs `just verify`, refuses unless `main` is clean and level with a freshly fetched `origin/main`, computes the bump from conventional commits, updates package metadata, synchronizes manifests and marketplace catalogs, commits, tags `v<version>`, refreshes installed plugins and pushes the commit and tag in one atomic push (`git push --atomic origin HEAD:main refs/tags/v<version>`), as admin past branch protection.
-2. The tag push runs `.github/workflows/release.yml`, which publishes the GitHub Release.
+1. When `verify.yml` passes on a push to `main`, `.github/workflows/release.yml` runs `scripts/release.py`. It refuses unless `main` is clean and level with `origin/main`, stops when the last tag is already `HEAD`, computes the bump from the conventional commits since that tag, updates package metadata, synchronizes manifests and marketplace catalogs, commits and tags `v<version>`.
+2. The job pushes the commit and tag in one atomic push (`git push --atomic origin HEAD:main refs/tags/v<version>`) with the `RELEASE_TOKEN` secret, an admin's fine-grained token with contents write on this repository, and publishes the GitHub Release. The release commit's own verified push finds nothing to release.
+3. Run `just refresh` to update locally installed plugins.

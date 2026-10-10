@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""The owner's local release: bump from conventional commits, sync manifests, commit and tag.
+"""Release main: bump from conventional commits, sync manifests, commit and tag.
 
-`just release` runs `just verify` first and pushes the commit and tag afterwards; the tag push
-starts `.github/workflows/release.yml`, which only publishes the GitHub Release.
+`.github/workflows/release.yml` runs it after every verified push to `main`, then pushes the
+commit and tag together and publishes the GitHub Release.
 """
 
 from __future__ import annotations
@@ -152,53 +152,6 @@ def get_manifest_paths(root: Path) -> list[str]:
     return manifest_paths
 
 
-def refresh_environments(root: Path) -> None:
-    """Synchronize plugins into local Antigravity IDE and CLI caches."""
-    target_dir = Path(root.parent / ".gemini" / "config" / "plugins").expanduser()
-    if not target_dir.exists():
-        target_dir = Path.home() / ".gemini" / "config" / "plugins"
-
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    # 0. Legacy Package Cleanup
-    legacy_pkgs = ("orchestration",)
-    for legacy in legacy_pkgs:
-        for legacy_name in (f"filipkrawiec-{legacy}", f"filipkrawiec-agy-{legacy}"):
-            dest = target_dir / legacy_name
-            if dest.exists():
-                subprocess.run(["rm", "-rf", str(dest)], check=False)
-        if shutil.which("codex") is not None:
-            subprocess.run(["codex", "plugin", "remove", f"filipkrawiec-{legacy}@filipkrawiec"], capture_output=True, check=False)
-        if shutil.which("claude") is not None:
-            subprocess.run(["claude", "plugin", "remove", f"filipkrawiec-{legacy}@filipkrawiec"], capture_output=True, check=False)
-
-    # 1. Antigravity IDE
-    for dir_path in (root / "plugins" / "common").glob("*"):
-        if dir_path.is_dir():
-            pkg_name = f"filipkrawiec-{dir_path.name}"
-            dest = target_dir / pkg_name
-            if dest.exists():
-                subprocess.run(["rm", "-rf", str(dest)], check=False)
-            subprocess.run(["cp", "-r", str(dir_path), str(dest)], check=False)
-
-    # 2. Codex
-    if shutil.which("codex") is not None:
-        for dir_path in (root / "plugins" / "common").glob("*"):
-            if dir_path.is_dir():
-                pkg = f"filipkrawiec-{dir_path.name}"
-                subprocess.run(["codex", "plugin", "remove", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
-                subprocess.run(["codex", "plugin", "add", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
-
-    # 3. Claude Code
-    if shutil.which("claude") is not None:
-        for dir_path in (root / "plugins" / "common").glob("*"):
-            if dir_path.is_dir():
-                pkg = f"filipkrawiec-{dir_path.name}"
-                subprocess.run(["claude", "plugin", "remove", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
-                subprocess.run(["claude", "plugin", "install", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
-                subprocess.run(["claude", "plugin", "update", f"{pkg}@filipkrawiec"], capture_output=True, check=False)
-
-
 def ensure_releasable(root: Path) -> None:
     """Refuse unless on a clean `main` level with a freshly fetched `origin/main`."""
     git("fetch", "--quiet", "--tags", "origin", cwd=root)
@@ -217,10 +170,13 @@ def perform_release(
     message: str | None = None,
     dry_run: bool = False,
     root: Path = ROOT,
-) -> str:
+) -> str | None:
     if not dry_run:
         ensure_releasable(root)
     latest_tag = get_latest_release_tag(root)
+    if latest_tag and not git("rev-list", f"{latest_tag}..HEAD", cwd=root):
+        print(f"Nothing to release: {latest_tag} is HEAD.")
+        return None
     # Without tags (a shallow or fresh clone) the manifests carry the released version.
     current_version = parse_semver(latest_tag) if latest_tag else manifest_version(root)
     assert current_version is not None
@@ -254,10 +210,7 @@ def perform_release(
     release_msg = message or f"Release {tag_name}: {resolved_bump} release automated from conventional commits"
     git("tag", "-a", tag_name, "-m", release_msg, cwd=root)
 
-    # 4. Refresh local environments
-    refresh_environments(root)
-
-    # 5. Validate release
+    # 4. Validate release
     import importlib.util
     val_spec = importlib.util.spec_from_file_location("val_module", root / "scripts" / "validate-plugin-definitions.py")
     assert val_spec and val_spec.loader
