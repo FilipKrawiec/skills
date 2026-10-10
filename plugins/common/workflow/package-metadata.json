@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-workflow",
-  "version": "11.17.0",
+  "version": "11.18.0",
   "description": "Delivery cycle skills: spec, plan, TDD, VCS, review, ship, improve, and unattended (AFK) delivery.",
   "author": {
     "name": "Filip Krawiec",
