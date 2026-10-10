@@ -111,11 +111,11 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
                 v.validate_skill_spec(skill_dir)
             self.assertIn("description exceeds 300 characters", str(ctx.exception))
 
-            # Rejects a body over 400 words
-            skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: Read\n---\n" + "word " * 401, encoding="utf-8")
+            # Rejects a body over 800 words
+            skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: Read\n---\n" + "word " * 801, encoding="utf-8")
             with self.assertRaises(v.ValidationError) as ctx:
                 v.validate_skill_spec(skill_dir)
-            self.assertIn("body exceeds 400 words", str(ctx.exception))
+            self.assertIn("body exceeds 800 words", str(ctx.exception))
 
             # Rejects reference > 600 words
             skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: Read\n---\n", encoding="utf-8")
