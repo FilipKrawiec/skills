@@ -131,6 +131,9 @@ def parse_skill_frontmatter(path: Path) -> dict:
 
 
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+REFERENCE_DEFINITION_RE = re.compile(r"^ {0,3}\[([^\]]+)\]:\s*(\S+)", re.MULTILINE)
+INVOKE_SKILL_RE = re.compile(r"\b[Ii]nvok(?:e|es|ing)\s+`[a-z0-9-]+`")
+PACKAGE_ROOT_ENTRIES = {".claude-plugin", ".codex-plugin", "package-metadata.json", "plugin.json", "skills"}
 
 
 def strip_markdown_code_blocks(text: str) -> str:
@@ -143,7 +146,7 @@ def validate_markdown_links(file_path: Path, confine_to: Path | None = None) -> 
     raw_content = file_path.read_text(encoding="utf-8")
     content = strip_markdown_code_blocks(raw_content)
     rel_path = rel(file_path)
-    for match in MARKDOWN_LINK_RE.finditer(content):
+    for match in [*MARKDOWN_LINK_RE.finditer(content), *REFERENCE_DEFINITION_RE.finditer(content)]:
         target = match.group(2).strip()
         if target.startswith(("http://", "https://", "mailto:", "#")):
             continue
@@ -189,6 +192,9 @@ def validate_skill_spec(skill_dir: Path) -> None:
     allowed_tools = frontmatter.get("allowed-tools")
     if not isinstance(allowed_tools, str) or not allowed_tools.strip() or "\n" in allowed_tools or allowed_tools.strip().startswith("-"):
         fail(f"{rel(skill_file)} must define a non-empty 'allowed-tools' space-delimited string")
+
+    if INVOKE_SKILL_RE.search(skill_file.read_text(encoding="utf-8")) and "Skill" not in allowed_tools.split():
+        fail(f"{rel(skill_file)} invokes a skill but 'allowed-tools' lacks Skill")
 
     validate_markdown_links(skill_file, confine_to=skill_dir)
 
@@ -291,8 +297,19 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
         if "hooks" in manifest:
             fail(f"{rel(manifest_path)} must not declare hooks; a skill's rules live in its SKILL.md")
 
-    if (package_root / "references").exists():
-        fail(f"{rel(package_root / 'references')}: package-shared references are not allowed; put each rule in the skill that performs it")
+        if (manifest_path.parent / "hooks.json").exists():
+            fail(f"{rel(manifest_path.parent)} must not hold hooks; a skill's rules live in its SKILL.md")
+
+    extra_entries = sorted(entry.name for entry in package_root.iterdir() if entry.name not in PACKAGE_ROOT_ENTRIES | {".DS_Store"})
+    if extra_entries:
+        fail(f"{rel(package_root)}: package root may hold only {sorted(PACKAGE_ROOT_ENTRIES)}, not {extra_entries}; put each rule in the skill that performs it")
+    skills_root = package_root / "skills"
+    if skills_root.is_dir():
+        for entry in skills_root.iterdir():
+            if entry.name == ".DS_Store":
+                continue
+            if not (entry / "SKILL.md").is_file():
+                fail(f"{rel(package_root)}: skills/{entry.name} is not a skill; put each rule in the skill that performs it")
 
 
 def discover_all_common_skills(root: Path = ROOT) -> set[str]:

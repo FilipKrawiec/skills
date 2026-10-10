@@ -23,7 +23,7 @@ List open PRs. Agent reviews are the reviewer's reviews starting `<!-- agent-rev
 
 ## 2. Review
 
-One isolated worker per PR, in parallel, in a scratch worktree at the head: `review`'s two axes on the diff against the closed issue's acceptance criteria; each unresolved thread fixed (with commit) or still open (blocking). Workers post nothing.
+One isolated worker per PR, in parallel, in a scratch worktree at the head, invoking `review` for both axes on the diff against the closed issue's acceptance criteria; each unresolved thread fixed (with commit) or still open (blocking). Workers post nothing.
 
 Verify blocking findings; skip PRs whose head moved.
 
@@ -31,12 +31,12 @@ Verify blocking findings; skip PRs whose head moved.
 
 ## 3. Post
 
-Read `gh pr view <pr> --json author,labels,title,body,closingIssuesReferences`, the changed paths (`gh api repos/<repo>/pulls/<pr>/files --paginate --jq '.[] | [.filename, .previous_filename, .additions, .deletions]'`; a rename counts both paths) and each closed issue's scope packet. Owner rules, checked in order; quote the first match. The PR:
+Read `gh pr view <pr> --json author,labels,title,body,closingIssuesReferences`, the changed paths (`gh api repos/<repo>/pulls/<pr>/files --paginate --jq '.[] | [.filename, .previous_filename, .additions, .deletions]'`; a rename counts both paths) and each closed issue's scope packet. Owner rules, checked in order; quote the first match. The list is closed: a PR matching none merges on your approval and green checks. The PR:
 
 1. carries `review:owner`;
 2. has an author other than `owner`, `implementer` or Dependabot;
 3. lists no files, or 3000 (the API's cap);
-4. touches a path `.github/CODEOWNERS` gives the owner, an `ownerPaths` path, stored data shapes or security rules;
+4. touches a path `.github/CODEOWNERS` or `ownerPaths` gives the owner;
 5. carries an `ownerLabels` label, which ships or deploys on merge;
 6. is a Dependabot update across a major version, or a minor one below 1.0 (title and `Bumps`/`Updates` lines);
 7. changes more than `ownerLines` lines of code;
@@ -60,7 +60,7 @@ Docs (`docs/`, `*.md`), tests and Dependabot's manifests and lockfiles are not c
 
 ## 4. Merge
 
-After each APPROVE: `gh pr merge <pr> --squash --auto --match-head-commit <head>`. Never switch auto-merge off: the required approval alone gates the merge, so the owner's approval lands an `owner` PR. After a merge, comment the round, with footer. Report failed merges once.
+After each APPROVE: `gh pr merge <pr> --squash --auto --match-head-commit <head>`. Never switch auto-merge off. After a merge, comment the round, with footer. Report failed merges once.
 
 **Exit gate:** auto-merge state per approved PR.
 

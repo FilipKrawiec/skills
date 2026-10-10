@@ -45,7 +45,7 @@ Read [afk-ready.md](references/afk-ready.md) when proposing, approving or triagi
 - Ask the owner: AFK? Yes → `lane:afk`; no → `lane:owner`; unsure → `lane:proposed`.
 - Tidy (when asked): bring every open issue and card to the issue form below; list the owner's fixes in the output.
 - Merged PRs already meet the criteria: comment one PR link per criterion and propose closing; the owner closes.
-- With a board, move each issue now Ready (open, no `state:` label, acceptance criteria, a lane, a scope packet when AFK) to Todo.
+- With a board, move each issue now Ready (meets the issue form, no `state:` label) to Todo.
 
 Issue form: one type label and the matching title; one lane when open, no `state:` label when closed; `### Acceptance criteria`, plus `### Estimate` and a scope packet in `lane:afk` and `lane:proposed`; slices under their epic; a card with Priority P0–P2, a slice taking its epic's; an epic's card In progress once it has sub-issues.
 

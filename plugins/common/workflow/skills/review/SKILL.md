@@ -6,7 +6,7 @@ allowed-tools: Skill Read Bash(git:*)
 
 # Code Review
 
-Review on two axes, A Standards and B Spec; report only what gates miss. Read [hot-paths.md](references/hot-paths.md) when the code under review runs per event, frame, keystroke or render, or at startup.
+Review on two axes, A Standards and B Spec; report only what gates miss. Read [hot-paths.md](references/hot-paths.md) for an area audit, or when the code under review runs per event, frame, keystroke or render, or at startup.
 
 ## Severity
 
@@ -14,7 +14,7 @@ Review on two axes, A Standards and B Spec; report only what gates miss. Read [h
 - **Major** (`REQUEST_CHANGES` when the diff introduces it): smell likely to cause a defect or rework soon.
 - **Minor** (`APPROVED`, as suggestions): style, naming, optional refactor.
 
-Fix every finding with a clear fix, Minors included, even after the PR opens, then re-review; ask the owner about the rest.
+*Blocking* means `REQUEST_CHANGES`.
 
 ## 1. Scope
 
@@ -64,7 +64,7 @@ Scope: clean | creep: <files>
 
 ## Area audit
 
-For a whole codebase or area instead of a diff: sweep every signal in phases 2 and 3 and in `hot-paths.md`, and invoke `tdd` to sample mutants on domain files. Report one row per smell ranked by likely rework, then the mutation table; no line cap.
+For a whole codebase or area instead of a diff: sweep every signal in phases 2 and 3 and in the hot-path checks, and invoke `tdd` to sample mutants on domain files. Report one row per smell ranked by likely rework, then the mutation table; no line cap.
 
 ```text
 | Smell | Count | Strongest examples (3 × file:line) | Refactoring | Estimate S/M/L |

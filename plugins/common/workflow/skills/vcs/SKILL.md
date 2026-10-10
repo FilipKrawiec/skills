@@ -6,18 +6,16 @@ allowed-tools: Bash(git:*,gh:*,lsof:*) Read
 
 # Version Control
 
-`<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`); `<root>` is the main checkout. Never edit, switch or stash `<root>`; work in a worktree. With a board (lanes.json `project`), move cards with `gh project item-edit`.
+`<repo>` (`owner/name`), `<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`); `<root>` is the main checkout. Never edit, switch or stash `<root>`; work in a worktree. With a board (lanes.json `project`), move cards with `gh project item-edit`.
 
 ## 1. Start
 
-Skip when you are already in the task's worktree.
-
-- Hold one open PR: start another issue only once yours merged, or is ready to merge, waits only on the owner and shares no files with the new one. Merge dependent changes in order.
-- `git fetch origin <base>`. Reuse the issue's worktree or its unmerged branch; else `git worktree add <root>/.worktrees/<branch-slug> -b <branch> origin/<base>`. When the host already gave the session a clean worktree, `git switch -c <branch> origin/<base>` there.
+- Hold one unfinished PR: start an issue only when each of your open PRs is ready to merge (phase 6) and shares no files with it; otherwise stop and return `blocked by #<pr>`. Merge dependent changes in order.
+- Unless already on the task's branch: `git fetch origin <base>`; reuse the issue's worktree, or `git switch <branch>` to its unmerged `<branchPrefix><N>-*` branch; else `git worktree add <root>/.worktrees/<N>-<slug> -b <branch> origin/<base>`, or, when the host gave the session a clean worktree, `git switch -c <branch> origin/<base>` there.
 - Branch: unattended `<branchPrefix><N>-<slug>`; attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
-- For an issue: unattended, add `state:claimed`, remove `lane:owner` and comment ``Claimed by an AFK run on `<branch>`.``; attended, add `state:started`. Card to In progress.
+- For an issue: unattended, add `state:claimed` and comment ``Claimed by an AFK run on `<branch>`.``; attended, add `state:started`. Card to In progress.
 
-**Exit gate:** `git status --short --branch` shows the task's worktree on its branch.
+**Exit gate:** `git status --short --branch` shows the task's branch, and the issue carries its `state:` label; or `blocked by #<pr>`.
 
 ## 2. Stage
 
@@ -42,8 +40,8 @@ Skip when you are already in the task's worktree.
 
 ## 5. Open the PR
 
-- `gh pr create` with the issue's title, ready, never a draft. Body: `Closes #<N>`, the `## Plan` link, the review verdict with its fixing commits, checks run, before and after captures of visible changes.
-- A finding left unfixed becomes a linked `lane:owner` issue (invoke `spec`) once the owner agrees it can wait; unattended, list it under Decision instead.
+- `gh pr create`, ready, never a draft. For an issue: its title; body `Closes #<N>`, the `## Plan` link, the review verdict with its fixing commits, checks run, before and after captures of visible changes. For a revert: the given title; body `Reverts #<M>` and the failing checks, never `Closes`.
+- List each finding left unfixed under Decision; on the owner's yes, open it as a linked `lane:owner` issue.
 - `gh pr merge <pr> --squash --auto`: it lands on the required approval. Remove `state:claimed` or `state:started`.
 
 **Exit gate:** the PR URL with auto-merge on.
@@ -52,17 +50,21 @@ Skip when you are already in the task's worktree.
 
 Run after every push to an open PR, when `<base>` moves, and before calling a PR ready.
 
-1. Blockers: draft; failing checks; `CONFLICTING`, `DIRTY` or `BEHIND`; an unresolved thread; `CHANGES_REQUESTED`. Read them with `gh pr view <pr> --json isDraft,mergeable,mergeStateStatus,reviewDecision`, `gh pr checks <pr>` and `gh api graphql -f query='{repository(owner:"<o>",name:"<r>"){pullRequest(number:<pr>){reviewThreads(first:100){nodes{isResolved path line comments(first:1){nodes{author{login} body}}}}}}}'`.
+1. Blockers: draft; failing checks; `CONFLICTING`, `DIRTY` or `BEHIND`; an unresolved thread; `CHANGES_REQUESTED`. Read them with `gh pr view <pr> --json isDraft,mergeable,mergeStateStatus,reviewDecision`, `gh pr checks <pr>` and `gh api graphql -f query='{repository(owner:"<owner>",name:"<name>"){pullRequest(number:<pr>){reviewThreads(first:100){nodes{isResolved path line comments(first:1){nodes{author{login} body}}}}}}}'`.
 2. Fix every review finding with a clear fix, optional ones too, and reply on its thread naming the commit. Then dispatch a fresh-context worker with no implementation context: it never edits or pushes, resolves the threads it confirms fixed and hands the rest back. A person's threads stay theirs; name each to the owner.
 3. Fix failing checks and conflicts (`git merge origin/<base>`), push, and start again at 1.
 
-**Exit gate:** no blocker but pending checks. Only then ask the owner to approve or merge; until then, report the blockers as why it waits.
+**Exit gate:** no blocker but pending checks or the required approval.
+
+**Output:** ≤ 5 lines. **Summary:** the PR and its blockers, or "ready". **Decision:** approve or merge it, or "Nothing needed." while blockers remain.
 
 ## 7. Tidy
 
 Remove other `<branchPrefix>` worktrees and branches whose PR merged or closed, when the worktree is clean and `lsof -a -d cwd +D <worktree>` exits 1.
 
+**Exit gate:** `git worktree list` shows no such worktree.
+
 ## Authority
 
-- Merge, approve, or force-push a protected or default branch only on the owner's explicit word. Auto-merge on your own PR is allowed.
+- Merge, approve, or force-push a protected or default branch only on the owner's explicit word.
 - Never dispatch workflows, create, edit or delete releases, write secrets or variables, or delete branches, tags or repositories other than your own merged head.
