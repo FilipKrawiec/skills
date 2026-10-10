@@ -62,7 +62,7 @@ Schedule runs in the main checkout so they never overlap. Prompt:
 Preflight, stop and report on any failure:
 1. The working directory is inside <owner>/<repo>.
 2. `gh api user --jq .login` prints lanes.json's `implementer`, and
-   `git remote get-url origin` starts `https://`; else pushes and PRs
+   `git remote get-url --push origin` starts `https://`; else pushes and PRs
    run as someone else, so stop.
 3. With a board in lanes.json, `gh project view <number> --owner <owner>`
    succeeds; otherwise the token lacks the `project` scope, so stop.
@@ -70,6 +70,6 @@ Then invoke the `afk` skill by name. The owner is away: park instead of asking. 
 switch, pull, reset or stash this checkout: it may hold the owner's work.
 ```
 
-- With `agentReview`, schedule a task invoking `agent-review`, naming the repository, how to wake the runner and any legacy review marker.
-- An orchestrating session may instead start one session per run with the same prompt naming the issue; runs in one checkout never overlap, so it starts the next only after the last one ends.
+- With `agentReview`, schedule a task invoking `agent-review`, naming the repository, how to wake the runner and any legacy review marker. One task may run both: that pass waking no runner, then the AFK prompt above. Keep its prompt and installer in the repository.
+- An orchestrating session may instead start one session per run with the AFK prompt naming the issue; runs in one checkout never overlap, so it starts the next only after the last one ends.
 - Approve its tool prompts on the first run.

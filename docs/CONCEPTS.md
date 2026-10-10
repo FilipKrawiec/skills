@@ -39,6 +39,7 @@ plugins/common/<package>/skills/<skill-name>/
   ---
   ```
   For human-triggered workflows, add `disable-model-invocation: true`.
+  A skill a scheduled task or another session starts stays model-invoked: a brief can't type a slash command, so the run stalls.
 * **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent, and specify clear trigger boundaries within 300 characters.
 * **Phase Sequencing**: Steps are numbered phases, each ending in an exit gate the agent can check (a command's exit code, a file, a label, a PR or CI state).
 * **Explicit Output Envelopes**: Every phase defines the exact compact Markdown template the agent should emit, preventing conversational wandering.

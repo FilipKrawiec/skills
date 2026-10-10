@@ -27,7 +27,7 @@ A skill is a system-prompt fragment: direct orders to an agent that already know
 ## Rules
 
 - **Budgets:** description ≤ 300 characters; `SKILL.md` body ≤ 800 words; a reference ≤ 600 words. Over budget, split the skill along a user intent or move a branch some runs skip to a reference, never content every run needs.
-- **Frontmatter:** a model-invoked description starts "Use when" and names user intents, not mechanics; a user-invoked skill sets `disable-model-invocation: true` and a one-line label. `allowed-tools` is a space-delimited string, with `Skill` when it invokes another skill.
+- **Frontmatter:** a model-invoked description starts "Use when" and names user intents, not mechanics; a user-invoked skill sets `disable-model-invocation: true` and a one-line label. A skill a scheduled task or another session starts stays model-invoked: a brief can't type a slash command, so the run stalls. `allowed-tools` is a space-delimited string, with `Skill` when it invokes another skill.
 - **Steps:** number the phases. End each with an **Exit gate** the agent can check: a command's exit code, a file, a label, a PR or CI state.
 - **Conditions:** data the agent can read ("the issue has a scope packet"), never another skill's history ("after `spec` ran"). Write a branch of three or more cases as a list, one case per line, first match wins.
 - **Emphasis:** CAPS or "IMPORTANT" only on the rule runs keep breaking; emphasis everywhere weights nothing.
