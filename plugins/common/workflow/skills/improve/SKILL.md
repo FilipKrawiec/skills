@@ -8,7 +8,7 @@ allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,python3:*,just:*)
 
 ## 1. Collect
 
-For each shipped issue awaiting lessons (closed as completed in the last 30 days, its newest `## Shipped` comment newer than any `## Lessons`) or this session, list parks, failed fixes, review findings, red base, owner corrections (agent memory too), missing commands or docs, and rules that cost time without preventing a failure. Find earlier occurrences with `gh search issues "## Lessons" -R <owner/repo>`.
+For each issue awaiting lessons (closed as completed in the last 30 days, its newest `## Shipped` comment newer than any `## Lessons`) and for this session, list parks, failed fixes, review findings, red base, owner corrections (agent memory too), missing commands or docs, and rules that cost time without preventing a failure. Find earlier occurrences in past `## Lessons` comments.
 
 **Exit gate:** friction points with evidence and earlier occurrences, or none.
 
@@ -16,27 +16,26 @@ For each shipped issue awaiting lessons (closed as completed in the last 30 days
 
 - A lesson needs two linked occurrences or the owner's request; one occurrence is an observation only.
 - Prefer a script or gate that makes the failure impossible, then editing or deleting a rule, then a new rule.
-- One target per lesson: the skill owning the phase (rules holding in any project); project agent rules (project-only); `.github/lanes.json` (scope, merge) or `.github/CODEOWNERS` (owner paths); issue template or `spec` (unbuildable issues); docs or assets. Delete a rule that cost more than it prevented.
-- Lessons go into skills or project rules, never agent memory; replace text or memory restating a skill with a link.
+- One target per lesson: the skill owning the phase (rules holding in any project); project agent rules (project-only); `.github/lanes.json` or `.github/CODEOWNERS` (scope, merge, owner paths); the issue template or `spec` (unbuildable issues); docs. Never agent memory.
 - Scrub secrets, internal hostnames, client names and local paths.
 
 **Exit gate:** each lesson has a target file and wording.
 
 ## 3. Record
 
-Comment `## Lessons` on the shipped issue ("no lessons" when none): lessons with occurrences, target, wording; observations one line each. No shipped issue: use the output.
+Comment `## Lessons` on the shipped issue ("no lessons" when none): lessons with occurrences, target and wording; observations one line each. No shipped issue: use the output.
 
 **Exit gate:** the comment link, or the output.
 
 ## 4. Propose
 
-One issue and PR per target repository. Leave out lessons for `.github/lanes.json` or CODEOWNERS (hand the owner the exact line), needing a product decision, or matching an open issue or PR (link it).
+One issue and PR per target repository. Leave out lessons for lanes.json or CODEOWNERS (hand the owner the exact line), needing a product decision, or matching an open issue or PR (link it).
 
-1. Invoke `spec` (`-R <owner/repo>`) for an issue carrying targets and wordings.
-2. Invoke `vcs` to start branch `<branchPrefix>lesson-<N>-<slug>` from the target's base (another repository: clone it to the host's temp directory first). Invoke `writing-great-skill` and write the change to its standard; pass the target's verification gate (word budgets included).
+1. Invoke `spec` to open an issue carrying the targets and wordings.
+2. Invoke `vcs` to start branch `<branchPrefix>lesson-<N>-<slug>` (another repository: clone it to a temp directory first). Invoke `writing-great-skill` and write the change to its standard; pass the target's verification.
 3. Invoke `vcs` to open the PR, linking the `## Lessons` comment.
-4. Owner approved the wording this session: ask them to approve the PR on GitHub, where auto-merge lands it.
-5. Link issue and PR from `## Lessons` (or output); remove a temp clone.
+4. When the owner approved the wording this session, ask them to approve the PR on GitHub.
+5. Link issue and PR from `## Lessons` or the output; remove a temp clone.
 
 **Exit gate:** each lesson linked to its PR, or a proposal with its reason.
 

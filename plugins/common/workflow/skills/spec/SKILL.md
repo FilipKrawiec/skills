@@ -18,7 +18,7 @@ Turn a need into one issue another agent can plan from without guessing.
 
 Skip when the issue exists.
 
-- Search first: `gh issue list -s all --search "<keywords>"` (`-R <owner/repo>` for another repository); offer to update a match.
+- Search existing issues first; offer to update a match.
 - Work that only runs tests becomes criteria of the issues it proves.
 - Create from the project's template: title `<type>(<area>): <outcome>`, `lane:owner`, priority only when the owner gave one, and one type label: `type:story` (`feat`), `type:bug` (`fix`), `type:chore` (`chore`, `docs`, `test`, `ci`, `refactor`, `perf`), `type:task` (`task`: a finding, never AFK) or `type:epic`.
 
@@ -26,13 +26,13 @@ Skip when the issue exists.
 
 ## 2. Ground
 
-Read the task's code, tests, agent rules and ADRs until the open decisions are clear; record each fact with its source path.
+Read the code, tests, agent rules and ADRs until the open decisions are clear; cite each fact's source path.
 
 **Exit gate:** verified facts separated from open decisions.
 
 ## 3. Grill
 
-- Ask one open decision per round in at most five lines (question, trade-offs, recommendation); wait for the answer.
+- Ask one open decision per round in ≤ 5 lines (question, trade-offs, recommendation).
 - Write answers into the issue: intent, non-goals, and `### Acceptance criteria` each provable by a test or a described render. ADRs only for architectural decisions.
 - More than one PR: on the owner's yes, one sub-issue per vertical slice under a `type:epic`. Only epics have sub-issues, and they hold all its remaining work; nobody claims or opens a PR for an epic. Slices sharing a file name the one slice owning it.
 
@@ -47,7 +47,7 @@ Read [afk-ready.md](references/afk-ready.md) when proposing, approving or triagi
 - Merged PRs already meet the criteria: comment one PR link per criterion and propose closing; the owner closes.
 - With a board, move each issue now Ready (meets the issue form, no `state:` label) to Todo.
 
-Issue form: one type label and the matching title; one lane when open, no `state:` label when closed; `### Acceptance criteria`, plus `### Estimate` and a scope packet in `lane:afk` and `lane:proposed`; slices under their epic; a card with Priority P0–P2, a slice taking its epic's; an epic's card In progress once it has sub-issues.
+Issue form: one type label and the matching title; one lane when open, no `state:` label when closed; `### Acceptance criteria`, plus `### Estimate` and a scope packet (a ```` ```scope ```` block of the paths the work may touch) in `lane:afk` and `lane:proposed`; slices under their epic; a card with Priority P0–P2, a slice taking its epic's; an epic's card In progress once it has sub-issues.
 
 **Exit gate:** each issue has one lane, at most one new comment.
 

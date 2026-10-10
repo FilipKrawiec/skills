@@ -9,9 +9,8 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 
 One run delivers **at most one** `lane:afk` issue; park instead of asking.
 
-- `<repo>`, `<base>` (default `main`), `branchPrefix` (default `agent/afk-`), `staleClaimHours` (default 3), `alwaysInScope` and `project`: `.github/lanes.json` on `origin/<base>`.
-- Never touch the starting checkout; work only in worktrees.
-- Run only commands named here and in the skills you invoke; improvised ones stall on permission prompts.
+- `<base>` (default `main`), `branchPrefix` (default `agent/afk-`), `staleClaimHours` (default 3), `alwaysInScope`, `project`: `.github/lanes.json` on `origin/<base>`.
+- Never touch the starting checkout; work only in worktrees. Run only `git`, `gh`, `just`, `python3` and `lsof`, one command at a time; compound shell stalls on permission prompts.
 - **Park** an issue: push useful work; replace `lane:afk` and `state:*` with `lane:owner`; comment the question, options and recommendation in ≤ 5 lines.
 - Reasoning: high `spec`; medium `plan`, `review`, `improve`; low `tdd`; lowest otherwise; raise after two failures.
 - Read [setup.md](references/setup.md) without `.github/lanes.json` or when scheduling runs.
@@ -25,38 +24,38 @@ Invoke `ship` to check base CI, revert a breaking AFK merge and confirm shipped 
 
 ## 2. Tend
 
-For each open `branchPrefix` PR whose issue has `lane:afk`, in its worktree: fix unanswered blocking reviews, then invoke `vcs` to make it ready to merge. Never switch auto-merge off. Verify fully before every push. Park on a product decision or two failed fixes.
+For each open `branchPrefix` PR whose issue has `lane:afk`: invoke `vcs` to make it ready to merge. Never switch auto-merge off. Park on a product decision or two failed fixes.
 
 **Exit gate:** each own PR green and conflict-free, or parked.
 
 ## 3. Pick
 
-Base red → phase 5. Else:
+First case that fits:
 
-1. `gh issue list -R <repo> -l lane:afk -s open -L 500 --json number,title,body,labels`, and the issues open PRs close: `gh pr list -R <repo> -s open -L 500 --json closingIssuesReferences,body` (a stacked PR only names `Closes #<N>` in its body).
-2. A `state:claimed` issue without an open PR is in flight: pick nothing, go to phase 5. Park it first when its newest `state:claimed` `labeled` event (`gh api repos/<repo>/issues/<N>/events --paginate`) is older than `staleClaimHours`.
-3. Candidates: no `state:` label, acceptance criteria, a scope packet (a ```` ```scope ```` block), not `type:epic` or `type:task`, no open PR, every packet dependency closed as completed (`gh issue view <d> -R <repo> --json stateReason`).
-4. Skip a candidate whose packet paths overlap the files of an open `branchPrefix` PR.
-5. Rank by the board's Priority (`gh project item-list <number> --owner <owner> -L 1000 --format json`), else a `priority:P*` label, else last; then lowest number.
+1. Base red: go to phase 5.
+2. A `state:claimed` issue has no open PR: another run is delivering it. Park it if its newest claim is older than `staleClaimHours`; go to phase 5 either way.
+3. Otherwise pick the top candidate.
+
+Candidates are open `lane:afk` issues with no `state:` label, acceptance criteria and a scope packet (a ```` ```scope ```` block); not `type:epic` or `type:task`; no open PR closing them (a stacked PR names `Closes #<N>` only in its body); every packet dependency closed as completed; no packet path in an open `branchPrefix` PR's files. Rank by the board's Priority, else a `priority:P*` label, then lowest number.
 
 **Exit gate:** `next: #<N>` → phase 4; none → phase 5.
 
 ## 4. Deliver
 
-1. Invoke `vcs` to start (claim) the issue; on `blocked by #<pr>`, go to phase 5. Read the issue, its linked decisions, project rules.
-2. Invoke `plan`.
-3. Invoke `tdd` to implement each step and `vcs` to commit it; update tied docs; pass the scope check and full verification.
-4. Dispatch two fresh-context workers given only issue and diff, each invoking `review` for one axis (A or B); fix their findings; two rounds max. Then invoke `vcs` to open the PR.
+1. Invoke `vcs` to start the issue; on `blocked by #<pr>`, go to phase 5.
+2. Invoke `plan`, then `tdd` for each step and `vcs` to commit it; update docs the change makes stale. Pass the scope check and the verify gate (the project's `verify` task).
+3. Two fresh-context workers, given only issue and diff, each invoke `review` for one axis; fix their findings. Say `review round <n> of 2` before each round; stop after round 2 and list what is left under Decision.
+4. Invoke `vcs` to open the PR.
 
-Scope check: list `git diff --name-only --no-renames $(git merge-base origin/<base> HEAD)` and `git ls-files -o --exclude-standard`. Each path equals a packet path, sits under a packet path ending in `/`, or under an `alwaysInScope` prefix. Revert any other path, or park when the issue needs it.
+Scope check: every path in `git diff --name-only --no-renames $(git merge-base origin/<base> HEAD)` and `git ls-files -o --exclude-standard` equals a packet path, or sits under a packet path ending in `/` or an `alwaysInScope` prefix. Revert any other path, or park when the issue needs it.
 
-Park when the issue is ambiguous or contradicts rules, needs an out-of-scope path or one `.github/CODEOWNERS` or lanes.json `ownerPaths` gives the owner, an undecided product or model choice, credentials, settings or a device, or stays red or blocked after two attempts. Verify first: trace the failure to its raising call; list fixes keeping all criteria.
+Park when the issue is ambiguous or contradicts rules; needs a path outside its packet or one `.github/CODEOWNERS` or `ownerPaths` gives the owner, a product decision, credentials, settings or a device; or stays red after two attempts. Before parking a failure, trace it to its raising call.
 
 **Exit gate:** PR URL with auto-merge on, or a parked issue.
 
 ## 5. Housekeeping
 
-Only when nothing was delivered: comment the failing excerpt on each red Dependabot PR; invoke `spec` for open issues without a `lane:` label. Never start follow-ups; list them.
+Only when nothing was delivered: comment the failing excerpt on each red Dependabot PR; invoke `spec` to lane open issues without a `lane:` label. List follow-ups; never start them.
 
 **Exit gate:** each comment and `spec` result.
 
@@ -68,4 +67,4 @@ Invoke `improve` for shipped issues awaiting lessons and this run's friction; in
 
 ## Output
 
-≤ 8 lines, changed items only. **Summary:** base health, PRs tended, delivered PR (or "queue empty"), lesson PRs, housekeeping, linked. **Decision:** parks, follow-ups and proposed lessons, each with a recommendation, or "Nothing needed."
+≤ 8 lines, changed items only. **Summary:** base health, PRs tended, delivered PR (or "queue empty"), lesson PRs, linked. **Decision:** parks, follow-ups and proposed lessons, each with a recommendation, or "Nothing needed."
