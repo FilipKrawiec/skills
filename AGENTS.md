@@ -84,7 +84,7 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 ## Editing Rules
 
 - Update the relevant skill and its references together.
-- Move content rather than duplicating it when a concept belongs in `references/`.
+- Keep what every run needs in `SKILL.md`; move to `references/` only a branch some runs skip.
 - Run `python3 scripts/validate-plugin-definitions.py` after changing skills or plugin manifests.
 - Change either board's Status columns, or which issues each board holds, in `plugins/common/workflow/references/board.md` together with FilipKrawiec/devcontainer's `dev issuetracker`, which reads them, in a companion PR.
 - Preserve existing user changes outside the requested scope.

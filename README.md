@@ -76,7 +76,7 @@ This library supports two complementary execution loops depending on the scope o
 
 For full details, read the comprehensive [Concepts & Architecture Guide](docs/CONCEPTS.md).
 
-* **System-Prompt Style under Word Budgets**: Skills are direct orders in numbered phases with checkable exit gates; the validator caps each `SKILL.md` at 400 words and each reference at 600.
+* **System-Prompt Style under Word Budgets**: Skills are direct orders in numbered phases with checkable exit gates; the validator caps each `SKILL.md` at 800 words and each reference at 600.
 * **Zero-Waste Output Economics**: Every skill phase defines explicit output envelopes, high-density token efficiency, and code anti-overengineering (Rule of Two Adapters).
 * **Provider-Neutral & Sovereign Git-Native**: Pure Git clone/submodule distribution across harnesses (Claude Code, Codex, Antigravity) without SaaS registry dependencies.
 * **Delivery Cycle**: Seven phases (01 Define to 07 Improve), one skill each, on an optional Project board (epics only in an Epics view, every other issue in a Board view) with standard columns that GitHub's built-in workflows mostly move.

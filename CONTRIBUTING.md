@@ -8,7 +8,7 @@ Thank you for contributing to the `skills` repository! This document outlines wo
 
 * **Public Repository**: Do not add proprietary, client, or secret material to skills or plugin packages.
 * **Compact & Agent-Agnostic**: Skills must remain portable, lightweight, and host-neutral.
-* **Single Source of Truth**: Move granular domain details into `references/` instead of duplicating them across files.
+* **Single Source of Truth**: Each procedure lives in the one skill that performs it; other skills invoke that skill instead of restating it.
 * **Deterministic Verification**: Every change must pass the automated verification matrix before being published.
 
 ---
@@ -25,7 +25,7 @@ Skills belong under `plugins/common/<package>/skills/<skill-name>/`.
 ```
 plugins/common/<package>/skills/<skill-name>/
 ├── SKILL.md                 # Primary instruction entrypoint
-├── references/              # Context pointers loaded on-demand
+├── references/              # Optional branches some runs skip
 │   └── topic.md
 └── scripts/                 # Non-interactive CLI helper scripts
 ```
@@ -36,7 +36,7 @@ plugins/common/<package>/skills/<skill-name>/
 
 ### Step 2: Crafting `SKILL.md`
 
-1. **YAML Frontmatter**: `description` starts with "Use when" and stays within 300 characters; the body stays within 400 words and each reference within 600; `allowed-tools` is required.
+1. **YAML Frontmatter**: `description` starts with "Use when" and stays within 300 characters; the body stays within 800 words and each reference within 600; `allowed-tools` is required.
    ```yaml
    ---
    name: example-skill
@@ -44,12 +44,12 @@ plugins/common/<package>/skills/<skill-name>/
    allowed-tools: Read Bash(git:*)
    ---
    ```
-2. **Instruction Wording**: Describe desired behaviors positively. Use prohibitions only for explicit security or safety boundaries.
-3. **Context Pointers**: Move detailed reference material into `references/` files and point agents to them:
+2. **Instruction Wording**: State the behavior to follow. Pair each prohibition with what to do instead ("Never Y; do Z instead.").
+3. **Self-contained skills**: Everything a run always needs lives in `SKILL.md`; agents often skip files they are only pointed to. A `references/` file holds an optional branch some runs skip, pointed to with its condition:
    ```markdown
    Read [topic.md](references/topic.md) when configuring X settings.
    ```
-   *Rule*: Links are relative and point inside the skill's own `references/`, or to the package's shared authority (`../../references/<file>.md`) when the skills of one plugin share it.
+   *Rule*: Links are relative and point inside the skill's own `references/`. A procedure two skills use lives in the skill that performs it; the other invokes that skill by name.
 
 ---
 
