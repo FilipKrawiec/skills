@@ -208,21 +208,10 @@ def validate_skill_spec(skill_dir: Path) -> None:
 
 def discover_common_packages(root: Path = ROOT) -> dict[Path, str]:
     packages = {}
-    # Structured layout: plugins/common/*
     common_dir = root / "plugins" / "common"
     if common_dir.is_dir():
         for pkg_dir in sorted(common_dir.iterdir()):
             if pkg_dir.is_dir() and not pkg_dir.name.startswith("."):
-                meta_path = pkg_dir / "package-metadata.json"
-                if meta_path.is_file():
-                    expected_name = f"filipkrawiec-{pkg_dir.name}"
-                    packages[meta_path] = expected_name
-
-    # Flat layout: plugins/* (excluding the common container dir)
-    plugins_dir = root / "plugins"
-    if plugins_dir.is_dir():
-        for pkg_dir in sorted(plugins_dir.iterdir()):
-            if pkg_dir.is_dir() and not pkg_dir.name.startswith(".") and pkg_dir.name != "common":
                 meta_path = pkg_dir / "package-metadata.json"
                 if meta_path.is_file():
                     expected_name = f"filipkrawiec-{pkg_dir.name}"

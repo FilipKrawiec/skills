@@ -69,8 +69,6 @@ Each common package describes itself once, in `package-metadata.json`; `just syn
 
 The host manifests point at the skills directory (`"skills": "./skills/"`); every skill under it is included.
 
-* **Common Packages (`plugins/common/*`)**: Portable base plugins without framework-specific GUI code.
-
 ---
 
 ## 4. Local Testing & Verification Matrix
