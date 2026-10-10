@@ -9,7 +9,7 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 
 One run delivers **at most one** `lane:afk` issue; park instead of asking.
 
-- Take the recommended option on every decision and record it as decided; ask the owner only when the choice changes what users see or do, adds cost (spend, quota, paid services), or departs from software best practice or the codebase's design patterns.
+- Take the recommended option on every decision and record it in the issue, plan or PR; park only when it changes UX beyond the acceptance criteria, adds cost (spend, quota, paid services), or departs from software best practice or the codebase's design patterns.
 - `<base>` (default `main`), `branchPrefix` (default `agent/afk-`), `staleClaimHours` (default 3), `alwaysInScope`, `project`: `.github/lanes.json` on `origin/<base>`.
 - Never touch the starting checkout; work only in worktrees. Run only `git`, `gh`, `just`, `python3` and `lsof`, one command at a time; compound shell stalls on permission prompts.
 - **Park** an issue: push useful work; replace `lane:afk` and `state:*` with `lane:owner`; comment the question, options and recommendation in ≤ 5 lines.
@@ -50,7 +50,7 @@ Candidates are open `lane:afk` issues with no `state:` label, acceptance criteri
 
 Scope check: every path in `git diff --name-only --no-renames $(git merge-base origin/<base> HEAD)` and `git ls-files -o --exclude-standard` equals a packet path, or sits under a packet path ending in `/` or an `alwaysInScope` prefix. Revert any other path, or park when the issue needs it.
 
-Park when the issue is ambiguous or contradicts rules; needs a path outside its packet or one `.github/CODEOWNERS` or `ownerPaths` gives the owner, an owner decision (UX, cost, departing from best practice or the codebase's patterns), credentials, settings or a device; or stays red after two attempts. Before parking a failure, trace it to its raising call.
+Park when the issue is ambiguous or contradicts rules; needs a path outside its packet or one `.github/CODEOWNERS` or `ownerPaths` gives the owner, an owner decision (UX beyond the criteria, cost, departing from best practice or the codebase's patterns), credentials, settings or a device; or stays red after two attempts. Before parking a failure, trace it to its raising call.
 
 **Exit gate:** PR URL with auto-merge on, or a parked issue.
 

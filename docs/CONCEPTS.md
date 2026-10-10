@@ -83,7 +83,7 @@ Delivery follows seven phases, each with a skill. The optional board doesn't mir
 | :--- | :--- | :--- |
 | 01 Define | `spec` | An issue with intent and open questions |
 | 02 Spec | `spec` | Acceptance criteria and one lane; an estimate and a scope packet for AFK |
-| 03 Plan | `plan` | An owner-approved plan, posted as a `## Plan` comment for AFK or multi-session work |
+| 03 Plan | `plan` | A plan the owner approves only when it holds a UX, cost or best-practice decision, posted as a `## Plan` comment for AFK or multi-session work |
 | 04 Execute | `tdd`, `vcs`, `review` (fresh-context worker) | Tested commits on a task branch, reviewed, and a PR |
 | 05 Review | `agent-review`, or the owner | A reviewed, mergeable PR |
 | 06 Ship | `ship` | A green base branch and a `## Shipped` comment, a revert PR, or an escalation |

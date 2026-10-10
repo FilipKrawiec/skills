@@ -94,7 +94,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`review`](plugins/common/workflow/skills/review/SKILL.md) | Model | Diff Audit: Boundary breaches, runtime defects, design smells, and test rigor. |
 | | [`vcs`](plugins/common/workflow/skills/vcs/SKILL.md) | Model | Version Control: Conventional commits, worktree isolation, and PR delivery. |
 | | [`spec`](plugins/common/workflow/skills/spec/SKILL.md) | Model | 01 Define, 02 Spec: Open the issue, grill against project context, write acceptance criteria, decide the lane (with an estimate and scope packet for AFK). |
-| | [`plan`](plugins/common/workflow/skills/plan/SKILL.md) | Model | 03 Plan: Post a repository-grounded plan on the issue; approval before execution. |
+| | [`plan`](plugins/common/workflow/skills/plan/SKILL.md) | Model | 03 Plan: Post a repository-grounded plan on the issue; owner approval only for a UX, cost or best-practice decision. |
 | | [`ship`](plugins/common/workflow/skills/ship/SKILL.md) | Model | 06 Ship: Base-branch health after merge, revert AFK breakage, confirm shipped issues. |
 | | [`improve`](plugins/common/workflow/skills/improve/SKILL.md) | Model | 07 Improve: Turn a failure seen twice into a lesson PR for skills, agent rules, docs or assets. |
 | | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | User (scheduler invokes by name) | Unattended Delivery: Runs the cycle for one approved issue per run, park-with-a-question, chore auto-merge, housekeeping. |
