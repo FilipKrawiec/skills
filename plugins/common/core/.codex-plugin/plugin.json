@@ -2,5 +2,34 @@
   "name": "filipkrawiec-core",
   "description": "Core agentic software engineering skills for domain modeling and architecture.",
   "version": "11.17.0",
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "author": {
+    "name": "Filip Krawiec",
+    "email": "contact@filipkrawiec.com",
+    "url": "https://github.com/FilipKrawiec"
+  },
+  "homepage": "https://github.com/FilipKrawiec/skills",
+  "repository": "https://github.com/FilipKrawiec/skills",
+  "license": "UNLICENSED",
+  "keywords": [
+    "skills",
+    "software-engineering",
+    "domain-modeling",
+    "architecture",
+    "agentic-workflow"
+  ],
+  "interface": {
+    "displayName": "Filip Krawiec Core Skills",
+    "shortDescription": "Core agentic software engineering skills.",
+    "longDescription": "Core agentic software engineering skills for domain modeling and architecture.",
+    "developerName": "Filip Krawiec",
+    "category": "Productivity",
+    "capabilities": [
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use ddd to clarify terms, ADRs, and bounded contexts.",
+      "Use hexagonal-architecture to separate API, application, domain, and infrastructure."
+    ]
+  }
 }

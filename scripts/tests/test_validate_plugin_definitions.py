@@ -17,6 +17,64 @@ spec.loader.exec_module(v)
 
 
 class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
+    def _codex_metadata_package(self, tmp_root: Path) -> tuple[Path, dict]:
+        pkg = tmp_root / "plugins" / "common" / "testpkg"
+        (pkg / "skills" / "sample").mkdir(parents=True)
+        (pkg / "skills" / "sample" / "SKILL.md").write_text(
+            "---\nname: sample\ndescription: Use when testing.\nallowed-tools: Read\n---\n", encoding="utf-8"
+        )
+        meta = {
+            "name": "filipkrawiec-testpkg",
+            "version": "1.2.3",
+            "description": "Test package description",
+            "author": {"name": "Owner"},
+            "homepage": "https://example.com/home",
+            "repository": "https://example.com/repo",
+            "license": "UNLICENSED",
+            "keywords": ["skills"],
+            "interface": {"displayName": "Test Package", "defaultPrompt": ["Use sample."]},
+        }
+        (pkg / "package-metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+        return pkg, meta
+
+    def test_sync_manifests_gives_codex_the_package_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pkg, meta = self._codex_metadata_package(Path(tmp_dir))
+
+            v.sync_manifests(Path(tmp_dir))
+
+            codex_json = json.loads((pkg / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+            for field in ("author", "homepage", "repository", "license", "keywords", "interface"):
+                self.assertEqual(codex_json[field], meta[field], field)
+            v.validate_package_metadata(pkg / "package-metadata.json", "filipkrawiec-testpkg")
+
+    def test_validate_package_metadata_rejects_a_codex_manifest_missing_package_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pkg, _ = self._codex_metadata_package(Path(tmp_dir))
+            v.sync_manifests(Path(tmp_dir))
+            codex_path = pkg / ".codex-plugin" / "plugin.json"
+            codex_json = json.loads(codex_path.read_text(encoding="utf-8"))
+            del codex_json["interface"]
+            codex_path.write_text(json.dumps(codex_json), encoding="utf-8")
+
+            with self.assertRaisesRegex(v.ValidationError, "must match package interface"):
+                v.validate_package_metadata(pkg / "package-metadata.json", "filipkrawiec-testpkg")
+
+    def test_a_field_dropped_from_package_metadata_leaves_the_codex_manifest_on_sync(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pkg, meta = self._codex_metadata_package(Path(tmp_dir))
+            v.sync_manifests(Path(tmp_dir))
+            del meta["keywords"]
+            (pkg / "package-metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+
+            with self.assertRaisesRegex(v.ValidationError, "must match package keywords"):
+                v.validate_package_metadata(pkg / "package-metadata.json", "filipkrawiec-testpkg")
+
+            v.sync_manifests(Path(tmp_dir))
+            codex_json = json.loads((pkg / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+            self.assertNotIn("keywords", codex_json)
+            v.validate_package_metadata(pkg / "package-metadata.json", "filipkrawiec-testpkg")
+
     def test_strip_markdown_code_blocks_removes_fenced_and_inline_code(self) -> None:
         text = (
             "Intro text\n"
