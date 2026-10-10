@@ -29,7 +29,7 @@ Comment `## Lessons` on the shipped issue ("no lessons" when none): lessons with
 
 ## 4. Propose
 
-One issue and PR per target repository. Leave out lessons for lanes.json or CODEOWNERS (hand the owner the exact line), needing a product decision, or matching an open issue or PR (link it).
+One issue and PR per target repository. Leave out lessons for lanes.json or CODEOWNERS (hand the owner the exact line), needing an owner decision (UX beyond the criteria, cost, departing from best practice or the codebase's patterns), or matching an open issue or PR (link it).
 
 1. Invoke `spec` to open an issue carrying the targets and wordings.
 2. Invoke `vcs` to start branch `<branchPrefix>lesson-<N>-<slug>` (another repository: clone it to a temp directory first). Invoke `writing-great-skill` and write the change to its standard; pass the target's verification.
