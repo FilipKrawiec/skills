@@ -27,7 +27,7 @@ An issue may take `lane:proposed` or `lane:afk` only when every check holds or t
 
 Unattended, or for issues from `gh issue list --search "-label:lane:afk -label:lane:proposed -label:lane:owner"`:
 
-- All checks pass → `lane:proposed`; any fails → `lane:owner`. Apply board.md's Issue form.
+- All checks pass → `lane:proposed`; any fails → `lane:owner`. Apply the issue form in `SKILL.md` phase 4.
 - Comment once: each failing check and what would fix it; end a proposal with "Apply `lane:afk` to let an AFK run take it."
 
 ## Epic design changes
