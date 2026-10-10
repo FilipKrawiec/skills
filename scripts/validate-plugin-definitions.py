@@ -31,7 +31,6 @@ ALLOWED_FRONTMATTER_KEYS = {
 MAX_DESCRIPTION_CHARS = 300
 MAX_SKILL_WORDS = 800
 MAX_REFERENCE_WORDS = 600
-MAX_PACKAGE_REFERENCE_WORDS = 800
 
 
 def word_count(text: str) -> int:
@@ -132,6 +131,9 @@ def parse_skill_frontmatter(path: Path) -> dict:
 
 
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+REFERENCE_DEFINITION_RE = re.compile(r"^ {0,3}\[([^\]]+)\]:\s*(\S+)", re.MULTILINE)
+INVOKE_SKILL_RE = re.compile(r"\b[Ii]nvok(?:e|es|ing)\s+`[a-z0-9-]+`")
+PACKAGE_ROOT_ENTRIES = {".claude-plugin", ".codex-plugin", "package-metadata.json", "plugin.json", "skills"}
 
 
 def strip_markdown_code_blocks(text: str) -> str:
@@ -140,11 +142,11 @@ def strip_markdown_code_blocks(text: str) -> str:
     return text
 
 
-def validate_markdown_links(file_path: Path) -> None:
+def validate_markdown_links(file_path: Path, confine_to: Path | None = None) -> None:
     raw_content = file_path.read_text(encoding="utf-8")
     content = strip_markdown_code_blocks(raw_content)
     rel_path = rel(file_path)
-    for match in MARKDOWN_LINK_RE.finditer(content):
+    for match in [*MARKDOWN_LINK_RE.finditer(content), *REFERENCE_DEFINITION_RE.finditer(content)]:
         target = match.group(2).strip()
         if target.startswith(("http://", "https://", "mailto:", "#")):
             continue
@@ -157,6 +159,8 @@ def validate_markdown_links(file_path: Path) -> None:
         resolved = (file_path.parent / target_file_path).resolve()
         if not resolved.is_file():
             fail(f"{rel_path} contains broken relative link target '{target}' -> {resolved}")
+        if confine_to is not None and not resolved.is_relative_to(confine_to.resolve()):
+            fail(f"{rel_path} links outside its skill: '{target}'; invoke the skill that owns it instead")
 
 
 def validate_skill_spec(skill_dir: Path) -> None:
@@ -189,7 +193,10 @@ def validate_skill_spec(skill_dir: Path) -> None:
     if not isinstance(allowed_tools, str) or not allowed_tools.strip() or "\n" in allowed_tools or allowed_tools.strip().startswith("-"):
         fail(f"{rel(skill_file)} must define a non-empty 'allowed-tools' space-delimited string")
 
-    validate_markdown_links(skill_file)
+    if INVOKE_SKILL_RE.search(skill_file.read_text(encoding="utf-8")) and "Skill" not in allowed_tools.split():
+        fail(f"{rel(skill_file)} invokes a skill but 'allowed-tools' lacks Skill")
+
+    validate_markdown_links(skill_file, confine_to=skill_dir)
 
     for path in sorted(skill_dir.rglob("*")):
         if path.is_file() and path.suffix in {".md", ".py", ".json", ".yaml", ".yml", ".sh"}:
@@ -213,7 +220,7 @@ def validate_skill_spec(skill_dir: Path) -> None:
                 fail(f"reference file {rel_ref} exceeds {MAX_REFERENCE_WORDS} words ({ref_words} words)")
             if re.search(r"^##\s+(?:Contents|Table of Contents)", ref_text, re.MULTILINE | re.IGNORECASE):
                 fail(f"reference file {rel_ref} must not include a Table of Contents (TOC)")
-            validate_markdown_links(reference)
+            validate_markdown_links(reference, confine_to=skill_dir)
 
 
 def discover_common_packages(root: Path = ROOT) -> dict[Path, str]:
@@ -287,22 +294,22 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
             fail(f"{rel(manifest_path)} must match package name and version")
         if manifest.get("description") != metadata["description"] or manifest.get("skills") != "./skills/":
             fail(f"{rel(manifest_path)} must match package description and skills path")
-        hooks = manifest.get("hooks")
-        if hooks is not None and not (package_root / hooks).is_file():
-            fail(f"{rel(manifest_path)} references missing hooks file {hooks}")
+        if "hooks" in manifest:
+            fail(f"{rel(manifest_path)} must not declare hooks; a skill's rules live in its SKILL.md")
 
-    package_references = package_root / "references"
-    if package_references.exists():
-        for ref in package_references.rglob("*.md"):
-            if not REFERENCE_NAME_RE.fullmatch(ref.name):
-                fail(f"package reference file must be lowercase kebab-case.md: {rel(ref)}")
-            ref_text = ref.read_text(encoding="utf-8")
-            ref_words = word_count(ref_text)
-            if ref_words > MAX_PACKAGE_REFERENCE_WORDS:
-                fail(f"package reference file {rel(ref)} exceeds {MAX_PACKAGE_REFERENCE_WORDS} words ({ref_words} words)")
-            if re.search(r"^##\s+(?:Contents|Table of Contents)", ref_text, re.MULTILINE | re.IGNORECASE):
-                fail(f"package reference file {rel(ref)} must not include a Table of Contents (TOC)")
-            validate_markdown_links(ref)
+        if (manifest_path.parent / "hooks.json").exists():
+            fail(f"{rel(manifest_path.parent)} must not hold hooks; a skill's rules live in its SKILL.md")
+
+    extra_entries = sorted(entry.name for entry in package_root.iterdir() if entry.name not in PACKAGE_ROOT_ENTRIES | {".DS_Store"})
+    if extra_entries:
+        fail(f"{rel(package_root)}: package root may hold only {sorted(PACKAGE_ROOT_ENTRIES)}, not {extra_entries}; put each rule in the skill that performs it")
+    skills_root = package_root / "skills"
+    if skills_root.is_dir():
+        for entry in skills_root.iterdir():
+            if entry.name == ".DS_Store":
+                continue
+            if not (entry / "SKILL.md").is_file():
+                fail(f"{rel(package_root)}: skills/{entry.name} is not a skill; put each rule in the skill that performs it")
 
 
 def discover_all_common_skills(root: Path = ROOT) -> set[str]:
@@ -476,9 +483,6 @@ def sync_manifests(root: Path = ROOT) -> None:
             "version": release_version,
             "skills": "./skills/",
         }
-        # Host-specific hook wiring stays inside the host's manifest directory.
-        if (claude_dir / "hooks.json").is_file():
-            claude_data["hooks"] = "./.claude-plugin/hooks.json"
         claude_json.write_text(json.dumps(claude_data, indent=2) + "\n", encoding="utf-8")
         synced_files.append(claude_json)
 

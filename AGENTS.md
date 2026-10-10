@@ -41,7 +41,7 @@ Verification must be deterministic, proportionate, and strictly deduplicated:
 
 Output generation tokens are significantly more expensive and slower than input context tokens. Agents must adhere to high-density communication and anti-overengineering invariants:
 
-- **Owner Reports**: Follow Reporting to the owner in `plugins/common/workflow/references/board.md`.
+- **Owner Reports**: Every owner message has a **Summary** (the outcome, linking the PR, issue or `file:line` with the detail) and a **Decision** (what the owner must decide, with options and a recommendation, or "Nothing needed."); a session reply ≤ 5 lines, a run or review report ≤ 8.
 - **Zero Conversational Preamble**: Jump directly to action, command execution, or verification evidence.
 - **Direct Symbol & File Links**: Link to modified paths (e.g. `[filename](file:///path/to/file#L10-L20)`) instead of echoing file bodies in chat.
 - **Evidence-First Output**: In PRs, logs and agent-to-agent output, emit compact evidence: exact commands executed, terminal exit code status, and concrete decision points.
@@ -86,12 +86,12 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 - Update the relevant skill and its references together.
 - Keep what every run needs in `SKILL.md`; move to `references/` only a branch some runs skip.
 - Run `python3 scripts/validate-plugin-definitions.py` after changing skills or plugin manifests.
-- Change either board's Status columns, or which issues each board holds, in `plugins/common/workflow/references/board.md` together with FilipKrawiec/devcontainer's `dev issuetracker`, which reads them, in a companion PR.
+- Change the board's Status columns, or which issues it holds, in the workflow skills and `plugins/common/workflow/skills/afk/references/setup.md` together with FilipKrawiec/devcontainer's `dev issuetracker`, which reads them, in a companion PR.
 - Preserve existing user changes outside the requested scope.
 
 ## Shipping
 
-- Work happens in an isolated worktree on a short-lived branch made from the fetched base branch; the checkout a session starts in stays as it is. The claim, open-PR and tidy steps are in `plugins/common/workflow/references/board.md`.
+- Work happens in an isolated worktree on a short-lived branch made from the fetched base branch; the checkout a session starts in stays as it is. The start, open-PR and tidy steps are in `plugins/common/workflow/skills/vcs/SKILL.md`.
 - Before opening a PR, run `review` on the branch as two fresh-context workers (axes A and B), fix every finding, and quote the verdict in the PR body.
 - Committed changes stay within the issue's scope packet when it has one. After verification, an agent pushes the branch and opens or updates the PR that closes the issue (`Closes #<N>`, linking the `## Plan` comment when one was posted).
 - The owner retains merge authority: merging, approving and force-pushing a protected or default branch happen only on the owner's explicit word; for a PR that matches no owner rule, `agent-review`'s approval is that word. GitHub branch protection and CODEOWNERS enforce this, not local hooks.

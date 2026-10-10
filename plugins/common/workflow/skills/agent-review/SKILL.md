@@ -7,22 +7,23 @@ allowed-tools: Skill Read Bash(git:*,gh:*)
 
 # Agent Review
 
-- Run every `gh` command as lanes.json's `reviewer`: `GH_TOKEN=$(gh auth token --user <reviewer>) gh ...`; never print the token.
+- `<repo>`, `owner`, `implementer`, `reviewer`, `reviewRounds` (default 3), `alwaysInScope`, `ownerPaths`, `ownerLabels`, `ownerLines` (default 800): `.github/lanes.json`.
+- Run every `gh` command as `reviewer`: `GH_TOKEN=$(gh auth token --user <reviewer>) gh ...`; never print the token.
 - Never commit, push or edit; fixes are the implementer's. Write to GitHub only reviews, thread replies and resolutions, `review:owner` and auto-merge.
 
 ## 1. Collect
 
-List open PRs. Agent reviews are the reviewer account's reviews starting `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->` (or a legacy marker the caller names). Read threads via GraphQL `reviewThreads { isResolved }`.
+List open PRs. Agent reviews are the reviewer's reviews starting `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->` (or a legacy marker the caller names). Read threads via GraphQL `reviewThreads { isResolved }`.
 
 - Agent review at the head → phase 4.
-- Newest used round `reviewRounds` (default 3) → skip.
+- Newest used round `reviewRounds` → skip.
 - Else round = 1 + earlier agent reviews.
 
 **Exit gate:** at most 4 PRs, oldest updated first.
 
 ## 2. Review
 
-One isolated worker per PR, in parallel, in a scratch worktree at the head: `review`'s two axes on the diff against the closed issue's acceptance criteria; each unresolved thread fixed (with commit) or still open (blocking). Workers post nothing.
+One isolated worker per PR, in parallel, in a scratch worktree at the head, invoking `review` for both axes on the diff against the closed issue's acceptance criteria; each unresolved thread fixed (with commit) or still open (blocking). Workers post nothing.
 
 Verify blocking findings; skip PRs whose head moved.
 
@@ -30,17 +31,36 @@ Verify blocking findings; skip PRs whose head moved.
 
 ## 3. Post
 
-Pick each PR's verdict from [owner-rules.md](references/owner-rules.md).
+Read `gh pr view <pr> --json author,labels,title,body,closingIssuesReferences`, the changed paths (`gh api repos/<repo>/pulls/<pr>/files --paginate --jq '.[] | [.filename, .previous_filename, .additions, .deletions]'`; a rename counts both paths) and each closed issue's scope packet. Owner rules, checked in order; quote the first match. The list is closed: a PR matching none merges on your approval and green checks. The PR:
 
-- One review on the head: APPROVE when `ready` and not your own PR, else COMMENT. Blocking findings inline; body = marker, verdict, findings (blocking first, optional marked; `file:line` and failure scenario each), every open thread, attribution footer.
-- Set `review:owner` per the verdict.
+1. carries `review:owner`;
+2. has an author other than `owner`, `implementer` or Dependabot;
+3. lists no files, or 3000 (the API's cap);
+4. touches a path `.github/CODEOWNERS` or `ownerPaths` gives the owner;
+5. carries an `ownerLabels` label, which ships or deploys on merge;
+6. is a Dependabot update across a major version, or a minor one below 1.0 (title and `Bumps`/`Updates` lines);
+7. changes more than `ownerLines` lines of code;
+8. changes code but closes no issue with a scope packet;
+9. changes code outside its issues' scope packets and `alwaysInScope`.
+
+Docs (`docs/`, `*.md`), tests and Dependabot's manifests and lockfiles are not code for rules 7–9.
+
+| `verdict=` | When | Review | `review:owner` |
+| --- | --- | --- | --- |
+| `ready` | No blocking finding or open thread; no owner rule matches. | APPROVE; COMMENT on your own PR | remove |
+| `owner` | No blocking finding; an owner rule matches, or a thread waits on an owner check (device, credential). | COMMENT | add |
+| `fixes` | Blocking findings, rounds left. | COMMENT | remove |
+| `rounds` | Blocking findings in the last round. | COMMENT | add |
+
+- Post one review on the head. Blocking findings inline; body = marker, verdict (quoting the owner rule), findings (blocking first, optional marked; `file:line` and failure scenario each), every open thread, before and after captures of each user-visible change for `owner`, attribution footer.
+- Label with `gh pr edit <pr> --add-label review:owner` or `--remove-label review:owner`.
 - Reply on each thread the head fixes, naming the commit; resolve only agent-written threads (first comment ends with the footer).
 
 **Exit gate:** each PR has its review and label.
 
 ## 4. Merge
 
-Each PR you approved at its head: auto-merge on; the owner merges the rest; after a merge, comment the round, with footer. Report failed merges once.
+After each APPROVE: `gh pr merge <pr> --squash --auto --match-head-commit <head>`. Never switch auto-merge off. After a merge, comment the round, with footer. Report failed merges once.
 
 **Exit gate:** auto-merge state per approved PR.
 
@@ -52,6 +72,6 @@ Wake the AFK runner as the caller describes: "Scheduled AFK run." plus AFK PRs n
 
 ## 6. Report
 
-When something needs the owner or shipped, in [board.md](../../references/board.md)'s Reporting to the owner form. Summary: PRs merged; runner's lesson PRs. Decision: PRs for the owner with reason; runner parks and follow-ups; findings raised on two or more PRs, with target file. Only changed items.
+Only when something needs the owner or shipped; changed items only; ≤ 8 lines. **Summary:** PRs merged; the runner's lesson PRs, linked. **Decision:** PRs for the owner with reason; runner parks and follow-ups; findings raised on two or more PRs, with target file; each with a recommendation.
 
 **Exit gate:** sent or nothing to report; scratch worktrees removed.

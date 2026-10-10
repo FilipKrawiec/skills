@@ -1,14 +1,14 @@
 ---
 name: plan
 description: Use when an issue is specified and needs its implementation plan before code changes (03 Plan), or when resuming work from a posted plan.
-allowed-tools: Read Bash(gh:*,git:*)
+allowed-tools: Skill Read Bash(gh:*,git:*)
 ---
 
 # Plan (03)
 
-Write a plan, grounded in the repository, that execution follows without re-planning. The issue is claimed or started first ([board.md](../../references/board.md)'s Issue steps).
+Write a plan, grounded in the repository, that execution follows without re-planning. Unless the issue carries `state:claimed` or `state:started`, first invoke `vcs` to start it.
 
-**Unattended:** the same phases; `lane:afk` stands in for approval, and a park replaces every question.
+**Unattended:** the same phases; `lane:afk` stands in for approval, and a park replaces every question: replace `lane:afk` and `state:*` with `lane:owner`, and comment the question, options and recommendation in ≤ 5 lines.
 
 ## 1. Read
 
@@ -23,7 +23,7 @@ Read the issue, its acceptance criteria, scope packet, parent and linked decisio
 - Ordered steps, each small and verifiable.
 - Risks and assumptions that could send the work back to `spec`.
 
-A path outside the scope packet, a protected path or an ambiguous criterion stops the plan: unattended, Park; attended, Release and return to `spec`.
+A path outside the scope packet, a path `.github/CODEOWNERS` or lanes.json `ownerPaths` gives the owner, or an ambiguous criterion stops the plan: unattended, park; attended, remove `state:started` (with a board, card to Todo) and invoke `spec`.
 
 **Exit gate:** a draft inside the scope packet, or a parked or released issue.
 
@@ -37,4 +37,4 @@ A path outside the scope packet, a protected path or an ambiguous criterion stop
 
 ## Output
 
-Reporting to the owner form. Summary: step count, and the comment link when posted. Decision: the plan to approve (attended), or why the issue went back and its question.
+≤ 5 lines. **Summary:** step count, and the comment link when posted. **Decision:** the plan to approve (attended), or why the issue went back and its question, with a recommendation.
