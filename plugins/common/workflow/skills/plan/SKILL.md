@@ -33,6 +33,48 @@ A path outside the scope packet, a path `.github/CODEOWNERS` or lanes.json `owne
 - Attended: show the draft; wait for approval only when it takes a decision the owner must make (UX beyond the criteria, cost, departing from best practice or the codebase's patterns), else continue.
 - Post it as one issue comment headed `## Plan` only in `lane:afk` or when the work may outlive the session.
 - When resuming or departing from it, edit that comment in place by its id (`gh api -X PATCH`). Never `gh issue comment --edit-last`; it may hit another session's comment.
+- Use the envelope below: executive summary ≤ 3 sentences; scope, risks and decision one line each. Keep material risks, blockers and owner choices visible; include options and a recommendation when a decision is needed. Collapse steps and evidence with `<details>` / `<summary>`, blank lines around Markdown inside. Use no CSS or scripts. Add fenced `mermaid` with a text explanation only when a diagram clarifies a flow or relationship; omit empty sections.
+
+````markdown
+## Plan
+
+### Executive summary
+Reject duplicate reservations before saving; keep the existing API response.
+
+**Scope:** reservation service and its unit tests.
+**Risks:** concurrent requests need a separate transaction fix.
+**Decision:** Nothing needed; concurrency is outside the agreed criteria.
+
+<details>
+<summary>Change flow</summary>
+
+Check the slot before saving; reject an occupied slot.
+
+```mermaid
+flowchart LR
+    A[Reservation request] --> B{Slot occupied?}
+    B -->|Yes| C[Reject]
+    B -->|No| D[Save]
+```
+
+</details>
+
+<details>
+<summary>Implementation steps</summary>
+
+1. In `src/reservations/service.py`, update `reserve(slot: Slot) -> Reservation` to reject an occupied slot. Add `test_duplicate_is_rejected` in `tests/reservations/test_service.py`: the second call fails and only one reservation persists. Verify with `pytest tests/reservations/test_service.py`.
+
+</details>
+
+<details>
+<summary>Verification and acceptance evidence</summary>
+
+| Criterion | Test and command |
+| --- | --- |
+| Duplicate rejected | `test_duplicate_is_rejected`; `pytest tests/reservations/test_service.py` |
+
+</details>
+````
 
 **Exit gate:** the `## Plan` comment link, the owner's approval in the session, or the draft shown with no owner decision in it.
 

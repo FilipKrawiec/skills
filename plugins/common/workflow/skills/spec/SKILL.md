@@ -50,6 +50,35 @@ Read [afk-ready.md](references/afk-ready.md) when proposing, approving or triagi
 
 Issue form: one type label and the matching title; one lane when open, no `state:` label when closed; `### Acceptance criteria`, plus `### Estimate` and a scope packet (a ```` ```scope ```` block of the paths the work may touch) in `lane:afk` and `lane:proposed`; slices under their epic; a card with Priority P0–P2, a slice taking its epic's; an epic's card In progress once it has sub-issues.
 
+Keep the project's template fields and literal criterion, estimate and scope markers. Use this body envelope: summary ≤ 3 sentences; scope, risks and decision one line each. Keep criteria, scope boundaries, material risks, blockers and owner choices visible, with options and a recommendation when needed. Collapse context and evidence using `<details>` / `<summary>` with blank lines around Markdown. Use no CSS or scripts. Add fenced `mermaid` with text only when a diagram clarifies a flow or relationship; omit empty sections.
+
+````markdown
+### Executive summary
+Reject duplicate reservations so a slot cannot be booked twice.
+
+**Scope:** reservation service; no API or concurrency changes.
+**Risks:** concurrent requests remain a separate issue.
+**Decision:** Recommend `lane:proposed`; owner decides whether to approve AFK.
+
+### Acceptance criteria
+
+- [ ] A second reservation for the same slot fails without persisting.
+
+### Estimate
+S; check how existing reservations are queried.
+
+```scope
+{"paths": ["src/reservations/", "tests/reservations/"], "dependencies": []}
+```
+
+<details>
+<summary>Context and evidence</summary>
+
+`src/reservations/service.py` saves without checking occupied slots.
+
+</details>
+````
+
 **Exit gate:** each issue has one lane, at most one new comment.
 
 ## Output

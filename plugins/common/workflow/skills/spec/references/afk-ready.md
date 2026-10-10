@@ -2,6 +2,8 @@
 
 An issue may take `lane:proposed` or `lane:afk` only when every check holds or the issue records the owner's waiver. Before asking the owner, add `### Estimate` and the scope packet.
 
+Keep estimates and scope packets outside collapsible sections. Record owner waivers and unresolved risks visibly in the issue envelope; collapsed evidence never changes lane authority.
+
 | Check | Holds when |
 | --- | --- |
 | Single | A story, chore or bug (not `type:epic` or `type:task`); no open PR, `state:claimed` or `state:started`. |

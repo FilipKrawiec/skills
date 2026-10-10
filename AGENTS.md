@@ -45,7 +45,7 @@ build_tools:
 
 ## Diagrams
 
-Never use Mermaid in skills or docs; it renders unreliably across viewers. Use ASCII or Unicode box drawings and Markdown tables.
+Use ASCII or Unicode box drawings and Markdown tables in portable skills and docs. GitHub issue bodies, plan comments and PR descriptions may use fenced `mermaid` diagrams when a flow or relationship needs explanation; include a text explanation. Literal GitHub output examples inside fenced code blocks may show that syntax.
 
 ## Doctrine
 
