@@ -26,8 +26,8 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │                            PORTABLE SKILLS                                  │
  │   Core:         ddd, hexagonal-architecture                                 │
- │   Workflow:     spec, plan, tdd, vcs, review, ship, improve, afk,           │
- │                 agent-review                                                │
+ │   Workflow:     spec, refine, plan, tdd, vcs, review, ship, improve,          │
+ │                 afk, agent-review                                           │
  │   Authoring:    writing-great-skill                                         │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -94,6 +94,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`review`](plugins/common/workflow/skills/review/SKILL.md) | Model | Diff Audit: Boundary breaches, runtime defects, design smells, and test rigor. |
 | | [`vcs`](plugins/common/workflow/skills/vcs/SKILL.md) | Model | Version Control: Conventional commits, worktree isolation, and PR delivery. |
 | | [`spec`](plugins/common/workflow/skills/spec/SKILL.md) | Model | 01 Define, 02 Spec: Open the issue, grill against project context, write acceptance criteria, decide the lane (with an estimate and scope packet for AFK). |
+| | [`refine`](plugins/common/workflow/skills/refine/SKILL.md) | Model | Refine a backlog or project board: reconcile decisions, dependencies, scope and readiness across items. |
 | | [`plan`](plugins/common/workflow/skills/plan/SKILL.md) | Model | 03 Plan: Post a repository-grounded plan on the issue; owner approval only for a UX, cost or best-practice decision. |
 | | [`ship`](plugins/common/workflow/skills/ship/SKILL.md) | Model | 06 Ship: Base-branch health after merge, revert AFK breakage, confirm shipped issues. |
 | | [`improve`](plugins/common/workflow/skills/improve/SKILL.md) | Model | 07 Improve: Turn a failure seen twice into a lesson PR for skills, agent rules, docs or assets. |
