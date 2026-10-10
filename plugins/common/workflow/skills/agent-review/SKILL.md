@@ -1,6 +1,6 @@
 ---
 name: agent-review
-description: One scheduled review pass over open PRs where lanes.json turns on agentReview; invoked by name from a scheduled task.
+description: One scheduled review pass over open PRs where lanes.json turns on agentReview; started by a scheduled task's leading slash command.
 disable-model-invocation: true
 allowed-tools: Skill Read Bash(git:*,gh:*)
 ---
@@ -64,7 +64,7 @@ After each APPROVE: `gh pr merge <pr> --squash --auto --match-head-commit <head>
 
 Wake the AFK runner as the caller describes: "Scheduled AFK run." plus AFK PRs needing fixes. Tell the owner after three offline passes. Review PRs the runner reports via phases 2–4.
 
-**Exit gate:** runner woken, or the offline count.
+**Exit gate:** runner woken, the offline count, or the caller runs `afk` itself.
 
 ## 6. Report
 
