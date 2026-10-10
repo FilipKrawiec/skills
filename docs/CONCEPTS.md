@@ -89,7 +89,7 @@ Delivery follows seven phases, each with a skill. The optional board doesn't mir
 | 06 Ship | `ship` | A green base branch and a `## Shipped` comment, a revert PR, or an escalation |
 | 07 Improve | `improve` | A `## Lessons` comment, and one issue and PR per target repository for lessons whose failure repeated |
 
-06 Ship and 07 Improve run after the merge, so their record is an issue comment rather than a column. `plugins/common/workflow/references/board.md` is the one source for each issue state and its column, which skill works it, the board workflows to turn on, and the `gh project` commands for the few moves the skills make themselves. Lanes stay labels, so a card's labels show who acts next. Every step, from picking the next issue to the merge gate, is a plain `gh` or `git` command written in the skills; no local script decides.
+06 Ship and 07 Improve run after the merge, so their record is an issue comment rather than a column. Each skill names the issue states it acts on and the card moves it makes itself; `afk`'s `references/setup.md` lists the columns and the board workflows to turn on. Lanes stay labels, so a card's labels show who acts next. Every step, from picking the next issue to the merge gate, is a plain `gh` or `git` command written in the skills; no local script decides.
 
 ### Worktree Provenance & Safety
 

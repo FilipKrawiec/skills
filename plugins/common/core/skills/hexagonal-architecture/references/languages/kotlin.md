@@ -1,7 +1,5 @@
 # Kotlin
 
-No framework is prescribed: use the codebase's.
-
 ## Layout
 
 - Feature-first packages: `users.domain`, `users.app`, `users.api`, `users.infra`.
@@ -33,4 +31,4 @@ No framework is prescribed: use the codebase's.
 
 ## Tests
 
-- Domain tests start no framework container; application tests use in-memory ports. Doubles: `tdd`'s Kotlin profile.
+- Domain tests start no framework container; application tests use in-memory ports.

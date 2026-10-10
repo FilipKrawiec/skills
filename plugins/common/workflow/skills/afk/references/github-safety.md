@@ -57,5 +57,3 @@ Add every path the owner must see: security rules, stored data shapes, migration
 | Push to the base branch, change settings, protection or collaborators | owner only |
 | Change CI workflows | owner only (token scope plus CODEOWNERS) |
 | Read deploy secrets, release, deploy | from a merged base branch, an owner tag, or the owner's environment approval |
-
-Local safety (never editing the owner's main checkout) is not GitHub's; every session works in its own worktree as `board.md`'s Start here says.

@@ -8,7 +8,7 @@ allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,python3:*,just:*)
 
 ## 1. Collect
 
-For the shipped issue (07 Improve in [board.md](../../references/board.md)'s States) or this session, list parks, failed fixes, review findings, red base, owner corrections (agent memory too), missing commands or docs, and rules that cost time without preventing a failure. Find earlier occurrences with `gh search issues "## Lessons" -R <owner/repo>`.
+For each shipped issue awaiting lessons (closed as completed in the last 30 days, its newest `## Shipped` comment newer than any `## Lessons`) or this session, list parks, failed fixes, review findings, red base, owner corrections (agent memory too), missing commands or docs, and rules that cost time without preventing a failure. Find earlier occurrences with `gh search issues "## Lessons" -R <owner/repo>`.
 
 **Exit gate:** friction points with evidence and earlier occurrences, or none.
 
@@ -33,8 +33,8 @@ Comment `## Lessons` on the shipped issue ("no lessons" when none): lessons with
 One issue and PR per target repository. Leave out lessons for `.github/lanes.json` or CODEOWNERS (hand the owner the exact line), needing a product decision, or matching an open issue or PR (link it).
 
 1. Invoke `spec` (`-R <owner/repo>`) for an issue carrying targets and wordings.
-2. Worktree from the target's base on `<branchPrefix>lesson-<N>-<slug>` (another repository: clone to the host's temp directory). Invoke `writing-great-skill` and write the change to its standard; pass the target's verification gate (word budgets included).
-3. Open the PR via board.md's Open PR, linking the `## Lessons` comment.
+2. Invoke `vcs` to start branch `<branchPrefix>lesson-<N>-<slug>` from the target's base (another repository: clone it to the host's temp directory first). Invoke `writing-great-skill` and write the change to its standard; pass the target's verification gate (word budgets included).
+3. Invoke `vcs` to open the PR, linking the `## Lessons` comment.
 4. Owner approved the wording this session: ask them to approve the PR on GitHub, where auto-merge lands it.
 5. Link issue and PR from `## Lessons` (or output); remove a temp clone.
 
@@ -42,4 +42,4 @@ One issue and PR per target repository. Leave out lessons for `.github/lanes.jso
 
 ## Output
 
-board.md's Reporting to the owner form. Summary: each lesson PR with targets and change, or "no lessons" and the observation count. Decision: proposals left, with target and reason.
+≤ 8 lines. **Summary:** each lesson PR with targets and change, or "no lessons" and the observation count. **Decision:** proposals left, with target, reason and a recommendation, or "Nothing needed."

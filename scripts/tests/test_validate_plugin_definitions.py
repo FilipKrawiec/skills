@@ -182,6 +182,94 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
                 v.validate_skill_spec(skill_dir)
             self.assertIn("must be renamed to assets/", str(ctx.exception))
 
+    def test_validate_skill_spec_rejects_links_outside_the_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / "shared.md").write_text("# Shared\n", encoding="utf-8")
+            skill_dir = tmp_path / "sample-skill"
+            (skill_dir / "references").mkdir(parents=True)
+            (skill_dir / "references" / "own.md").write_text("Back to [shared](../../shared.md).\n", encoding="utf-8")
+            skill_file = skill_dir / "SKILL.md"
+            header = "---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: Read\n---\n"
+
+            skill_file.write_text(header + "Read [shared](../shared.md) when testing.\n", encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_skill_spec(skill_dir)
+            self.assertIn("links outside its skill", str(ctx.exception))
+
+            skill_file.write_text(header + "Read [own](references/own.md) when testing.\n", encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_skill_spec(skill_dir)
+            self.assertIn("references/own.md links outside its skill", str(ctx.exception))
+
+            (skill_dir / "references" / "own.md").write_text("[shared]: ../../shared.md\n", encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_skill_spec(skill_dir)
+            self.assertIn("references/own.md links outside its skill", str(ctx.exception))
+
+            (skill_dir / "references" / "own.md").write_text("# Own\n", encoding="utf-8")
+            v.validate_skill_spec(skill_dir)
+
+    def test_validate_skill_spec_requires_skill_tool_to_invoke_skills(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            skill_dir = Path(tmp_dir) / "sample-skill"
+            skill_dir.mkdir()
+            skill_file = skill_dir / "SKILL.md"
+            body = "---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: {tools}\n---\nInvoke `vcs` to open the PR.\n"
+
+            skill_file.write_text(body.format(tools="Read Bash(git:*)"), encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_skill_spec(skill_dir)
+            self.assertIn("invokes a skill but 'allowed-tools' lacks Skill", str(ctx.exception))
+
+            skill_file.write_text(body.format(tools="Skill Read Bash(git:*)"), encoding="utf-8")
+            v.validate_skill_spec(skill_dir)
+
+    def test_validate_package_metadata_rejects_shared_references_and_hooks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            package = Path(tmp_dir) / "testpkg"
+            meta = {"name": "filipkrawiec-testpkg", "version": "1.2.3", "description": "Test package"}
+            (package / ".claude-plugin").mkdir(parents=True)
+            (package / ".codex-plugin").mkdir()
+            (package / "package-metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+            (package / "plugin.json").write_text(json.dumps(meta), encoding="utf-8")
+            manifest = {"name": meta["name"], "version": meta["version"], "description": meta["description"], "skills": "./skills/"}
+            (package / ".codex-plugin" / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+            claude_manifest = package / ".claude-plugin" / "plugin.json"
+            claude_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+            v.validate_package_metadata(package / "package-metadata.json", meta["name"])
+
+            (package / ".claude-plugin" / "hooks.json").write_text("{}", encoding="utf-8")
+            claude_manifest.write_text(json.dumps({**manifest, "hooks": "./.claude-plugin/hooks.json"}), encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_package_metadata(package / "package-metadata.json", meta["name"])
+            self.assertIn("must not declare hooks", str(ctx.exception))
+
+            claude_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_package_metadata(package / "package-metadata.json", meta["name"])
+            self.assertIn("must not hold hooks", str(ctx.exception))
+
+            (package / ".claude-plugin" / "hooks.json").unlink()
+            (package / "hooks").mkdir()
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_package_metadata(package / "package-metadata.json", meta["name"])
+            self.assertIn("package root may hold only", str(ctx.exception))
+
+            (package / "hooks").rmdir()
+            (package / "skills" / "shared").mkdir(parents=True)
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_package_metadata(package / "package-metadata.json", meta["name"])
+            self.assertIn("skills/shared is not a skill", str(ctx.exception))
+
+            (package / "skills" / "shared").rmdir()
+            v.validate_package_metadata(package / "package-metadata.json", meta["name"])
+            (package / "references").mkdir()
+            (package / "references" / "board.md").write_text("# Board\n", encoding="utf-8")
+            with self.assertRaises(v.ValidationError) as ctx:
+                v.validate_package_metadata(package / "package-metadata.json", meta["name"])
+            self.assertIn("package root may hold only", str(ctx.exception))
+
     def test_discover_common_packages_and_validate_all_in_repo(self) -> None:
         packages = v.discover_common_packages(ROOT)
         self.assertIn(ROOT / "plugins" / "common" / "core" / "package-metadata.json", packages)
