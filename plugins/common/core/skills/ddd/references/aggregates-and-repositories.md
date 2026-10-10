@@ -12,7 +12,7 @@
 
 - Provide repositories for aggregate roots only; reach local entities through their root.
 - Load and save the whole aggregate.
-- Name the port as a plural collection (`Threads`), per `hexagonal-architecture`'s naming rule.
+- Name the port as a plural collection (`Threads`).
 - Add explicit lightweight query methods (`exists(id)`, `countUnresolved(parentId)`) instead of loading aggregates to count or test existence; the adapter runs an `EXISTS`/`COUNT` query.
 - Hydration from storage stays in the infrastructure adapter. Never add a public `reconstitute(...)` or persistence constructor to the root.
 - A DAO is a private helper inside an infrastructure adapter, never a port and never imported by domain or application. A database-backed check (uniqueness) is a domain-named port (`EmailUniqueness`) whose adapter uses the DAO.

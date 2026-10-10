@@ -1,6 +1,6 @@
 # Dart and Flutter
 
-No state-management, routing or backend package is prescribed: use the codebase's, and treat each as an adapter.
+Treat the codebase's state-management, routing and backend packages as adapters.
 
 ## Layout
 
@@ -32,5 +32,5 @@ No state-management, routing or backend package is prescribed: use the codebase'
 
 ## Tests
 
-- Domain and application tests run under `dart test` with no Flutter binding, using in-memory port fakes. Harness and doubles: `tdd`'s Dart profile.
+- Domain and application tests run under `dart test` with no Flutter binding, using in-memory port fakes.
 - Adapter tests run against the backend's local emulator.
