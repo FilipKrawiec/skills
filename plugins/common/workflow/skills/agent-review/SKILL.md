@@ -14,9 +14,10 @@ allowed-tools: Skill Read Bash(git:*,gh:*)
 
 Agent reviews are the reviewer's reviews starting `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->`. Per open PR, first case that fits:
 
-1. An agent review exists at the head: go to phase 4.
-2. Its newest agent review used round `reviewRounds`: skip it.
-3. Otherwise: review it as round 1 + its earlier agent reviews.
+1. A draft: skip it; its author is still at work, and a draft never auto-merges.
+2. An agent review exists at the head: go to phase 4.
+3. Its newest agent review used round `reviewRounds`: skip it.
+4. Otherwise: review it as round 1 + its earlier agent reviews.
 
 **Exit gate:** at most 4 PRs, oldest updated first.
 

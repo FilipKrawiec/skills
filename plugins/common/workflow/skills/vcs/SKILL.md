@@ -6,15 +6,15 @@ allowed-tools: Bash(git:*,gh:*,lsof:*) Read
 
 # Version Control
 
-`<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`). Never edit, switch or stash the main checkout `<root>`; work in a worktree under `<root>/.worktrees/`. With a board (lanes.json `project`), move cards with `gh project item-edit`.
+`<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`). Never edit, switch or stash the main checkout `<root>` (the first entry of `git worktree list`). Work in the session's own worktree when the host made one, since hosts block edits outside it; else in a worktree under `<root>/.worktrees/`. In the host's worktree, `git switch` to the task's branch; a branch checks out in one worktree only, so first remove the worktree holding it when clean and `lsof -a -d cwd +D <worktree>` exits 1; else return `blocked by <worktree>`. With a board (lanes.json `project`), move cards with `gh project item-edit`.
 
 ## 1. Start
 
 - Start an issue only when each of your open PRs is ready to merge (phase 5) and shares no files with it; otherwise return `blocked by #<pr>`.
-- Reuse the issue's worktree or unmerged branch; else branch from `origin/<base>`: unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
+- Reuse the issue's unmerged branch, and its worktree unless the host made one for the session; else branch from `origin/<base>`: unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
 - Unattended: add `state:claimed` and comment ``Claimed by an AFK run on `<branch>`.``. Attended: add `state:started`. Card to In progress.
 
-**Exit gate:** on the task's branch, the issue labelled; or `blocked by #<pr>`.
+**Exit gate:** on the task's branch, the issue labelled; or `blocked by #<pr>` or `<worktree>`.
 
 ## 2. Commit
 
