@@ -70,6 +70,6 @@ Then invoke the `afk` skill by name. The owner is away: park instead of asking. 
 switch, pull, reset or stash this checkout: it may hold the owner's work.
 ```
 
-- With `agentReview`, schedule a prompt opening with `/<plugin>:agent-review` (only a leading slash command starts it) naming the repository, how to wake the runner and any legacy review marker. One task may run both: that line, then the AFK prompt above, waking no runner. Keep its prompt and installer in the repository.
+- With `agentReview`, schedule a task invoking `agent-review`, naming the repository, how to wake the runner and any legacy review marker. One task may run both: that pass waking no runner, then the AFK prompt above. Keep its prompt and installer in the repository.
 - An orchestrating session may instead start one session per run with the AFK prompt naming the issue; runs in one checkout never overlap, so it starts the next only after the last one ends.
 - Approve its tool prompts on the first run.

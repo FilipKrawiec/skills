@@ -1,7 +1,6 @@
 ---
 name: agent-review
-description: One scheduled review pass over open PRs where lanes.json turns on agentReview; started by a scheduled task's leading slash command.
-disable-model-invocation: true
+description: Use when a scheduled task asks for one unattended review pass over open PRs, in a repository whose .github/lanes.json turns on agentReview. Never for an owner's own interactive review.
 allowed-tools: Skill Read Bash(git:*,gh:*)
 ---
 
