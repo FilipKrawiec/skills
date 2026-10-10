@@ -6,7 +6,7 @@ allowed-tools: Skill Read Bash(gh:*,git:*)
 
 # Plan (03)
 
-Write a plan, grounded in the repository, that execution follows without re-planning. Unless the issue carries `state:claimed` or `state:started`, first invoke `vcs` to start it.
+Write a plan execution follows without re-planning. Unless the issue carries `state:claimed` or `state:started`, first invoke `vcs` to start it.
 
 **Unattended:** the same phases; `lane:afk` stands in for approval, and a park replaces every question: replace `lane:afk` and `state:*` with `lane:owner`, and comment the question, options and recommendation in ≤ 5 lines.
 
@@ -20,8 +20,8 @@ Read the issue, its acceptance criteria, scope packet, parent and linked decisio
 
 - Files to change, inside the scope packet when there is one.
 - Per acceptance criterion, the failing test that proves it.
-- Ordered steps, each small and verifiable.
-- Risks and assumptions that could send the work back to `spec`.
+- Ordered steps, each verifiable.
+- Risks that could send the work back to `spec`.
 
 A path outside the scope packet, a path `.github/CODEOWNERS` or lanes.json `ownerPaths` gives the owner, or an ambiguous criterion stops the plan: unattended, park; attended, remove `state:started` (with a board, card to Todo) and invoke `spec`.
 
@@ -31,7 +31,7 @@ A path outside the scope packet, a path `.github/CODEOWNERS` or lanes.json `owne
 
 - Attended: show the draft; wait for approval or changes.
 - Post it as one issue comment headed `## Plan` only in `lane:afk` or when the work may outlive the session.
-- When resuming or departing from it, edit that comment in place: `gh api -X PATCH repos/<owner/repo>/issues/comments/<id> -F body=@<file>` (`<id>` follows `#issuecomment-` in its url from `gh issue view <N> --json comments`). Never `gh issue comment --edit-last`; it may hit another session's comment.
+- When resuming or departing from it, edit that comment in place by its id (`gh api -X PATCH`). Never `gh issue comment --edit-last`; it may hit another session's comment.
 
 **Exit gate:** the `## Plan` comment link, or the owner's approval in the session.
 
