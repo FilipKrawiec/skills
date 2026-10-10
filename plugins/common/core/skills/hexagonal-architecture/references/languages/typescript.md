@@ -1,7 +1,5 @@
 # TypeScript
 
-No framework is prescribed: use the codebase's.
-
 ## Layout
 
 - `src/<context>/{domain,app,api,infra}/`; in a monorepo, `@project/<context>-domain` depends on no app, api, infra or framework package.
@@ -25,4 +23,4 @@ No framework is prescribed: use the codebase's.
 
 ## Tests
 
-- Domain tests import pure functions and boot no container. Doubles: `tdd`'s JavaScript profile.
+- Domain tests import pure functions and boot no container.

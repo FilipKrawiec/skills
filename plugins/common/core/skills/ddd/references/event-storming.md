@@ -17,4 +17,3 @@ In `docs/event-storming.md` keep the timeline and a coverage table with one row 
 - Events are facts, not commands, intentions or UI actions.
 - Boundaries follow language and ownership, not teams, services, tables or queues.
 - No component per event; add a policy, integration or read model only when the flow needs one.
-- Afterwards, update `docs/context.md`, `docs/context-map.md` and the aggregate and event models.

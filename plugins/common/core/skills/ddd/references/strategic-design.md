@@ -1,6 +1,5 @@
 # Strategic Design
 
-- Fix context boundaries, language and core model before integration, framework or schema choices.
 - A term with two meanings ("Account" as login vs. ledger) means two contexts.
 - Translate foreign DTOs only in adapters: inbound adapters map to commands, outbound adapters map to schemas or external DTOs. Foreign contracts never reach application or domain.
 

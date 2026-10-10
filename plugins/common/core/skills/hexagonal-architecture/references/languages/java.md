@@ -1,7 +1,5 @@
 # Java
 
-No framework is prescribed: use the codebase's.
-
 ## Layout
 
 - Packages `com.example.<context>.{domain,application,api,infrastructure}`; enforce direction with ArchUnit or modules.
