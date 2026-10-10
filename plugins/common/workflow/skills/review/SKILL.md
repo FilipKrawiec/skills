@@ -14,7 +14,7 @@ Review on two axes, A Standards and B Spec; report only what gates miss. For a w
 - **Major** (`REQUEST_CHANGES` when the diff introduces it): smell likely to cause a defect or rework soon.
 - **Minor** (`APPROVED`, as suggestions): style, naming, optional refactor.
 
-*Blocking* means `REQUEST_CHANGES`. Before the PR opens, fix every finding, Minors included, and re-review; after, Minors never hold it. Ask the owner what needs an owner decision.
+*Blocking* means `REQUEST_CHANGES`. Fix every finding with a clear fix, Minors included, even after the PR opens, then re-review; ask the owner about the rest.
 
 ## 1. Scope
 
