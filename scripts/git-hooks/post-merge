@@ -19,12 +19,6 @@ if [[ "${CURRENT_BRANCH}" == "main" ]]; then
       rm -rf "${target_dir}/${pkg}"
       cp -r "$dir" "${target_dir}/${pkg}"
     done
-    for dir in "${REPO_ROOT}"/plugins/agy/*; do
-      [ -d "$dir" ] || continue
-      pkg="filipkrawiec-agy-$(basename "$dir")"
-      rm -rf "${target_dir}/${pkg}"
-      cp -r "$dir" "${target_dir}/${pkg}"
-    done
     echo "Refreshed local plugin installations."
   fi
 fi

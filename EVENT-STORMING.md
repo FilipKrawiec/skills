@@ -2,7 +2,7 @@
 
 ## Scope
 
-The release of the repository's common and Antigravity-native plugins from a `main` commit. The goal is one compatible plugin set, identified by one annotated Git tag, cut by the owner with `just release` (`scripts/release.py`) and published by `.github/workflows/release.yml`.
+The release of the repository's common plugins from a `main` commit. The goal is one compatible plugin set, identified by one annotated Git tag, cut by the owner with `just release` (`scripts/release.py`) and published by `.github/workflows/release.yml`.
 
 ## Timeline
 

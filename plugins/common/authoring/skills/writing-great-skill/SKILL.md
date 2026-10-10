@@ -20,7 +20,7 @@ A skill is a system-prompt fragment: direct orders to an agent that already know
 
 - **Self-contained:** everything a run always needs lives in `SKILL.md`. If every run would read a file, inline it.
 - **References hold optional branches only:** detail some runs skip (one language, one test level, one setup task), pointed to as "Read `<file>` when <condition>" with conditions that do not overlap. Never make loading a reference a step or an exit gate.
-- **No shared or injected procedures:** no package-shared reference files and no session hooks that inject rules; hooks are host-specific and shared files go unread. A host overlay (`plugins/<agent>/`) carries host mechanics only, never a skill's procedure.
+- **No shared or injected procedures:** no package-shared reference files and no session hooks that inject rules; hooks are host-specific and shared files go unread.
 - **One owner per procedure:** a procedure two skills use lives in the skill that performs it, because invocation loads a skill and a "see X" pointer loads nothing. The caller writes the step as "Invoke `<skill>` to <intent>"; the owner's Steps branch on that intent. When the owner cannot branch that way, the procedure becomes its own skill. A rule of one or two lines, such as an output envelope, is repeated in each skill that uses it.
 - **Define terms where they are used:** a name coined in another file ("Merge gate", "Issue steps") means nothing to an agent that has not read it. State the step, or invoke the skill that owns it.
 
@@ -35,7 +35,7 @@ A skill is a system-prompt fragment: direct orders to an agent that already know
 - **Examples:** one good/bad pair beats a paragraph.
 - **Output:** every phase that talks to a human or agent gets an envelope, written out in that skill: its fields and a line limit.
 - **Calls:** at most two deep, no cycles; a callee returns its exit gate.
-- **Names:** say "agent", "AI" or "host"; product names only in host overlays (`plugins/<agent>/`). Directories and references are lowercase kebab-case; scripts in `scripts/` run non-interactively.
+- **Names:** say "agent", "AI" or "host", never a product name. Directories and references are lowercase kebab-case; scripts in `scripts/` run non-interactively.
 
 ## Example
 

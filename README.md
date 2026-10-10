@@ -20,7 +20,6 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  ┌─────────────────────────────────────────────────────────────────────────────┐
  │                            PLUGIN ECOSYSTEM                                 │
  │  plugins/common/*   Canonical Portable Plugins (Cross-Agent)                 │
- │  plugins/agy/*      Antigravity-Native UI & Artifact Overlays               │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
@@ -141,7 +140,7 @@ codex plugin add filipkrawiec-authoring@filipkrawiec
 
 ### Antigravity (`agy`)
 
-Link common packages and native overlays directly into Antigravity IDE:
+Link the common packages directly into Antigravity IDE:
 
 ```bash
 just link-agy

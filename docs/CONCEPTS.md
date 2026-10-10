@@ -6,14 +6,13 @@ This document provides a comprehensive guide to the architectural design, core c
 
 ## 1. Core Philosophy & Principles
 
-The `skills` repository is designed around six foundational principles:
+The `skills` repository is designed around five foundational principles:
 
 1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
 2. **System-Prompt Style under Word Budgets**: Skills are direct orders to an agent, one rule per bullet, numbered phases with checkable exit gates, and nothing the agent would do untold. The validator enforces budgets: description ≤ 300 characters, `SKILL.md` body ≤ 800 words, reference ≤ 600.
 3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
 4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for direct changes alongside the Delivery Cycle (`spec` ➔ `plan` ➔ `tdd` ➔ `review` ➔ `ship` ➔ `improve`) for tracked work, attended or AFK.
 5. **Deterministic Verification**: AI agents validate all work against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
-6. **Hierarchical Overlay Architecture**: Base capabilities are defined in common, provider-neutral plugins (`plugins/common/*`), while agent-specific enhancements (such as Antigravity interactive artifacts) are layered on top via native overlays (`plugins/agy/*`).
 
 ---
 
@@ -48,24 +47,19 @@ plugins/common/<package>/skills/<skill-name>/
 
 ---
 
-## 3. Plugin Packaging & Overlay System
+## 3. Plugin Packaging
 
 Skills are grouped into **plugins** for distribution and host discovery.
 
 ```
 plugins/
-├── common/                  # Canonical portable plugins (Cross-Agent)
-│   ├── core/                # DDD, Hexagonal Architecture
-│   ├── workflow/            # The delivery cycle: spec, plan, tdd, vcs, review, ship, improve, afk, agent-review
-│   └── authoring/           # Writing Great Skill
-└── agy/                     # Antigravity-Native Overlay Plugins
-    └── core/                # Reference resolution & interactive artifact review rules
+└── common/                  # Canonical portable plugins (Cross-Agent)
+    ├── core/                # DDD, Hexagonal Architecture
+    ├── workflow/            # The delivery cycle: spec, plan, tdd, vcs, review, ship, improve, afk, agent-review
+    └── authoring/           # Writing Great Skill
 ```
 
-### Common vs. Overlay Plugins
-
-* **Common Plugins (`plugins/common/*`)**: Fully portable skills formatted in standard YAML and Markdown. They run on any host harness (Claude Code, Codex, Antigravity, custom agents) without requiring host-specific code.
-* **Agent Overlays (`plugins/<agent>/*`)**: Progressive enhancements tailored to specific host capabilities. For example, `plugins/agy/` overlays Antigravity-native Artifact workflows with interactive UI review buttons.
+Common plugins hold fully portable skills in standard YAML and Markdown. They run on any host harness (Claude Code, Codex, Antigravity, custom agents) without host-specific code; each host reads its generated manifest beside them.
 
 ---
 

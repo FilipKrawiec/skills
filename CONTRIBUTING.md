@@ -53,7 +53,7 @@ plugins/common/<package>/skills/<skill-name>/
 
 ---
 
-## 3. Plugin Manifests & Overlay Architecture
+## 3. Plugin Manifests
 
 Each common package describes itself once, in `package-metadata.json`; `just sync-manifests` (`python3 scripts/validate-plugin-definitions.py --sync`) generates `plugin.json`, `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json` and both marketplace catalogs from it, and the validator fails when they drift.
 
@@ -68,9 +68,6 @@ Each common package describes itself once, in `package-metadata.json`; `just syn
 ```
 
 The host manifests point at the skills directory (`"skills": "./skills/"`); every skill under it is included.
-
-* **Common Packages (`plugins/common/*`)**: Portable base plugins without framework-specific GUI code.
-* **Agent Overlays (`plugins/<agent>/*`)**: Native overlays providing custom host UX (e.g. Antigravity UI proceed buttons in `plugins/agy/`).
 
 ---
 
@@ -106,7 +103,7 @@ just link-agy          # Symlink plugins to ~/.gemini/config/plugins
 
 ## 5. Release & Versioning Procedure
 
-Every common package and agent overlay shares a unified repository-wide release version defined by an annotated Git tag (`v<semver>`).
+Every common package shares a unified repository-wide release version defined by an annotated Git tag (`v<semver>`).
 
 ### Owner Release
 

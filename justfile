@@ -52,12 +52,6 @@ install-agy:
       rm -rf "${target_dir}/${pkg}"
       cp -r "$dir" "${target_dir}/${pkg}"
     done
-    for dir in plugins/agy/*; do
-      [ -d "$dir" ] || continue
-      pkg="filipkrawiec-agy-$(basename "$dir")"
-      rm -rf "${target_dir}/${pkg}"
-      cp -r "$dir" "${target_dir}/${pkg}"
-    done
     # Implicitly install SDLC and sibling devcontainer plugins if available
     for devws in "${DEVCONTAINER_ROOT:-}" "${repo_root}/../devcontainer" "$HOME/Developer/github.com/FilipKrawiec/devcontainer" "/projects/github.com/FilipKrawiec/devcontainer"; do
       if [ -n "$devws" ] && [ -d "$devws/plugins" ]; then
@@ -83,12 +77,6 @@ link-agy:
     for dir in plugins/common/*; do
       [ -d "$dir" ] || continue
       pkg="filipkrawiec-$(basename "$dir")"
-      rm -rf "${target_dir}/${pkg}"
-      ln -s "${repo_root}/${dir}" "${target_dir}/${pkg}"
-    done
-    for dir in plugins/agy/*; do
-      [ -d "$dir" ] || continue
-      pkg="filipkrawiec-agy-$(basename "$dir")"
       rm -rf "${target_dir}/${pkg}"
       ln -s "${repo_root}/${dir}" "${target_dir}/${pkg}"
     done
