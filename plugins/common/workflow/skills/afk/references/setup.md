@@ -67,7 +67,7 @@ Preflight, stop and report on any failure:
 3. With a board in lanes.json, `gh project view <number> --owner <owner>`
    succeeds; otherwise the token lacks the `project` scope, so stop.
 Then invoke the `afk` skill by name. The owner is away: park instead of asking. Never
-switch, pull, reset or stash this checkout: it may hold the owner's work.
+switch, pull, reset or stash the main checkout: it may hold the owner's work.
 ```
 
 - With `agentReview`, schedule a task invoking `agent-review`, naming the repository, how to wake the runner and any legacy review marker. One task may run both: that pass waking no runner, then the AFK prompt above. Keep its prompt and installer in the repository.
