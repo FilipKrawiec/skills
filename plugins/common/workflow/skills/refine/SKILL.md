@@ -29,7 +29,7 @@ For each item, take the first matching case:
 - Read comments before repeating a question. Historical bot recommendations are not owner approval.
 - Trace dependencies through open and closed items. Remove obsolete prerequisites only when their responsibility is gone; retain completed prerequisite evidence. Detect cycles, missing prerequisites and shared-file races. State which slice owns shared edits and their merge order.
 - Separate first-delivery criteria from explicitly deferred work. An epic's old summary must not reintroduce a deferred slice as a gate.
-- Check that scope covers every criterion, including tests, locales, model changes and required documentation; account for project-wide scope allowances. An empty packet cannot authorize edits. Record protected paths and required owner actions visibly.
+- Check the scope packet covers every criterion, including tests, locales, model changes and required documentation; account for project-wide allowances. An empty packet cannot authorize edits. Record protected paths and owner actions visibly. Check whether the base deleted a packet path; if so, confirm the outcome still holds before asking the owner.
 
 **Exit gate:** each item has a disposition and each cross-item conflict has a correction or a visible blocker.
 
