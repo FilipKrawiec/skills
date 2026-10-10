@@ -1,23 +1,25 @@
 ---
 name: vcs
-description: Use when committing, branching, rebasing, pushing or moving files with Git.
-allowed-tools: Bash(git:*,gh:*) Read
+description: Use when starting work on an issue, committing, branching, rebasing, pushing, opening a PR or getting a PR ready to merge.
+allowed-tools: Bash(git:*,gh:*,lsof:*) Read
 ---
 
 # Version Control
 
-Worktrees, branch names, opening the PR, the Merge gate and cleanup follow [board.md](../../references/board.md)'s Issue steps. Outside the issue cycle, name branches `<category>/<description>` (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
+`<repo>` (`owner/name`), `<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`); `<root>` is the main checkout. Never edit, switch or stash `<root>`; work in a worktree. With a board (lanes.json `project`), move cards with `gh project item-edit`.
 
-## 1. Preflight
+## 1. Start
 
-Run `git status --short --branch`; work in the task's worktree and leave the session's starting checkout as it is.
+- Hold one unfinished PR: start an issue only when each of your open PRs is ready to merge (phase 6) and shares no files with it; otherwise stop and return `blocked by #<pr>`. Merge dependent changes in order.
+- Unless already on the task's branch: `git fetch origin <base>`; reuse the issue's worktree, or `git switch <branch>` to its unmerged `<branchPrefix><N>-*` branch; else `git worktree add <root>/.worktrees/<N>-<slug> -b <branch> origin/<base>`, or, when the host gave the session a clean worktree, `git switch -c <branch> origin/<base>` there.
+- Branch: unattended `<branchPrefix><N>-<slug>`; attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
+- For an issue: unattended, add `state:claimed` and comment ``Claimed by an AFK run on `<branch>`.``; attended, add `state:started`. Card to In progress.
 
-**Exit gate:** you are in the task's worktree on its branch.
+**Exit gate:** `git status --short --branch` shows the task's branch, and the issue carries its `state:` label; or `blocked by #<pr>`.
 
 ## 2. Stage
 
-- `git add <paths>` for files the task changed only; leave unrelated user changes unstaged.
-- Move with `git mv`, delete with `git rm`.
+- `git add <paths>` the task changed only; leave unrelated changes unstaged. Move with `git mv`, delete with `git rm`.
 - Read `git diff --staged`.
 
 **Exit gate:** the staged diff holds only task changes.
@@ -25,22 +27,44 @@ Run `git status --short --branch`; work in the task's worktree and leave the ses
 ## 3. Commit
 
 - One Conventional Commit per green slice: `<type>[(<scope>)][!]: <imperative description>`; pair `!` with a `BREAKING CHANGE:` footer.
-- `wip:` commits stay local; squash them before the PR opens.
-- For review feedback on an open PR, add a commit, then settle its thread per the Merge gate's step 2.
+- Squash `wip:` commits before the PR opens.
 
-**Exit gate and output:** one line, `📦 <short-sha> <type>: <description>`.
+**Exit gate and output:** `📦 <short-sha> <type>: <description>`.
 
-## 4. Sync and push
+## 4. Push
 
-- Before the PR opens: `git fetch origin && git rebase origin/<base>`. Once open: `git merge origin/<base>`, never rebase. Rerun required checks after resolving conflicts.
-- Push and run `gh` as the implementer machine user, as the host's setup says: an HTTPS remote whose credential helper and `GH_TOKEN` hold its token. Never push over SSH, which pushes as the key's owner; never print a token.
-- `git push -u origin <branch>`; after a rebase, `--force-with-lease`.
-- After every push to an open PR, run board.md's Merge gate.
+- Before the PR opens: `git fetch origin && git rebase origin/<base>`, then push with `--force-with-lease`. Once it is open: `git merge origin/<base>`, never rebase. Rerun required checks after resolving conflicts.
+- Push and run `gh` as the implementer machine user the host set up: an HTTPS remote whose credential helper and `GH_TOKEN` hold its token. Never push over SSH, which pushes as the key's owner; never print a token.
 
-**Exit gate:** the branch is pushed and the Merge gate's output is in hand.
+**Exit gate:** `git push -u origin <branch>` exits 0.
 
-## Merge Authority
+## 5. Open the PR
 
-Commit, push task branches and open or update PRs freely. Merge, approve, or force-push a protected or default branch only on the owner's explicit word; branch protection and CODEOWNERS enforce it on GitHub (afk's `github-safety.md`). Auto-merge on your own PR (board.md's Open PR) is allowed: it lands only on the required approval.
+- `gh pr create`, ready, never a draft. For an issue: its title; body `Closes #<N>`, the `## Plan` link, the review verdict with its fixing commits, checks run, before and after captures of visible changes. For a revert: the given title; body `Reverts #<M>` and the failing checks, never `Closes`.
+- List each finding left unfixed under Decision; on the owner's yes, open it as a linked `lane:owner` issue.
+- `gh pr merge <pr> --squash --auto`: it lands on the required approval. Remove `state:claimed` or `state:started`.
 
-- Never dispatch workflows, create, edit or delete releases, write secrets or variables, or delete branches, tags or repositories other than your own merged head; GitHub does not stop all of these.
+**Exit gate:** the PR URL with auto-merge on.
+
+## 6. Ready to merge
+
+Run after every push to an open PR, when `<base>` moves, and before calling a PR ready.
+
+1. Blockers: draft; failing checks; `CONFLICTING`, `DIRTY` or `BEHIND`; an unresolved thread; `CHANGES_REQUESTED`. Read them with `gh pr view <pr> --json isDraft,mergeable,mergeStateStatus,reviewDecision`, `gh pr checks <pr>` and `gh api graphql -f query='{repository(owner:"<owner>",name:"<name>"){pullRequest(number:<pr>){reviewThreads(first:100){nodes{isResolved path line comments(first:1){nodes{author{login} body}}}}}}}'`.
+2. Fix every review finding with a clear fix, optional ones too, and reply on its thread naming the commit. Then dispatch a fresh-context worker with no implementation context: it never edits or pushes, resolves the threads it confirms fixed and hands the rest back. A person's threads stay theirs; name each to the owner.
+3. Fix failing checks and conflicts (`git merge origin/<base>`), push, and start again at 1.
+
+**Exit gate:** no blocker but pending checks or the required approval.
+
+**Output:** ≤ 5 lines. **Summary:** the PR and its blockers, or "ready". **Decision:** approve or merge it, or "Nothing needed." while blockers remain.
+
+## 7. Tidy
+
+Remove other `<branchPrefix>` worktrees and branches whose PR merged or closed, when the worktree is clean and `lsof -a -d cwd +D <worktree>` exits 1.
+
+**Exit gate:** `git worktree list` shows no such worktree.
+
+## Authority
+
+- Merge, approve, or force-push a protected or default branch only on the owner's explicit word.
+- Never dispatch workflows, create, edit or delete releases, write secrets or variables, or delete branches, tags or repositories other than your own merged head.

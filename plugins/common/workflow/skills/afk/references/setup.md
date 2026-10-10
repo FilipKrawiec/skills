@@ -33,7 +33,7 @@ Its presence opts the repository in; agents read it from the base branch themsel
 
 ## Board
 
-- Status: the five columns in [board.md](../../../references/board.md); single-select Priority (P0, P1, P2). Existing board: add options, move every card, delete old options.
+- Status columns Backlog, Todo, In progress, Review, Done; single-select Priority (P0, P1, P2). Existing board: add options, move every card, delete old options.
 - `gh auth refresh -s project`.
 - Workflows: Auto-add (`is:issue`); Item added → Backlog; PR linked → Review; closed → Done; reopened → Todo.
 - Views, first is default:
@@ -52,7 +52,7 @@ Its presence opts the repository in; agents read it from the base branch themsel
 | `lane:owner` | Needs the owner. |
 | `state:claimed`, `state:started` | An AFK run, or another session, is on it. |
 | `review:owner` | PR for the owner; `agent-review` withholds approval. |
-| `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue (board.md's Issue types). |
+| `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue. |
 
 ## Unattended runs
 

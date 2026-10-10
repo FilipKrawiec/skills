@@ -10,11 +10,10 @@ Reusing the vocabulary of an existing `docs/context.md` needs no skill; use this
 
 ## Steps
 
-1. Read the one reference below that matches the task. **Exit gate:** it is loaded.
-2. For a new business workflow or bounded context, run EventStorming before choosing aggregates or components; record it in `docs/event-storming.md`. **Exit gate:** every in-scope event has an owner in the coverage table.
-3. Challenge ambiguous terms against domain experts and the code; record each resolved term in `docs/context.md` in business language only. **Exit gate:** each term the change uses has one glossary entry.
-4. Partition into bounded contexts using event ownership, invariants and policy handoffs as evidence. Record each integration in `docs/context-map.md` with a named relationship, and classify any sharing as Shared Kernel, Published Language/ACL, layer-specific technical reuse or local duplication. **Exit gate:** each integration has a named relationship.
-5. Derive responsibilities from the event flow: aggregates own invariant-bearing decisions, application services handle commands, policies react to events, and each aggregate has one creation entry. Type every entity attribute, domain method parameter and event payload as a Value Object, encoded as the `hexagonal-architecture` language profile prescribes (the profile wins on encoding). **Exit gate:** no raw `String`, `double`, `int` or UUID on a public domain signature.
+1. For a new business workflow or bounded context, run EventStorming before choosing aggregates or components; record it in `docs/event-storming.md`. **Exit gate:** every in-scope event has an owner in the coverage table.
+2. Challenge ambiguous terms against domain experts and the code; record each resolved term in `docs/context.md` in business language only. **Exit gate:** each term the change uses has one glossary entry.
+3. Partition into bounded contexts using event ownership, invariants and policy handoffs as evidence. Record each integration in `docs/context-map.md` with a named relationship, and classify any sharing as Shared Kernel, Published Language/ACL, layer-specific technical reuse or local duplication. **Exit gate:** each integration has a named relationship.
+4. Derive responsibilities from the event flow: aggregates own invariant-bearing decisions, application services handle commands, policies react to events, and each aggregate has one creation entry. Type every entity attribute, domain method parameter and event payload as a Value Object. **Exit gate:** no raw `String`, `double`, `int` or UUID on a public domain signature.
 
 ## Context Pointers
 
