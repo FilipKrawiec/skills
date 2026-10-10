@@ -1,6 +1,6 @@
 ---
 name: afk
-description: One unattended run of the delivery cycle for a repository with .github/lanes.json; invoked by name from a scheduled task.
+description: One unattended run of the delivery cycle in a repository with .github/lanes.json; run by a scheduled task.
 disable-model-invocation: true
 allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 ---

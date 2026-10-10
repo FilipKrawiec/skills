@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Use when an issue is specified and needs its implementation plan before code changes (03 Plan), or when resuming work from a posted plan.
+description: Use when a specified issue needs an implementation plan before code, or work resumes from a posted plan.
 allowed-tools: Skill Read Bash(gh:*,git:*)
 ---
 

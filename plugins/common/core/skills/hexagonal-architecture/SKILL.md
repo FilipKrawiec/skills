@@ -1,6 +1,6 @@
 ---
 name: hexagonal-architecture
-description: Use when designing or placing code across API, application, domain and infrastructure layers, or defining ports and adapters.
+description: Use when placing code across API, application, domain and infrastructure layers, or defining ports and adapters.
 allowed-tools: Read
 ---
 

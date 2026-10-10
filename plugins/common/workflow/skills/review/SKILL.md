@@ -1,6 +1,6 @@
 ---
 name: review
-description: Use when auditing a diff, branch, PR, staged changes, or a whole codebase or area, for architectural boundary breaches, runtime defects, design smells and test rigor.
+description: Use when reviewing a diff, branch or PR, or auditing a codebase area, for defects, design smells and test rigor.
 allowed-tools: Skill Read Bash(git:*)
 ---
 

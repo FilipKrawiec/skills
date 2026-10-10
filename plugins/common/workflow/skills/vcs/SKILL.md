@@ -1,6 +1,6 @@
 ---
 name: vcs
-description: Use when starting work on an issue, committing, branching, rebasing, pushing, opening a PR or getting a PR ready to merge.
+description: Use when starting an issue, committing, branching, pushing, opening a PR or making a PR ready to merge.
 allowed-tools: Bash(git:*,gh:*,lsof:*) Read
 ---
 

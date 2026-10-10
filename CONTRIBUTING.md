@@ -36,7 +36,7 @@ plugins/common/<package>/skills/<skill-name>/
 
 ### Step 2: Crafting `SKILL.md`
 
-1. **YAML Frontmatter**: `description` starts with "Use when" and stays within 300 characters; the body stays within 800 words and each reference within 600; `allowed-tools` is required.
+1. **YAML Frontmatter**: `description` starts with "Use when" and stays within 120 characters; the body stays within 800 words and each reference within 600; `allowed-tools` is required.
    ```yaml
    ---
    name: example-skill

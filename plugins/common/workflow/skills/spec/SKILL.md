@@ -1,6 +1,6 @@
 ---
 name: spec
-description: Use when a need or bug report should become a GitHub issue, an issue needs acceptance criteria or a lane (01 Define, 02 Spec), or issues need triage into lanes or tidying into the standard issue form.
+description: Use when a need or bug should become a GitHub issue with acceptance criteria and a lane, or issues need triage.
 allowed-tools: Read Bash(gh:*,git:*)
 ---
 

@@ -104,12 +104,12 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
                 v.validate_skill_spec(skill_dir)
             self.assertIn("description must begin with 'Use when...'", str(ctx.exception))
 
-            # Rejects description > 300 chars
-            long_desc = "Use when " + ("x" * 300)
+            # Rejects description > 120 chars
+            long_desc = "Use when " + ("x" * 120)
             skill_file.write_text(f"---\nname: sample-skill\ndescription: {long_desc}\nallowed-tools: Read\n---\n", encoding="utf-8")
             with self.assertRaises(v.ValidationError) as ctx:
                 v.validate_skill_spec(skill_dir)
-            self.assertIn("description exceeds 300 characters", str(ctx.exception))
+            self.assertIn("description exceeds 120 characters", str(ctx.exception))
 
             # Rejects a body over 800 words
             skill_file.write_text("---\nname: sample-skill\ndescription: Use when testing.\nallowed-tools: Read\n---\n" + "word " * 801, encoding="utf-8")

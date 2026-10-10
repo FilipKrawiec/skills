@@ -1,6 +1,6 @@
 ---
 name: ddd
-description: Use when modeling a business domain, meaning its language, bounded contexts, aggregates, entities, value objects, repositories or domain events.
+description: Use when modeling a business domain: bounded contexts, aggregates, entities, value objects or domain events.
 allowed-tools: Read Edit
 ---
 

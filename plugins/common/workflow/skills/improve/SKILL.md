@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Use when a change has shipped (07 Improve) or friction, rework or a repeated review finding should become a lasting change to skills, agent rules or docs.
+description: Use when friction, rework or a repeated review finding should become a change to skills, agent rules or docs.
 allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,python3:*,just:*)
 ---
 

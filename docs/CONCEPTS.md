@@ -9,7 +9,7 @@ This document provides a comprehensive guide to the architectural design, core c
 The `skills` repository is designed around six foundational principles:
 
 1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
-2. **System-Prompt Style under Word Budgets**: Skills are direct orders to an agent, one rule per bullet, numbered phases with checkable exit gates, and nothing the agent would do untold. The validator enforces budgets: description ≤ 300 characters, `SKILL.md` body ≤ 800 words, reference ≤ 600.
+2. **System-Prompt Style under Word Budgets**: Skills are direct orders to an agent, one rule per bullet, numbered phases with checkable exit gates, and nothing the agent would do untold. The validator enforces budgets: description ≤ 120 characters, `SKILL.md` body ≤ 800 words, reference ≤ 600.
 3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
 4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for direct changes alongside the Delivery Cycle (`spec` ➔ `plan` ➔ `tdd` ➔ `review` ➔ `ship` ➔ `improve`) for tracked work, attended or AFK.
 5. **Deterministic Verification**: AI agents validate all work against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
@@ -40,7 +40,7 @@ plugins/common/<package>/skills/<skill-name>/
   ---
   ```
   For human-triggered workflows, add `disable-model-invocation: true`.
-* **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent, and specify clear trigger boundaries within 300 characters.
+* **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent, and name the user intents within 120 characters, because every session loads every description.
 * **Phase Sequencing**: Steps are numbered phases, each ending in an exit gate the agent can check (a command's exit code, a file, a label, a PR or CI state).
 * **Explicit Output Envelopes**: Every phase defines the exact compact Markdown template the agent should emit, preventing conversational wandering.
 * **Universal ASCII Diagram Standard**: Uses clean ASCII/Unicode box diagrams and Markdown tables; Mermaid code blocks are prohibited to guarantee rendering across all editor environments.
