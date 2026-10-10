@@ -49,7 +49,7 @@ Pass the verify gate (the project's `verify` task) before each push. Push over H
 
 - For a revert: title `revert: <subject>`; body `Reverts #<M>` and the failing checks, never `Closes`, which would close the reverted issue.
 - List unfixed findings under Decision; open one as a `lane:owner` issue only on the owner's yes.
-- `gh pr merge --squash --auto`; remove the `state:` label.
+- Every PR, attended or not, revert and lesson PRs too: `gh pr merge <pr> --squash --auto`; auto-merge still waits for required approvals and checks. Remove the `state:` label.
 
 **Exit gate:** the PR URL with auto-merge on.
 

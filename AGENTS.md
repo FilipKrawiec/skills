@@ -83,4 +83,5 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 - Work happens in an isolated worktree on a short-lived branch made from the fetched base branch; the checkout a session starts in stays as it is. The start, open-PR and tidy steps are in `plugins/common/workflow/skills/vcs/SKILL.md`.
 - Before opening a PR, run `review` on the branch as two fresh-context workers (axes A and B), fix every finding, and quote the verdict in the PR body.
 - Committed changes stay within the issue's scope packet when it has one. After verification, an agent pushes the branch and opens or updates the PR that closes the issue (`Closes #<N>`, linking the `## Plan` comment when one was posted).
+- Open every PR ready, never a draft, and turn on squash auto-merge (`gh pr merge <pr> --squash --auto`) at once; it still waits for the required approval and checks.
 - The owner retains merge authority: merging, approving and force-pushing a protected or default branch happen only on the owner's explicit word; for a PR that matches no owner rule, `agent-review`'s approval is that word. GitHub branch protection and CODEOWNERS enforce this, not local hooks.
