@@ -165,8 +165,8 @@ just verify       # unit tests plus the validator; python3 scripts/project-verif
 # Run release version validator
 just release-check
 
-# Owner only: release from an up-to-date main (verifies, bumps, syncs manifests, commits, tags, pushes)
-just release      # owner only: verifies, bumps, tags and pushes main
+# Refresh locally installed plugins after a release
+just refresh
 ```
 
 ---
@@ -178,7 +178,7 @@ Want to add a new skill, update plugin manifests, or prepare a release tag? Read
 ### Release Procedure Summary
 
 * **Pre-merge**: Run `just verify` and open a pull request. This stage does not claim a release tag, published version, or completed release.
-* **Release**: the owner runs `just release` on an up-to-date `main`: it runs `just verify`, refuses unless `main` is clean and level with `origin/main`, computes the semver bump from conventional commits, synchronizes all plugin manifests, commits, tags `v<version>` and pushes the commit and tag atomically past branch protection as admin. The tag push runs `.github/workflows/release.yml`, which publishes the GitHub Release. Agents never release: `main` requires an approved PR and only admins may create `v*` tags.
+* **Release**: merging to `main` releases. Once `verify.yml` passes, `.github/workflows/release.yml` computes the semver bump from conventional commits, synchronizes all plugin manifests, commits, tags `v<version>`, pushes the commit and tag atomically past branch protection with the admin `RELEASE_TOKEN` secret, and publishes the GitHub Release.
 
 ---
 

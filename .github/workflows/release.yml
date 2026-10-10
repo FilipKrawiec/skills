@@ -1,21 +1,52 @@
 name: Release
 
-# The owner cuts a release locally with `just release`, which bumps, tags and pushes as admin.
-# This workflow only publishes the GitHub Release for the pushed tag.
+# Every verified push to main is released: release.py bumps the version from the conventional
+# commits since the last tag, syncs the manifests, commits and tags. RELEASE_TOKEN, an admin's
+# fine-grained token with contents write on this repository, pushes both past main's review rule
+# and the v* tag ruleset. The release commit's own push verifies and finds nothing to release.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: [Verify repository]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
-    name: Publish GitHub Release
+    name: Release main
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Publish
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.11"
+      - name: Bump, commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/release.py
+      - name: Push and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${GITHUB_REF_NAME}" -R "${GITHUB_REPOSITORY}" --verify-tag --generate-notes --title "${GITHUB_REF_NAME}"
+        run: |
+          tag="$(git describe --exact-match --tags HEAD 2>/dev/null || true)"
+          if [ -z "${tag}" ] || git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null; then
+            echo "Nothing to publish."
+            exit 0
+          fi
+          git push --atomic origin HEAD:main "refs/tags/${tag}"
+          gh release create "${tag}" -R "${GITHUB_REPOSITORY}" --verify-tag --generate-notes --title "${tag}"

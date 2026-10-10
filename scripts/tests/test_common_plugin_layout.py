@@ -72,19 +72,23 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("python3 scripts/validate-plugin-definitions.py", workflow)
         self.assertIn("python3 scripts/project-verify.py verify", workflow)
 
-    def test_ci_only_publishes_the_release_of_a_pushed_tag(self) -> None:
+    def test_every_verified_push_to_main_is_released(self) -> None:
         release_wf = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
-        self.assertIn('tags:\n      - "v*"', release_wf)
-        self.assertNotIn("branches:", release_wf)
-        self.assertNotIn("git push", release_wf)
+        self.assertIn("workflows: [Verify repository]", release_wf)
+        self.assertIn("branches: [main]", release_wf)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", release_wf)
+        self.assertIn("github.event.workflow_run.event == 'push'", release_wf)
+        self.assertIn("secrets.RELEASE_TOKEN", release_wf)
+        self.assertIn("python3 scripts/release.py", release_wf)
+        self.assertIn('git push --atomic origin HEAD:main "refs/tags/${tag}"', release_wf)
+        self.assertIn("gh release create", release_wf)
 
-    def test_the_owner_release_verifies_then_pushes_main_and_the_tag_atomically(self) -> None:
+    def test_no_local_recipe_pushes_a_release(self) -> None:
         justfile = (ROOT / "justfile").read_text(encoding="utf-8")
 
-        self.assertIn('release bump="auto": verify\n', justfile)
-        self.assertIn('git push --atomic origin HEAD:main "refs/tags/${tag}"', justfile)
-        self.assertNotIn("--follow-tags", justfile)
+        self.assertNotIn("\nrelease ", justfile)
+        self.assertNotIn("git push", justfile)
 
     def test_all_docs_and_adrs_are_indexed_in_docs_index(self) -> None:
         docs_index = (ROOT / "docs" / "index.md").read_text(encoding="utf-8")
