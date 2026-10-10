@@ -55,7 +55,7 @@ Skills are grouped into **plugins** for distribution and host discovery.
 plugins/
 └── common/                  # Canonical portable plugins (Cross-Agent)
     ├── core/                # DDD, Hexagonal Architecture
-    ├── workflow/            # The delivery cycle: spec, plan, tdd, vcs, review, ship, improve, afk, agent-review
+    ├── workflow/            # The delivery cycle: spec, refine, plan, tdd, vcs, review, ship, improve, afk, agent-review
     └── authoring/           # Writing Great Skill
 ```
 
@@ -106,6 +106,8 @@ GitHub Issues are the only queue. A repository opts in with `.github/lanes.json`
 | `lane:owner` | Needs a decision, credentials, settings or a device | Anyone |
 
 An `afk` run carries the cycle while the owner is away. It first invokes `ship`, which checks the base branch, opens a revert PR when an AFK merge turned it red, and confirms shipped issues. Then it tends its own PRs. It takes at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) through `plan`, `tdd` and a fresh-context `review`, and opens a PR, or parks the issue back to `lane:owner` with one question. It ends by invoking `improve`, which turns a failure seen twice into a PR that waits for the owner's merge. A PR that matches none of the closed list of owner rules merges on the reviewer's approval and green checks; the rest wait for the owner. GitHub is the boundary, not a local hook: agents push and open PRs as an implementer machine user and review as a second, reviewer machine user, and branch protection, CODEOWNERS and token scopes keep merges into the base branch, owner paths, CI workflows, releases and settings with the owner (`skills/afk/references/github-safety.md`). Runs never touch the checkout they start in: queue decisions read the fetched base branch.
+
+`refine` inventories a backlog or project board, reconciles recorded decisions and cross-issue dependencies against the current implementation, invokes `spec` for individual issue changes, and verifies the saved queue. It preserves owner approvals and makes blocked or deferred work visible before an execution run picks an item.
 
 With `agentReview` in lanes.json, `agent-review` reviews every open PR once per head commit, the runner fixes its findings for up to `reviewRounds` rounds, and the reviewer approves and auto-merges a PR it judged ready that matches no owner rule; the others go to the owner with `review:owner`.
 
