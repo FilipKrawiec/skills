@@ -8,6 +8,8 @@ allowed-tools: Skill Read Edit Bash
 
 Run Red-Green-Refactor per behaviour slice; `vcs` commits. Project rules override commands, layout and coverage here. First name the targeted test command and the verify gate (the project's `verify` task).
 
+Executing a `## Plan` step, follow it exactly. When the code contradicts the plan or the step needs a choice the plan does not make, stop and return `stuck: <step>: <what the plan misses>`; never improvise.
+
 ## Phases
 
 ### 1. RED

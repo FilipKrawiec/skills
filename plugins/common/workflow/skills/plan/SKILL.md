@@ -20,12 +20,13 @@ Read the issue, its acceptance criteria, scope packet (its ```` ```scope ```` bl
 
 - Files to change, inside the scope packet when there is one.
 - Per acceptance criterion, the failing test that proves it.
-- Ordered steps, each verifiable.
+- Ordered steps. Each names its file, the types and signatures it adds or changes, its failing test (name and assertion) and the command that proves it, so a fast model executes it without judgment.
+- Decide every choice here; a step saying "choose", "decide" or "if needed" is unfinished.
 - Risks that could send the work back to `spec`.
 
 A path outside the scope packet, a path `.github/CODEOWNERS` or lanes.json `ownerPaths` gives the owner, or an ambiguous criterion stops the plan: unattended, park; attended, remove `state:started` (with a board, card to Todo) and invoke `spec`.
 
-**Exit gate:** a draft inside the scope packet, or a parked or released issue.
+**Exit gate:** a draft inside the scope packet whose every step names file, test and command and leaves no choice, or a parked or released issue.
 
 ## 3. Approve and post
 
