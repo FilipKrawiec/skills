@@ -59,6 +59,10 @@ KNOWN_CORE_SKILLS = {
 }
 
 
+# package-metadata.json fields the Codex manifest carries for its plugin directory.
+CODEX_DISPLAY_FIELDS = ("author", "homepage", "repository", "license", "keywords", "interface")
+
+
 class ValidationError(Exception):
     """Raised when validation fails."""
 
@@ -290,6 +294,9 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
         hooks = manifest.get("hooks")
         if hooks is not None and not (package_root / hooks).is_file():
             fail(f"{rel(manifest_path)} references missing hooks file {hooks}")
+    for field in CODEX_DISPLAY_FIELDS:
+        if codex.get(field) != metadata.get(field):
+            fail(f"{rel(package_root / '.codex-plugin' / 'plugin.json')} must match package {field}")
 
     package_references = package_root / "references"
     if package_references.exists():
@@ -491,6 +498,7 @@ def sync_manifests(root: Path = ROOT) -> None:
             "description": description,
             "version": release_version,
             "skills": "./skills/",
+            **{field: meta_data[field] for field in CODEX_DISPLAY_FIELDS if field in meta_data},
         }
         codex_json.write_text(json.dumps(codex_data, indent=2) + "\n", encoding="utf-8")
         synced_files.append(codex_json)

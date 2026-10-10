@@ -257,6 +257,49 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
             self.assertEqual(len(codex_m["plugins"]), 1)
             self.assertEqual(codex_m["plugins"][0]["name"], "filipkrawiec-testpkg")
 
+    def _codex_display_package(self, tmp_root: Path) -> tuple[Path, dict]:
+        pkg = tmp_root / "plugins" / "common" / "testpkg"
+        (pkg / "skills" / "sample").mkdir(parents=True)
+        (pkg / "skills" / "sample" / "SKILL.md").write_text(
+            "---\nname: sample\ndescription: Use when testing.\nallowed-tools: Read\n---\n", encoding="utf-8"
+        )
+        meta = {
+            "name": "filipkrawiec-testpkg",
+            "version": "1.2.3",
+            "description": "Test package description",
+            "author": {"name": "Owner"},
+            "homepage": "https://example.com/home",
+            "repository": "https://example.com/repo",
+            "license": "UNLICENSED",
+            "keywords": ["skills"],
+            "interface": {"displayName": "Test Package", "defaultPrompt": ["Use sample."]},
+        }
+        (pkg / "package-metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+        return pkg, meta
+
+    def test_sync_manifests_gives_codex_the_package_display_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pkg, meta = self._codex_display_package(Path(tmp_dir))
+
+            v.sync_manifests(Path(tmp_dir))
+
+            codex_json = json.loads((pkg / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+            for field in ("author", "homepage", "repository", "license", "keywords", "interface"):
+                self.assertEqual(codex_json[field], meta[field], field)
+            v.validate_package_metadata(pkg / "package-metadata.json", "filipkrawiec-testpkg")
+
+    def test_validate_package_metadata_rejects_a_codex_manifest_without_the_display_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            pkg, _ = self._codex_display_package(Path(tmp_dir))
+            v.sync_manifests(Path(tmp_dir))
+            codex_path = pkg / ".codex-plugin" / "plugin.json"
+            codex_json = json.loads(codex_path.read_text(encoding="utf-8"))
+            del codex_json["interface"]
+            codex_path.write_text(json.dumps(codex_json), encoding="utf-8")
+
+            with self.assertRaises(v.ValidationError):
+                v.validate_package_metadata(pkg / "package-metadata.json", "filipkrawiec-testpkg")
+
     def test_validate_agy_plugins_subagent_skill_reference_checks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_root = Path(tmp_dir)
