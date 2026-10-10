@@ -1,4 +1,4 @@
-"""Regression checks for directly installable common and agent overlay packages."""
+"""Regression checks for directly installable common packages."""
 
 from __future__ import annotations
 
@@ -38,9 +38,6 @@ class CommonPluginLayoutTests(unittest.TestCase):
             ):
                 versions.add(json.loads(manifest.read_text(encoding="utf-8"))["version"])
 
-        for manifest in (ROOT / "plugins" / "agy").glob("*/plugin.json"):
-            versions.add(json.loads(manifest.read_text(encoding="utf-8"))["version"])
-
         self.assertEqual(versions, {release_version})
 
     def test_common_packages_do_not_contain_agent_native_rules_or_agents(self) -> None:
@@ -53,14 +50,8 @@ class CommonPluginLayoutTests(unittest.TestCase):
 
     def test_retired_orchestration_material_is_absent(self) -> None:
         self.assertFalse((ROOT / "plugins" / "common" / "orchestration").exists())
-        self.assertFalse((ROOT / "plugins" / "agy" / "orchestration").exists())
         self.assertFalse((ROOT / "spec" / "autonomous-sdlc").exists())
         self.assertFalse((ROOT / "archive" / "autonomous-sdlc").exists())
-
-    def test_antigravity_core_overlay_owns_reference_resolution_guidance(self) -> None:
-        overlay = ROOT / "plugins" / "agy" / "core"
-        self.assertTrue((overlay / "plugin.json").is_file())
-        self.assertTrue((overlay / "rules" / "resolve-skill-references.md").is_file())
 
     def test_agent_marketplaces_list_only_their_common_packages(self) -> None:
         claude = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))

@@ -145,11 +145,6 @@ def get_manifest_paths(root: Path) -> list[str]:
             if p.is_file():
                 manifest_paths.append(str(p.relative_to(root)))
 
-    agy_dir = root / "plugins" / "agy"
-    if agy_dir.is_dir():
-        for p in sorted(agy_dir.glob("*/plugin.json")):
-            if p.is_file():
-                manifest_paths.append(str(p.relative_to(root)))
     # sync_manifests rewrites the marketplace catalogs too; a release commits them with the rest.
     for p in (root / ".claude-plugin" / "marketplace.json", root / ".agents" / "plugins" / "marketplace.json"):
         if p.is_file():
@@ -181,14 +176,6 @@ def refresh_environments(root: Path) -> None:
     for dir_path in (root / "plugins" / "common").glob("*"):
         if dir_path.is_dir():
             pkg_name = f"filipkrawiec-{dir_path.name}"
-            dest = target_dir / pkg_name
-            if dest.exists():
-                subprocess.run(["rm", "-rf", str(dest)], check=False)
-            subprocess.run(["cp", "-r", str(dir_path), str(dest)], check=False)
-
-    for dir_path in (root / "plugins" / "agy").glob("*"):
-        if dir_path.is_dir():
-            pkg_name = f"filipkrawiec-agy-{dir_path.name}"
             dest = target_dir / pkg_name
             if dest.exists():
                 subprocess.run(["rm", "-rf", str(dest)], check=False)
