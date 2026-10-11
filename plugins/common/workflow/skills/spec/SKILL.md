@@ -33,6 +33,7 @@ Read the code, tests, agent rules and ADRs until the open decisions are clear; c
 
 ## 3. Grill
 
+- Ask owner clarifications through a permitted native question tool, with options and a recommendation; otherwise use text. Request approval only through a host-permitted mechanism and wait for the owner's answer.
 - Settle each open decision on your recommendation; ask the owner the ones the rule above names, one per round in ≤ 5 lines (question, trade-offs, recommendation).
 - Write answers into the issue: intent, non-goals, and `### Acceptance criteria` each provable by a test or a described render. ADRs only for architectural decisions.
 - More than one PR: one sub-issue per vertical slice under a `type:epic`. Only epics have sub-issues, and they hold all its remaining work; nobody claims or opens a PR for an epic. Slices sharing a file name the one slice owning it.
