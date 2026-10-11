@@ -18,6 +18,7 @@ Read the issue, its acceptance criteria, scope packet (its ```` ```scope ```` bl
 
 ## 2. Draft
 
+- Ask owner clarifications through a permitted native question tool, with options and a recommendation; otherwise use text. Request approval only through a host-permitted mechanism and wait for the owner's answer.
 - Files to change, inside the scope packet when there is one.
 - Per acceptance criterion, the failing test that proves it.
 - Ordered steps. Each names its file, the types and signatures it adds or changes, its failing test (name and assertion) and the command that proves it, so a fast model executes it without judgment.
