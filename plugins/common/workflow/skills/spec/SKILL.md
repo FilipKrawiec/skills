@@ -27,7 +27,7 @@ Skip when the issue exists.
 
 ## 2. Ground
 
-Read the code, tests, agent rules and ADRs until the open decisions are clear; cite each fact's source path.
+Read the code, tests, agent rules and ADRs until the open decisions are clear; cite each fact's source path, including the data a decision names (an id, a stored value), before recording it.
 
 **Exit gate:** verified facts separated from open decisions.
 
