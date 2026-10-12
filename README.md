@@ -27,7 +27,7 @@ This repository works out of the box with **Claude Code**, **Codex**, **Antigrav
  │                            PORTABLE SKILLS                                  │
  │   Core:         ddd, hexagonal-architecture                                 │
  │   Workflow:     spec, refine, plan, tdd, vcs, review, ship, improve,          │
- │                 afk, agent-review                                           │
+ │                 afk, agent-review, explore                                  │
  │   Authoring:    writing-great-skill                                         │
  └─────────────────────────────────────────────────────────────────────────────┘
                                        │
@@ -100,6 +100,7 @@ For full details, read the comprehensive [Concepts & Architecture Guide](docs/CO
 | | [`improve`](plugins/common/workflow/skills/improve/SKILL.md) | Model | 07 Improve: Turn a failure seen twice into a lesson PR for skills, agent rules, docs or assets. |
 | | [`afk`](plugins/common/workflow/skills/afk/SKILL.md) | User (scheduler invokes by name) | Unattended Delivery: Runs the cycle for one approved issue per run, park-with-a-question, squash auto-merge, housekeeping. |
 | | [`agent-review`](plugins/common/workflow/skills/agent-review/SKILL.md) | User (scheduler invokes by name) | Agent Review: Review each open PR per head commit, hand critical PRs to the owner, merge reviewed AFK PRs, wake the runner. |
+| | [`explore`](plugins/common/workflow/skills/explore/SKILL.md) | User (scheduler invokes by name) | Explore: Drive the running app on a simulator as one of its personas and file the friction met as proposed issues. |
 | **`filipkrawiec-authoring`** | [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md) | Model | Meta-Skill: Authoring skills as system-prompt orders within word budgets. |
 
 ---
