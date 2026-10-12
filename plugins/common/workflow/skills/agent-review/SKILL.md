@@ -6,9 +6,9 @@ allowed-tools: Skill Read Bash(git:*,gh:*)
 
 # Agent Review
 
-- `owner`, `implementer`, `reviewer`, `reviewRounds` (default 3), `alwaysInScope`, `ownerPaths`, `ownerLabels`, `ownerLines` (default 800): `.github/lanes.json`.
+- `owner`, `implementer`, `reviewer`, `reviewRounds` (default 3), `alwaysInScope`, `ownerPaths`, `ownerLabels`, `ownerLines` (default 800), `reviewQueue`: `.github/lanes.json`.
 - Run every `gh` command as `reviewer`: `GH_TOKEN=$(gh auth token --user <reviewer>) gh ...`; never print the token.
-- Never commit, push or edit. Write to GitHub only reviews, thread replies and resolutions, `review:owner` and auto-merge.
+- Never commit, push or edit. Write to GitHub only reviews, thread replies and resolutions, `review:owner`, auto-merge and the `reviewQueue` issue.
 
 ## 1. Collect
 
@@ -60,14 +60,27 @@ After each APPROVE: `gh pr merge <pr> --squash --auto --match-head-commit <head>
 
 **Exit gate:** auto-merge state per approved PR.
 
-## 5. Wake the runner
+## 5. Queue
+
+With `reviewQueue` (an issue number), keep that issue the owner's one ordered review list: pin it once with `gh issue pin`, then rewrite its body each pass with `gh issue edit <n> --body "<list>"`, which notifies no one. List every open non-draft PR carrying `review:owner`, and the owner's own PRs with blocking findings; first difference wins:
+
+1. Fixes a red `<base>`.
+2. Unblocks more: drafts whose body says `Stacked on #<pr>`, plus open issues it blocks or shares packet paths with.
+3. Its issues' highest board Priority, else `priority:P*` label; none last.
+4. Oldest first.
+
+One line each: `1. #<pr> <title>: <owner rule or finding>; unblocks #<a>, #<b>`. None: "Nothing waits for the owner."
+
+**Exit gate:** the issue body lists this pass's PRs in order.
+
+## 6. Wake the runner
 
 Wake the AFK runner as the caller describes: "Scheduled AFK run." plus AFK PRs needing fixes. Tell the owner after three offline passes. Review PRs the runner reports via phases 2–4.
 
 **Exit gate:** runner woken, the offline count, or the caller runs `afk` itself.
 
-## 6. Report
+## 7. Report
 
-Only when something needs the owner or shipped; ≤ 8 lines. **Summary:** PRs merged; the runner's lesson PRs, linked. **Decision:** PRs for the owner with reason; runner parks and follow-ups; findings raised on two or more PRs, with target file; each with a recommendation.
+Only when something needs the owner or shipped; ≤ 8 lines. **Summary:** PRs merged; the runner's lesson PRs, linked. **Decision:** PRs for the owner with reason, linking the queue; runner parks and follow-ups; findings raised on two or more PRs, with target file; each with a recommendation.
 
 **Exit gate:** sent or nothing to report; scratch worktrees removed.
