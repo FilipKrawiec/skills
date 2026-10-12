@@ -56,7 +56,7 @@ Skills are grouped into **plugins** for distribution and host discovery.
 plugins/
 └── common/                  # Canonical portable plugins (Cross-Agent)
     ├── core/                # DDD, Hexagonal Architecture
-    ├── workflow/            # The delivery cycle: spec, refine, plan, tdd, vcs, review, ship, improve, afk, agent-review
+    ├── workflow/            # The delivery cycle: spec, refine, plan, tdd, vcs, review, ship, improve, afk, agent-review, explore
     └── authoring/           # Writing Great Skill
 ```
 

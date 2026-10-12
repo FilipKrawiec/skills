@@ -12,6 +12,7 @@ active_skills:
   - writing-great-skill
   - afk
   - agent-review
+  - explore
 
 build_tools:
   just:
