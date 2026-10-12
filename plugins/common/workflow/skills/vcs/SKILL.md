@@ -10,8 +10,8 @@ allowed-tools: Bash(git:*,gh:*,lsof:*) Read
 
 ## 1. Start
 
-- Start an issue only when each of your open PRs is ready to merge (phase 5) and shares no files with it; otherwise return `blocked by #<pr>`.
-- Reuse the issue's unmerged branch, and its worktree unless the host made one for the session; else branch from `origin/<base>`: unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
+- Start an issue only when each of your open PRs is ready to merge (phase 5) and shares no files with it, the named stack parent excepted; otherwise return `blocked by #<pr>`.
+- Reuse the issue's unmerged branch, and its worktree unless the host made one for the session; else branch from the stack parent's head, or `origin/<base>`: unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
 - Unattended: add `state:claimed` and comment ``Claimed by an AFK run on `<branch>`.``. Attended: add `state:started`. Card to In progress.
 
 **Exit gate:** on the task's branch, the issue labelled; or `blocked by #<pr>` or `<worktree>`.
@@ -30,7 +30,7 @@ Pass the verify gate (the project's `verify` task) before each push. Push over H
 
 ## 4. Open the PR
 
-- Ready, never a draft: a draft never auto-merges. For an issue, use its title. Every PR uses this body envelope (omit inapplicable sections): summary ≤ 3 sentences; scope, risks and decision one line each. Keep blockers, unfixed findings and owner choices visible, with options and a recommendation when needed. Collapse evidence with `<details>` / `<summary>` and blank lines around Markdown. Use no CSS or scripts. Add fenced `mermaid` with text only when a diagram clarifies a flow or relationship.
+- Ready, never a draft: a draft never auto-merges. Stacked: a draft on the parent's branch, body `Stacked on #<P>`, so nothing lands before the parent. For an issue, use its title. Every PR uses this body envelope (omit inapplicable sections): summary ≤ 3 sentences; scope, risks and decision one line each. Keep blockers, unfixed findings and owner choices visible, with options and a recommendation when needed. Collapse evidence with `<details>` / `<summary>` and blank lines around Markdown. Use no CSS or scripts. Add fenced `mermaid` with text only when a diagram clarifies a flow or relationship.
 
   ```markdown
   ## Executive summary
@@ -69,7 +69,7 @@ Pass the verify gate (the project's `verify` task) before each push. Push over H
 - List unfixed findings under Decision; open one as a `lane:owner` issue only on the owner's yes.
 - Every PR, attended or not, revert and lesson PRs too: `gh pr merge <pr> --squash --auto`; auto-merge still waits for required approvals and checks. Remove the `state:` label.
 
-**Exit gate:** the PR URL with auto-merge on.
+**Exit gate:** the PR URL, auto-merge on unless stacked.
 
 ## 5. Ready to merge
 
@@ -77,7 +77,8 @@ Run after every push, when `<base>` moves, and before calling a PR ready.
 
 1. Blockers: draft, failing checks, conflicts or `BEHIND`, unresolved threads, `CHANGES_REQUESTED`. Fix them and every review finding with a clear fix, optional ones too; reply on each thread naming the commit.
 2. A fresh-context worker that never edits resolves the threads it confirms fixed. A person's threads stay theirs; name them to the owner.
-3. Repeat until only pending checks or the required approval remain.
+3. A stacked draft follows its parent: merge its new commits; once merged, `gh pr edit <pr> --base <base>`, merge `origin/<base>`, push, `gh pr ready <pr>`, auto-merge on; closed unmerged, close it and return `blocked by #<P>`.
+4. Repeat until only pending checks, the required approval or an open parent remain.
 
 **Exit gate:** no other blocker.
 

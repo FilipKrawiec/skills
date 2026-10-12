@@ -2,7 +2,7 @@
 
 ## Configuration: `.github/lanes.json`
 
-Its presence opts the repository in; agents read it from the base branch themselves. Only `repo` is required. Agents ignore keys no longer read (`protected`, `chores`, `dependencyFiles`, `guard`): owner paths belong in CODEOWNERS.
+Its presence opts the repository in; agents read it from the base branch. Only `repo` is required. Agents ignore retired keys (`protected`, `chores`, `dependencyFiles`, `guard`): owner paths belong in CODEOWNERS.
 
 | Key | Meaning |
 | --- | --- |
@@ -15,6 +15,7 @@ Its presence opts the repository in; agents read it from the base branch themsel
 | `branchPrefix`, `staleClaimHours` | Defaults `agent/afk-`, `3`. |
 | `agentReview`, `reviewRounds` | `true` when `agent-review` reviews open PRs; rounds cap per PR. Defaults `false`, `3`. |
 | `ownerPaths`, `ownerLabels`, `ownerLines` | `agent-review`'s owner rules: paths beyond CODEOWNERS, ship-on-merge labels, line limit (800). |
+| `reviewQueue` | Issue `agent-review` pins as the owner's queue. |
 
 ```json
 {
