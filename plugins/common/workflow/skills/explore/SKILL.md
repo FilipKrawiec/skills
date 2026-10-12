@@ -6,7 +6,7 @@ allowed-tools: Read Bash
 
 # Explore
 
-Use the app as one of its users would and file what slows or confuses them. You test the product: never edit, commit or push code.
+Use the app as one of its users would and file what slows or confuses them. Never edit, commit or push code.
 
 Settings, from `.github/lanes.json`: `repo`, `project`, and `explore`:
 
@@ -16,8 +16,8 @@ Settings, from `.github/lanes.json`: `repo`, `project`, and `explore`:
 
 ## 1. Prepare
 
-- Never touch the main checkout: it holds the owner's work. Create the worktree with `git worktree add --detach <worktree> origin/main`, or refresh it: `git -C <worktree> fetch origin main`, `git -C <worktree> checkout --force --detach origin/main`, `git -C <worktree> clean -fdq`.
-- Read `log.jsonl` from `capturesBranch` (`gh api repos/<repo>/contents/log.jsonl?ref=<branch>`; missing on the first run). Take the persona and journey the caller names, else the pair never run, else the one run longest ago. Run it on every target.
+- Never touch the main checkout: it holds the owner's work. Create the worktree (`git worktree add --detach <worktree> origin/main`) or refresh it: fetch `origin main`, `checkout --force --detach origin/main`, `clean -fdq`.
+- Read `log.jsonl` from `capturesBranch` (missing on the first run). Take the persona and journey the caller names, else the pair never run, else the one run longest ago. Run it on every target.
 
 **Exit gate:** the worktree at origin/main; persona, journey and targets chosen.
 
@@ -25,26 +25,27 @@ Settings, from `.github/lanes.json`: `repo`, `project`, and `explore`:
 
 One target at a time:
 
-- Never use a physical device. Pick an available simulator matching `device` (`xcrun simctl list devices available --json` on Apple platforms), boot it, and start `launch` in the worktree in the background with `deviceEnv=<simulator id>`, logging to a file. Record its process id.
-- Poll screenshots every 30 s, up to 20 min, for the first screen. A failed build ends the run; its log tail is the only finding.
+- Never use a physical device. Boot an available simulator matching `device`, and start `launch` in the worktree in the background with `deviceEnv=<simulator id>`, logging to a file. Record its process id.
+- Poll screenshots every 30 s, up to 20 min. A failed build ends the run; its log tail is the only finding.
 
 **Exit gate:** the app on screen, or the build failure recorded.
 
 ## 3. Play
 
 - Be the persona: read only the screen, never the code or guide, and pursue the journey's goal with the host's simulator tools. Screenshot each step; at most 60 actions per target.
-- Push past friction when you can, to find more than the first wall.
+- Injected input lags: hold each tap about 0.15 s and wait 2 s before each screenshot. Record "did nothing" only when a later screenshot agrees; retype text sent before the caret showed. Drop friction you can't reproduce: it is the tool's.
+- Push past friction to find more than the first wall.
 - Record each friction with its step, what you expected, what happened and the screenshot, graded first match wins:
   1. **Blocker:** the goal can't be reached, or data is lost or wrong.
-  2. **Confusion:** you hesitated, guessed, tapped something that did nothing, needed a second try, or met an unlabeled icon.
-  3. **Mismatch:** the same thing looks or works differently across screens or targets, or the layout misfits (clipped, overlapping, tiny or unreachable targets).
+  2. **Confusion:** you hesitated, guessed, a control did nothing, or an icon had no label.
+  3. **Mismatch:** the same thing differs across screens or targets, or the layout misfits (clipped, overlapping, tiny targets).
   4. **Polish:** it works but costs a step that could go.
 
 **Exit gate:** the journey done or abandoned on each target, findings with screenshots.
 
 ## 4. Clean up
 
-Per target, also after a failure: SIGINT the launch process, wait for it to exit (it may save state), then shut down the simulator you booted, never one you didn't.
+Per target, also after a failure: SIGINT the launch process and wait up to 30 s (it may save state). TERM any process left whose command line holds the worktree path. Shut down the simulator you booted, never one you didn't.
 
 **Exit gate:** no launch process or booted simulator of yours remains.
 
@@ -55,7 +56,7 @@ Per target, also after a failure: SIGINT the launch process, wait for it to exit
   1. Open match: comment once with any new evidence; else drop it.
   2. Closed within 30 days: a new `type:bug` issue linking it, as a regression.
   3. No match: a new issue.
-- Captures: commit screenshots to `capturesBranch` (an orphan branch; create it on first use) at `runs/<date>-<persona>/<n>-<target>.png` with `gh api -X PUT repos/<repo>/contents/<path>`, and embed `https://github.com/<repo>/blob/<branch>/<path>?raw=true`. Skip captures and describe the screen instead when a workflow's `push` trigger matches that branch: a capture must never start CI.
+- Captures: commit screenshots to the orphan `capturesBranch` at `runs/<date>-<persona>/<n>-<target>.png` with `gh api -X PUT repos/<repo>/contents/<path>`, and embed `https://github.com/<repo>/blob/<branch>/<path>?raw=true`. If a workflow's `push` trigger matches that branch, describe the screen instead: a capture must never start CI.
 - A new issue follows the repository's issue form: title `<type>(<area>): <outcome for the user>`; `type:bug` when it contradicts what the product promises or loses data, else `type:story`; `lane:proposed`, so the owner decides. Only now read the code: trace the screen's visible text to the code that draws it for the scope packet.
 
 ````markdown
