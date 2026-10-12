@@ -16,8 +16,11 @@ Settings, from `.github/lanes.json`: `repo`, `project`, and `explore`:
 
 ## 1. Prepare
 
-- Never touch the main checkout: it holds the owner's work. Create the worktree (`git worktree add --detach <worktree> origin/main`) or refresh it: fetch `origin main`, `checkout --force --detach origin/main`, `clean -fdq`.
-- Read `log.jsonl` from `capturesBranch` (missing on the first run). Take the persona and journey the caller names, else the pair never run, else the one run longest ago. Run it on every target.
+- Never touch the main checkout: it holds the owner's work. Create (`git worktree add --detach <worktree> origin/main`) or refresh it: fetch `origin main`, `checkout --force --detach origin/main`, `clean -fdq`.
+- Read `log.jsonl` from `capturesBranch` (missing on the first run). Pick a journey of the caller's persona, if named, first match wins:
+  1. The journey the caller names.
+  2. A journey never run.
+  3. The journey run longest ago.
 
 **Exit gate:** the worktree at origin/main; persona, journey and targets chosen.
 
@@ -34,8 +37,7 @@ One target at a time:
 
 - Be the persona: read only the screen, never the code or guide, and pursue the journey's goal with the host's simulator tools. Screenshot each step; at most 60 actions per target.
 - Injected input lags: hold each tap about 0.15 s and wait 2 s before each screenshot. Record "did nothing" only when a later screenshot agrees; retype text sent before the caret showed. Drop friction you can't reproduce: it is the tool's.
-- Push past friction to find more than the first wall.
-- Record each friction with its step, what you expected, what happened and the screenshot, graded first match wins:
+- Push past friction. Record each with its step, expected, observed and screenshot, graded first match wins:
   1. **Blocker:** the goal can't be reached, or data is lost or wrong.
   2. **Confusion:** you hesitated, guessed, a control did nothing, or an icon had no label.
   3. **Mismatch:** the same thing differs across screens or targets, or the layout misfits (clipped, overlapping, tiny targets).
@@ -97,6 +99,11 @@ iPhone, band leader: Setlists → … Expected …; observed …
 
 Append `{"date", "persona", "journey", "targets", "issues", "outcome"}` as one line to `log.jsonl` on `capturesBranch`.
 
-≤ 8 lines. **Summary:** persona, journey, targets, then each issue opened or commented, linked, with its grade. **Decision:** the new issues awaiting the owner's lane, with your recommendation, or "Nothing needed."
+At most 8 lines:
+
+```markdown
+**Summary:** band-leader, plan-sunday-set, ipad + iphone: #474 Blocker (opened), #475 Mismatch (opened).
+**Decision:** #474 and #475 await your lane; I recommend `lane:afk`. Or: "Nothing needed."
+```
 
 **Exit gate:** the log line committed and the report sent.
