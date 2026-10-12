@@ -29,6 +29,11 @@ Keep estimates and scope packets outside collapsible sections. Record owner waiv
 
 Unattended, or for issues from `gh issue list --search "-label:lane:afk -label:lane:proposed -label:lane:owner"`:
 
+- Ground a bug report (`type:bug`, or `<!-- explore-finding` in the body) before the checks; under a review-only request, report these edits instead of saving them:
+  1. Trace the observed behaviour to the base's code; state the cause with `file:line`, marked confirmed, or suspected with what would confirm it.
+  2. Add only criteria restoring the report's expected behaviour, including that a test reproducing the report passes (a described render for a visual bug); propose others in the comment.
+  3. Narrow the packet to the files the fix and its tests change (`alwaysInScope` paths need no entry); name the estimate's main unknown.
+  4. Append `<!-- refined base=<short sha> -->` to the body whatever the outcome, closure proposals included.
 - All checks pass → `lane:proposed`; any fails → `lane:owner`. Apply the issue form in `SKILL.md` phase 4.
 - Comment once: each failing check and what would fix it; end a proposal with "Apply `lane:afk` to let an AFK run take it."
 
