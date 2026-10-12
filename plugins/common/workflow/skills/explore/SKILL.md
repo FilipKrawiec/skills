@@ -63,32 +63,32 @@ Per target, also after a failure: SIGINT the launch process and wait up to 30 s 
 
 ````markdown
 ### Executive summary
-A band leader can't tell which setlist is live: both look the same on iPhone.
+<Persona> can't <goal>: <what blocks them> on <target>.
 
-**Scope:** setlist list; no data changes.
+**Scope:** <screen>; <what changes>.
 **Decision:** Recommend `lane:proposed`; owner decides.
 
 ### Acceptance criteria
 
-- [ ] The live setlist is marked in words on iPhone and iPad.
+- [ ] <Observable outcome on every target>.
 
 ### Estimate
 S.
 
 ```scope
-{"paths": ["app/lib/setlists/"], "dependencies": []}
+{"paths": ["<code that draws the screen>"], "dependencies": []}
 ```
 
 <details>
 <summary>Steps, expected, observed</summary>
 
-iPhone, band leader: Setlists → … Expected …; observed …
+<target>, <persona>: <step> → <step>. Expected …; observed …
 
-![step 3](https://github.com/<repo>/blob/explore-captures/runs/…/3-iphone.png?raw=true)
+![step <n>](https://github.com/<repo>/blob/<capturesBranch>/runs/<date>-<persona>/<n>-<target>.png?raw=true)
 
 </details>
 
-<!-- explore-finding persona=band-leader journey=plan-sunday-set -->
+<!-- explore-finding persona=<persona> journey=<journey> -->
 ````
 
 - With a `project`, add each new issue to it: `gh project item-add`.
@@ -102,8 +102,8 @@ Append `{"date", "persona", "journey", "targets", "issues", "outcome"}` as one l
 At most 8 lines:
 
 ```markdown
-**Summary:** band-leader, plan-sunday-set, ipad + iphone: #474 Blocker (opened), #475 Mismatch (opened).
-**Decision:** #474 and #475 await your lane; I recommend `lane:afk`. Or: "Nothing needed."
+**Summary:** <persona>, <journey>, <targets>: #<n> Blocker (opened), #<m> Confusion (commented).
+**Decision:** #<n> awaits your lane; I recommend `lane:afk`. Or: "Nothing needed."
 ```
 
 **Exit gate:** the log line committed and the report sent.
