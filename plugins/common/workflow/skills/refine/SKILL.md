@@ -10,9 +10,9 @@ Refine the queue across items. For GitHub issues, invoke `spec` for individual i
 
 ## 1. Inventory
 
-- Resolve the repository, project or todo source from the request and current context. Ask once when the target is ambiguous; do not substitute another repository's backlog.
-- Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch all in-scope items, decisions, relationships and active work; paginate to completion. Include draft cards and closed cards when checking board drift. Report inaccessible sources and limits rather than treating an empty search as proof of an empty backlog.
-- Record item links and revisions or update times. Read the current base's relevant implementation and tests; distinguish source evidence, historical reports and unverified claims.
+- Resolve the source from the request; ask once if ambiguous, never substitute another repository's backlog.
+- Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch all in-scope items, decisions, relationships and active work; paginate to completion. Include draft and closed cards when checking board drift. Report inaccessible sources; an empty search never proves an empty backlog.
+- Read the base's code and tests; separate source evidence from historical reports and unverified claims.
 
 **Exit gate:** every in-scope item is inventoried, or missing coverage is named.
 
@@ -27,7 +27,7 @@ For each item, take the first matching case:
 5. Remaining work is unclear or too large: invoke `spec` to ground and refine it, splitting valuable vertical slices when several PRs are needed.
 
 - Read comments before repeating a question. Historical bot recommendations are not owner approval.
-- Trace dependencies through open and closed items. Remove obsolete prerequisites only when their responsibility is gone; retain completed prerequisite evidence. Detect cycles, missing prerequisites and shared-file races. State which slice owns shared edits and their merge order.
+- Trace dependencies through open and closed items. Remove obsolete prerequisites only when their responsibility is gone; retain completed prerequisite evidence. Detect cycles, missing prerequisites and shared-file races. Record merge order and shared-file ownership as blocked-by links, never only in comments or the report; drop links to deferred work. Unattended, add links mirroring a packet or `### Dependencies` section; report removals instead.
 - Separate first-delivery criteria from explicitly deferred work. An epic's old summary must not reintroduce a deferred slice as a gate.
 - Check the scope packet covers every criterion, including tests, locales, model changes and required documentation; account for project-wide allowances. An empty packet cannot authorize edits. Record protected paths and owner actions visibly. Check whether the base deleted a packet path; if so, confirm the outcome still holds before asking the owner.
 
@@ -35,19 +35,19 @@ For each item, take the first matching case:
 
 ## 3. Apply
 
-- A review-only request produces recommendations. A refinement request authorizes issue/list and board edits within the requested scope; it does not authorize implementation, new unattended approvals, merges, releases or deployments.
+- A review-only request produces recommendations; a refinement request authorizes issue and board edits in scope, never implementation, new unattended approvals, merges, releases or deployments.
 - For GitHub issues, invoke `spec` for specification and readiness changes. Unattended, run only its triage phase and report proposed specification changes; its attended phases remain attended. For other sources, edit the source directly with an outcome, checkable completion criteria, dependencies and blockers; use its existing readiness convention, not GitHub labels. Preserve owner approvals; a board column never grants unattended authority.
-- Take and record routine recommendations. Ask the owner only for decisions that change UX beyond the criteria, add cost or depart from project patterns or best practice; continue independent refinements while answers are pending.
-- Re-read each item before writing. If its body, decisions or execution state changed, reconcile the new version first. Apply a minimal patch; preserve unrelated content and historical comments. Avoid a comment per formatting change.
+- Take and record routine recommendations. Ask the owner only for decisions that change UX beyond the criteria, add cost or depart from project patterns or best practice; keep refining independent items meanwhile.
+- Re-read each item before writing and reconcile any newer version. Apply a minimal patch; preserve unrelated content and history; no comment per formatting change.
 - Derive board status from readiness, dependencies and active work. Preserve priorities unless a recorded decision or parent policy changes them. Correct stale board descriptions without changing columns or automation rules.
 
 **Exit gate:** authorized corrections are saved; pending choices remain visible and blocked work cannot appear ready.
 
 ## 4. Verify and Report
 
-Re-fetch changed items and cards. Confirm saved criteria, scope, dependencies, lanes and status; check the dependency graph for cycles. Account for every inventoried item. Do not run code tests for issue-only edits, and do not claim historical test evidence as a fresh run.
+Re-fetch changed items and cards. Confirm saved criteria, scope, dependencies, lanes and status; check the blocked-by graph for cycles and for links the bodies don't name. List the parallel set: Todo issues with no open blocker and disjoint packets. Account for every inventoried item. Issue-only edits need no code tests; never present old test evidence as fresh.
 
-Recurring runs leave unchanged items alone; notify only for meaningful changes or owner action unless periodic reports were requested. Schedule the routine only when asked.
+Recurring runs leave unchanged items alone and notify only for meaningful changes or owner action. Schedule the routine only when asked.
 
 **Exit gate:** saved changes match the refinement; coverage gaps and choices are reported.
 
@@ -56,6 +56,7 @@ Recurring runs leave unchanged items alone; notify only for meaningful changes o
 ```text
 Summary: Reviewed 12 items; refined 4, left 6 unchanged, and blocked 2.
 Project: <URL>; corrected scope in #14 and carried the owner decision into #18.
-Verification: re-read 4 bodies and 2 cards; no dependency cycles. Code tests not run.
+Parallel now: #14, #18 (disjoint packets); #20 waits on #14.
+Verification: re-read 4 bodies and 2 cards; no blocked-by cycles. Code tests not run.
 Decision: #22 needs a sharing choice; recommend a private personal workspace.
 ```
