@@ -11,8 +11,9 @@ Refine the queue across items. For GitHub issues, invoke `spec` for individual i
 ## 1. Inventory
 
 - Resolve the source from the request; ask once if ambiguous, never substitute another repository's backlog.
-- Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch all in-scope items, decisions, relationships and active work; paginate to completion. Include draft and closed cards when checking board drift. Report inaccessible sources; an empty search never proves an empty backlog.
+- Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch all in-scope items, decisions, relationships and active work; paginate to completion. Check board drift across draft and closed cards. Report inaccessible sources; an empty search never proves an empty backlog.
 - Read the base's code and tests; separate source evidence from historical reports and unverified claims.
+- Also fetch open bug reports (`type:bug` or `<!-- explore-finding`) lacking `<!-- refined base=`; read [bug-reports.md](references/bug-reports.md) when any exist.
 
 **Exit gate:** every in-scope item is inventoried, or missing coverage is named.
 
@@ -37,9 +38,9 @@ For each item, take the first matching case:
 
 - A review-only request produces recommendations; a refinement request authorizes issue and board edits in scope, never implementation, new unattended approvals, merges, releases or deployments.
 - For GitHub issues, invoke `spec` for specification and readiness changes. Unattended, run only its triage phase and report proposed specification changes; its attended phases remain attended. For other sources, edit the source directly with an outcome, checkable completion criteria, dependencies and blockers; use its existing readiness convention, not GitHub labels. Preserve owner approvals; a board column never grants unattended authority.
-- Take and record routine recommendations. Ask the owner only for decisions that change UX beyond the criteria, add cost or depart from project patterns or best practice; keep refining independent items meanwhile.
-- Re-read each item before writing and reconcile any newer version. Apply a minimal patch; preserve unrelated content and history; no comment per formatting change.
-- Derive board status from readiness, dependencies and active work. Preserve priorities unless a recorded decision or parent policy changes them. Correct stale board descriptions without changing columns or automation rules.
+- Take routine recommendations and record them; ask the owner only what `spec` reserves for them, refining independent items meanwhile.
+- Re-read each item before writing; reconcile newer versions. Patch minimally, preserving unrelated content and history; no comment per formatting change.
+- Derive board status from readiness, dependencies and active work. Preserve priorities unless a recorded decision or parent policy changes them. Correct stale board descriptions, never columns or automation rules.
 
 **Exit gate:** authorized corrections are saved; pending choices remain visible and blocked work cannot appear ready.
 
@@ -47,7 +48,7 @@ For each item, take the first matching case:
 
 Re-fetch changed items and cards. Confirm saved criteria, scope, dependencies, lanes and status; check the blocked-by graph for cycles and for links the bodies don't name. List the parallel set: Todo issues with no open blocker and disjoint packets. Account for every inventoried item. Issue-only edits need no code tests; never present old test evidence as fresh.
 
-Recurring runs leave unchanged items alone and notify only for meaningful changes or owner action. Schedule the routine only when asked.
+Recurring runs leave unchanged items alone, notifying only for meaningful changes or owner action. Schedule the routine only when asked.
 
 **Exit gate:** saved changes match the refinement; coverage gaps and choices are reported.
 
