@@ -10,7 +10,7 @@ Refine the queue across items. For GitHub issues, invoke `spec` for individual i
 
 ## 1. Inventory
 
-- Resolve the source from the request; ask once if ambiguous, never substitute another repository's backlog.
+- Resolve the source from the request; ask once if ambiguous; never substitute another repository's backlog.
 - Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch all in-scope items, decisions, relationships and active work; paginate to completion. Check board drift across draft and closed cards. Report inaccessible sources; an empty search never proves an empty backlog.
 - Read the base's code and tests; separate source evidence from historical reports and unverified claims.
 - Also fetch unclaimed bug reports (`type:bug`, `<!-- explore-finding`) in `lane:proposed` or no lane without `<!-- refined base=`; `spec` triages each.
@@ -27,18 +27,18 @@ For each item, take the first matching case:
 4. A recorded owner decision supersedes the body: put the binding decision and its source in the body; update dependent slices and epic summaries together.
 5. Remaining work is unclear or too large: invoke `spec` to ground and refine it, splitting vertical slices when it needs several PRs.
 
-- Read comments before repeating a question. Historical bot recommendations are not owner approval.
-- Trace dependencies through open and closed items. Remove obsolete prerequisites only when their responsibility is gone; retain completed prerequisite evidence. Detect cycles, missing prerequisites and shared-file races. Record merge order and shared-file ownership as blocked-by links, never only in comments or the report; drop links to deferred work. Unattended, add links mirroring a packet or `### Dependencies` section; report removals instead.
+- Historical bot recommendations are not owner approval.
+- Trace dependencies through open and closed items. Remove a prerequisite only when its responsibility is gone. Detect cycles, missing prerequisites and shared-file races. Record merge order and shared-file ownership as blocked-by links, never only in comments; drop links to deferred work. Unattended, add links mirroring a packet or `### Dependencies` section; report removals instead.
 - Separate first-delivery criteria from explicitly deferred work. An epic's old summary must not reintroduce a deferred slice as a gate.
-- Check the scope packet covers every criterion, including tests, locales, model changes and required documentation; account for project-wide allowances. An empty packet cannot authorize edits. Record protected paths and owner actions visibly. If the base deleted a packet path, confirm the outcome still holds before asking the owner.
+- Check the scope packet covers every criterion, including tests, locales and required documentation; account for project-wide allowances. An empty packet cannot authorize edits. Record protected paths and owner actions visibly. If the base deleted a packet path, confirm the outcome still holds before asking.
 
 **Exit gate:** each item has a disposition and each cross-item conflict has a correction or a visible blocker.
 
 ## 3. Apply
 
 - A review-only request produces recommendations; a refinement request authorizes issue and board edits in scope, never implementation, new unattended approvals, merges, releases or deployments.
-- For GitHub issues, invoke `spec` for specification and readiness changes. Unattended, run only its triage phase and report proposed specification changes; its attended phases remain attended. For other sources, edit the source directly with an outcome, checkable completion criteria, dependencies and blockers; use its existing readiness convention, not GitHub labels. Preserve owner approvals; a board column never grants unattended authority.
-- Take and record routine recommendations. Ask the owner only for decisions changing UX beyond the criteria, adding cost or departing from project patterns or best practice; keep refining independent items meanwhile.
+- For GitHub issues, invoke `spec` for specification and readiness changes. Unattended, run only its triage phase and report proposed specification changes. For other sources, edit the source directly with an outcome, checkable completion criteria, dependencies and blockers; use its existing readiness convention, not GitHub labels. Preserve owner approvals; a board column never grants unattended authority.
+- Take and record routine recommendations. With lanes.json `agentReview`, the reviewer decides each fork you would ask the owner: dispatch a fresh worker with "Invoke `agent-review` to decide on #<N>: <question>; options <A>, <B>; recommended <A>: <evidence>."; ask the owner only on its `owner`. Without it, ask the owner only about UX beyond the criteria, cost, or departing from project patterns or best practice. Keep refining other items meanwhile.
 - Re-read each item before writing; reconcile newer versions. Patch minimally, preserving unrelated content and history; no comment per formatting change.
 - Derive board status from readiness, dependencies and active work. Preserve priorities unless a recorded decision or parent policy changes them. Correct stale board descriptions, never columns or automation rules.
 
@@ -56,8 +56,7 @@ Recurring runs leave unchanged items alone, notifying only for meaningful change
 
 ```text
 Summary: Reviewed 12 items; refined 4, left 6 unchanged, and blocked 2.
-Project: <URL>; corrected scope in #14 and carried the owner decision into #18.
 Parallel now: #14, #18 (disjoint packets); #20 waits on #14.
-Verification: re-read 4 bodies and 2 cards; no blocked-by cycles. Code tests not run.
+Verification: re-read 4 bodies and 2 cards; no cycles; no code tests.
 Decision: #22 needs a sharing choice; recommend a private personal workspace.
 ```

@@ -1,6 +1,6 @@
 ---
 name: agent-review
-description: Use when a scheduled task asks for one unattended review pass over open PRs, in a repository whose .github/lanes.json turns on agentReview. Never for an owner's own interactive review.
+description: Use when a scheduled task asks for one unattended review pass over open PRs, or an AFK run or refinement asks the reviewer to decide a fork, in a repository whose .github/lanes.json turns on agentReview. Never for an owner's own interactive review.
 allowed-tools: Skill Read Bash(git:*,gh:*)
 ---
 
@@ -8,13 +8,24 @@ allowed-tools: Skill Read Bash(git:*,gh:*)
 
 - `owner`, `implementer`, `reviewer`, `reviewRounds` (default 3), `alwaysInScope`, `ownerPaths`, `ownerLabels`, `ownerLines` (default 800), `reviewQueue`: `.github/lanes.json`.
 - Run every `gh` command as `reviewer`: `GH_TOKEN=$(gh auth token --user <reviewer>) gh ...`; never print the token.
-- Never commit, push or edit. Write to GitHub only reviews, thread replies and resolutions, `review:owner`, auto-merge and the `reviewQueue` issue.
+- Never commit, push or edit. Write to GitHub only reviews, thread replies and resolutions, `review:owner`, auto-merge, the `reviewQueue` issue and phase 0's decisions.
+- You are the project's craft and UX expert: before judging code or a decision, invoke the craft, design and UX skills its agent rules name.
+
+## 0. Decide
+
+Asked to decide one fork (issue, question, options, recommendation), run only this phase; an implementer never widens its own scope.
+
+1. Return `owner: <reason>` when it adds cost, reverses a recorded owner decision, goes beyond the issue's intent, touches an owner path (rule 4), can't be undone, or needs credentials, settings or a device.
+2. Else read the issue and code; decide, UX and craft included: the recommendation unless the evidence favours another option. A widened packet gains only paths its criteria need, outside other claims' packets.
+3. Patch the issue's packet or criteria to match, then comment `<!-- agent-decision -->`, question, decision and reason in ≤ 3 lines.
+
+**Exit gate:** `decided: <option>` with the comment link, or `owner: <reason>`.
 
 ## 1. Collect
 
 Agent reviews are the reviewer's reviews starting `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->`. Per open PR, first case that fits:
 
-1. A draft: skip it; its author is still at work, and a draft never auto-merges.
+1. A draft: skip it.
 2. An agent review exists at the head: go to phase 4.
 3. Its newest agent review used round `reviewRounds`: skip it.
 4. Otherwise: review it as round 1 + its earlier agent reviews.
@@ -23,20 +34,20 @@ Agent reviews are the reviewer's reviews starting `<!-- agent-review sha=<HEAD> 
 
 ## 2. Review
 
-One isolated worker per PR, in parallel, in a scratch worktree at the head, invokes `review` for both axes against the closed issue's acceptance criteria, and marks each unresolved thread fixed (with commit) or open (blocking). Workers post nothing. Verify blocking findings; skip PRs whose head moved.
+One isolated worker per PR, in parallel, in a worktree at the head, invokes `review` for both axes against the closed issue's acceptance criteria, and marks each unresolved thread fixed (with commit) or open (blocking). Workers post nothing. Verify blocking findings; skip PRs whose head moved.
 
 **Exit gate:** verified findings per PR at an unchanged head.
 
 ## 3. Post
 
-Owner rules, checked in order; quote the first match. The list is closed: a PR matching none merges on your approval and green checks. The PR:
+Owner rules, in order; quote the first match. A PR matching none merges on your approval and green checks. The PR:
 
 1. carries `review:owner`;
 2. has an author other than `owner`, `implementer` or Dependabot;
 3. lists no files, or 3000 (the API's cap);
 4. touches a path `.github/CODEOWNERS` or `ownerPaths` gives the owner (a rename counts both paths);
 5. carries an `ownerLabels` label;
-6. is a Dependabot update across a major version, or a minor one below 1.0 (read the title and `Bumps`/`Updates` lines);
+6. is a Dependabot update across a major version, or a minor one below 1.0;
 7. changes more than `ownerLines` lines of code;
 8. changes code but closes no issue with a scope packet (a ```` ```scope ```` block of allowed paths);
 9. changes code outside its issues' scope packets and `alwaysInScope`.
@@ -62,16 +73,9 @@ After each APPROVE: `gh pr merge <pr> --squash --auto --match-head-commit <head>
 
 ## 5. Queue
 
-With `reviewQueue` (an issue number), keep that issue the owner's one ordered review list: pin it once with `gh issue pin`, then rewrite its body each pass with `gh issue edit <n> --body "<list>"`, which notifies no one. List every open non-draft PR carrying `review:owner`, and the owner's own PRs with blocking findings; first difference wins:
+With `reviewQueue` in lanes.json, read [queue.md](references/queue.md) and rewrite that issue's ordered list.
 
-1. Fixes a red `<base>`.
-2. Unblocks more: drafts whose body says `Stacked on #<pr>`, plus open issues it blocks or shares packet paths with.
-3. Its issues' highest board Priority, else `priority:P*` label; none last.
-4. Oldest first.
-
-One line each: `1. #<pr> <title>: <owner rule or finding>; unblocks #<a>, #<b>`. None: "Nothing waits for the owner."
-
-**Exit gate:** the issue body lists this pass's PRs in order.
+**Exit gate:** the issue body lists this pass's PRs in order, or no `reviewQueue`.
 
 ## 6. Wake the runner
 

@@ -8,7 +8,7 @@ allowed-tools: Skill Read Bash(gh:*,git:*)
 
 Write a plan execution follows without re-planning. Unless the issue carries `state:claimed` or `state:started`, first invoke `vcs` to start it.
 
-**Unattended:** the same phases; `lane:afk` stands in for approval, and a park replaces every question: replace `lane:afk` and `state:*` with `lane:owner`, and comment the question, options and recommendation in ≤ 5 lines.
+**Unattended:** the same phases; `lane:afk` stands in for approval; the reviewer decides each question it may (below), and a park replaces the rest: replace `lane:afk` and `state:*` with `lane:owner`, and comment the question, options and recommendation in ≤ 5 lines.
 
 ## 1. Read
 
@@ -25,7 +25,9 @@ Read the issue, its acceptance criteria, scope packet (its ```` ```scope ```` bl
 - Decide every choice here; a step saying "choose", "decide" or "if needed" is unfinished. Take the recommended option on every decision and record it in the issue, plan or PR; ask the owner only when it changes UX beyond the acceptance criteria, adds cost (spend, quota, paid services), or departs from software best practice or the codebase's design patterns.
 - Risks that could send the work back to `spec`.
 
-A path outside the scope packet, a path `.github/CODEOWNERS` or lanes.json `ownerPaths` gives the owner, or an ambiguous criterion stops the plan: unattended, park; attended, remove `state:started` (with a board, card to Todo) and invoke `spec`.
+Unattended with lanes.json `agentReview`, a path outside the scope packet or an open choice (an ambiguous criterion, or one you would ask the owner) goes to the reviewer: dispatch a fresh-context worker with "Invoke `agent-review` to decide on #<N>: <question>; options <A>, <B>; recommended <A>: <evidence>." On `decided`, re-read the issue and continue.
+
+A path `.github/CODEOWNERS` or `ownerPaths` gives the owner, the reviewer's `owner`, or such a fork without the reviewer stops the plan: unattended, park; attended, remove `state:started` (with a board, card to Todo) and invoke `spec`.
 
 **Exit gate:** a draft inside the scope packet whose every step names file, test and command and leaves no choice, or a parked or released issue.
 

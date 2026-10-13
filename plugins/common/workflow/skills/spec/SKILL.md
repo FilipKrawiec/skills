@@ -12,7 +12,7 @@ Turn a need into one issue another agent can plan from without guessing.
 
 - Every open issue has one lane: `lane:afk` (owner approved), `lane:proposed` (you recommend AFK) or `lane:owner` (needs an owner decision, credentials, a device, or the owner steers it).
 - Apply `lane:afk` only on the owner's yes in the current session.
-- Take the recommended option on every decision and record it in the issue, plan or PR; ask the owner only when it changes UX beyond the acceptance criteria, adds cost (spend, quota, paid services), or departs from software best practice or the codebase's design patterns. Unattended, such a decision moves the issue to `lane:owner` with the question. The approvals a skill reserves for the owner (`lane:afk`, approving or merging a PR) stay theirs.
+- Take the recommended option on every decision and record it in the issue, plan or PR; ask the owner only when it changes UX beyond the acceptance criteria, adds cost, or departs from best practice or the codebase's patterns. Unattended, such a decision moves the issue to `lane:owner` with the question. The approvals a skill reserves for the owner (`lane:afk`, approving or merging a PR) stay theirs.
 - With a board (`.github/lanes.json` `project`), move cards with `gh project item-edit`; without one, use `priority:P*` labels instead of the Priority field.
 
 ## 1. Define
@@ -45,13 +45,13 @@ Read the code, tests, agent rules and ADRs until the open decisions are clear; c
 Read [afk-ready.md](references/afk-ready.md) when proposing, approving or triaging an issue for AFK. Attended issues need no estimate or scope packet.
 
 - Ask the owner: AFK? Yes → `lane:afk`; no → `lane:owner`; unsure → `lane:proposed`.
-- Tidy (when asked): bring every open issue and card to the issue form below; list the owner's fixes in the output.
+- Tidy (when asked): bring every open issue and card to the issue form below; list the owner's fixes.
 - Merged PRs already meet the criteria: comment one PR link per criterion and propose closing; the owner closes.
 - With a board, move each issue now Ready (meets the issue form, no `state:` label) to Todo.
 
 Issue form: one type label and the matching title; one lane when open, no `state:` label when closed; `### Acceptance criteria`, plus `### Estimate` and a scope packet (a ```` ```scope ```` block of the paths the work may touch) in `lane:afk` and `lane:proposed`; slices under their epic; each dependency (packet or `### Dependencies`, including a slice's merge order) is a blocked-by link (`gh api -X POST repos/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker's REST id>`) and each open link a dependency; a card with Priority P0–P2, a slice taking its epic's; an epic's card In progress once it has sub-issues.
 
-Keep the project's template fields and literal criterion, estimate and scope markers. Use this body envelope: summary ≤ 3 sentences; scope, risks and decision one line each. Keep criteria, scope boundaries, risks, blockers and owner choices visible. Collapse context and evidence using `<details>` / `<summary>` with blank lines around Markdown. Use no CSS or scripts. Add fenced `mermaid` with text only when a diagram clarifies a flow or relationship; omit empty sections.
+Keep the project's template fields and literal criterion, estimate and scope markers. Use this body envelope: summary ≤ 3 sentences; scope, risks and decision one line each. Keep criteria, scope boundaries, risks, blockers and owner choices visible. Collapse context and evidence using `<details>` / `<summary>` with blank lines around Markdown. Add fenced `mermaid` with text only when a diagram clarifies a flow or relationship; omit empty sections.
 
 ````markdown
 ### Executive summary
