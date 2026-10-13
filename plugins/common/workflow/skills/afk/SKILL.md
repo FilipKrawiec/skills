@@ -36,7 +36,7 @@ For each open `branchPrefix` PR whose issue has `lane:afk`: invoke `vcs` to make
 
 Candidates are open `lane:afk` issues with no `state:` label, acceptance criteria and a scope packet (a ```` ```scope ```` block); not `type:epic` or `type:task`; no open PR closing them (a stacked PR names `Closes #<N>` only in its body); every packet dependency and blocked-by issue closed as completed; no packet path in an open `branchPrefix` PR's files; no overlap with a remaining claim's packet. Paths overlap when equal or when a directory path ending in `/` contains the other.
 
-An issue held back only by one non-draft `branchPrefix` PR carrying `review:owner` (its parent) is a stacked candidate. Rank unstacked first, then by the board's Priority, else a `priority:P*` label, then lowest number.
+An issue held back only by one non-draft `branchPrefix` PR carrying `review:owner` or closing a parked issue is a stacked candidate. Rank unstacked first, then board Priority, else a `priority:P*` label, then lowest number.
 
 **Exit gate:** `next: #<N>` → phase 4; none → phase 5.
 
