@@ -102,8 +102,11 @@ Append `{"date", "persona", "journey", "targets", "issues", "outcome"}` as one l
 At most 8 lines:
 
 ```markdown
+Waiting on @owner: #<n> needs your lane.
 **Summary:** <persona>, <journey>, <targets>: #<n> Blocker (opened), #<m> Confusion (commented).
-**Decision:** #<n> awaits your lane; I recommend `lane:afk`. Or: "Nothing needed."
+**Decision:** #<n> awaits your lane; I recommend `lane:afk`.
 ```
+
+Unattended, open with `Blocked: <cause>` or `Waiting on <owner>: <what>` and stay flagged when either applies; else archive.
 
 **Exit gate:** the log line committed and the report sent.

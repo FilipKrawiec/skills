@@ -12,7 +12,7 @@ Refine the queue across items. For GitHub issues, invoke `spec` for individual i
 
 - Resolve the source from the request; ask once if ambiguous; never substitute another repository's backlog.
 - Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch all in-scope items, decisions, relationships and active work; paginate to completion. Check board drift across draft and closed cards. Report inaccessible sources; an empty search never proves an empty backlog.
-- Read the base's code and tests; separate source evidence from historical reports and unverified claims.
+- Read the base's code and tests; separate source evidence from reports and unverified claims.
 - Also fetch unclaimed bug reports (`type:bug`, `<!-- explore-finding`) in `lane:proposed` or no lane without `<!-- refined base=`; `spec` triages each.
 
 **Exit gate:** every in-scope item is inventoried, or missing coverage is named.
@@ -38,7 +38,7 @@ For each item, take the first matching case:
 
 - A review-only request produces recommendations; a refinement request authorizes issue and board edits in scope, never implementation, new unattended approvals, merges, releases or deployments.
 - For GitHub issues, invoke `spec` for specification and readiness changes. Unattended, run only its triage phase and report proposed specification changes. For other sources, edit the source directly with an outcome, checkable completion criteria, dependencies and blockers; use its existing readiness convention, not GitHub labels. Preserve owner approvals; a board column never grants unattended authority.
-- Take and record routine recommendations. With lanes.json `agentReview`, the reviewer decides each fork you would ask the owner: dispatch a fresh worker with "Invoke `agent-review` to decide on #<N>: <question>; options <A>, <B>; recommended <A>: <evidence>."; ask the owner only on its `owner`. Without it, ask the owner only about UX beyond the criteria, cost, or departing from project patterns or best practice. Keep refining other items meanwhile.
+- Take and record routine recommendations. With lanes.json `agentReview`, the reviewer decides each fork you would ask the owner: dispatch a fresh worker with "Invoke `agent-review` to decide on #<N>: <question>; options <A>, <B>; recommended <A>: <evidence>."; ask the owner only on its `owner`. Without it, ask the owner only about UX beyond the criteria, cost, or departing from project patterns or best practice. Keep refining meanwhile.
 - Re-read each item before writing; reconcile newer versions. Patch minimally, preserving unrelated content and history; no comment per formatting change.
 - Derive board status from readiness, dependencies and active work. Preserve priorities unless a recorded decision or parent policy changes them. Correct stale board descriptions, never columns or automation rules.
 
@@ -48,11 +48,11 @@ For each item, take the first matching case:
 
 Re-fetch changed items and cards. Confirm saved criteria, scope, dependencies, lanes and status; check the blocked-by graph for cycles and for links the bodies don't name. List the parallel set: Todo issues with no open blocker and disjoint packets. Account for every inventoried item. Issue-only edits need no code tests; never present old test evidence as fresh.
 
-Recurring runs leave unchanged items alone, notifying only for meaningful change or owner action. Schedule the routine only when asked.
+Recurring runs leave unchanged items alone; open with `Blocked: <cause>` or `Waiting on <owner>: <what>` and stay flagged when either applies; else archive. Schedule the routine only when asked.
 
 **Exit gate:** saved changes match the refinement; coverage gaps and choices are reported.
 
-**Output:** ≤ 8 lines, with **Summary** (counts, changed-item/project links, substantive corrections, verification and coverage limits) and **Decision** (owner choices with options and a recommendation, or "Nothing needed.").
+**Output:** ≤ 8 lines, with **Summary** (counts, changed-item/project links, corrections, verification and coverage limits) and **Decision** (owner choices with options and a recommendation, or "Nothing needed.").
 
 ```text
 Summary: Reviewed 12 items; refined 4, left 6 unchanged, and blocked 2.
