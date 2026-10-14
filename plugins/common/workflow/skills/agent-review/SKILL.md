@@ -9,7 +9,7 @@ allowed-tools: Skill Read Bash(git:*,gh:*)
 - `owner`, `implementer`, `reviewer`, `reviewRounds` (default 3), `alwaysInScope`, `ownerPaths`, `ownerLabels`, `ownerLines` (default 800), `reviewQueue`: `.github/lanes.json`.
 - Run every `gh` command as `reviewer`: `GH_TOKEN=$(gh auth token --user <reviewer>) gh ...`; never print the token.
 - Never commit, push or edit. Write to GitHub only reviews, thread replies and resolutions, `review:owner`, auto-merge, the `reviewQueue` issue and phase 0's decisions.
-- You are the project's craft and UX expert: before judging code or a decision, invoke the craft, design and UX skills its agent rules name.
+- Before judging code or a decision, invoke the craft, design and UX skills the project's agent rules name.
 
 ## 0. Decide
 
@@ -44,7 +44,7 @@ Owner rules, in order; quote the first match. A PR matching none merges on your 
 
 1. carries `review:owner`;
 2. has an author other than `owner`, `implementer` or Dependabot;
-3. lists no files, or 3000 (the API's cap);
+3. lists no files, or 3000 (the API cap);
 4. touches a path `.github/CODEOWNERS` or `ownerPaths` gives the owner (a rename counts both paths);
 5. carries an `ownerLabels` label;
 6. is a Dependabot update across a major version, or a minor one below 1.0;
@@ -85,6 +85,6 @@ Wake the AFK runner as the caller describes: "Scheduled AFK run." plus AFK PRs n
 
 ## 7. Report
 
-Only when something needs the owner or shipped; ≤ 8 lines. **Summary:** PRs merged; the runner's lesson PRs, linked. **Decision:** PRs for the owner with reason, linking the queue; runner parks and follow-ups; findings raised on two or more PRs, with target file; each with a recommendation.
+≤ 8 lines. Open with `Blocked: <cause>` or `Waiting on <owner>: <what>` and stay flagged when either applies; else archive. **Summary:** PRs merged; the runner's lesson PRs, linked. **Decision:** PRs for the owner with reason, linking the queue; runner parks and follow-ups; findings raised on two or more PRs, with target file; each with a recommendation.
 
-**Exit gate:** sent or nothing to report; scratch worktrees removed.
+**Exit gate:** report sent; scratch worktrees removed.

@@ -8,11 +8,11 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 
 One run delivers **at most one** `lane:afk` issue; park instead of asking.
 
-- Take and record the recommended option on every decision; one you may not take, such as widening your own packet, goes to the reviewer.
+- Take and record the recommended option on every decision you may take.
 - `<base>` (default `main`), `branchPrefix` (default `agent/afk-`), `staleClaimHours` (default 3), `alwaysInScope`, `project`: `.github/lanes.json` on `origin/<base>`.
-- Work only in worktrees, never the main checkout. Run one command at a time; compound shell stalls on permission prompts.
+- Work only in worktrees, never the main checkout. Run one command at a time; compound shell stalls on prompts.
 - **Park** an issue: push useful work; replace `lane:afk` and `state:*` with `lane:owner`; comment the question, options and recommendation in ≤ 5 lines.
-- Models: the strongest model runs `spec`, `plan`, review axis A and `improve`; a fast-model worker runs the `tdd` steps and review axis B. Reasoning: high `spec`; medium `plan`, `review`, `improve`; low `tdd`; lowest otherwise.
+- Models: the strongest model runs `spec`, `plan`, review axis A and `improve`; a fast model runs the `tdd` steps and review axis B. Reasoning: high `spec`; medium `plan`, `review`, `improve`; low `tdd`; lowest otherwise.
 - Read [setup.md](references/setup.md) without `.github/lanes.json` or when scheduling runs.
 - Read [github-safety.md](references/github-safety.md) when setting up or checking GitHub settings.
 
@@ -69,4 +69,4 @@ Invoke `improve` for shipped issues awaiting lessons and this run's friction; in
 
 ## Output
 
-≤ 8 lines, changed items only. **Summary:** base health, PRs tended, delivered PR (or "queue empty"), lesson PRs, linked. **Decision:** parks, follow-ups and proposed lessons, each with a recommendation, or "Nothing needed."
+≤ 8 lines, changed items only. **Summary:** base health, PRs tended, delivered PR (or "queue empty"), lesson PRs, linked. **Decision:** parks, follow-ups and proposed lessons, each with a recommendation. Open with `Blocked: <cause>` or `Waiting on <owner>: <what>` and stay flagged when either applies; else archive.
