@@ -2,7 +2,7 @@
 
 An issue may take `lane:proposed` or `lane:afk` only when every check holds or the issue records the owner's waiver. Before asking the owner, add `### Estimate` and the scope packet.
 
-Keep estimates and scope packets outside collapsible sections. Record owner waivers and unresolved risks visibly in the issue envelope; collapsed evidence never changes lane authority.
+Keep estimates, scope packets, owner waivers and unresolved risks outside collapsible sections; collapsed evidence never changes lane authority.
 
 | Check | Holds when |
 | --- | --- |
@@ -10,7 +10,7 @@ Keep estimates and scope packets outside collapsible sections. Record owner waiv
 | Independent | No other open issue must merge in the same PR or release with it; none of its dependencies depends back on it. |
 | Valuable | Merged alone, it gives a user a behaviour or the owner a named benefit; a layer that pays off only with another issue fails. |
 | Small | `### Estimate` is S or M, with one sentence on the main unknown. Split an L into slices (unattended: propose the slices in the triage comment). |
-| Bounded | A scope packet lists every path it may change and every issue it builds on, including ones named only in prose (see below). When the main unknown is how existing code handles real input, a run on a real sample shows the work stays inside those paths. |
+| Bounded | A scope packet lists every path it changes and issue it builds on, including ones named only in prose (see below), and the shared ports, libraries and widgets each criterion's outcome passes through. When the main unknown is how existing code handles real input, a run on a real sample shows the work stays inside those paths. |
 | Decided | No open question that changes UX beyond the criteria, adds cost or departs from best practice or the codebase's patterns (settle any other on your recommendation and record it in the issue); new UI has a mockup or names an existing pattern. When the issue promises no visible change, every control a criterion moves or replaces shows where and as it does today on every layout; otherwise it is an open design question. |
 | Unprivileged | Touches nothing CODEOWNERS gives the owner: automation, agent instructions, infrastructure, credentials, settings, releases, deploys. |
 
