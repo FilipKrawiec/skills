@@ -34,7 +34,7 @@ For each open `branchPrefix` PR whose issue has `lane:afk`: invoke `vcs` to make
 2. Park each `lane:afk` issue with `state:claimed` and no open PR whose newest claim is older than `staleClaimHours`. Remaining claims are active deliveries; at three or more, go to phase 5. A claim's missing or invalid packet blocks selection → phase 5.
 3. Otherwise pick the top candidate.
 
-Candidates are open `lane:afk` issues with no `state:` label, acceptance criteria and a scope packet (a ```` ```scope ```` block); not `type:epic` or `type:task`; no open PR closing them (a stacked PR names `Closes #<N>` only in its body); every packet dependency and blocked-by issue closed as completed; no packet path in an open `branchPrefix` PR's files; no overlap with a remaining claim's packet. Paths overlap when equal or one is a `/`-ending directory containing the other.
+Candidates are open `lane:afk` issues with no `state:` label, acceptance criteria and a scope packet (a ```` ```scope ```` block); not `type:epic` or `type:task`; no open PR closing them (a stacked PR names `Closes #<N>` only in its body); every packet dependency and blocked-by issue closed as completed; no packet path overlapping an open `branchPrefix` PR's files or a remaining claim's packet. Paths overlap when equal or a `/`-ending one contains the other; test directories and files never overlap.
 
 An issue held back only by one non-draft `branchPrefix` PR carrying `review:owner` or closing a parked issue is a stacked candidate. Rank unstacked first, then board Priority, else a `priority:P*` label, then lowest number.
 
@@ -42,7 +42,7 @@ An issue held back only by one non-draft `branchPrefix` PR carrying `review:owne
 
 ## 4. Deliver
 
-1. Re-read active claims before `vcs` starts (at three or overlapping scope, go to phase 5) and after claiming: order claims by timestamp then issue number; keep at most three disjoint packets. If yours loses, or on `blocked by …`, remove `state:claimed`, return its card to Todo and go to phase 5.
+1. Re-read active claims before `vcs` starts (at three or overlapping, go to phase 5) and after claiming: order claims by timestamp, then number; keep at most three non-overlapping packets. If yours loses, or on `blocked by …`, remove `state:claimed`, return its card to Todo and go to phase 5.
 2. Invoke `vcs` to start the issue, naming any parent, then `plan`. Dispatch a fast-model worker, given the issue, the `## Plan` comment and the worktree, to invoke `tdd` for each step and `vcs` to commit it and update docs the change makes stale; it returns `done` or `tdd`'s `stuck`. On `stuck`, amend the plan and re-dispatch; a step stuck twice you run yourself. Pass the scope check and the verify gate (the project's `verify` task).
 3. Two fresh-context workers, given only issue and diff, each invoke `review` for one axis; fix their findings. Say `review round <n> of 2` before each; after round 2, list what is left under Decision.
 4. Invoke `vcs` to open the PR.
