@@ -1,7 +1,7 @@
 ---
 name: spec
 description: Use when a need or bug report should become a GitHub issue, an issue needs acceptance criteria or a lane (01 Define, 02 Spec), or issues need triage into lanes or tidying into the standard issue form.
-allowed-tools: Read Bash(gh:*,git:*)
+allowed-tools: Skill Read Bash(gh:*,git:*)
 ---
 
 # Spec (01 Define, 02 Spec)
@@ -11,8 +11,8 @@ Turn a need into one issue another agent can plan from without guessing.
 **With the owner:** every phase. **Unattended:** phase 4, plus phase 1 when `improve` opens a lesson issue; other follow-ups go in its output.
 
 - Every open issue has one lane: `lane:afk` (owner approved), `lane:proposed` (you recommend AFK) or `lane:owner` (needs an owner decision, credentials, a device, or the owner steers it).
-- Apply `lane:afk` only on the owner's yes in the current session.
-- Take the recommended option on every decision and record it in the issue, plan or PR; ask the owner only when it changes UX beyond the acceptance criteria, adds cost, or departs from best practice or the codebase's patterns. Unattended, such a decision moves the issue to `lane:owner` with the question. The approvals a skill reserves for the owner (`lane:afk`, approving or merging a PR) stay theirs.
+- Apply `lane:afk` only on the owner's yes in the session, or `agent-review`'s under lanes.json `reviewerLanes`.
+- Take the recommended option on every decision and record it in the issue, plan or PR; ask the owner only when it changes UX beyond the acceptance criteria, adds cost, or departs from best practice or the codebase's patterns. Unattended, such a decision moves the issue to `lane:owner` with the question. Approving or merging a PR stays theirs.
 - With a board (`.github/lanes.json` `project`), move cards with `gh project item-edit`; without one, use `priority:P*` labels instead of the Priority field.
 
 ## 1. Define
@@ -44,7 +44,7 @@ Read the code, tests, agent rules and ADRs until the open decisions are clear; c
 
 Read [afk-ready.md](references/afk-ready.md) when proposing, approving or triaging an issue for AFK. Attended issues need no estimate or scope packet.
 
-- Ask the owner: AFK? Yes → `lane:afk`; no → `lane:owner`; unsure → `lane:proposed`.
+- Ask the owner, or with `reviewerLanes` invoke `agent-review`: AFK? Yes → `lane:afk`; no → `lane:owner`; unsure → `lane:proposed`.
 - Tidy (when asked): bring every open issue and card to the issue form below; list the owner's fixes.
 - Merged PRs already meet the criteria: comment one PR link per criterion and propose closing; the owner closes.
 - With a board, move each issue now Ready (meets the issue form, no `state:` label) to Todo.

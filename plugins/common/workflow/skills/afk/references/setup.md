@@ -16,6 +16,7 @@ Its presence opts the repository in; agents read it from the base branch. Only `
 | `agentReview`, `reviewRounds` | `true` when `agent-review` reviews open PRs; rounds cap per PR. Defaults `false`, `3`. |
 | `ownerPaths`, `ownerLabels`, `ownerLines` | `agent-review`'s owner rules: paths beyond CODEOWNERS, ship-on-merge labels, line limit (800). |
 | `reviewQueue` | Issue `agent-review` pins as the owner's queue. |
+| `reviewerLanes` | `true` lets `agent-review` move AFK-ready `lane:proposed` issues to `lane:afk`. |
 
 ```json
 {
@@ -48,8 +49,8 @@ Its presence opts the repository in; agents read it from the base branch. Only `
 
 | Label | Meaning |
 | --- | --- |
-| `lane:afk` | Owner-approved for AFK. |
-| `lane:proposed` | Agent recommends AFK; owner decides. |
+| `lane:afk` | Approved for AFK. |
+| `lane:proposed` | Agent recommends AFK. |
 | `lane:owner` | Needs the owner. |
 | `state:claimed`, `state:started` | An AFK run, or another session, is on it. |
 | `review:owner` | PR for the owner; `agent-review` withholds approval. |
@@ -63,14 +64,13 @@ Schedule runs in the main checkout so they never overlap. Prompt:
 Preflight, stop and report on any failure:
 1. The working directory is inside <owner>/<repo>.
 2. `gh api user --jq .login` prints lanes.json's `implementer`, and
-   `git remote get-url --push origin` starts `https://`; else pushes and PRs
-   run as someone else, so stop.
+   `git remote get-url --push origin` starts `https://`.
 3. With a board in lanes.json, `gh project view <number> --owner <owner>`
-   succeeds; otherwise the token lacks the `project` scope, so stop.
+   succeeds; otherwise the token lacks the `project` scope.
 Then invoke the `afk` skill by name. The owner is away: park instead of asking. Never
 switch, pull, reset or stash the main checkout: it may hold the owner's work.
 ```
 
 - With `agentReview`, schedule a task invoking `agent-review`, naming the repository, how to wake the runner and any legacy review marker. One task may run both: that pass waking no runner, then the AFK prompt above. Keep its prompt and installer in the repository.
-- An orchestrating session may instead start one session per run with the AFK prompt naming the issue; runs in one checkout never overlap, so it starts the next only after the last one ends.
+- A standing session may instead loop instead of a schedule: one `agent-review` pass, one `afk` run, then wait for the next GitHub event or owner message; a daily task restarts it when it stopped.
 - Approve its tool prompts on the first run.

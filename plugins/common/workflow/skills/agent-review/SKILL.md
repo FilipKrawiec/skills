@@ -17,7 +17,7 @@ Asked to decide one fork (issue, question, options, recommendation), run only th
 
 1. Return `owner: <reason>` when it adds cost, reverses a recorded owner decision, goes beyond the issue's intent, touches an owner path (rule 4), can't be undone, or needs credentials, settings or a device.
 2. Else read the issue and code; decide, UX and craft included: the recommendation unless the evidence favours another option. A widened packet gains only paths its criteria need, outside other claims' packets.
-3. Patch the issue's packet or criteria to match, then comment `<!-- agent-decision -->`, question, decision and reason in ≤ 3 lines.
+3. Patch the issue's packet, criteria or (`reviewerLanes`) lane to match, then comment `<!-- agent-decision -->`, question, decision and reason in ≤ 3 lines.
 
 **Exit gate:** `decided: <option>` with the comment link, or `owner: <reason>`.
 
@@ -34,7 +34,7 @@ Agent reviews are the reviewer's reviews starting `<!-- agent-review sha=<HEAD> 
 
 ## 2. Review
 
-One isolated worker per PR, in parallel, in a worktree at the head, invokes `review` for both axes against the closed issue's acceptance criteria, and marks each unresolved thread fixed (with commit) or open (blocking). Workers post nothing. Verify blocking findings; skip PRs whose head moved.
+One parallel worker per PR, in a worktree at the head, invokes `review` for both axes against the closed issue's acceptance criteria, and marks each unresolved thread fixed (with commit) or open (blocking). Workers post nothing. Verify blocking findings; skip PRs whose head moved.
 
 **Exit gate:** verified findings per PR at an unchanged head.
 
@@ -50,9 +50,9 @@ Owner rules, in order; quote the first match. A PR matching none merges on your 
 6. is a Dependabot update across a major version, or a minor one below 1.0;
 7. changes more than `ownerLines` lines of code;
 8. changes code but closes no issue with a scope packet (a ```` ```scope ```` block of allowed paths);
-9. changes code outside its issues' scope packets and `alwaysInScope`.
+9. changes code outside its issues' scope packets and `alwaysInScope`, unless phase 0 widened them.
 
-Docs (`docs/`, `*.md`), tests and Dependabot's manifests and lockfiles are not code for rules 7–9.
+Docs, tests and Dependabot's manifests and lockfiles are not code for rules 7–9.
 
 | `verdict=` | When | Review | `review:owner` |
 | --- | --- | --- | --- |
