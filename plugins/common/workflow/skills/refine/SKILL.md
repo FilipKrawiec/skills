@@ -11,8 +11,8 @@ Refine the queue across items. For GitHub issues, invoke `spec` for individual i
 ## 1. Inventory
 
 - Resolve the source from the request; ask once if ambiguous; never substitute another repository's backlog.
-- Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch all in-scope items, decisions, relationships and active work; paginate to completion. Check board drift across draft and closed cards. Report inaccessible sources; an empty search never proves an empty backlog.
-- Read the base's code and tests; separate source evidence from reports and unverified claims.
+- Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch all in-scope items, decisions, relationships and active work; paginate fully. Check board drift across draft and closed cards. Report inaccessible sources; an empty search never proves an empty backlog.
+- Read the base's code and tests; separate source evidence from unverified reports.
 - Also fetch unclaimed bug reports (`type:bug`, `<!-- explore-finding`) in `lane:proposed` or no lane without `<!-- refined base=`; `spec` triages each.
 
 **Exit gate:** every in-scope item is inventoried, or missing coverage is named.
@@ -25,7 +25,7 @@ For each item, take the first matching case:
 2. Implementation evidence meets every criterion: link evidence per criterion and propose closure; leave closing to the owner through `spec`.
 3. Another item owns the same outcome: name the canonical owner and narrow overlapping criteria; preserve unique remaining work. Never close duplicates without the owner's word.
 4. A recorded owner decision supersedes the body: put the binding decision and its source in the body; update dependent slices and epic summaries together.
-5. Remaining work is unclear or too large: invoke `spec` to ground and refine it, splitting vertical slices when it needs several PRs.
+5. Remaining work is unclear or too large (code over lanes.json `ownerLines`, default 800): invoke `spec` to ground and refine it into vertical slices within it.
 
 - Historical bot recommendations are not owner approval.
 - Trace dependencies through open and closed items. Remove a prerequisite only when its responsibility is gone. Detect cycles, missing prerequisites and shared-file races. Record merge order and shared-file ownership as blocked-by links, never only in comments; drop links to deferred work. Unattended, add links mirroring a packet or `### Dependencies` section; report removals instead.
