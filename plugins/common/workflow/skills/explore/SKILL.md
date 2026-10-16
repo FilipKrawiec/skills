@@ -1,72 +1,75 @@
 ---
 name: explore
-description: Use when a scheduled task or the owner asks for an exploratory usability pass, meaning someone drives the running app as one of its users on a simulator and files the friction they meet as issues.
+description: Use when a scheduled task or the owner asks for an exploratory usability pass, meaning someone drives the running app as one of its users on a simulator or in a browser and files the friction they meet as issues.
 allowed-tools: Read Bash
 ---
 
 # Explore
 
-Use the app as one of its users would and file what slows or confuses them. Never edit, commit or push code.
+Use the app as one of its users; file what slows or confuses them. Never edit, commit or push code.
 
 Settings, from `.github/lanes.json`: `repo`, `project`, and `explore`:
 
-- `personas`: a Markdown file; each `## <persona>` says who they are, how they sign in, and lists `### <journey>` tasks, each with a goal.
-- `targets`: `{"<name>": {"launch": "<command>", "device": "<simulator name>"}}`; `launch` starts the app on the simulator whose id is in the environment variable `deviceEnv`.
+- `personas`: Markdown; each `## <persona>` says who they are and how they sign in, with `### <journey>` goals.
+- `targets`: by name, a simulator `{"launch": "<command>", "device": "<name>"}` (its id goes in variable `deviceEnv`) or a browser `{"launch": "<command>", "url": "<origin>", "viewport": "<w>x<h>"}`, or `urlFromLog`, a regex whose first group is the origin in the launch log, for a port picked at launch.
 - `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree` (default `.worktrees/explore`).
 
 ## 1. Prepare
 
-- Never touch the main checkout: it holds the owner's work. Create (`git worktree add --detach <worktree> origin/main`) or refresh it: fetch `origin main`, `checkout --force --detach origin/main`, `clean -fdq`.
-- Read `log.jsonl` from `capturesBranch` (missing on the first run). Pick a journey of the caller's persona, if named, first match wins:
-  1. The journey the caller names.
+- Never touch the main checkout. Create the worktree (`git worktree add --detach <worktree> origin/main`) or refresh it: fetch, `checkout --force --detach origin/main`, `clean -fdq`.
+- Pick a journey of the caller's persona, if named, by `log.jsonl` on `capturesBranch` (absent at first), first match wins:
+  1. The caller's named journey.
   2. A journey never run.
   3. The journey run longest ago.
 
-**Exit gate:** the worktree at origin/main; persona, journey and targets chosen.
+**Exit gate:** worktree at origin/main; persona, journey, targets chosen.
 
 ## 2. Launch
 
-One target at a time:
+One target at a time, never a physical device. Run `launch` from the worktree in the background, logging to a file; note its pid. First match wins:
 
-- Never use a physical device. Boot an available simulator matching `device`, and start `launch` in the worktree in the background with `deviceEnv=<simulator id>`, logging to a file. Record its process id.
-- Poll screenshots every 30 s, up to 20 min. A failed build ends the run; its log tail is the only finding.
+1. `device`: first boot a matching available simulator; pass `deviceEnv=<its id>`.
+2. `url` or `urlFromLog`, and `viewport`: once the origin answers, open it in a new browser tab at `viewport`, emulating touch if possible.
+3. Otherwise: skip the target, saying why.
 
-**Exit gate:** the app on screen, or the build failure recorded.
+Poll every 30 s, up to 20 min: the log, then screenshots. A failed build ends the run; its log tail is the only finding.
+
+**Exit gate:** app on screen, or build failure recorded.
 
 ## 3. Play
 
-- Be the persona: read only the screen, never the code or guide, and pursue the journey's goal with the host's simulator tools. Screenshot each step; at most 60 actions per target.
-- Injected input lags: hold each tap about 0.15 s and wait 2 s before each screenshot. Record "did nothing" only when a later screenshot agrees; retype text sent before the caret showed. Drop friction you can't reproduce: it is the tool's.
-- Push past friction. Record each with its step, expected, observed and screenshot, graded first match wins:
-  1. **Blocker:** the goal can't be reached, or data is lost or wrong.
+- Be the persona: read only the screen, never code or guide; pursue the journey's goal. Screenshot each step; at most 60 actions per target.
+- Injected input lags: wait 2 s before each screenshot; on a simulator hold taps 0.15 s. Record "did nothing" only if a later screenshot agrees; retype text sent before the caret showed. Drop friction you can't reproduce.
+- In a browser, follow the repository's preview rules; list touch-only gestures the journey needs (swipe, long-press, pinch) as `notJudged`, never as findings.
+- Push past friction. Record each with step, expected, observed and screenshot, graded first match wins:
+  1. **Blocker:** the goal is unreachable, or data is lost or wrong.
   2. **Confusion:** you hesitated, guessed, a control did nothing, or an icon had no label.
-  3. **Mismatch:** the same thing differs across screens or targets, or the layout misfits (clipped, overlapping, tiny targets).
-  4. **Polish:** it works but costs a step that could go.
+  3. **Mismatch:** it differs across screens or targets, or the layout misfits (clipped, overlapping, tiny targets).
+  4. **Polish:** it works but costs a needless step.
 
-**Exit gate:** the journey done or abandoned on each target, findings with screenshots.
+**Exit gate:** journey done or abandoned on each target; findings have screenshots.
 
 ## 4. Clean up
 
-Per target, also after a failure: SIGINT the launch process and wait up to 30 s (it may save state). TERM any process left whose command line holds the worktree path. Shut down the simulator you booted, never one you didn't.
+Per target, even after a failure: SIGINT the launch process, wait up to 30 s (it may save state), then TERM any process naming the worktree path. Close your tabs; shut down your simulator, never another.
 
-**Exit gate:** no launch process or booted simulator of yours remains.
+**Exit gate:** none of your launch processes, tabs or simulators remain.
 
 ## 5. File
 
-- Merge a finding seen on several targets. Keep the top `maxIssues` by grade.
-- Search open and closed issues for the screen and symptom (`gh issue list --state all --search "<words>"`), first match wins:
-  1. Open match: comment once with any new evidence; else drop it.
-  2. Closed within 30 days: a new `type:bug` issue linking it, as a regression.
+- Merge findings seen on several targets; keep the top `maxIssues` by grade.
+- Search issues by screen and symptom (`gh issue list --state all --search "<words>"`), first match wins:
+  1. Open match: comment once with new evidence, if any.
+  2. Closed within 30 days: a new `type:bug` regression issue linking it.
   3. No match: a new issue.
-- Captures: commit screenshots to the orphan `capturesBranch` at `runs/<date>-<persona>/<n>-<target>.png` with `gh api -X PUT repos/<repo>/contents/<path>`, and embed `https://github.com/<repo>/blob/<branch>/<path>?raw=true`. If a workflow's `push` trigger matches that branch, describe the screen instead: a capture must never start CI.
-- A new issue follows the repository's issue form: title `<type>(<area>): <outcome for the user>`; `type:bug` when it contradicts what the product promises or loses data, else `type:story`; `lane:proposed`, so the owner decides. Only now read the code: trace the screen's visible text to the code that draws it for the scope packet.
+- Captures: commit screenshots to orphan `capturesBranch` at `runs/<date>-<persona>/<n>-<target>.png` (`gh api -X PUT repos/<repo>/contents/<path>`); embed `https://github.com/<repo>/blob/<branch>/<path>?raw=true`. If a workflow's `push` trigger matches it, describe screens instead: captures never start CI.
+- A new issue: title `<type>(<area>): <outcome for the user>`; `type:bug` when it breaks a product promise or loses data, else `type:story`; `lane:proposed` for the owner. Only now read code: trace the screen's text to the code drawing it for the scope packet.
 
 ````markdown
 ### Executive summary
 <Persona> can't <goal>: <what blocks them> on <target>.
 
 **Scope:** <screen>; <what changes>.
-**Decision:** Recommend `lane:proposed`; owner decides.
 
 ### Acceptance criteria
 
@@ -79,34 +82,29 @@ S.
 {"paths": ["<code that draws the screen>"], "dependencies": []}
 ```
 
-<details>
-<summary>Steps, expected, observed</summary>
-
-<target>, <persona>: <step> → <step>. Expected …; observed …
+**Steps:** <target>, <persona>: <step> → <step>. Expected …; observed …
 
 ![step <n>](https://github.com/<repo>/blob/<capturesBranch>/runs/<date>-<persona>/<n>-<target>.png?raw=true)
-
-</details>
 
 <!-- explore-finding persona=<persona> journey=<journey> -->
 ````
 
-- With a `project`, add each new issue to it: `gh project item-add`.
+- With a `project`, `gh project item-add` each new issue.
 
-**Exit gate:** each finding is an issue, a comment, or dropped with its reason.
+**Exit gate:** each finding filed, commented or dropped with a reason.
 
 ## 6. Report
 
-Append `{"date", "persona", "journey", "targets", "issues", "outcome"}` as one line to `log.jsonl` on `capturesBranch`.
+Append `{"date", "persona", "journey", "targets", "issues", "notJudged", "outcome"}` as one line to `log.jsonl` on `capturesBranch` (`notJudged: []` without browser targets).
 
 At most 8 lines:
 
 ```markdown
 Waiting on @owner: #<n> needs your lane.
-**Summary:** <persona>, <journey>, <targets>: #<n> Blocker (opened), #<m> Confusion (commented).
+**Summary:** <persona>, <journey>, <targets>: #<n> Blocker (opened), #<m> Confusion (commented). Not judged: <notJudged, if any>.
 **Decision:** #<n> awaits your lane; I recommend `lane:afk`.
 ```
 
-Unattended, open with `Blocked: <cause>` or `Waiting on <owner>: <what>` and stay flagged when either applies; else archive.
+Unattended, open with `Blocked: <cause>` or `Waiting on <owner>: <what>` and stay flagged if either applies; else archive.
 
-**Exit gate:** the log line committed and the report sent.
+**Exit gate:** log line committed, report sent.
