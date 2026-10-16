@@ -9,10 +9,10 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 One run delivers **at most one** `lane:afk` issue; park instead of asking.
 
 - Take and record the recommended option on every decision you may take.
-- `<base>` (default `main`), `branchPrefix` (default `agent/afk-`), `staleClaimHours` (default 3), `alwaysInScope`, `project`: `.github/lanes.json` on `origin/<base>`.
+- `<base>` (default `main`), `branchPrefix` (default `agent/afk-`), `staleClaimHours` (default 3), `alwaysInScope`, `project`, `ownerLines` (default 800): `.github/lanes.json` on `origin/<base>`.
 - Work only in worktrees, never the main checkout. Run one command at a time; compound shell stalls on prompts.
-- **Park** an issue: push useful work; replace `lane:afk` and `state:*` with `lane:owner`; comment the question, options and recommendation in ≤ 5 lines.
-- Models: the strongest model runs `spec`, `plan`, review axis A and `improve`; a fast model runs the `tdd` steps and review axis B. Reasoning: high `spec`; medium `plan`, `review`, `improve`; low `tdd`; lowest otherwise.
+- **Park** an issue: push useful work; replace `lane:afk` and `state:*` with `lane:owner`; comment question, options and recommendation in ≤ 5 lines.
+- Models: strongest for `spec`, `plan`, `improve`, review axis A; fast for `tdd` steps, review axis B. Reasoning: high `spec`; medium `plan`, `review`, `improve`; low `tdd`; lowest otherwise.
 - Read [setup.md](references/setup.md) without `.github/lanes.json` or when scheduling runs.
 - Read [github-safety.md](references/github-safety.md) when setting up or checking GitHub settings.
 
@@ -31,25 +31,25 @@ For each open `branchPrefix` PR whose issue has `lane:afk`: invoke `vcs` to make
 ## 3. Pick
 
 1. Base red: go to phase 5.
-2. Park each `lane:afk` issue with `state:claimed` and no open PR whose newest claim is older than `staleClaimHours`. Remaining claims are active deliveries; at three or more, go to phase 5. A claim's missing or invalid packet blocks selection → phase 5.
+2. Park each `lane:afk` issue with `state:claimed` and no open PR whose newest claim is older than `staleClaimHours`. Remaining claims are active deliveries; at three or more, or one without a valid packet, go to phase 5.
 3. Otherwise pick the top candidate.
 
-Candidates are open `lane:afk` issues with no `state:` label, acceptance criteria and a scope packet (a ```` ```scope ```` block); not `type:epic` or `type:task`; no open PR closing them (a stacked PR names `Closes #<N>` only in its body); every packet dependency and blocked-by issue closed as completed; no packet path overlapping an open `branchPrefix` PR's files or a remaining claim's packet. Paths overlap when equal or a `/`-ending one contains the other; test directories and files never overlap.
+Candidates are open `lane:afk` issues with no `state:` label, acceptance criteria and a scope packet (a ```` ```scope ```` block); not `type:epic`/`type:task`; no open PR closing them (a stacked PR names `Closes #<N>` only in its body); every packet dependency and blocked-by issue closed as completed; no packet path overlapping an open `branchPrefix` PR's files or a remaining claim's packet. Paths overlap when equal or a `/`-ending one contains the other; test directories and files never overlap.
 
-An issue held back only by one non-draft `branchPrefix` PR carrying `review:owner` or closing a parked issue is a stacked candidate. Rank unstacked first, then board Priority, else a `priority:P*` label, then lowest number.
+An issue held back only by one non-draft `branchPrefix` PR carrying `review:owner` or closing a parked issue is a stacked candidate. Rank unstacked first, then board Priority or a `priority:P*` label, then lowest number.
 
 **Exit gate:** `next: #<N>` → phase 4; none → phase 5.
 
 ## 4. Deliver
 
-1. Re-read active claims before `vcs` starts (at three or overlapping, go to phase 5) and after claiming: order claims by timestamp, then number; keep at most three non-overlapping packets. If yours loses, or on `blocked by …`, remove `state:claimed`, return its card to Todo and go to phase 5.
-2. Invoke `vcs` to start the issue, naming any parent, then `plan`. Dispatch a fast-model worker, given the issue, the `## Plan` comment and the worktree, to invoke `tdd` for each step and `vcs` to commit it and update docs the change makes stale; it returns `done` or `tdd`'s `stuck`. On `stuck`, amend the plan and re-dispatch; a step stuck twice you run yourself. Pass the scope check and the verify gate (the project's `verify` task).
+1. Re-read active claims before `vcs` starts (three or overlapping: phase 5) and after claiming: order by timestamp, then number; keep at most three non-overlapping packets. If yours loses, or on `blocked by …`, remove `state:claimed`, return its card to Todo; go to phase 5.
+2. Invoke `vcs` to start the issue, naming any parent, then `plan`. Planned code (not docs, tests, lockfiles) over `ownerLines`: plan a self-contained first part within it; invoke `spec` to move the rest to a `lane:afk` issue blocked by this one. Dispatch a fast-model worker, given the issue, the `## Plan` comment and worktree, to invoke `tdd` per step and `vcs` to commit it, updating docs it makes stale; it returns `done` or `tdd`'s `stuck`. On `stuck`, amend the plan and re-dispatch; a step stuck twice you run yourself. Pass the scope check and verify gate (the project's `verify` task).
 3. Two fresh-context workers, given only issue and diff, each invoke `review` for one axis; fix their findings. Say `review round <n> of 2` before each; after round 2, list what is left under Decision.
 4. Invoke `vcs` to open the PR.
 
 Scope check: every path in `git diff --name-only --no-renames $(git merge-base origin/<base> HEAD)` (stacked: the parent's branch for `<base>`) and `git ls-files -o --exclude-standard` equals a packet path, or sits under a packet path ending in `/` or an `alwaysInScope` prefix. Revert any other path or ask the reviewer for it.
 
-Ask the reviewer when the issue needs a path outside its packet or a choice its criteria leave open: with `agentReview`, dispatch a fresh-context worker: "Invoke `agent-review` to decide on #<N>: <question>; options <A>, <B>; recommended <A>: <evidence>." On `decided`, continue; on `owner`, or without `agentReview`, park.
+Ask the reviewer for a path outside the packet or a choice the criteria leave open: with `agentReview`, dispatch a fresh-context worker: "Invoke `agent-review` to decide on #<N>: <question>; options <A>, <B>; recommended <A>: <evidence>." On `decided`, continue; on `owner`, or without `agentReview`, park.
 
 Park when the issue contradicts rules; needs an owner path (`.github/CODEOWNERS`, `ownerPaths`), credentials, settings or a device; or stays red after two attempts. Before parking a failure, trace it to its raising call.
 
@@ -57,13 +57,13 @@ Park when the issue contradicts rules; needs an owner path (`.github/CODEOWNERS`
 
 ## 5. Housekeeping
 
-Only when nothing was delivered: comment the failing excerpt on each red Dependabot PR; invoke `spec` to lane open issues without a `lane:` label. List follow-ups; never start them.
+Nothing delivered: comment the failing excerpt on each red Dependabot PR; invoke `spec` to lane open issues without a `lane:` label. List follow-ups; never start them.
 
 **Exit gate:** each comment and `spec` result.
 
 ## 6. Close
 
-Invoke `improve` for shipped issues awaiting lessons and this run's friction; invoke `vcs` to tidy.
+Invoke `improve` for shipped issues awaiting lessons and run friction; invoke `vcs` to tidy.
 
 **Exit gate:** `improve`'s exit gates; worktrees removed.
 
