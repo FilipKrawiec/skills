@@ -6,11 +6,11 @@ Keep estimates, scope packets, owner waivers and risks outside collapsible secti
 
 | Check | Holds when |
 | --- | --- |
-| Single | A story, chore or bug (not `type:epic` or `type:task`); no open PR, `state:claimed` or `state:started`. |
+| Single | A `type:story`, `type:chore` or `type:bug`; no open PR, `state:claimed` or `state:started`. |
 | Independent | No other open issue must merge in the same PR or release with it; none of its dependencies depends back on it. |
 | Valuable | Merged alone, it gives a user a behaviour or the owner a named benefit; a layer that pays off only with another issue fails. |
 | Small | `### Estimate` is S or M, with one sentence on the main unknown. Split an L into slices (unattended: propose them in the triage comment). |
-| Bounded | A scope packet lists every path it changes and issue it builds on, including ones named only in prose, and the shared ports, libraries and widgets each criterion's outcome passes through. A bug's cause is confirmed at `file:line` by a reproducing test or traced call, never only suspected. When the main unknown is how existing code handles real input or whether it does what a criterion assumes, a real-sample run or the cited code settles it. |
+| Bounded | A scope packet lists every path it changes, each file on every criterion's call path (from where its effect shows to where it starts) and each issue it builds on, including ones named only in prose. A bug's cause is confirmed at `file:line` by a reproducing test or traced call. When the main unknown is how existing code handles real input or whether it does what a criterion assumes, a real-sample run or the cited code settles it. |
 | Decided | No open question that changes UX beyond the criteria, adds cost or departs from best practice or the codebase's patterns (settle others on your recommendation, recorded in the issue); new UI has a mockup or names an existing pattern. When the issue promises no visible change, every control a criterion moves or replaces shows where and as it does today on every layout; otherwise it is an open design question. |
 | Unprivileged | Touches nothing CODEOWNERS gives the owner: automation, agent instructions, infrastructure, credentials, settings, releases, deploys. |
 
@@ -32,7 +32,7 @@ Unattended, or for issues from `gh issue list --search "-label:lane:afk -label:l
 - Ground a bug report (`type:bug`, or `<!-- explore-finding` in the body) before the checks; under a review-only request, report these edits instead of saving them:
   1. Trace the observed behaviour to the base's code and confirm its cause at `file:line`.
   2. Add only criteria restoring the report's expected behaviour, including that a test reproducing the report passes (a described render for a visual bug); propose others in the comment.
-  3. Narrow the packet to the files the fix and its tests change (`alwaysInScope` paths need no entry); name the estimate's main unknown.
+  3. Narrow the packet to the files the fix, its tests and its call path need (`alwaysInScope` paths need no entry); name the estimate's main unknown.
   4. Append `<!-- refined base=<short sha> -->` to the body whatever the outcome, closure proposals included.
 - All checks pass → `lane:proposed`; any fails → `lane:owner`. Apply the issue form in `SKILL.md` phase 4.
 - Comment once: each failing check and what would fix it; end a proposal with "Apply `lane:afk` to let an AFK run take it."
