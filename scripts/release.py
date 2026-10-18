@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Release main: bump from conventional commits, sync manifests, commit and tag.
 
-`.github/workflows/release.yml` runs it after every verified push to `main`, then pushes the
-commit and tag together and publishes the GitHub Release.
+Stable publication in `.github/workflows/release.yml` is held pending owner approval of
+the exact release candidate. Its constant false job condition has no manual or variable
+bypass; the retained steps would run this script, push the commit and tag together,
+and publish the GitHub Release.
 """
 
 from __future__ import annotations
