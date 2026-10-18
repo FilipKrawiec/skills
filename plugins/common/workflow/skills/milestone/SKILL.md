@@ -40,9 +40,9 @@ The host replaces example commands and paths with concrete project values before
 
 ## 3. Hand off the result
 
-Have the host dispatch release with the exact candidate and approval evidence, then bounded health after each product milestone. Automatically deliver the working test candidate for owner evaluation; production still needs exact owner approval. Rank the next milestone proposals by user value, risk and dependency, recommend one, and include any health prerequisite. Do not treat the next proposal as approved.
+Have the host dispatch release with the exact candidate and approval evidence, then bounded health after production acceptance. Automatically deliver the working test candidate for owner evaluation; production still needs exact owner approval. Rank the next milestone proposals by user value, risk and dependency, recommend one, and include any health prerequisite. Do not treat the next proposal as approved.
 
-**Exit gate:** test delivery and limitations recorded, health scheduled or completed, next proposal ranked.
+**Exit gate:** test delivery and limitations recorded, health scheduled after production acceptance or completed, next proposal ranked.
 
 ## Output
 

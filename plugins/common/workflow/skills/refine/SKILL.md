@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Bash(gh:*,git:*)
 
 # Backlog Refinement
 
-Refine the queue across items. Invoke `spec` for individual intent, criteria, estimate, scope and lane. Approved milestone intent authorizes autonomous slicing, refinement and lane assignment without per-story approval. Validate owner-authored GitHub approval of the matching brief revision; silence grants nothing. Have the host invoke `milestone` separately for missing authority.
+Refine the queue across items. Invoke `spec` for individual intent, criteria, estimate, scope and lane. Use a trusted direct owner request or matching approved milestone brief as authority; record its source on GitHub for durable work. Refine authorized slices without per-story approval. Silence and bot summaries grant nothing; missing milestone direction goes to the host.
 
 ## 1. Inventory
 
@@ -28,17 +28,17 @@ For each item, take the first matching case:
 5. Remaining work is unclear or too large (code over lanes.json `ownerLines`, default 800): invoke `spec` to ground and refine it into vertical slices within it.
 
 - Historical bot recommendations are not owner approval; out-of-intent proposals never halt approved work.
-- Lanes say whether owner participation is required; milestones group deliverables: give each open issue a milestone (a slice its epic's) and drop epics' lanes; defer work, including work awaiting a third party, to a later milestone, keeping its lane.
+- Lanes say whether owner participation is required; milestones group deliverables: give each open issue a milestone (a slice its epic's) and drop epics' lanes; defer only work outside the current acceptance; required work stays in its milestone with a visible wait, keeping its lane.
 - Independently adjudicate technical choices and ADRs; reserve product/strategy reversal, new paid services or budget increases, and authority/credential/release/quality-gate weakening for the owner. New interactions require owner prototype direction. Bounded investigations may proceed with a question, time limit and evidence exit.
-- Trace dependencies through open and closed items. Remove a prerequisite only when its responsibility is gone. Detect cycles, missing prerequisites and shared-file races. Record merge order and shared-file ownership as blocked-by links, never only in comments; drop links to deferred work. Unattended, add links mirroring a packet or `### Dependencies` section; report removals instead.
+- Trace dependencies through open and closed items. Remove a prerequisite only when its responsibility is gone. Detect cycles, missing prerequisites and shared-file races. Record merge order and shared-file ownership as blocked-by links, never only in comments; keep deferred prerequisites blocking until fulfilled or genuinely removed from scope. Unattended, add links mirroring a packet or `### Dependencies` section; report removals instead.
 - Check the scope packet covers every criterion, including tests, locales and required documentation; account for project-wide allowances. Record protected paths and owner actions visibly. If the base deleted a packet path, confirm the outcome still holds before asking.
 
 **Exit gate:** each item has a disposition and each cross-item conflict has a correction or a visible blocker.
 
 ## 3. Apply
 
-- A review-only request produces recommendations; a refinement request authorizes issue and board edits in scope, never implementation, new milestone authority, merges, releases or deployments. Standing milestone approval covers in-intent story lanes.
-- For GitHub issues, invoke `spec` for specification and readiness changes. Within approved milestone intent, refine and slice autonomously; otherwise report proposals. Edit other sources directly, using their own readiness convention. Preserve owner approvals; a board column never grants unattended authority.
+- A review-only request produces recommendations; a refinement request authorizes issue and board edits in scope, never implementation, new milestone authority, merges, releases or deployments.
+- For GitHub issues, invoke `spec` for specification and readiness changes. Refine and slice within recorded authority; otherwise report proposals. Edit other sources directly, using their own readiness convention. Preserve owner approvals; a board column never grants unattended authority.
 - Take and record routine recommendations. If independent adjudication is needed, ask the host to dispatch a leaf worker with: "Decide #<N>: <question>; options <A/B>; recommend <A> from <evidence>. Read <rules, criteria, code, constraints>; no dispatch or credential access. Return decision, evidence and reserved owner question if any in ≤ 5 lines." Keep refining independent work. Preserve lane authorization through temporary blockers; `lane:owner` only when owner participation is required.
 - Re-read each item before writing. Patch minimally; no comment per formatting change.
 - Derive board status from readiness, dependencies and active work. Preserve priorities unless a recorded decision or parent policy changes them.

@@ -8,7 +8,7 @@ allowed-tools: Read Edit Bash
 
 ## 1. Bound the iteration
 
-After each product milestone, autonomously inspect dependencies, toolchains, automation actions and confidence evidence within the approved maintenance constraints. Record a bounded scope and acceptance criteria, then defer new discoveries. Use project resource/retry limits and stop conditions; a time limit does not waive required migrations. Freeze the latest stable versions available at iteration start, including major versions of direct dependencies, toolchains and actions. Record registry/release evidence and resolve transitive compatibility. Do not chase versions arriving later; queue them for the next iteration unless urgent security requires immediate reassessment.
+After production acceptance of each product milestone in the target repository, autonomously inspect dependencies, toolchains, automation actions and confidence evidence within the approved maintenance constraints. Record a bounded scope and acceptance criteria, then defer new discoveries. Use project resource/retry limits and stop conditions; a time limit does not waive required migrations. Freeze the latest stable versions available at iteration start, including major versions of direct dependencies, toolchains and actions. Record registry/release evidence and resolve transitive compatibility. Do not chase versions arriving later; queue them for the next iteration unless urgent security requires immediate reassessment.
 
 **Exit gate:** dated target inventory, compatibility evidence and bounded slices recorded.
 

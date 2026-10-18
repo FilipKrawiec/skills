@@ -10,7 +10,7 @@ allowed-tools: Read Bash
 
 Identify the immutable artifact and configuration revision, acceptance evidence, independent review, reproducible project coverage/mutation/risk gates, limitations, and tested rollback. Use stricter project gates for changed and critical behavior. Missing required evidence blocks delivery; never infer a pass from an absent run. A plugin's versioned Git tree can be the artifact; record its exact tree or commit and publication configuration.
 
-Read configured native CI, test delivery and production controls. Implementers and reviewers cannot hold promotion credentials; only the configured promotion mechanism may use them. Do not invent a new release framework. Missing controls block the affected stage and become a setup blocker. For this skill repository, hold stable publication until promotion controls are ready.
+Read configured native CI, test delivery and production controls. Implementers and reviewers cannot hold promotion credentials; only the configured promotion mechanism may use them. Do not invent a new release framework. Missing controls block the affected stage and become a setup blocker.
 
 **Exit gate:** candidate identity, evidence and applicable configured controls are known; blockers named.
 

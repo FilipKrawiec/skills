@@ -6,9 +6,9 @@ allowed-tools: Skill Read Bash(git:*)
 
 # Code Review
 
-Review on two axes, A Standards and B Spec. Report confirmed defects gates miss; omit unchanged-line defects, compiler/linter findings and unnamed style preferences. Read [hot-paths.md](references/hot-paths.md) for area audits or hot paths/startup.
+Review on two axes, A Standards and B Spec. Report confirmed defects gates miss; omit compiler/linter findings and unnamed style preferences. On diffs, omit unrelated pre-existing defects; area audits cover all in-scope code. Read [hot-paths.md](references/hot-paths.md) for area audits or hot paths/startup.
 
-Severity: **Blocker** (`REQUEST_CHANGES`) is a runtime defect, unhandled edge, boundary breach, hollow or failing test; **Major** (`REQUEST_CHANGES` when the diff introduces it) a smell likely to cause a defect or rework soon; **Minor** (suggestion) style, naming, optional refactor. *Blocking* means `REQUEST_CHANGES`.
+**Blocker**: runtime defect, unhandled edge, boundary breach or hollow/failing test. **Major**: smell likely to cause defects or rework; blocking on a diff when introduced. Blocking findings require `REQUEST_CHANGES`. **Minor**: optional style, naming or refactoring suggestion.
 
 ## 1. Scope
 
@@ -60,7 +60,7 @@ A leaf runs only its assigned axis. Otherwise review both axes serially. Keep in
 
 ## 4. Verdict
 
-Merge both axes, most severe first; ≤ 8 lines. Blockers require REQUEST_CHANGES; suggestions never require fixes. Recheck the head and required checks before declaring approval; changed heads invalidate review evidence.
+Report both axes by severity in ≤8 lines. Blockers require changes; suggestions stay optional. Recheck head and required checks before approval; a changed head invalidates evidence.
 
 ```text
 Decision: APPROVED | REQUEST_CHANGES

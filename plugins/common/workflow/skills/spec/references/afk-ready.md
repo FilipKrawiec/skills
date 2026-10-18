@@ -34,7 +34,7 @@ Unattended, or for issues from `gh issue list --search "-label:lane:afk -label:l
   2. Add only criteria restoring the report's expected behaviour, including that a test reproducing the report passes (a described render for a visual bug); propose others in the comment.
   3. Narrow the packet to the files the fix and its tests change (`alwaysInScope` paths need no entry); name the estimate's main unknown.
   4. Append `<!-- refined base=<short sha> -->` to the body whatever the outcome, closure proposals included.
-- Ready and authorized by matching owner-approved milestone brief revision → `lane:afk`; ready without authorization → `lane:proposed`; required owner participation → `lane:owner`. Temporary blockers preserve existing authorization and lane; record readiness separately. Absence of approval is never approval.
+- Ready under matching approved milestone, direct owner or configured reviewer authority → `lane:afk`; ready without authorization → `lane:proposed`; required owner participation → `lane:owner`. Temporary blockers preserve existing authorization and lane; record readiness separately. Absence of approval is never approval.
 - Comment once: each failing check and what would fix it.
 
 ## Epic design changes
