@@ -6,7 +6,7 @@ allowed-tools: Skill Read Bash(gh:*,git:*)
 
 # Spec (01 Define, 02 Spec)
 
-**Autonomy:** an approved milestone authorizes story slicing, refinement and lane assignment within its intent; no per-story approval. Have the host invoke `milestone` separately for missing intent/approval. Validate owner-authored GitHub approval naming the matching brief revision; silence and bot recommendations grant nothing.
+**Autonomy:** use a trusted direct owner request for assigned work, or the matching approved milestone brief for delegated slices; no per-story approval. Record the source on GitHub when work must survive the session. Silence, labels and bot summaries grant no authority. Have the host invoke `milestone` separately only for missing milestone intent/approval.
 
 - A lane says who delivers; a milestone groups a deliverable outcome. Each open non-epic issue has one lane: `lane:afk` (an agent delivers unattended), `lane:proposed` (you recommend AFK) or `lane:owner` (only the owner can: a reserved decision, credentials, settings, a device). Name milestones by release (`1.0.0`); the open one due first, else lowest, is current. Defer by milestone, never by lane.
 - Apply `lane:afk` under matching milestone authority, explicit owner approval, or configured reviewer authority. Preserve authorization through temporary blockers; `lane:owner` means owner participation is required.
@@ -41,7 +41,7 @@ Read the code, tests, agent rules and ADRs until the open decisions are clear; c
 
 Read [afk-ready.md](references/afk-ready.md) when proposing, approving or triaging an issue for AFK. Attended issues need no estimate or scope packet.
 
-- Assign `lane:afk` to ready authorized work; `lane:proposed` to unapproved agent work; `lane:owner` only for required owner participation. Preserve the lane for temporary readiness or dependency blockers.
+- Set the authorized ready lane; retain it across temporary readiness or dependency waits.
 - Tidy (when asked): bring open issues and cards to the issue form below.
 - Merged PRs already meet the criteria: comment one PR link per criterion and propose closing; the owner closes.
 - With a board, move each issue now Ready (meets the issue form, no `state:` label) to Todo.
@@ -77,7 +77,7 @@ S; check how existing reservations are queried.
 </details>
 ````
 
-**Exit gate:** each issue has one lane, at most one new comment.
+**Exit gate:** each non-epic issue has one lane, at most one new comment.
 
 ## Output
 

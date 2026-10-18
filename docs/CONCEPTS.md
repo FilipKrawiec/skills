@@ -16,7 +16,7 @@ Team refines → plans → implements → independent review
        production → acceptance → engineering health
 ```
 
-A milestone groups a deliverable outcome, constraints, non-goals and acceptance. New interactions need lightweight prototype direction; established interactions reference an accepted pattern. Approval covers the matching brief revision and delegates story slicing, refinement and engineering decisions. An out-of-intent discovery becomes a proposal without stopping approved work.
+A milestone groups a deliverable outcome, constraints, non-goals and acceptance. New interactions need lightweight prototype direction; established interactions reference an accepted pattern. Approval covers the matching brief revision and delegates story slicing, refinement and engineering decisions. A trusted direct owner request also authorizes its specified work without an artificial milestone-approval loop; retain its source for durable GitHub work. An out-of-intent discovery becomes a proposal without stopping approved work.
 
 Production approval is separate: demonstrate a working test environment or installable candidate, acceptance evidence, limitations and rollback readiness. The owner marks feedback as a blocker or follow-up. Approval binds the artifact and configuration; changed contents require renewed approval. Merge/CI success alone is not production acceptance. Default to a coherent milestone release; propose an earlier valuable subset when justified.
 
@@ -41,7 +41,7 @@ Work in isolated short-lived branches/worktrees from a fetched base; preserve th
 
 ## Health and confidence
 
-After each product milestone, deliver autonomously scoped health work: dependency currency, meaningful testing gaps, duplication, test speed and justified refactoring. Freeze latest-stable targets at kickoff, including majors for direct dependencies, toolchains and CI actions; resolve transitives compatibly. Complete required migrations in bounded slices before the next product milestone. Unsupported combinations permit documented newest-compatible exceptions; external outages permit independent product work while health remains blocked. Later releases wait until next iteration except urgent security fixes.
+After production acceptance of each product milestone in the consuming repository, deliver autonomously scoped health work: dependency currency, meaningful testing gaps, duplication, test speed and justified refactoring. Freeze latest-stable targets at kickoff, including majors for direct dependencies, toolchains and CI actions; resolve transitives compatibly. Complete required migrations in bounded slices before the next product milestone. Unsupported combinations permit documented newest-compatible exceptions; external outages permit independent product work while health remains blocked. Later releases wait until next iteration except urgent security fixes.
 
 Use reproducible project mutation, coverage and complexity/risk evidence with stricter changed/critical-code gates. Ratchet assurance; missing required evidence blocks merge. Lowered thresholds, narrower measurement scope, new exclusions or baseline resets require owner approval. Compare like environments and behavior, not test counts or one line-coverage percentage.
 
@@ -51,6 +51,6 @@ Safe configured rollback on agreed failing production checks is delegated, with 
 
 Canonical packages live in `plugins/common/<package>/skills/`. Each skill is self-contained within 800 words; optional references within 600, descriptions within 300 characters. Portable docs use text diagrams; GitHub issue/PR bodies may use Mermaid with an explanation. Host-specific manifests are generated from package metadata; native host code does not belong in common skills.
 
-Use project-native build and quality tools. This repository runs `just verify` for unit tests and one plugin validation. The legacy `scripts/project-verify.py` entrypoint remains for compatibility; it does not orchestrate work. Prefer deleting duplicated checks and instructions over adding scripts, schemas or coordination frameworks.
+Use project-native build and quality tools. This library runs `just verify` for unit tests and one plugin validation; distributing health instructions does not authorize installing their toolchain here. The legacy `scripts/project-verify.py` entrypoint remains for compatibility; it does not orchestrate work. Prefer deleting duplicated checks and instructions over adding scripts, schemas or coordination frameworks.
 
 The board remains Backlog, Todo, In progress, Review, Done. Any change to its columns or membership requires coordinated devcontainer work. Keep one owner decision queue, a daily digest when things change and immediate incident/all-useful-work-blocked alerts through an explicitly authorized channel.

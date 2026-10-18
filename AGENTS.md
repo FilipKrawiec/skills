@@ -56,7 +56,7 @@ Use ASCII or Unicode box drawings and Markdown tables in portable skills and doc
 
 ## Goal
 
-Keep this repository as a compact, agent-agnostic skill library.
+Keep this repository as a compact, agent-agnostic skill library. Its workflow skills govern consuming product repositories; maintaining the library does not initiate their product-health or runtime setup. Use this repository's configured tests and validator; add tooling only for an identified library need within the requested scope.
 
 This is a public repository. Do not add proprietary, client, or secret material to its skills or plugin packages.
 
@@ -86,4 +86,4 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 - Open ready PRs and turn on squash auto-merge bound to the reviewed head; it waits for required independent approvals and checks. Wait for a prerequisite PR instead of opening stacked drafts. Optional review suggestions do not block delivery.
 - The owner retains merge authority: merging, approving and force-pushing a protected or default branch happen only on the owner's explicit word; for a PR that matches no owner rule, `agent-review`'s approval is that word. GitHub branch protection and CODEOWNERS enforce this, not local hooks.
 
-- Production requires owner approval of the demonstrated artifact and configuration, not merely merge approval. Keep stable publication held until native promotion controls exist. After each product milestone, deliver bounded engineering health; hosts own credential isolation, scheduling and enforced claims, not new library scripts.
+- Production requires owner approval of the demonstrated artifact and configuration, not merely merge approval. Keep stable publication held until native promotion controls exist.

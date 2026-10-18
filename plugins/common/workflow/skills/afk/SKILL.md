@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 
 # AFK
 
-Deliver one bounded slice of an approved milestone per run. Read `.github/lanes.json` from `origin/<base>` (`base` defaults to `main`); use its branchPrefix, scope, project and claim settings. Never change the main checkout.
+Deliver one authorized bounded slice per run. Read `.github/lanes.json` from `origin/<base>` (`base` defaults to `main`); use its branchPrefix, scope, project and claim settings. Never change the main checkout.
 
 The host owns model routing, credential isolation and enforced claims. Serialize work until those capabilities are proven. Parallel work requires enforced disjoint scopes including tests and dependencies; labels and read/write claim checks are not atomic exclusion. Keep invocation depth at most two, without cycles: ask the host to dispatch leaf assignments rather than nesting orchestration skills.
 
@@ -14,7 +14,7 @@ Read [setup.md](references/setup.md) when enabling or scheduling runs; read [git
 
 ## 1. Establish authority
 
-Have the host assign `ship` to observe actual base health, then read the approved milestone, issue criteria, scope packet, dependencies and recorded decisions. Approved milestones authorize routine engineering decisions within those constraints; record the recommended choice. New interactions require the owner's prototype direction before implementation. Reserve new paid services, budget increases, changed product/strategy intent, authority changes and exact production approval for the owner; existing services within explicit budgets are delegated.
+Have the host assign `ship` to observe actual base health, then read the issue's recorded authorization, criteria, scope packet, dependencies and decisions, plus its approved milestone brief when governing the work. Approved milestones authorize routine engineering decisions within those constraints; record the recommended choice. New interactions require the owner's prototype direction before implementation. Reserve new paid services, budget increases, changed product/strategy intent, authority changes and exact production approval for the owner; existing services within explicit budgets are delegated.
 
 Have the host assign milestone, release and bounded health work to their owning skills; do not reproduce their procedures here. Test delivery is automatic within approved constraints; production requires exact owner approval for the candidate and destination.
 
@@ -39,7 +39,7 @@ Use the host's enforced claim if available; otherwise run serially. Re-read clai
 Ask the host to dispatch leaf assignments with this complete brief, filled with actual values:
 
 ```text
-Intent: <approved milestone and issue URLs; user outcome>.
+Intent: <issue URL; owner decision or matching approved milestone; outcome>.
 Criteria: <observable acceptance criteria and prototype direction>.
 Scope: <owned paths including tests; exclusions; dependencies; claim>.
 Checkout: <worktree>; base <ref + SHA>; head <branch + SHA>.
@@ -60,7 +60,7 @@ Require focused tests, scope containment and the project's verify gate before de
 
 On failure, trace the raising call, attempt at most two evidence-led fixes, then replan or wait with a concrete retry condition. Retain the lane; technical difficulty alone never becomes `lane:owner`. Request fresh technical adjudication within approved constraints through the host. Only an owner-reserved decision waits on the owner. Preserve useful work and report the blocker.
 
-Have the host assign lessons and safe worktree cleanup to their owning skills. Stop health work at its product-defined bound.
+Have the host assign lessons and safe worktree cleanup to their owning skills. At a bounded health stop, keep unfinished required migrations as next-product prerequisites.
 
 **Exit gate:** delivery or recorded replan/wait, with lane retained unless authority changed.
 
