@@ -6,86 +6,64 @@ allowed-tools: Skill Read Bash(git:*,gh:*)
 
 # Agent Review
 
-- `owner`, `implementer`, `reviewer`, `reviewRounds` (default 3), `alwaysInScope`, `ownerPaths`, `ownerLabels`, `ownerLines` (default 800), `reviewQueue`: `.github/lanes.json`.
-- Run every `gh` command as `reviewer`: `GH_TOKEN=$(gh auth token --user <reviewer>) gh ...`; never print the token.
-- Never commit, push or edit. Write to GitHub only reviews, thread replies and resolutions, `review:owner`, auto-merge, the `reviewQueue` issue and phase 0's decisions.
-- Before judging, invoke the craft, design and UX skills the project's agent rules name.
+Read `.github/lanes.json`: owner, implementer, reviewer, ownerPaths, ownerLabels, ownerLines (default 800), reviewRounds (default 3), alwaysInScope and reviewQueue. Never implement, commit or push. Post only authorized decisions, reviews, replies, resolutions, queue updates and auto-merge requests.
 
-## 0. Decide
+The host must provide a fresh reviewer context and reviewer credentials inaccessible to the craftsman. Account selection from a shared token store is not isolation. If isolation is unavailable, withhold approval and report the capability gap. The host owns model routing and claims. Serialize until capability is proven; parallel assignments require enforced disjoint scopes including tests and dependencies. Keep dispatch depth at most two without cycles; have the host assign review axes as leaves.
 
-Asked to decide one fork (issue, question, options, recommendation), run only this phase; an implementer never widens its own scope.
+## 1. Adjudicate a technical fork
 
-1. Return `owner: <reason>` when it adds cost, reverses a recorded owner decision, goes beyond the issue's intent, touches an owner path (rule 4), can't be undone, or needs credentials, settings or a device.
-2. Else read the issue and code; decide, UX and craft included: the recommendation unless evidence favours another. A widened packet gains only paths its criteria need, outside other claims' packets.
-3. Patch the issue's packet, criteria or (`reviewerLanes`) lane to match, then comment `<!-- agent-decision -->`, question, decision and reason in ≤ 3 lines.
+When given a fork, read intent, criteria, options, recommendation and evidence. Decide routine engineering within approved milestone constraints; prefer the recommendation unless evidence contradicts it. Never reverse owner decisions, add a paid service, exceed budgets, alter product intent, cross owner paths or approve production. New interactions await owner prototype direction.
 
-**Exit gate:** `decided: <option>` with the comment link, or `owner: <reason>`.
+A necessary packet expansion must remain within intent and outside enforced active scopes. Record the choice, reason and updated criteria/packet on the issue. Change lanes only under configured reviewerLanes authority; failure alone retains its lane. Return a reserved owner decision with options and recommendation, or an evidence-led replan/wait. Never substitute repeated review for bounded diagnosis.
 
-## 1. Collect
+**Exit gate:** `decided: <choice>` and evidence link, or reserved decision/capability wait.
 
-Agent reviews are the reviewer's reviews starting `<!-- agent-review sha=<HEAD> round=<N> verdict=<V> -->`. Per open PR, first case that fits:
+## 2. Collect and inspect
 
-1. A draft: skip it.
-2. An agent review exists at the head: go to phase 4.
-3. Its newest agent review is round `reviewRounds`, verdict `rounds`, at an older head: review it as round `reviewRounds` + 1.
-4. Its newest agent review used round `reviewRounds` or later: skip it.
-5. Otherwise: review it as round 1 + its earlier agent reviews.
+Select at most four ready PRs, oldest updated first. Capture base and head SHAs, issue criteria, unresolved threads, current checks and previous rounds. Skip drafts. Reuse a verdict only for the identical head with still-valid evidence. At reviewRounds, stop repetitive retries and record diagnosis/replan/wait; do not grant approval by exhaustion.
 
-**Exit gate:** at most 4 PRs, oldest updated first.
+Have the host dispatch each axis with this complete leaf brief:
 
-## 2. Review
+```text
+Intent: <milestone/issue URLs and outcome>.
+Criteria: <criteria, prototype decision and reserved approvals>.
+Scope: review axis <A|B>, <paths including tests>, <dependencies/exclusions>.
+Checkout: <worktree>; base <ref + SHA>; head <branch + SHA>.
+Decisions: <approved constraints and unresolved technical questions>.
+Evidence: <diff command, check commands/exits, captures, prior findings>.
+Use review's assigned axis only; no dispatch, edits or external posting.
+Verify unresolved threads against code. Return APPROVED or REQUEST_CHANGES,
+confirmed file:line findings/scenarios, suggestions separately, commands/exits,
+head SHA and remaining decisions in at most 8 lines.
+```
 
-One parallel worker per PR, in a worktree at the head, invokes `review` for both axes against its issue's acceptance criteria, and marks each unresolved thread fixed (with commit) or open (blocking). Verify blocking findings; skip PRs whose head moved.
+**Exit gate:** confirmed findings for an unchanged exact head.
 
-**Exit gate:** verified findings per PR at an unchanged head.
+## 3. Post the verdict
 
-## 3. Post
+Reserve owner approval when the PR matches any of these rules:
 
-Owner rules, in order; quote the first match. A PR matching none merges on your approval and green checks. The PR:
+- Explicit owner review, unknown author, no files or at least 3000 files.
+- CODEOWNERS/ownerPaths (both rename paths), ownerLabels, or code over ownerLines.
+- Dependabot major update, or minor update below 1.0.
+- Code without a closing issue's packet, or outside packet/alwaysInScope without authorized adjudication.
 
-1. carries `review:owner` not added by your own `rounds` verdict;
-2. has an author other than `owner`, `implementer` or Dependabot;
-3. lists no files, or 3000;
-4. touches a path `.github/CODEOWNERS` or `ownerPaths` gives the owner (a rename counts both paths);
-5. carries an `ownerLabels` label;
-6. is a Dependabot update across a major version, or a minor one below 1.0;
-7. changes more than `ownerLines` lines of code;
-8. changes code but closes no issue with a scope packet;
-9. changes code outside its issues' scope packets and `alwaysInScope`, unless phase 0 widened them.
+Docs, tests, manifests and lockfiles from Dependabot do not count as code for the last two code limits. Owner paths and product/production authority still apply.
 
-Docs, tests and Dependabot's manifests and lockfiles are not code for rules 7–9.
+Blocking findings require REQUEST_CHANGES, including at the round limit; optional suggestions never force fixes. Clean reserved work gets COMMENT and review:owner. Otherwise APPROVE only the captured head with valid required checks, no unresolved blockers and an independent author/reviewer. Never approve your own PR.
 
-| `verdict=` | When | Review | `review:owner` |
-| --- | --- | --- | --- |
-| `ready` | No blocking finding or open thread; no owner rule matches. | APPROVE; COMMENT on your own PR | remove |
-| `owner` | No blocking finding; an owner rule matches, or a thread waits on an owner check (device, credential). | COMMENT | add |
-| `fixes` | Blocking findings, rounds left. | COMMENT | remove |
-| `rounds` | Blocking findings in the last round. | COMMENT | add |
+Post marker `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|owner|fixes|rounds> -->`, matched rule, confirmed findings, evidence and attribution. Reply with fixing commits; resolve only agent threads whose fixes were independently verified. Recheck head and checks immediately before approval; head movement invalidates it.
 
-Post one review on the head: blocking findings inline; body = marker, verdict (quoting the owner rule), findings (blocking first; `file:line` and failure scenario each), open threads, before/after captures of user-visible changes for `owner`, attribution footer. Reply on each thread the head fixes, naming the commit; resolve only agent-written threads (first comment ends with the footer).
+**Exit gate:** review tied to exact head, or stale evidence wait.
 
-**Exit gate:** each PR has its review and label.
+## 4. Merge and queue
 
-## 4. Merge
+For eligible approved heads, request `gh pr merge <pr> --squash --auto --match-head-commit <head>`; required protection must still hold. Never treat merge approval as production approval.
 
-After each APPROVE: `gh pr merge <pr> --squash --auto --match-head-commit <head>`. Never switch auto-merge off. Report failed merges once.
+With reviewQueue, read [queue.md](references/queue.md) to update it. Wake runners only through caller-authorized mechanisms; never recursively invoke AFK. Report failed wakes with a retry condition.
 
-**Exit gate:** auto-merge state per approved PR.
+**Exit gate:** auto-merge/check state and queue recorded.
 
-## 5. Queue
+## Output
 
-With `reviewQueue`, read [queue.md](references/queue.md) and rewrite that issue.
-
-**Exit gate:** the queue issue is rewritten, or no `reviewQueue`.
-
-## 6. Wake the runner
-
-Wake the AFK runner as the caller describes: "Scheduled AFK run." plus AFK PRs needing fixes. Tell the owner after three offline passes. Review PRs the runner reports via phases 2–4.
-
-**Exit gate:** runner woken, the offline count, or the caller runs `afk` itself.
-
-## 7. Report
-
-≤ 8 lines. Open with `Blocked: <cause>` or `Waiting on <owner>: <what>` and stay flagged when either applies; else archive. **Summary:** PRs merged; the runner's lesson PRs, linked. **Decision:** PRs for the owner with reason, linking the queue; runner parks and follow-ups; findings raised on two or more PRs, with target file; each with a recommendation.
-
-**Exit gate:** report sent; scratch worktrees removed.
+At most 8 lines: **Summary:** linked verdicts, exact heads, commands/exits and waits. **Decision:** reserved choices with options/recommendation, or “Nothing needed.” Daily changed digest and immediate incidents/all-work-blocked notices use only the authorized configured notification channel.

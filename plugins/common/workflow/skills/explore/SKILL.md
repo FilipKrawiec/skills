@@ -6,7 +6,7 @@ allowed-tools: Read Bash
 
 # Explore
 
-Use the app as one of its users; file what slows or confuses them. Never edit, commit or push code.
+File reproducible user friction. Never edit, commit or push code.
 
 Settings, from `.github/lanes.json`: `repo`, `project`, and `explore`:
 
@@ -16,13 +16,13 @@ Settings, from `.github/lanes.json`: `repo`, `project`, and `explore`:
 
 ## 1. Prepare
 
-- Never touch the main checkout. Create the worktree (`git worktree add --detach <worktree> origin/main`) or refresh it: fetch, `checkout --force --detach origin/main`, `clean -fdq`.
+- Never touch the main checkout. Fetch configured `base` (default `main`); create an owned worktree with `git worktree add --detach <worktree> origin/<base>`. Reuse only your clean worktree; otherwise choose another path or wait. Never force-clean or force-checkout another worktree.
 - Pick a journey of the caller's persona, if named, by `log.jsonl` on `capturesBranch` (absent at first), first match wins:
   1. The caller's named journey.
   2. A journey never run.
   3. The journey run longest ago.
 
-**Exit gate:** worktree at origin/main; persona, journey, targets chosen.
+**Exit gate:** owned worktree at configured origin/<base>; persona, journey, targets chosen.
 
 ## 2. Launch
 
@@ -51,7 +51,7 @@ Poll every 30 s, up to 20 min: the log, then screenshots. A failed build ends th
 
 ## 4. Clean up
 
-Per target, even after a failure: SIGINT the launch process, wait up to 30 s (it may save state), then TERM any process naming the worktree path. Close your tabs; shut down your simulator, never another.
+Per target, even after a failure: SIGINT the launch process, wait up to 30 s (it may save state), then TERM only processes started by this assignment. Close your tabs; shut down your simulator, never another.
 
 **Exit gate:** none of your launch processes, tabs or simulators remain.
 
@@ -105,6 +105,6 @@ Waiting on @owner: #<n> needs your lane.
 **Decision:** #<n> awaits your lane; I recommend `lane:afk`.
 ```
 
-Unattended, open with `Blocked: <cause>` or `Waiting on <owner>: <what>` and stay flagged if either applies; else archive.
+Unattended, flag blockers or reserved owner waits; otherwise archive.
 
 **Exit gate:** log line committed, report sent.

@@ -13,18 +13,17 @@ active_skills:
   - afk
   - agent-review
   - explore
+  - milestone
+  - release
+  - health
 
 build_tools:
   just:
     build_script: justfile
     lifecycle_tasks:
       unit: python3 -m unittest discover -s scripts/tests
-      verify: python3 scripts/validate-plugin-definitions.py
-  python:
-    build_script: scripts/validate-plugin-definitions.py
-    lifecycle_tasks:
-      unit: python3 -m unittest discover -s scripts/tests
-      verify: python3 scripts/validate-plugin-definitions.py
+      verify: just verify
+
 ---
 
 # Agent Guidance
@@ -38,7 +37,7 @@ build_tools:
 
 ## Output
 
-- Take the recommended option on every decision and record it in the issue, plan or PR; ask the owner only when it changes UX beyond the acceptance criteria, adds cost (spend, quota, paid services), or departs from software best practice or the codebase's design patterns. The approvals a skill reserves for the owner (`lane:afk`, approving or merging a PR) stay theirs.
+- Approved milestone intent delegates slicing, routine engineering, technical ADRs and ready autonomous lanes. Record recommendations; reserve changed product/strategy intent, unfamiliar interaction direction, new paid services/budget increases, authority/credential/release changes, quality-gate weakening and exact production approval for the owner. Temporary blockers retain lane authorization; diagnose and replan technical failures.
 - Every owner message has a **Summary** (the outcome, linking the PR, issue or `file:line` with the detail) and a **Decision** (what the owner must decide, with options and a recommendation, or "Nothing needed."). A session reply ≤ 5 lines; a run or review report ≤ 8.
 - Start with the action or its evidence, not a preamble. Link changed files instead of pasting them.
 - In PRs, logs and agent-to-agent output, give the commands run, their exit codes and the decisions left.
@@ -84,5 +83,7 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 - Work happens in an isolated worktree on a short-lived branch made from the fetched base branch; the main checkout stays as it is. The start, open-PR and tidy steps are in `plugins/common/workflow/skills/vcs/SKILL.md`.
 - Before opening a PR, run `review` on the branch as two fresh-context workers (axes A and B), fix every finding, and quote the verdict in the PR body.
 - Committed changes stay within the issue's scope packet when it has one. After verification, an agent pushes the branch and opens or updates the PR that closes the issue (`Closes #<N>`, linking the `## Plan` comment when one was posted).
-- Open every PR ready, never a draft, and turn on squash auto-merge (`gh pr merge <pr> --squash --auto`) at once; it still waits for the required approval and checks.
+- Open ready PRs and turn on squash auto-merge bound to the reviewed head; it waits for required independent approvals and checks. Wait for a prerequisite PR instead of opening stacked drafts. Optional review suggestions do not block delivery.
 - The owner retains merge authority: merging, approving and force-pushing a protected or default branch happen only on the owner's explicit word; for a PR that matches no owner rule, `agent-review`'s approval is that word. GitHub branch protection and CODEOWNERS enforce this, not local hooks.
+
+- Production requires owner approval of the demonstrated artifact and configuration, not merely merge approval. Keep stable publication held until native promotion controls exist. After each product milestone, deliver bounded engineering health; hosts own credential isolation, scheduling and enforced claims, not new library scripts.

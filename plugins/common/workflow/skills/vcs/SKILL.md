@@ -6,12 +6,12 @@ allowed-tools: Bash(git:*,gh:*,lsof:*) Read
 
 # Version Control
 
-`<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`). Never edit, switch or stash the main checkout `<root>` (the first entry of `git worktree list`). Work in the session's own worktree when the host made one, since hosts block edits outside it; else in a worktree under `<root>/.worktrees/`. In the host's worktree, `git switch` to the task's branch; a branch checks out in one worktree only, so first remove the worktree holding it when clean and `lsof -a -d cwd +D <worktree>` exits 1; else return `blocked by <worktree>`. With a board (lanes.json `project`), move cards with `gh project item-edit`.
+`<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`). Never edit, switch or stash the main checkout `<root>` (the first entry of `git worktree list`). Use the host's worktree or `<root>/.worktrees/`; wait if another worktree holds the branch. With a board (lanes.json `project`), move cards with `gh project item-edit`.
 
 ## 1. Start
 
-- Start an issue only when each of your open PRs is ready to merge (phase 5) and shares no files with it, the named stack parent excepted; otherwise return `blocked by #<pr>`.
-- Reuse the issue's unmerged branch, and its worktree unless the host made one for the session; else branch from the stack parent's head, or `origin/<base>`: unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
+- Start an issue only when each of your open PRs is ready to merge (phase 5) and shares no files with it, including a proposed parent; otherwise return `blocked by #<pr>`.
+- Reuse the issue's unmerged branch, and its worktree unless the host made one for the session; else fetch and branch from `origin/<base>`; wait for any parent to merge first: unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
 - Unattended: add `state:claimed` and comment ``Claimed by an AFK run on `<branch>`.``. Attended: add `state:started`. Card to In progress.
 
 **Exit gate:** on the task's branch, the issue labelled; or `blocked by #<pr>` or `<worktree>`.
@@ -24,13 +24,13 @@ Stage only the task's paths. One Conventional Commit per green slice; squash `wi
 
 ## 3. Push
 
-Pass the verify gate (the project's `verify` task) before each push. Push over HTTPS as the host's machine user, never SSH: SSH pushes as the key's owner. Before the PR opens, rebase on `origin/<base>` and push `--force-with-lease`; once it is open, merge `origin/<base>`, never rebase: a rewritten history detaches review threads and races the reviewer.
+Pass the verify gate (the project's `verify` task) for each changed push. Push over HTTPS as the host's machine user, never SSH: SSH pushes as the key's owner. Before the PR opens, rebase on `origin/<base>` and push `--force-with-lease`; once it is open, merge `origin/<base>`, never rebase: a rewritten history detaches review threads and races the reviewer.
 
 **Exit gate:** the push exits 0.
 
 ## 4. Open the PR
 
-- Ready, never a draft: a draft never auto-merges. Stacked: a draft on the parent's branch, body `Stacked on #<P>`, so nothing lands before the parent. For an issue, use its title. Every PR uses this body envelope (omit inapplicable sections): summary ≤ 3 sentences; scope, risks and decision one line each. Keep blockers, unfixed findings and owner choices visible, with options and a recommendation when needed. Collapse evidence with `<details>` / `<summary>` and blank lines around Markdown. Use no CSS or scripts. Add fenced `mermaid` with text only when a diagram clarifies a flow or relationship.
+- Ready, never a draft. Wait for a parent to merge before starting dependent work; do not open stacked drafts. For an issue, use its title. Every PR uses this body envelope (omit inapplicable sections): summary ≤ 3 sentences; scope, risks and decision one line each. Keep blockers, unfixed findings and owner choices visible, with options and a recommendation when needed. Collapse evidence with `<details>` / `<summary>` and blank lines around Markdown.
 
   ```markdown
   ## Executive summary
@@ -66,18 +66,27 @@ Pass the verify gate (the project's `verify` task) before each push. Push over H
 
 - For a revert: title `revert: <subject>`; body `Reverts #<M>` and the failing checks, never `Closes`, which would close the reverted issue.
 - Include before/after captures for each visible change in the evidence section.
-- Open each unfixed finding as an issue, unless an open one covers it; link it under Decision.
+- Require fresh independent review of both axes for this exact head before opening; host-dispatched leaves return verdicts and evidence. Reviewer credentials must be inaccessible to the craftsman; shared token-store account selection is not isolation. Fix blockers; record optional suggestions without forcing fixes. Quote exact-head verdicts and valid checks in the PR.
 - Every PR, attended or not, revert and lesson PRs too: `gh pr merge <pr> --squash --auto`; auto-merge still waits for required approvals and checks. Remove the `state:` label.
 
-**Exit gate:** the PR URL, auto-merge on unless stacked.
+**Exit gate:** the PR URL, auto-merge on.
 
 ## 5. Ready to merge
 
 Run after every push, when `<base>` moves, and before calling a PR ready.
 
-1. Blockers: draft, failing checks, conflicts or `BEHIND`, unresolved threads, `CHANGES_REQUESTED`. Fix them and every review finding with a clear fix, optional ones too; reply on each thread naming the commit.
-2. A fresh-context worker that never edits resolves the threads it confirms fixed. A person's threads stay theirs; name them to the owner.
-3. A stacked draft follows its parent: merge its new commits; once merged, `gh pr edit <pr> --base <base>`, merge `origin/<base>`, push, `gh pr ready <pr>`, auto-merge on; closed unmerged, close it and return `blocked by #<P>`.
+1. Blockers: draft, failing checks, conflicts or `BEHIND`, unresolved threads, `CHANGES_REQUESTED`. Fix blocking findings; reply on each thread naming the commit.
+2. Ask the host for a fresh read-only leaf to verify agent thread fixes; human threads stay theirs. Supply this complete brief:
+
+   ```text
+   Intent/criteria: <issue outcome and acceptance criteria>.
+   Scope: <paths, tests, exclusions, dependencies>.
+   Checkout: <worktree>; base <ref/SHA>; head <branch/SHA>.
+   Decisions/evidence: <constraints, findings, commands/exits>.
+   Verify fixes only; no dispatch or edits. Return exact-head verdict,
+   fixing commits, evidence and remaining decisions in at most 8 lines.
+   ```
+3. Recheck head SHA and required checks; invalidate approvals/evidence after head movement. Request a fresh independent review for the exact head. Bind auto-merge to it with `--match-head-commit <head>`.
 4. Repeat until only pending checks, the required approval or an open parent remain.
 
 **Exit gate:** no other blocker.
@@ -86,10 +95,10 @@ Run after every push, when `<base>` moves, and before calling a PR ready.
 
 ## 6. Tidy
 
-Remove other `<branchPrefix>` worktrees and branches whose PR merged or closed, when clean and `lsof -a -d cwd +D <worktree>` exits 1 (no session inside).
+Remove only this assignment’s `<branchPrefix>` worktrees and branches whose PR merged or closed, when clean and `lsof -a -d cwd +D <worktree>` exits 1 (no session inside).
 
-**Exit gate:** `git worktree list` shows none.
+**Exit gate:** owned completed worktrees removed; others preserved.
 
 ## Authority
 
-Merge, approve or force-push a protected or default branch only on the owner's word. Never dispatch workflows, touch releases, secrets or variables, or delete branches, tags or repositories other than your own merged head.
+Merge, approve or force-push a protected or default branch only on the owner's word. Production requires exact owner approval for candidate and destination, beyond branch restriction. Never dispatch workflows, touch releases, secrets or variables, or delete branches, tags or repositories other than your own merged head.

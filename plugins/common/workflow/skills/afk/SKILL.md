@@ -6,67 +6,64 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 
 # AFK
 
-One run delivers **at most one** `lane:afk` issue; park instead of asking.
+Deliver one bounded slice of an approved milestone per run. Read `.github/lanes.json` from `origin/<base>` (`base` defaults to `main`); use its branchPrefix, scope, project and claim settings. Never change the main checkout.
 
-- Take and record the recommended option on every decision you may take.
-- `<base>` (default `main`), `branchPrefix` (default `agent/afk-`), `staleClaimHours` (default 3), `alwaysInScope`, `project`, `ownerLines` (default 800): `.github/lanes.json` on `origin/<base>`.
-- Work only in worktrees, never the main checkout. Run one command at a time; compound shell stalls on prompts.
-- **Park** an issue: push useful work; replace `lane:afk` and `state:*` with `lane:owner`; comment question, options and recommendation in ≤ 5 lines.
-- Models: strongest for `spec`, `plan`, `improve`, review axis A; fast for `tdd` steps, review axis B. Reasoning: high `spec`; medium `plan`, `review`, `improve`; low `tdd`; lowest otherwise.
-- Read [setup.md](references/setup.md) without `.github/lanes.json` or when scheduling runs.
-- Read [github-safety.md](references/github-safety.md) when setting up or checking GitHub settings.
+The host owns model routing, credential isolation and enforced claims. Serialize work until those capabilities are proven. Parallel work requires enforced disjoint scopes including tests and dependencies; labels and read/write claim checks are not atomic exclusion. Keep invocation depth at most two, without cycles: ask the host to dispatch leaf assignments rather than nesting orchestration skills.
 
-## 1. Ship
+Read [setup.md](references/setup.md) when enabling or scheduling runs; read [github-safety.md](references/github-safety.md) when checking GitHub protections.
 
-Invoke `ship`.
+## 1. Establish authority
 
-**Exit gate:** `ship`'s exit gate.
+Have the host assign `ship` to observe actual base health, then read the approved milestone, issue criteria, scope packet, dependencies and recorded decisions. Approved milestones authorize routine engineering decisions within those constraints; record the recommended choice. New interactions require the owner's prototype direction before implementation. Reserve new paid services, budget increases, changed product/strategy intent, authority changes and exact production approval for the owner; existing services within explicit budgets are delegated.
 
-## 2. Tend
+Have the host assign milestone, release and bounded health work to their owning skills; do not reproduce their procedures here. Test delivery is automatic within approved constraints; production requires exact owner approval for the candidate and destination.
 
-For each open `branchPrefix` PR whose issue has `lane:afk`: invoke `vcs` to make it ready to merge. Never switch auto-merge off. Park on an owner decision or two failed fixes.
+**Exit gate:** authorized slice and healthy base, or a recorded wait reason.
 
-**Exit gate:** each own PR green and conflict-free, or parked.
+## 2. Tend owned PRs
 
-## 3. Pick
+Before selecting new work, inspect each owned open PR and its issue. Have the host assign VCS to reconcile head, checks and threads, and implementation to fix confirmed blockers within approved scope. Preserve lane authorization. Apply bounded diagnosis/replanning from phase 5; keep a visible wait and retry condition if unresolved. Existing PRs stay in this recovery loop instead of being abandoned by candidate filtering.
 
-1. Base red: go to phase 5.
-2. Park each `lane:afk` issue with `state:claimed` and no open PR whose newest claim is older than `staleClaimHours`. Three or more remaining claims, or one without a valid packet: go to phase 5.
-3. Otherwise pick the top candidate.
+**Exit gate:** owned PRs ready or recorded for recovery/wait; exact heads and next actions known.
 
-Candidates are open `lane:afk` issues with no `state:` label, acceptance criteria and a scope packet (a ```` ```scope ```` block); not `type:epic`/`type:task`; no open PR closing them (a stacked PR names `Closes #<N>` only in its body); every packet dependency and blocked-by issue closed as completed; no packet path overlapping an open `branchPrefix` PR's files or a remaining claim's packet. Paths overlap when equal or a `/`-ending one contains the other; test directories and files never overlap.
+## 3. Select and claim
 
-An issue held back only by one non-draft `branchPrefix` PR carrying `review:owner` or closing a parked issue is a stacked candidate unless a draft is already stacked on it. Rank unstacked first, then earliest milestone (none last), then board Priority or a `priority:P*` label, then lowest number.
+Choose an open `lane:afk` issue with criteria and a scope packet, excluding epics, active claims and issues with an open closing PR. Require dependencies completed and no overlap with active work, including tests. Rank earliest milestone, then board Priority or priority label, then issue number. Wait for a parent PR to merge; never create a stacked draft.
 
-**Exit gate:** `next: #<N>` → phase 4; none → phase 5.
+Use the host's enforced claim if available; otherwise run serially. Re-read claims before and after recording `state:claimed`; stop on conflict. A stale claim is investigated, not permission to overwrite work. Keep the five board columns Backlog, Todo, In progress, Review, Done and existing membership behavior. Claimed work moves to In progress; linked PR to Review; completed issue to Done.
+
+**Exit gate:** one exclusive assignment, or queue empty/wait reason.
 
 ## 4. Deliver
 
-1. Re-read active claims before `vcs` starts (three or overlapping: phase 5) and after claiming: order by timestamp, then number; keep at most three non-overlapping packets. If yours loses, or on `blocked by …`, remove `state:claimed`, return its card to Todo; go to phase 5.
-2. Invoke `vcs` to start the issue, naming any parent, then `plan`. Planned code (not docs, tests, lockfiles) over `ownerLines`: plan a self-contained first part within it; invoke `spec` to move the rest to a `lane:afk` issue blocked by this one. Dispatch a fast-model worker, given the issue, the `## Plan` comment and worktree, to invoke `tdd` per step and `vcs` to commit it, updating docs it makes stale; it returns `done` or `tdd`'s `stuck`. On `stuck`, amend the plan and re-dispatch; a step stuck twice you run yourself. Pass the scope check and verify gate.
-3. Two fresh-context workers, given only issue and diff, each invoke `review` for one axis; fix their findings; after two rounds, list what is left under Decision.
-4. Invoke `vcs` to open the PR.
+Ask the host to dispatch leaf assignments with this complete brief, filled with actual values:
 
-Scope check: every path in `git diff --name-only --no-renames $(git merge-base origin/<base> HEAD)` (stacked: the parent's branch for `<base>`) and `git ls-files -o --exclude-standard` equals a packet path, or sits under a packet path ending in `/` or an `alwaysInScope` prefix. Revert any other path or ask the reviewer for it.
+```text
+Intent: <approved milestone and issue URLs; user outcome>.
+Criteria: <observable acceptance criteria and prototype direction>.
+Scope: <owned paths including tests; exclusions; dependencies; claim>.
+Checkout: <worktree>; base <ref + SHA>; head <branch + SHA>.
+Decisions: <recorded choices; delegated bounds; owner-reserved decisions>.
+Evidence: <plan, commands/exits, captures, findings and prior attempts>.
+Perform only <implementation | technical adjudication | review axis A/B |
+VCS start/commit/open/tend | milestone | release | health> under its owning
+skill. Do not dispatch workers or invoke orchestration. Preserve other edits.
+Return evidence, changed paths, resulting head, exit gate and remaining decisions
+in at most 8 lines; never expose credentials.
+```
 
-Ask the reviewer for a path outside the packet or a choice the criteria leave open: with `agentReview`, dispatch a fresh-context worker: "Invoke `agent-review` to decide on #<N>: <question>; options <A>, <B>; recommended <A>: <evidence>." On `decided`, continue; on `owner`, or without `agentReview`, park.
+Require focused tests, scope containment and the project's verify gate before delivery. Every changed/untracked path must belong to the packet or approved alwaysInScope prefixes. Independent reviewers receive fresh context and credentials inaccessible to the craftsman; selecting an account in a shared token store is not isolation. Review the exact head; resolve blockers, not optional suggestions. Have the host assign VCS to open a ready PR with auto-merge awaiting valid approval/checks.
 
-Park when the issue contradicts rules; needs an owner path (`.github/CODEOWNERS`, `ownerPaths`), credentials, settings or a device; or stays red after two attempts. Before parking a failure, trace it to its raising call.
+**Exit gate:** ready PR and evidence for its exact head, or bounded failure record.
 
-**Exit gate:** PR URL, auto-merge on unless stacked, or a parked issue.
+## 5. Recover and close
 
-## 5. Housekeeping
+On failure, trace the raising call, attempt at most two evidence-led fixes, then replan or wait with a concrete retry condition. Retain the lane; technical difficulty alone never becomes `lane:owner`. Request fresh technical adjudication within approved constraints through the host. Only an owner-reserved decision waits on the owner. Preserve useful work and report the blocker.
 
-Nothing delivered: comment the failing excerpt on each red Dependabot PR; invoke `spec` to lane open issues without a `lane:` label. List follow-ups; never start them.
+Have the host assign lessons and safe worktree cleanup to their owning skills. Stop health work at its product-defined bound.
 
-**Exit gate:** each comment and `spec` result.
-
-## 6. Close
-
-Invoke `improve` for shipped issues awaiting lessons and run friction; invoke `vcs` to tidy.
-
-**Exit gate:** `improve`'s exit gates; worktrees removed.
+**Exit gate:** delivery or recorded replan/wait, with lane retained unless authority changed.
 
 ## Output
 
-≤ 8 lines, changed items only. **Summary:** base health, PRs tended, delivered PR (or "queue empty"), lesson PRs, linked. **Decision:** parks, follow-ups and proposed lessons, each with a recommendation. Open with `Blocked: <cause>` or `Waiting on <owner>: <what>` and stay flagged when either applies; else archive.
+At most 8 lines: **Summary:** linked delivery, commands/exits, evidence and waits. **Decision:** only reserved owner choices with recommendation, or “Nothing needed.” Update the configured queue; send notifications only through its authorized configured channel.

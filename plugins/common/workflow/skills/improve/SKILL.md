@@ -15,7 +15,7 @@ For each issue awaiting lessons (closed as completed in the last 30 days, its ne
 ## 2. Place
 
 - A lesson needs two linked occurrences or the owner's request; one occurrence is an observation only.
-- Prefer a script or gate that makes the failure impossible, then editing or deleting a rule, then a new rule.
+- Prefer an existing deterministic gate, then delete or sharpen a rule. Add a helper only for a demonstrated boundary existing tools cannot enforce; do not build a workflow engine here.
 - One target per lesson: the skill owning the phase (rules holding in any project); project agent rules (project-only); `.github/lanes.json` or `.github/CODEOWNERS` (scope, merge, owner paths); the issue template or `spec` (unbuildable issues); docs. Never agent memory.
 - Scrub secrets, internal hostnames, client names and local paths.
 
@@ -29,13 +29,24 @@ Comment `## Lessons` on the shipped issue ("no lessons" when none): lessons with
 
 ## 4. Propose
 
-One issue and PR per target repository. Leave out lessons for lanes.json or CODEOWNERS (hand the owner the exact line), needing an owner decision (UX beyond the criteria, cost, departing from best practice or the codebase's patterns), or matching an open issue or PR (link it).
+Classify by effects: routine engineering guidance within approved constraints is delegated; product intent, cost, owner paths, credential/merge authority and production approval remain reserved. A documentation label never makes an authority change routine. Keep configuration/CODEOWNERS changes for explicit owner authority. Link duplicate proposals.
 
-1. Invoke `spec` to open an issue carrying the targets and wordings.
-2. Invoke `vcs` to start branch `<branchPrefix>lesson-<N>-<slug>` (another repository: clone it to a temp directory first). Invoke `writing-great-skill` and write the change to its standard; pass the target's verification.
-3. Invoke `vcs` to open the PR, linking the `## Lessons` comment.
-4. When the owner approved the wording this session, ask them to approve the PR on GitHub.
-5. Link issue and PR from `## Lessons` or the output; remove a temp clone.
+Have the host assign implementation and delivery to leaf workers; keep invocation depth at most two with no cycles. The host owns model routing, isolated reviewer credentials and enforced claims. Serialize until capabilities are proven; parallel scopes must be enforced and disjoint, including tests and dependencies.
+
+```text
+Intent: <lesson, occurrences, milestone/issue and desired effect>.
+Criteria: <exact wording/outcomes and authoring budgets>.
+Scope: <owned paths including tests; exclusions; dependencies>.
+Checkout: <worktree>; base <ref/SHA>; head <branch/SHA>.
+Decisions: <delegated engineering choices; owner-reserved effects>.
+Evidence: <lessons links, prior decisions, commands/exits, findings>.
+Perform only assigned authoring or VCS work using its owning skill; no
+worker dispatch or orchestration. Preserve other edits. Independent review
+must have credentials inaccessible to the craftsman. Return changed paths,
+head, checks/exits, exit gate and remaining decisions in at most 8 lines.
+```
+
+Use one issue/ready PR per target repository; link the Lessons evidence. Verify the target, secure independent exact-head review and enable auto-merge awaiting required approvals/checks. On failure, diagnose and attempt at most two fixes, then record replan/wait with retry condition; retain the lane. Ask the owner only for reserved effects.
 
 **Exit gate:** each lesson linked to its PR, or a proposal with its reason.
 

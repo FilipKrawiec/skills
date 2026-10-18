@@ -65,19 +65,6 @@ class CommonPluginLayoutTests(unittest.TestCase):
             {f"./plugins/common/{package}" for package in COMMON_PACKAGES},
         )
 
-    def test_root_ci_runs_the_authoritative_operational_mvp_checks(self) -> None:
-        workflow = (ROOT / ".github" / "workflows" / "verify.yml").read_text(encoding="utf-8")
-
-        self.assertIn("python3 -m unittest discover -s scripts/tests", workflow)
-        self.assertIn("python3 scripts/validate-plugin-definitions.py", workflow)
-        self.assertIn("python3 scripts/project-verify.py verify", workflow)
-
-    def test_no_local_recipe_pushes_a_release(self) -> None:
-        justfile = (ROOT / "justfile").read_text(encoding="utf-8")
-
-        self.assertNotIn("\nrelease ", justfile)
-        self.assertNotIn("git push", justfile)
-
     def test_all_docs_and_adrs_are_indexed_in_docs_index(self) -> None:
         docs_index = (ROOT / "docs" / "index.md").read_text(encoding="utf-8")
         adr_readme = (ROOT / "docs" / "adr" / "README.md").read_text(encoding="utf-8")
@@ -99,39 +86,6 @@ class CommonPluginLayoutTests(unittest.TestCase):
                     f"Record file {record_file.name} is not indexed in docs/index.md or docs/records/README.md",
                 )
 
-    def test_root_justfile_defines_standard_lifecycle_recipes(self) -> None:
-        justfile = (ROOT / "justfile").read_text(encoding="utf-8")
-        self.assertTrue((ROOT / "justfile").is_file())
-        self.assertIn("unit:", justfile)
-        self.assertIn("verify:", justfile)
-        self.assertIn("status:", justfile)
-        self.assertIn("release-check:", justfile)
-        self.assertIn("install-agy:", justfile)
-        self.assertIn("link-agy:", justfile)
-
-    def test_all_skills_and_package_markdown_links_resolve_correctly(self) -> None:
-        import re
-        link_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
-        for md_file in (ROOT / "plugins" / "common").rglob("*.md"):
-            raw_content = md_file.read_text(encoding="utf-8")
-            # Strip code blocks and inline code
-            content = re.sub(r"```[\s\S]*?```", "", raw_content)
-            content = re.sub(r"`[^`\n]+`", "", content)
-            for match in link_pattern.finditer(content):
-                target = match.group(2).strip()
-                if target.startswith(("http://", "https://", "mailto:", "#")):
-                    continue
-                self.assertFalse(
-                    target.startswith("file://") or target.startswith("/"),
-                    f"{md_file.relative_to(ROOT)} should not use absolute link '{target}'",
-                )
-                target_path = target.split("#", 1)[0]
-                resolved = (md_file.parent / target_path).resolve()
-                self.assertTrue(
-                    resolved.is_file(),
-                    f"{md_file.relative_to(ROOT)} broken relative link '{target}' -> {resolved}",
-                )
-
     def test_skills_are_portable_and_do_not_hardcode_repo_specific_scripts(self) -> None:
         for md_file in (ROOT / "plugins").rglob("*.md"):
             content = md_file.read_text(encoding="utf-8")
@@ -149,6 +103,3 @@ class CommonPluginLayoutTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-

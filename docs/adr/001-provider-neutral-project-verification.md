@@ -1,19 +1,29 @@
-# ADR-001: Provider-Neutral Project Verification Baseline
+# ADR-001: Portable skills and delegated delivery
 
 ## Decision
 
-This is the single active operating-model baseline. The public repository hosts portable skills with encapsulated reference guidance under `plugins/common/`; it contains no proprietary, client, or secret content.
+This is the single current architectural baseline. The public library contains portable procedure skills and generated host manifests under `plugins/common/`; no proprietary, client or secret content.
 
-Delivery follows the seven-phase cycle of the workflow plugin: 01 Define, 02 Spec, 03 Plan, 04 Execute, 05 Review, 06 Ship, 07 Improve. Each phase has one skill, and the optional Project board groups them into five standard columns (`plugins/common/workflow/skills/afk/references/setup.md`). Work is planned as cohesive slices, not artificial microtasks. Each slice gets one isolated short-lived-branch linked Git worktree from a declared base revision; a named isolated copy is the non-Git fallback. Parallel execution is limited to independent slices with non-overlapping ownership and dependencies.
+The owner approves milestone outcomes and design direction, then the team autonomously refines and delivers bounded slices through planning, implementation, independent review and test deployment. Production requires a separate prepared demo and approval of the exact artifact and configuration. Technical decisions and technical ADR changes remain delegated unless they reverse owner strategy or cross a reserved boundary.
 
-Model and harness routing stays local to each host, not in project-committed profiles. A slice whose executor fails, is unavailable or is unsuitable goes back to planning; there is no automatic cross-harness retry and no fabricated execution.
+Keep authorization, type, milestone and waiting reason distinct. Temporary failure never erases a granted autonomous lane. Bound retries and replan from evidence; escalate concrete reserved decisions, not every technical difficulty. After each product milestone, complete bounded health work with frozen dependency targets and reproducible project-specific confidence gates; record agreed compatibility/outage exceptions explicitly.
 
-The shared Python CLI (`scripts/project-verify.py`) is the local and CI verification loop. It discovers `AGENTS.md` frontmatter declarations, executes defined lifecycle tasks, and validates Git worktree hygiene. It does not create worktrees, schedule tasks, manage packages, edit content, or interpret prose. Executors rerun the loop until the gate passes or return the slice.
+GitHub preserves intent, approvals, claims and evidence across sessions. Hosts own model routing, dispatch, isolated credentials and enforceable coordination. Skills are not a credential or concurrency boundary. Require fresh review context and credentials unavailable to the implementer. Parallel work needs proven claims and disjoint scopes including tests; serialize otherwise. Resume reconciles records against actual branch/PR/CI state and never fabricates execution.
 
-AFK grants bounded autonomy across one complete slice. Executors may commit verified branches, push them, and publish/update Review Requests. Non-AFK work requires a Review Request; merge, approval, and force-push of protected/default branches remain user-authorized. A published Review Request links exactly one durable Delivery Record in the configured tracker; the configured host integration may close or update it on merge.
+Use isolated worktrees and short-lived branches from the fetched base. GitHub protections keep protected paths and owner-reserved actions under required approval. Autonomous engineering merge approval is not production approval. The five board columns and existing membership remain unchanged; any change needs coordinated devcontainer support.
+
+Verification uses project-native commands. Here `just verify` runs unit fixtures and the plugin validator once. Retain `scripts/project-verify.py` as a compatibility entrypoint until consumers migrate, not as a required orchestration layer. Keep policy in its owning skill and use existing platform/build controls before adding a helper.
+
+## Rationale and alternatives
+
+Per-story owner approval and parking every failed fix consume owner attention without resolving engineering work. Unrestricted autonomy would lose product direction and production control. Milestone delegation plus exact-candidate production approval preserves both.
+
+A script for every contract or role would turn this library into another runtime with duplicated host capabilities. Keep procedure guidance portable and enforcement in GitHub, project tools and the host. Package syntax tests alone do not prove credential isolation, release correctness or cross-harness behavior; record those integration capabilities honestly.
 
 ## Consequences
 
-- `scripts/project-verify.py verify` is the executable deterministic gate reading `AGENTS.md` frontmatter lifecycle tasks.
-- The delivery cycle skills (`spec`, `plan`, `tdd`, `vcs`, `review`, `ship`, `improve`) and the unattended runner `afk` live in this repository's workflow plugin. FilipKrawiec/devcontainer's `filipkrawiec-sdlc` package keeps only project initialisation; host adapters remain outside the common packages.
-- The retired Autonomous SDLC implementation and interim baseline records were removed during release-candidate cleanup; Git history retains them if needed.
+- `milestone`, `release` and `health` own their distinct procedures; existing delivery and doctrine skills remain their leaf tools.
+- Always-needed instructions stay in the owning `SKILL.md`; references are conditional branches, not shared/injected procedures.
+- Actual production promotion remains blocked until its native controls are configured. This repository's stable publication hold stays active until exact-candidate promotion replaces release-on-main.
+- Engineering guidance can improve independently; weakening authority, credentials, release or quality gates requires owner approval by effect, regardless of filename.
+- Host integrations and project initialization belong outside common packages. The retired Autonomous SDLC framework stays retired; Git history preserves its history.

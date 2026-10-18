@@ -1,116 +1,47 @@
-# Contributing & Maintenance Guide
+# Contributing
 
-Thank you for contributing to the `skills` repository! This document outlines workflows, guidelines, and commands for creating skills, updating plugins, validating changes, and cutting releases.
+Keep this public library compact and portable. Put procedures in skills and use existing platform/project tools for enforcement. Add a helper only when a demonstrated boundary cannot be enforced by tools already available; do not grow a scheduler, role registry or generic contract framework here.
 
----
+## Authoring
 
-## 1. Overview & Guidelines
+Read [writing-great-skill](plugins/common/authoring/skills/writing-great-skill/SKILL.md) before editing skills, agent rules or manifests. Name the observed failure or owner correction, place the rule with its procedure owner and delete instructions the agent would follow untold.
 
-* **Public Repository**: Do not add proprietary, client, or secret material to skills or plugin packages.
-* **Compact & Agent-Agnostic**: Skills must remain portable, lightweight, and host-neutral.
-* **Single Source of Truth**: Each procedure lives in the one skill that performs it; other skills invoke that skill instead of restating it.
-* **Deterministic Verification**: Every change must pass the automated verification matrix before being published.
-
----
-
-## 2. Skill Development Workflow
-
-> [!IMPORTANT]
-> **Mandatory Rule**: Before editing or creating any skill in this repository, you **must** read [`writing-great-skill`](plugins/common/authoring/skills/writing-great-skill/SKILL.md). It is the canonical source of truth for skill authoring.
-
-### Step 1: Directory Setup
-
-Skills belong under `plugins/common/<package>/skills/<skill-name>/`.
-
-```
-plugins/common/<package>/skills/<skill-name>/
-├── SKILL.md                 # Primary instruction entrypoint
-├── references/              # Optional branches some runs skip
-│   └── topic.md
-└── scripts/                 # Non-interactive CLI helper scripts
+```text
+plugins/common/<package>/skills/<skill>/
+  SKILL.md          always-needed procedure
+  references/       conditional branches only
+  scripts/          necessary non-interactive helpers
+  assets/           data/templates, not injected instructions
 ```
 
-* **Skill Directory Name**: Must use `lowercase-kebab-case` (e.g., `hexagonal-architecture`).
-* **Main Instruction File**: Must be named exactly `SKILL.md` (all uppercase).
-* **Reference Files**: Store in `references/` and use `lowercase-kebab-case.md`.
+Descriptions start with “Use when” and stay within 300 characters; skill bodies within 800 words and references within 600. Use numbered phases, checkable exit gates and compact output envelopes. Another skill invokes the procedure owner; it does not link to its private files. Required worker instructions travel in the complete dispatch brief.
 
-### Step 2: Crafting `SKILL.md`
+## Change and verify
 
-1. **YAML Frontmatter**: `description` starts with "Use when" and stays within 300 characters; the body stays within 800 words and each reference within 600; `allowed-tools` is required.
-   ```yaml
-   ---
-   name: example-skill
-   description: Use when [describe user intent and trigger conditions].
-   allowed-tools: Read Bash(git:*)
-   ---
-   ```
-2. **Instruction Wording**: State the behavior to follow. Pair each prohibition with what to do instead ("Never Y; do Z instead.").
-3. **Self-contained skills**: Everything a run always needs lives in `SKILL.md`; agents often skip files they are only pointed to. A `references/` file holds an optional branch some runs skip, pointed to with its condition:
-   ```markdown
-   Read [topic.md](references/topic.md) when configuring X settings.
-   ```
-   *Rule*: Links are relative and point inside the skill's own `references/`. A procedure two skills use lives in the skill that performs it; the other invokes that skill by name.
-
----
-
-## 3. Plugin Manifests
-
-Each common package describes itself once, in `package-metadata.json`; `just sync-manifests` (`python3 scripts/validate-plugin-definitions.py --sync`) generates `plugin.json`, `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json` and both marketplace catalogs from it, and the validator fails when they drift.
-
-### Source of truth (`package-metadata.json`)
-
-```json
-{
-  "name": "filipkrawiec-core",
-  "version": "9.20.0",
-  "description": "Core software engineering architecture skills"
-}
-```
-
-The host manifests point at the skills directory (`"skills": "./skills/"`); every skill under it is included.
-
----
-
-## 4. Local Testing & Verification Matrix
-
-Before committing or opening a pull request, run the local verification suite:
-
-### Automated Verifiers
+Use an isolated worktree on a short-lived branch from the fetched base. Preserve the main checkout and unrelated work. Before editing, name the targeted test or validator; run focused checks while working. Use meaningful valid/broken behavior fixtures, not tests that freeze recipe names or workflow spelling.
 
 ```bash
-# 1. Run Python unit tests
-just unit              # or: python3 scripts/project-verify.py unit
-
-# 2. Unit tests plus the plugin definition validator
-just verify            # python3 scripts/project-verify.py verify runs the validator and git hygiene only
-
-# 3. Regenerate manifests after editing package-metadata.json
+just unit
+just verify
 just sync-manifests
 ```
 
-### Contributor Setup & Git Hooks
- 
-Set up local Git hooks and link development plugins into your local Antigravity environment with a single command:
+Run `just verify` once on completed changes. CI runs the same unit fixtures and plugin validation once, checks tracked/untracked hygiene, then scans secrets. The legacy `scripts/project-verify.py` command remains compatible while its consumers migrate; it is not required for normal library development.
 
-```bash
-just setup             # Configures scripts/git-hooks and links dev plugins
-# or separately:
-just setup-hooks       # Point core.hooksPath at scripts/git-hooks: pre-push validates; post-commit and post-merge on main run `just refresh`
-just link-agy          # Symlink plugins to ~/.gemini/config/plugins
-```
+Every package's `package-metadata.json` owns its identity/version. `just sync-manifests` generates common host manifests and marketplace catalogs. Keep versions unified; do not hand-edit generated manifests.
 
----
+Before opening a ready PR, obtain fresh independent review on both axes, fix blockers and include verdicts, commands and exit codes. Optional suggestions may remain follow-ups. Request required owner review and enable squash auto-merge bound to the reviewed head; merge approval is not production approval.
 
-## 5. Release & Versioning Procedure
+## Local installation
 
-Every common package shares a unified repository-wide release version defined by an annotated Git tag (`v<semver>`).
+Use the host's direct local plugin loading or `just link-agy`. The latter uses `AGY_IDE_PLUGIN_DIR`, links only this repository's common packages, replaces existing symlinks and refuses real paths. Test installation against a temporary destination, not a user's home. No automatic refresh hooks, copies or sibling discovery run on commit/merge.
 
-### Stable Publication Hold
+If an earlier installation configured this repository's removed hooks, first inspect `git config --local --get core.hooksPath`; when it points to the old `scripts/git-hooks`, remove that setting with `git config --local --unset core.hooksPath`. Preserve unrelated custom hooks. Explicitly migrate old copied plugin directories before linking; the command will not delete them.
 
-Stable publication is held pending owner approval of the exact release candidate. The release job in `.github/workflows/release.yml` is disabled with the constant job-level condition `if: ${{ false }}`, with no manual or variable bypass. Merges to `main` continue verification, and local/test installation remains available; new release jobs do not publish a stable release.
+## Stable publication hold
 
-The retained release algorithm in `scripts/release.py` refuses unless `main` is clean and level with `origin/main`, stops when the last tag is already `HEAD`, computes the bump from the conventional commits since that tag, updates package metadata, synchronizes manifests and marketplace catalogs, commits and tags `v<version>`. The disabled job retains its atomic commit-and-tag push and GitHub Release publication steps. These steps do not run during the hold; owner approval alone does not bypass the constant condition.
+Stable publication is held by the constant false job condition in `.github/workflows/release.yml`, with no manual/variable bypass. Verification and local/test installation continue. Owner approval alone does not bypass that hold. The old release script remains until a smaller exact-candidate promotion path is reviewed; it must not be used to bypass production approval.
 
-Before declaring the hold effective, check Release runs queued or started under the previous workflow and wait for them to finish. The changed condition cannot stop an already running copy.
+Before declaring the hold effective, inspect queued/running Release jobs created under the older workflow; the changed condition cannot stop an existing run. The merged hold's release run is evidence for that revision, not a guarantee about earlier jobs.
 
-Run `just refresh` to update locally installed plugins.
+The replacement must promote the demonstrated immutable artifact/configuration under trusted owner approval, retain meaningful release tests and remove administrative main-push machinery. Prepare environment/identity/protection changes as explicit owner handoffs. Do not claim a skill edit configured those controls.
