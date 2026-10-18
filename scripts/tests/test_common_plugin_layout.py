@@ -72,18 +72,6 @@ class CommonPluginLayoutTests(unittest.TestCase):
         self.assertIn("python3 scripts/validate-plugin-definitions.py", workflow)
         self.assertIn("python3 scripts/project-verify.py verify", workflow)
 
-    def test_every_verified_push_to_main_is_released(self) -> None:
-        release_wf = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-
-        self.assertIn("workflows: [Verify repository]", release_wf)
-        self.assertIn("branches: [main]", release_wf)
-        self.assertIn("github.event.workflow_run.conclusion == 'success'", release_wf)
-        self.assertIn("github.event.workflow_run.event == 'push'", release_wf)
-        self.assertIn("secrets.RELEASE_TOKEN", release_wf)
-        self.assertIn("python3 scripts/release.py", release_wf)
-        self.assertIn('git push --atomic origin HEAD:main "refs/tags/${tag}"', release_wf)
-        self.assertIn("gh release create", release_wf)
-
     def test_no_local_recipe_pushes_a_release(self) -> None:
         justfile = (ROOT / "justfile").read_text(encoding="utf-8")
 

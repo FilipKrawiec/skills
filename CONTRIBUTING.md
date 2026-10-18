@@ -105,10 +105,12 @@ just link-agy          # Symlink plugins to ~/.gemini/config/plugins
 
 Every common package shares a unified repository-wide release version defined by an annotated Git tag (`v<semver>`).
 
-### Release on Merge
+### Stable Publication Hold
 
-Merging to `main` releases; nobody runs a release by hand (`main` requires an approved PR, and only admins may create `v*` tags).
+Stable publication is held pending owner approval of the exact release candidate. The release job in `.github/workflows/release.yml` is disabled with the constant job-level condition `if: ${{ false }}`, with no manual or variable bypass. Merges to `main` continue verification, and local/test installation remains available; new release jobs do not publish a stable release.
 
-1. When `verify.yml` passes on a push to `main`, `.github/workflows/release.yml` runs `scripts/release.py`. It refuses unless `main` is clean and level with `origin/main`, stops when the last tag is already `HEAD`, computes the bump from the conventional commits since that tag, updates package metadata, synchronizes manifests and marketplace catalogs, commits and tags `v<version>`.
-2. The job pushes the commit and tag in one atomic push (`git push --atomic origin HEAD:main refs/tags/v<version>`) with the `RELEASE_TOKEN` secret, an admin's fine-grained token with contents write on this repository, and publishes the GitHub Release. The release commit's own verified push finds nothing to release.
-3. Run `just refresh` to update locally installed plugins.
+The retained release algorithm in `scripts/release.py` refuses unless `main` is clean and level with `origin/main`, stops when the last tag is already `HEAD`, computes the bump from the conventional commits since that tag, updates package metadata, synchronizes manifests and marketplace catalogs, commits and tags `v<version>`. The disabled job retains its atomic commit-and-tag push and GitHub Release publication steps. These steps do not run during the hold; owner approval alone does not bypass the constant condition.
+
+Before declaring the hold effective, check Release runs queued or started under the previous workflow and wait for them to finish. The changed condition cannot stop an already running copy.
+
+Run `just refresh` to update locally installed plugins.
