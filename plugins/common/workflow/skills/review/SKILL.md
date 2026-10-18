@@ -12,7 +12,7 @@ Review on two axes, A Standards and B Spec. Report confirmed defects gates miss;
 
 ## 1. Scope
 
-Capture intent, criteria, owned scope including tests/dependencies, worktree, base ref/SHA, head ref/SHA, recorded decisions and evidence. The host assigns fresh independent reviewers; reviewer credentials must be inaccessible to the craftsman, not selected from a shared token store. Without isolation, return a capability wait rather than an independent approval. The host owns model routing. Serialize until proven capability; parallel work requires enforced disjoint scopes including tests and dependencies.
+Capture intent, criteria, owned scope including tests/dependencies, worktree, base ref/SHA, head ref/SHA, recorded decisions and evidence. The orchestrator assigns fresh read-only reviewer contexts. Code-review verdicts need no GitHub credentials and do not authorize posting an approval or merging. Report findings even when approval credentials are unavailable; `agent-review` owns the separate GitHub approval gate. The host owns model routing. Serialize until proven capability; parallel work requires enforced disjoint scopes including tests and dependencies.
 
 A host dispatch supplies the whole brief:
 

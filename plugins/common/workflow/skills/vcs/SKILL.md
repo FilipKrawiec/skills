@@ -6,13 +6,13 @@ allowed-tools: Bash(git:*,gh:*,lsof:*) Read
 
 # Version Control
 
-`<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`). Never edit, switch or stash the main checkout `<root>` (the first entry of `git worktree list`). Use the host's worktree or `<root>/.worktrees/`; wait if another worktree holds the branch. With a board (lanes.json `project`), move cards with `gh project item-edit`.
+`<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`). Never edit, switch or stash the main checkout `<root>` (the first entry of `git worktree list`). Use an isolated worktree; wait if another holds the branch. Move configured board cards with `gh project item-edit`.
 
 ## 1. Start
 
 - Start an issue only when each of your open PRs is ready to merge (phase 5) and shares no files with it, including a proposed parent; otherwise return `blocked by #<pr>`.
 - Reuse the issue's unmerged branch, and its worktree unless the host made one for the session; else fetch and branch from `origin/<base>`; wait for any parent to merge first: unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
-- Unattended: add `state:claimed` and comment ``Claimed by an AFK run on `<branch>`.``. Attended: add `state:started`. Card to In progress.
+- Re-read active state labels; stop on another assignment, never overwrite it. Unattended: add `state:claimed` and comment ``Claimed by an AFK run on `<branch>`.``. Attended: add `state:started`. Card to In progress.
 
 **Exit gate:** on the task's branch, the issue labelled; or `blocked by #<pr>` or `<worktree>`.
 
@@ -30,7 +30,7 @@ Pass the verify gate (the project's `verify` task) for each changed push. Push o
 
 ## 4. Open the PR
 
-- Ready, never a draft. Wait for a parent to merge before starting dependent work; do not open stacked drafts. For an issue, use its title. Every PR uses this body envelope (omit inapplicable sections): summary ≤ 3 sentences; scope, risks and decision one line each. Keep blockers, unfixed findings and owner choices visible, with options and a recommendation when needed. Collapse evidence with `<details>` / `<summary>` and blank lines around Markdown.
+- Ready, never a draft. Wait for a parent to merge before starting dependent work; do not open stacked drafts. For an issue, use its title. Envelope: summary ≤3 sentences; scope, risks and decision one line each. Show blockers and owner choices with recommendations. Collapse evidence with `<details>` / `<summary>` and blank lines around Markdown.
 
   ```markdown
   ## Executive summary
@@ -54,19 +54,11 @@ Pass the verify gate (the project's `verify` task) for each changed push. Push o
   `just verify` exit 0.
 
   </details>
-
-  <details>
-  <summary>Before / after evidence</summary>
-
-  ## Before / after
-  `test_duplicate_is_rejected`: second call fails; one reservation persists.
-
-  </details>
   ```
 
 - For a revert: title `revert: <subject>`; body `Reverts #<M>` and the failing checks, never `Closes`, which would close the reverted issue.
 - Include before/after captures for each visible change in the evidence section.
-- Require fresh independent review of both axes for this exact head before opening; host-dispatched leaves return verdicts and evidence. Reviewer credentials must be inaccessible to the craftsman; shared token-store account selection is not isolation. Fix blockers; record optional suggestions without forcing fixes. Quote exact-head verdicts and valid checks in the PR.
+- Require fresh independent review of both axes for this exact head before opening; host-dispatched leaves return verdicts and evidence. These read-only code verdicts need no approval credentials; GitHub approval remains a separate `agent-review` gate. Fix blockers; record optional suggestions without forcing fixes. Quote exact-head verdicts and valid checks in the PR.
 - Every PR, attended or not, revert and lesson PRs too: `gh pr merge <pr> --squash --auto`; auto-merge still waits for required approvals and checks. Remove the `state:` label.
 
 **Exit gate:** the PR URL, auto-merge on.
@@ -91,7 +83,7 @@ Run after every push, when `<base>` moves, and before calling a PR ready.
 
 **Exit gate:** no other blocker.
 
-**Output:** ≤ 5 lines. **Summary:** the PR and its blockers, or "ready". **Decision:** approve it, or "Nothing needed." while blockers remain.
+**Output:** ≤ 5 lines. **Summary:** the PR and its blockers, or "ready". **Decision:** name the next action and its actor: agent fixes/retries, required reviewer approval, or a reserved owner choice. Use "Nothing needed." only when this assignment has no pending action.
 
 ## 6. Tidy
 
@@ -101,4 +93,4 @@ Remove only this assignment’s `<branchPrefix>` worktrees and branches whose PR
 
 ## Authority
 
-Merge, approve or force-push a protected or default branch only on the owner's word. Production requires exact owner approval for candidate and destination, beyond branch restriction. Never dispatch workflows, touch releases, secrets or variables, or delete branches, tags or repositories other than your own merged head.
+`agent-review` approval authorizes routine merges matching no owner rule. Owner-matching PRs and protected/default force-pushes require explicit owner authorization. Production requires exact owner approval for candidate and destination, beyond branch restriction. Never dispatch workflows, touch releases, secrets or variables, or delete branches, tags or repositories other than your own merged head.

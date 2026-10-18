@@ -1,6 +1,6 @@
 ---
 name: agent-review
-description: Use when a scheduled task asks for one unattended review pass over open PRs, or an AFK run or refinement asks the reviewer to decide a fork, in a repository whose .github/lanes.json turns on agentReview. Never for an owner's own interactive review.
+description: Use when an orchestrator or scheduled task assigns delegated GitHub PR review or technical adjudication in a repository whose .github/lanes.json enables agentReview. Not for an owner's personal code-review request.
 allowed-tools: Skill Read Bash(git:*,gh:*)
 ---
 
@@ -51,6 +51,8 @@ Reserve owner approval when the PR matches any of these rules:
 Docs, tests, manifests and lockfiles from Dependabot do not count as code for the last two code limits. Owner paths and product/production authority still apply.
 
 Blocking findings require REQUEST_CHANGES, including at the round limit; optional suggestions never force fixes. Clean reserved work gets COMMENT and review:owner. Otherwise APPROVE only the captured head with valid required checks, no unresolved blockers and an independent author/reviewer. Never approve your own PR.
+
+Keep `review:owner` for a current owner rule; remove only your own obsolete hold after its cause clears, never an explicit owner request.
 
 Post marker `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|owner|fixes|rounds> -->`, matched rule, confirmed findings, evidence and attribution. Reply with fixing commits; resolve only agent threads whose fixes were independently verified. Recheck head and checks immediately before approval; head movement invalidates it.
 

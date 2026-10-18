@@ -35,7 +35,7 @@ The Product partner refines outcomes; Craftsman implements; Reviewer judges inde
 
 ## Enforcement and concurrency
 
-Implementer and Reviewer need separate contexts and credentials inaccessible to each other where their authorities differ. Selecting a different account in a shared secret store is not isolation. GitHub protections enforce required review/checks; production controls enforce owner approval of the exact candidate. Skill text cannot supply these controls. Missing setup is a visible capability gap.
+Code review uses fresh read-only subagent contexts and requires no GitHub credentials. A code verdict is evidence, not a posted GitHub approval. Autonomous GitHub approval separately requires reviewer credentials inaccessible to the implementer where their authorities differ. Selecting a different account in a shared secret store is not isolation. GitHub protections enforce required review/checks; production controls enforce owner approval of the exact candidate. Skill text cannot supply these controls. Missing setup blocks its affected privileged action, not read-only review or approved implementation. Record the gap; do not initiate a host or credential migration without an authorized setup scope.
 
 Work in isolated short-lived branches/worktrees from a fetched base; preserve the main checkout. Start serially. Parallel implementation requires enforced claims, disjoint scope including tests and satisfied dependencies. Waiting work need not idle independent work. Reviews bind to the exact head; blocking findings request changes, optional suggestions stay optional.
 

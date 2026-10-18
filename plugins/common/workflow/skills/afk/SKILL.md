@@ -52,7 +52,7 @@ Return evidence, changed paths, resulting head, exit gate and remaining decision
 in at most 8 lines; never expose credentials.
 ```
 
-Require focused tests, scope containment and the project's verify gate before delivery. Every changed/untracked path must belong to the packet or approved alwaysInScope prefixes. Independent reviewers receive fresh context and credentials inaccessible to the craftsman; selecting an account in a shared token store is not isolation. Review the exact head; resolve blockers, not optional suggestions. Have the host assign VCS to open a ready PR with auto-merge awaiting valid approval/checks.
+Require focused tests, scope containment and the project's verify gate before delivery. Every changed/untracked path must belong to the packet or approved alwaysInScope prefixes. Fresh read-only subagents judge the code without approval credentials; `agent-review` separately controls GitHub approval. Review the exact head; resolve blockers, not optional suggestions. Have the host assign VCS to open a ready PR with auto-merge awaiting valid approval/checks.
 
 **Exit gate:** ready PR and evidence for its exact head, or bounded failure record.
 

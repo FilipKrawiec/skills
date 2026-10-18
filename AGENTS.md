@@ -38,7 +38,7 @@ build_tools:
 ## Output
 
 - Approved milestone intent delegates slicing, routine engineering, technical ADRs and ready autonomous lanes. Record recommendations; reserve changed product/strategy intent, unfamiliar interaction direction, new paid services/budget increases, authority/credential/release changes, quality-gate weakening and exact production approval for the owner. Temporary blockers retain lane authorization; diagnose and replan technical failures.
-- Every owner message has a **Summary** (the outcome, linking the PR, issue or `file:line` with the detail) and a **Decision** (what the owner must decide, with options and a recommendation, or "Nothing needed."). A session reply ≤ 5 lines; a run or review report ≤ 8.
+- Every owner message has a **Summary** (the outcome, linking the PR, issue or `file:line` with the detail) and a **Decision** (the next action and its actor: an agent-owned correction/retry, a reviewer action or an owner choice with recommendation; "Nothing needed." only when no action remains in the assignment). A session reply ≤ 5 lines; a run or review report ≤ 8.
 - Start with the action or its evidence, not a preamble. Link changed files instead of pasting them.
 - In PRs, logs and agent-to-agent output, give the commands run, their exit codes and the decisions left.
 - Add an interface only once two implementations exist (a test fake counts, and so does each case of a repeated conditional). Verify state, not mock calls.
