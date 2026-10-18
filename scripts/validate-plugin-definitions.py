@@ -67,7 +67,10 @@ def fail(message: str) -> None:
 
 def load_json(path: Path) -> dict:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            fail(f"{rel(path)} must contain a JSON object")
+        return data
     except FileNotFoundError:
         fail(f"missing {rel(path)}")
     except json.JSONDecodeError as exc:
@@ -249,6 +252,19 @@ def validate_skill_tree(root: Path) -> set[str]:
     return found
 
 
+def expected_package_manifests(metadata: dict) -> dict[str, dict]:
+    identity = {field: metadata[field] for field in ("name", "description", "version")}
+    host = {**identity, "skills": "./skills/"}
+    return {
+        "plugin.json": identity,
+        ".claude-plugin/plugin.json": host,
+        ".codex-plugin/plugin.json": {
+            **host,
+            **{field: metadata[field] for field in CODEX_METADATA_FIELDS if field in metadata},
+        },
+    }
+
+
 def validate_package_metadata(path: Path, expected_name: str) -> None:
     metadata = load_json(path)
     rel_path = rel(path)
@@ -260,33 +276,20 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
         fail(f"{rel_path} must define a non-empty description")
 
     package_root = path.parent
-    antigravity = load_json(package_root / "plugin.json")
-    claude = load_json(package_root / ".claude-plugin" / "plugin.json")
-    codex_path = package_root / ".codex-plugin" / "plugin.json"
-    codex = load_json(codex_path)
-    if (
-        antigravity.get("name") != metadata["name"]
-        or antigravity.get("description") != metadata["description"]
-        or antigravity.get("version") != metadata["version"]
-    ):
-        fail(f"{rel(package_root / 'plugin.json')} must match package identity and version")
-    for manifest_path, manifest in (
-        (package_root / ".claude-plugin" / "plugin.json", claude),
-        (codex_path, codex),
-    ):
-        if manifest.get("name") != metadata["name"] or manifest.get("version") != metadata["version"]:
-            fail(f"{rel(manifest_path)} must match package name and version")
-        if manifest.get("description") != metadata["description"] or manifest.get("skills") != "./skills/":
-            fail(f"{rel(manifest_path)} must match package description and skills path")
-        if "hooks" in manifest:
-            fail(f"{rel(manifest_path)} must not declare hooks; a skill's rules live in its SKILL.md")
-
-        if (manifest_path.parent / "hooks.json").exists():
-            fail(f"{rel(manifest_path.parent)} must not hold hooks; a skill's rules live in its SKILL.md")
-
-    for field in CODEX_METADATA_FIELDS:
-        if codex.get(field) != metadata.get(field):
-            fail(f"{rel(codex_path)} must match package {field}")
+    for relative_path, expected in expected_package_manifests(metadata).items():
+        manifest_path = package_root / relative_path
+        manifest = load_json(manifest_path)
+        fields = set(expected)
+        if relative_path == ".codex-plugin/plugin.json":
+            fields.update(CODEX_METADATA_FIELDS)
+        for field in sorted(fields):
+            if manifest.get(field) != expected.get(field):
+                fail(f"{rel(manifest_path)} must match package {field}")
+        if relative_path != "plugin.json":
+            if "hooks" in manifest:
+                fail(f"{rel(manifest_path)} must not declare hooks; a skill's rules live in its SKILL.md")
+            if (manifest_path.parent / "hooks.json").exists():
+                fail(f"{rel(manifest_path.parent)} must not hold hooks; a skill's rules live in its SKILL.md")
 
     extra_entries = sorted(entry.name for entry in package_root.iterdir() if entry.name not in PACKAGE_ROOT_ENTRIES | {".DS_Store"})
     if extra_entries:
@@ -345,9 +348,6 @@ def validate_repository_markdown_links(root: Path = ROOT) -> None:
 
 def sync_manifests(root: Path = ROOT) -> None:
     common_pkgs = discover_common_packages(root)
-    if not common_pkgs:
-        fail("No common packages found to sync")
-
     versions: set[str] = set()
     for meta_path in common_pkgs:
         data = load_json(meta_path)
@@ -369,42 +369,13 @@ def sync_manifests(root: Path = ROOT) -> None:
         description = meta_data.get("description", "")
         pkg_rel_source = f"./{pkg_root.relative_to(root)}"
 
-        # plugin.json
-        plugin_json = pkg_root / "plugin.json"
-        plugin_data = {
-            "name": pkg_name,
-            "description": description,
-            "version": release_version,
-        }
-        plugin_json.write_text(json.dumps(plugin_data, indent=2) + "\n", encoding="utf-8")
-        synced_files.append(plugin_json)
-
-        # .claude-plugin/plugin.json
-        claude_dir = pkg_root / ".claude-plugin"
-        claude_dir.mkdir(parents=True, exist_ok=True)
-        claude_json = claude_dir / "plugin.json"
-        claude_data = {
-            "name": pkg_name,
-            "description": description,
-            "version": release_version,
-            "skills": "./skills/",
-        }
-        claude_json.write_text(json.dumps(claude_data, indent=2) + "\n", encoding="utf-8")
-        synced_files.append(claude_json)
-
-        # .codex-plugin/plugin.json
-        codex_dir = pkg_root / ".codex-plugin"
-        codex_dir.mkdir(parents=True, exist_ok=True)
-        codex_json = codex_dir / "plugin.json"
-        codex_data = {
-            "name": pkg_name,
-            "description": description,
-            "version": release_version,
-            "skills": "./skills/",
-            **{field: meta_data[field] for field in CODEX_METADATA_FIELDS if field in meta_data},
-        }
-        codex_json.write_text(json.dumps(codex_data, indent=2) + "\n", encoding="utf-8")
-        synced_files.append(codex_json)
+        for relative_path, data in expected_package_manifests({
+            **meta_data, "name": pkg_name, "description": description, "version": release_version,
+        }).items():
+            manifest_path = pkg_root / relative_path
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            synced_files.append(manifest_path)
 
         repo_url = meta_data.get("repository", "https://github.com/FilipKrawiec/skills")
         claude_plugins.append({
@@ -422,20 +393,15 @@ def sync_manifests(root: Path = ROOT) -> None:
             "category": "Engineering",
         })
 
-    # 2. Sync Marketplace Catalogs (if they exist)
-    claude_market = root / ".claude-plugin" / "marketplace.json"
-    if claude_market.is_file():
-        cm_data = load_json(claude_market)
-        cm_data["plugins"] = claude_plugins
-        claude_market.write_text(json.dumps(cm_data, indent=2) + "\n", encoding="utf-8")
-        synced_files.append(claude_market)
-
-    codex_market = root / ".agents" / "plugins" / "marketplace.json"
-    if codex_market.is_file():
-        cx_data = load_json(codex_market)
-        cx_data["plugins"] = codex_plugins
-        codex_market.write_text(json.dumps(cx_data, indent=2) + "\n", encoding="utf-8")
-        synced_files.append(codex_market)
+    for market_path, plugins in (
+        (root / ".claude-plugin" / "marketplace.json", claude_plugins),
+        (root / ".agents" / "plugins" / "marketplace.json", codex_plugins),
+    ):
+        if market_path.is_file():
+            data = load_json(market_path)
+            data["plugins"] = plugins
+            market_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            synced_files.append(market_path)
 
     print(f"Synchronized {len(synced_files)} manifest files to release version {release_version}.")
 

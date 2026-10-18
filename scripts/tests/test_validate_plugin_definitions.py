@@ -75,6 +75,38 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
             self.assertNotIn("keywords", codex_json)
             v.validate_package_metadata(pkg / "package-metadata.json", "filipkrawiec-testpkg")
 
+    def test_manifest_drift_is_rejected_and_sync_repairs_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pkg, meta = self._codex_metadata_package(root)
+            v.sync_manifests(root)
+            identity = {"name": meta["name"], "description": meta["description"], "version": meta["version"]}
+            for relative_path, required in (
+                ("plugin.json", identity),
+                (".claude-plugin/plugin.json", {**identity, "skills": "./skills/"}),
+                (".codex-plugin/plugin.json", {**identity, "skills": "./skills/"}),
+            ):
+                path = pkg / relative_path
+                original = json.loads(path.read_text())
+                for field, expected in required.items():
+                    self.assertEqual(original.get(field), expected, f"{relative_path}: {field}")
+                path.write_text(json.dumps({**original, "host-extension": {"enabled": True}}))
+                v.validate_package_metadata(pkg / "package-metadata.json", meta["name"])
+                for field in required:
+                    for value in (None, "drift"):
+                        with self.subTest(path=relative_path, field=field, value=value):
+                            broken = dict(original)
+                            if value is None:
+                                del broken[field]
+                            else:
+                                broken[field] = value
+                            path.write_text(json.dumps(broken))
+                            with self.assertRaises(v.ValidationError):
+                                v.validate_package_metadata(pkg / "package-metadata.json", meta["name"])
+                v.sync_manifests(root)
+                self.assertEqual(json.loads(path.read_text()), original)
+                v.validate_package_metadata(pkg / "package-metadata.json", meta["name"])
+
     def test_strip_markdown_code_blocks_removes_fenced_and_inline_code(self) -> None:
         text = (
             "Intro text\n"
@@ -297,18 +329,20 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
             claude_manifest.write_text(json.dumps(manifest), encoding="utf-8")
             v.validate_package_metadata(package / "package-metadata.json", meta["name"])
 
-            (package / ".claude-plugin" / "hooks.json").write_text("{}", encoding="utf-8")
-            claude_manifest.write_text(json.dumps({**manifest, "hooks": "./.claude-plugin/hooks.json"}), encoding="utf-8")
-            with self.assertRaises(v.ValidationError) as ctx:
-                v.validate_package_metadata(package / "package-metadata.json", meta["name"])
-            self.assertIn("must not declare hooks", str(ctx.exception))
+            for host in (".claude-plugin", ".codex-plugin"):
+                with self.subTest(host=host):
+                    manifest_path = package / host / "plugin.json"
+                    hooks_path = package / host / "hooks.json"
+                    manifest_path.write_text(json.dumps({**manifest, "hooks": "./hooks.json"}), encoding="utf-8")
+                    with self.assertRaisesRegex(v.ValidationError, "must not declare hooks"):
+                        v.validate_package_metadata(package / "package-metadata.json", meta["name"])
+                    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                    hooks_path.write_text("{}", encoding="utf-8")
+                    with self.assertRaisesRegex(v.ValidationError, "must not hold hooks"):
+                        v.validate_package_metadata(package / "package-metadata.json", meta["name"])
+                    hooks_path.unlink()
+                    v.validate_package_metadata(package / "package-metadata.json", meta["name"])
 
-            claude_manifest.write_text(json.dumps(manifest), encoding="utf-8")
-            with self.assertRaises(v.ValidationError) as ctx:
-                v.validate_package_metadata(package / "package-metadata.json", meta["name"])
-            self.assertIn("must not hold hooks", str(ctx.exception))
-
-            (package / ".claude-plugin" / "hooks.json").unlink()
             (package / "hooks").mkdir()
             with self.assertRaises(v.ValidationError) as ctx:
                 v.validate_package_metadata(package / "package-metadata.json", meta["name"])
@@ -328,20 +362,32 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
                 v.validate_package_metadata(package / "package-metadata.json", meta["name"])
             self.assertIn("package root may hold only", str(ctx.exception))
 
-    def test_discover_common_packages_and_validate_all_in_repo(self) -> None:
-        packages = v.discover_common_packages(ROOT)
-        self.assertIn(ROOT / "plugins" / "common" / "core" / "package-metadata.json", packages)
-        self.assertIn(ROOT / "plugins" / "common" / "workflow" / "package-metadata.json", packages)
-        self.assertIn(ROOT / "plugins" / "common" / "authoring" / "package-metadata.json", packages)
+    def test_discover_common_packages_uses_metadata_in_visible_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pkg, _ = self._codex_metadata_package(root)
+            for name in (".hidden", "empty"):
+                directory = pkg.parent / name
+                directory.mkdir()
+                if name == ".hidden":
+                    (directory / "package-metadata.json").write_text("{}")
+            self.assertEqual(v.discover_common_packages(root), {
+                pkg / "package-metadata.json": "filipkrawiec-testpkg",
+            })
+            (pkg / "package-metadata.json").unlink()
+            with self.assertRaises(v.ValidationError):
+                v.discover_common_packages(root)
 
-        for meta_path, pkg_name in packages.items():
-            v.validate_package_metadata(meta_path, pkg_name)
-            skills = v.validate_skill_tree(meta_path.parent / "skills")
-            self.assertTrue(len(skills) > 0)
-
-        v.validate_retired_sdlc_is_absent(ROOT)
-        v.validate_repository_release_version(ROOT)
-        v.validate_repository_markdown_links(ROOT)
+    def test_load_json_rejects_broken_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "plugin.json"
+            with self.assertRaises(v.ValidationError):
+                v.load_json(path)
+            for content in ("{", "[]", "null", '"text"', "1"):
+                with self.subTest(content=content):
+                    path.write_text(content)
+                    with self.assertRaises(v.ValidationError):
+                        v.load_json(path)
 
     def test_sync_manifests_synchronizes_all_manifests_and_catalogs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -386,6 +432,10 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
             codex_m = json.loads((tmp_root / ".agents" / "plugins" / "marketplace.json").read_text(encoding="utf-8"))
             self.assertEqual(len(codex_m["plugins"]), 1)
             self.assertEqual(codex_m["plugins"][0]["name"], "filipkrawiec-testpkg")
+
+            before = {path: path.read_bytes() for path in tmp_root.rglob("*.json")}
+            v.sync_manifests(tmp_root)
+            self.assertEqual({path: path.read_bytes() for path in tmp_root.rglob("*.json")}, before)
 
 
 if __name__ == "__main__":
