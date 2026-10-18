@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import json
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parents[2]
-VALIDATOR_PATH = ROOT / "scripts" / "validate-plugin-definitions.py"
-
-spec = importlib.util.spec_from_file_location("validate_plugin_definitions", VALIDATOR_PATH)
-v = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(v)
-
+v = importlib.import_module('scripts.validate-plugin-definitions')
 
 class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
     def _codex_metadata_package(self, tmp_root: Path) -> tuple[Path, dict]:
@@ -36,6 +34,226 @@ class ValidatePluginDefinitionsUnitTests(unittest.TestCase):
         }
         (pkg / "package-metadata.json").write_text(json.dumps(meta), encoding="utf-8")
         return pkg, meta
+
+    def test_cli_sync_validates_repairs_manifests_and_checks_repository_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pkg, metadata = self._codex_metadata_package(root)
+            script = root / "scripts" / "validate-plugin-definitions.py"
+            script.parent.mkdir()
+            shutil.copyfile(v.__file__, script)
+            nested = root / "docs" / "guides" / "setup.md"
+            nested.parent.mkdir(parents=True)
+            nested.write_text("[Home](../../README.md)\n")
+            readme = root / "README.md"
+            readme.write_text("[Setup](docs/guides/setup.md)\n")
+
+            def run(*args: str) -> subprocess.CompletedProcess:
+                return subprocess.run(
+                    [sys.executable, str(script), *args], cwd=root,
+                    capture_output=True, text=True, timeout=15,
+                )
+
+            synced = run("--sync")
+            self.assertEqual(synced.returncode, 0, synced.stderr)
+            self.assertIn("Plugin validation passed.", synced.stdout)
+            manifest = pkg / ".codex-plugin" / "plugin.json"
+            expected = json.loads(manifest.read_text())
+            self.assertEqual(expected["version"], metadata["version"])
+            self.assertEqual(expected["skills"], "./skills/")
+            manifest.write_text(json.dumps({**expected, "version": "9.9.9"}))
+            refused = run()
+            self.assertEqual(refused.returncode, 1, refused.stdout + refused.stderr)
+            self.assertIn("must match package version", refused.stderr)
+            self.assertNotIn("Plugin validation passed.", refused.stdout)
+            repaired = run("--sync")
+            self.assertEqual(repaired.returncode, 0, repaired.stderr)
+            self.assertEqual(json.loads(manifest.read_text()), expected)
+            self.assertIn("Plugin validation passed.", repaired.stdout)
+
+            for path in (readme, nested):
+                with self.subTest(document=path.relative_to(root)):
+                    original = path.read_text()
+                    path.write_text("[Missing](missing.md)\n")
+                    refused = run()
+                    self.assertEqual(refused.returncode, 1, refused.stdout + refused.stderr)
+                    self.assertIn(str(path.relative_to(root)), refused.stderr)
+                    self.assertIn("broken relative link target", refused.stderr)
+                    self.assertNotIn("Plugin validation passed.", refused.stdout)
+                    path.write_text(original)
+            accepted = run()
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertIn("Plugin validation passed.", accepted.stdout)
+
+    def test_retired_sdlc_paths_are_refused_but_unrelated_material_is_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "archive" / "other-project").mkdir(parents=True)
+            v.validate_retired_sdlc_is_absent(root)
+            for relative, message in (
+                ("plugins/common/orchestration", "retired orchestration material remains active"),
+                ("spec/autonomous-sdlc", "retired orchestration material remains active"),
+                ("archive/autonomous-sdlc", "Git history is the only legacy reference"),
+            ):
+                with self.subTest(path=relative):
+                    path = root / relative
+                    path.mkdir(parents=True)
+                    with self.assertRaisesRegex(v.ValidationError, message):
+                        v.validate_retired_sdlc_is_absent(root)
+                    path.rmdir()
+                    v.validate_retired_sdlc_is_absent(root)
+
+    def test_frontmatter_fallback_preserves_values_and_invocation_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, patch.object(v, "yaml", None):
+            skill = Path(tmp) / "sample"
+            skill.mkdir()
+            path = skill / "SKILL.md"
+            for flag, expected, description in (
+                ("TRUE", True, "Human summary."),
+                ("'false'", False, "Use when testing."),
+                ('"True"', True, "Human summary."),
+                ("False", False, "Use when testing."),
+            ):
+                with self.subTest(flag=flag):
+                    path.write_text(
+                        "---\nignored preamble\nname: 'sample'\n"
+                        f'description: "{description}"\n'
+                        "compatibility: first\n  second: detail\n\tthird\n"
+                        f"disable-model-invocation: {flag}\nallowed-tools: Read\n---\n"
+                    )
+                    self.assertEqual(v.parse_skill_frontmatter(path), {
+                        "name": "sample", "description": description,
+                        "compatibility": "first\nsecond: detail\nthird",
+                        "disable-model-invocation": expected, "allowed-tools": "Read",
+                    })
+                    v.validate_skill_spec(skill)
+                    path.write_text(path.read_text().replace(description, "Human summary."))
+                    if expected:
+                        v.validate_skill_spec(skill)
+                    else:
+                        with self.assertRaisesRegex(v.ValidationError, "description must begin"):
+                            v.validate_skill_spec(skill)
+
+    def test_package_identity_refuses_invalid_metadata_before_manifest_comparison(self) -> None:
+        cases = (
+            ("name", None, "must use package name"),
+            ("name", "other", "must use package name"),
+            ("version", None, "must define a semantic version"),
+            ("version", 123, "must define a semantic version"),
+            ("version", "1.2", "must define a semantic version"),
+            ("version", "1.2.3-beta", "must define a semantic version"),
+            ("version", "1.2.3\n", "must define a semantic version"),
+            ("description", None, "must define a non-empty description"),
+            ("description", "", "must define a non-empty description"),
+            ("description", [], "must define a non-empty description"),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pkg, metadata = self._codex_metadata_package(root)
+            v.sync_manifests(root)
+            path = pkg / "package-metadata.json"
+            for field, value, message in cases:
+                with self.subTest(field=field, value=value):
+                    broken = {**metadata, field: value}
+                    if value is None:
+                        del broken[field]
+                    path.write_text(json.dumps(broken))
+                    with self.assertRaisesRegex(v.ValidationError, message):
+                        v.validate_package_metadata(path, metadata["name"])
+            path.write_text(json.dumps(metadata))
+            v.validate_package_metadata(path, metadata["name"])
+
+    def test_skill_tree_refuses_missing_empty_and_invalid_skills(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "skills"
+            with self.assertRaisesRegex(v.ValidationError, "missing"):
+                v.validate_skill_tree(root)
+            root.mkdir()
+            (root / "notes.md").write_text("Not a skill")
+            (root / "unfinished").mkdir()
+            with self.assertRaisesRegex(v.ValidationError, "has no valid skills"):
+                v.validate_skill_tree(root)
+            skill = root / "sample"
+            skill.mkdir()
+            path = skill / "SKILL.md"
+            header = "---\nname: sample\ndescription: Use when testing.\nallowed-tools: Read\n---\n"
+            path.write_text(header)
+            self.assertEqual(v.validate_skill_tree(root), {"sample"})
+            (skill / "own.md").write_text("Own reference")
+            outside = Path(tmp) / "outside.md"
+            outside.write_text("Outside reference")
+            (skill / "alias.md").symlink_to(outside)
+            for target, message in (
+                ("missing.md", "broken relative link"),
+                ("../../outside.md", "links outside its skill"),
+                ("alias.md", "links outside its skill"),
+                (str(outside), "must not use absolute"),
+                (outside.as_uri(), "must not use absolute"),
+            ):
+                with self.subTest(target=target):
+                    path.write_text(header + f"Read [reference]({target}).\n")
+                    with self.assertRaisesRegex(v.ValidationError, message):
+                        v.validate_skill_tree(root)
+            path.write_text(header + "Read [own](own.md#section).\n")
+            self.assertEqual(v.validate_skill_tree(root), {"sample"})
+
+    def test_skill_tree_refuses_unsafe_names_and_invalid_frontmatter(self) -> None:
+        cases = (
+            ("Sample", "sample", "Use when testing.", "", "lowercase kebab-case"),
+            ("sample--skill", "sample--skill", "Use when testing.", "", "lowercase kebab-case"),
+            ("sample", "other", "Use when testing.", "", "name must match directory"),
+            ("sample", "sample", "", "", "non-empty description"),
+            ("sample", "sample", "false", "", "non-empty description"),
+            ("sample", "sample", "Use when testing.", "unknown: value\n", "non-spec frontmatter keys"),
+        )
+        for directory, name, description, extra, message in cases:
+            with self.subTest(directory=directory, description=description, extra=extra):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    skill = root / directory
+                    skill.mkdir()
+                    (skill / "SKILL.md").write_text(
+                        f"---\nname: {name}\ndescription: {description}\n"
+                        f"allowed-tools: Read\n{extra}---\n"
+                    )
+                    with self.assertRaisesRegex(v.ValidationError, message):
+                        v.validate_skill_tree(root)
+
+    def test_repository_release_refuses_drift_in_each_definition_and_across_packages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pkg, metadata = self._codex_metadata_package(root)
+            other = pkg.with_name("other")
+            other.mkdir()
+            (other / "package-metadata.json").write_text(json.dumps({
+                **metadata, "name": "filipkrawiec-other",
+            }))
+            v.sync_manifests(root)
+            v.validate_repository_release_version(root)
+            for relative in ("package-metadata.json", "plugin.json",
+                             ".claude-plugin/plugin.json", ".codex-plugin/plugin.json"):
+                path = pkg / relative
+                original = path.read_text()
+                for version in (None, 123, "1.2", "1.2.3-beta", "1.2.3\n", "1.2.4"):
+                    with self.subTest(path=relative, version=version):
+                        data = json.loads(original)
+                        if version is None:
+                            del data["version"]
+                        else:
+                            data["version"] = version
+                        path.write_text(json.dumps(data))
+                        message = "share one release version" if version == "1.2.4" else "semantic release version"
+                        with self.assertRaisesRegex(v.ValidationError, message):
+                            v.validate_repository_release_version(root)
+                        path.write_text(original)
+            for path in other.rglob("*.json"):
+                data = json.loads(path.read_text())
+                data["version"] = "2.0.0"
+                path.write_text(json.dumps(data))
+            with self.assertRaisesRegex(v.ValidationError, "share one release version"):
+                v.validate_repository_release_version(root)
+            with self.assertRaisesRegex(v.ValidationError, "Cannot sync: found multiple versions"):
+                v.sync_manifests(root)
 
     def test_sync_manifests_gives_codex_the_package_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

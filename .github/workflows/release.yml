@@ -23,21 +23,21 @@ concurrency:
 jobs:
   preflight:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       source_sha: ${{ steps.candidate.outputs.source_sha }}
       tag: ${{ steps.candidate.outputs.tag }}
       workflow_sha: ${{ steps.candidate.outputs.workflow_sha }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: control
           persist-credentials: false
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+          python-version: "3.15.0"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.source_sha }}
           path: candidate
@@ -55,41 +55,40 @@ jobs:
 
   candidate-tests:
     needs: preflight
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Candidate code gets its own runner, without trusted control files or outputs.
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.preflight.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.15.0"
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3
         with:
           just-version: '1.59.0'
-      - run: python3 -m pip install pyyaml
+      - run: python3 -m pip install -r requirements-health.txt
       - name: Test exact source
         run: |
-          python3 -m unittest discover -s scripts/tests
-          python3 scripts/validate-plugin-definitions.py
+          just verify
 
   production-readiness:
     needs: preflight
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.preflight.outputs.workflow_sha }}
           path: control
           persist-credentials: false
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.15.0"
       # Fail before referencing an environment: GitHub otherwise creates it unprotected.
       # Unsupported plans or insufficient API permissions deliberately block publication.
       - name: Prove production requires the owner
@@ -107,10 +106,10 @@ jobs:
     if: ${{ false }}
     needs: [preflight, candidate-tests, production-readiness]
     name: Publish ${{ needs.preflight.outputs.tag }} at ${{ needs.preflight.outputs.source_sha }} · workflow ${{ needs.preflight.outputs.workflow_sha }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     environment: production
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.preflight.outputs.source_sha }}
           fetch-depth: 0

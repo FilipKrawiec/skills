@@ -1,0 +1,10 @@
+[run]
+branch = true
+source = scripts
+omit = scripts/tests/*
+parallel = true
+patch = subprocess
+relative_files = true
+
+[report]
+precision = 2

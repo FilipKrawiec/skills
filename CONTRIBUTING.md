@@ -20,13 +20,17 @@ Descriptions start with “Use when” and stay within 300 characters; skill bod
 
 Use an isolated worktree on a short-lived branch from the fetched base. Preserve the main checkout and unrelated work. Before editing, name the targeted test or validator; run focused checks while working. Use meaningful valid/broken behavior fixtures, not tests that freeze recipe names or workflow spelling.
 
+Use Python 3.15 and install the frozen development tools explicitly in a virtual environment:
+
 ```bash
-just unit
-just verify
+python3 -m pip install -r requirements-health.txt
+just unit               # focused iteration without measurement
+just verify             # full tests once, branch coverage, complexity and plugin checks
 just sync-manifests
+just mutation release 81.50 # run after committing; keep aligned with the CI floor
 ```
 
-Run `just verify` once on completed changes. CI runs the same unit fixtures and plugin validation once, checks tracked/untracked hygiene, then scans secrets. The legacy `scripts/project-verify.py` command remains compatible while its consumers migrate; it is not required for normal library development.
+Run `just verify` once on completed changes. CI runs `just verify`, checks tracked/untracked hygiene and scans secrets. Separate mutation jobs use committed disposable copies; the required `verify` job waits for every measurement. Session databases and coverage/complexity reports are retained as run artifacts. A missing, empty, crashed or incomplete mutation session fails regardless of its partial score. See the [confidence baseline](docs/records/2026-10-18-script-confidence.md) for scopes, ratchets and remaining risks. The legacy `scripts/project-verify.py` command remains compatible while its consumers migrate; it is not required for normal library development.
 
 Every package's `package-metadata.json` owns its identity/version. `just sync-manifests` generates common host manifests and marketplace catalogs. Keep versions unified; do not hand-edit generated manifests.
 

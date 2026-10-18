@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import importlib
 import sys
 import tempfile
 import unittest
@@ -10,9 +11,95 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CLI = REPOSITORY_ROOT / "scripts" / "project-verify.py"
+project_verify = importlib.import_module('scripts.project-verify')
 
 
 class CompactProjectVerifyTests(unittest.TestCase):
+    def test_fallback_parser_preserves_lists_nested_tasks_and_quoted_colons(self) -> None:
+        config = project_verify.parse_yaml_fallback(
+            "# ignored comment\n\n"
+            "- orphan\n"
+            "title: 'Project: checks'\n"
+            "active_skills:\n  - 'ddd'\n  - \"tdd\"\n"
+            "tool_list:\n  - python\n"
+            "build_tools:\n"
+            "  'python':\n"
+            "    build_script: \"check.py\"\n"
+            "    lifecycle_tasks:\n"
+            "      verify: 'echo result: ok'\n"
+            "  fallback:\n"
+            "    lifecycle_tasks:\n"
+            "      unit: echo unit\n"
+            "ignored line\n"
+        )
+        self.assertEqual(config, {
+            "title": "Project: checks",
+            "active_skills": ["ddd", "tdd"],
+            "tool_list": ["python"],
+            "build_tools": {
+                "python": {"build_script": "check.py", "lifecycle_tasks": {"verify": "echo result: ok"}},
+                "fallback": {"lifecycle_tasks": {"unit": "echo unit"}},
+            },
+        })
+
+    def test_frontmatter_requires_opening_and_closing_delimiters(self) -> None:
+        for content in ("", "# Rules\n", "active_skills: []\n---\n", "---\nactive_skills: []\n"):
+            with self.subTest(content=content):
+                self.assertEqual(project_verify.parse_frontmatter_text(content), {})
+
+    def test_invalid_child_agents_does_not_hide_valid_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "AGENTS.md").write_text("---\nactive_skills:\n  - ddd\n---\n", encoding="utf-8")
+            child = root / "child"
+            child.mkdir()
+            (child / "AGENTS.md").write_text("---\nunterminated: rules\n", encoding="utf-8")
+            self.assertEqual(project_verify.find_agents_md(child), (root.resolve(), {"active_skills": ["ddd"]}))
+
+    def test_missing_agents_reports_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            res = self.run_cli("--root", tmp_dir, "status")
+            self.assertEqual(res.returncode, 1)
+            self.assertIn("Could not find valid AGENTS.md with frontmatter in hierarchy", res.stderr)
+            self.assertNotIn("Project Root:", res.stdout)
+
+    def test_build_tool_selection_skips_unusable_candidates_and_keeps_first_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "build.txt").write_text("plain project\n", encoding="utf-8")
+            (root / "directory").mkdir()
+            first = {"lifecycle_tasks": {"verify": "echo first"}}
+            matched = {"build_script": "build.txt", "contains": "plain"}
+            tools = {
+                "invalid": "not a mapping",
+                "first": first,
+                "second": {"lifecycle_tasks": {"verify": "echo second"}},
+                "missing": {"build_script": "absent"},
+                "mismatch": {"build_script": "build.txt", "contains": "flutter"},
+                "unreadable": {"build_script": "directory", "contains": "plain"},
+            }
+            self.assertEqual(project_verify.detect_build_tool(root, {"build_tools": tools}), ("first", first))
+            tools["matched"] = matched
+            self.assertEqual(project_verify.detect_build_tool(root, {"build_tools": tools}), ("matched", matched))
+            self.assertEqual(project_verify.detect_build_tool(root, {}), ("default", {}))
+            self.assertEqual(project_verify.detect_build_tool(root, {"build_tools": {"missing": tools["missing"]}}), ("default", {}))
+
+    def test_task_failure_propagates_exit_code_and_runs_at_project_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            (root / "AGENTS.md").write_text(
+                "---\nbuild_tools:\n  fallback:\n    lifecycle_tasks:\n"
+                "      verify: 'printf ran > result.txt; exit 23'\n---\n", encoding="utf-8"
+            )
+            child = root / "child"
+            child.mkdir()
+            res = self.run_cli("--root", str(child), "verify", cwd=child)
+            self.assertEqual(res.returncode, 23)
+            self.assertIn("Task 'verify' failed with exit code 23", res.stderr)
+            self.assertNotIn("PASS:", res.stdout)
+            self.assertEqual((root / "result.txt").read_text(encoding="utf-8"), "ran")
+            self.assertFalse((child / "result.txt").exists())
+
     def run_cli(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(CLI), *args],

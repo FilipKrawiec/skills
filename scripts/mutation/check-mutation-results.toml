@@ -1,0 +1,7 @@
+[cosmic-ray]
+module-path = "scripts/check-mutation-results.py"
+timeout = 40.0
+excluded-modules = []
+test-command = "python -m unittest discover -f -s scripts/tests -p test_mutation_results.py"
+[cosmic-ray.distributor]
+name = "local"

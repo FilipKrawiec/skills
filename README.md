@@ -45,7 +45,8 @@ Override `AGY_IDE_PLUGIN_DIR` to choose a destination. This command replaces sym
 
 ```bash
 just unit             # focused script unit/integration fixtures
-just verify           # unit tests, then one plugin validation
+python3 -m pip install -r requirements-health.txt # inside a Python 3.15 venv
+just verify           # tests once, coverage/complexity gates, plugin validation
 just sync-manifests   # regenerate host manifests from metadata
 ```
 

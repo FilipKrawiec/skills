@@ -1,0 +1,7 @@
+[cosmic-ray]
+module-path = "scripts/release.py"
+timeout = 40.0
+excluded-modules = []
+test-command = "python -m unittest -f scripts.tests.test_release_automation.CandidateTests scripts.tests.test_release_automation.ProductionGateTests"
+[cosmic-ray.distributor]
+name = "local"

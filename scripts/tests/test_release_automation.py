@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,8 +14,7 @@ import unittest
 import yaml
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import release
+from scripts import release
 
 RELEASE_SCRIPT = Path(__file__).resolve().parents[1] / "release.py"
 
@@ -107,6 +107,16 @@ class CandidateTests(RepositoryTestCase):
     def test_dirty_checkout(self):
         (self.root / "untracked").write_text("dirty")
         self.refused("dirty")
+
+    def test_missing_remote_fails_without_publishing(self):
+        git(self.root, "remote", "remove", "origin")
+        self.refused("origin")
+
+    def test_empty_package_tree_is_rejected(self):
+        shutil.rmtree(self.root / "plugins/common")
+        sha = self.commit("remove packages")
+        git(self.root, "push", "origin", "HEAD:main")
+        self.refused("no package metadata", sha=sha)
 
     def test_wrong_checkout(self):
         (self.root / "later").write_text("later")
