@@ -1,10 +1,24 @@
 # Review queue
 
-With `reviewQueue`, keep that issue the owner's ordered review list: pin it once (`gh issue pin`), then rewrite its body each pass with `gh issue edit <n> --body "<list>"`, which notifies no one. List every open non-draft PR carrying `review:owner`, and the owner's own PRs with blocking findings; first difference wins:
+With configured reviewQueue, pin that issue once and update its body with the current decision queue. Include approved milestone progress and next slice, prototype direction awaiting owner input, exact candidate/head and check evidence, production destination/approval, reserved authority decisions, and technical replan/waits with retry conditions. Preserve links to criteria and recorded decisions. An issue-body update is a record, not a guaranteed notification mechanism.
 
-1. Fixes a red `<base>`.
-2. Unblocks more: drafts whose body says `Stacked on #<pr>`, plus open issues it blocks or shares packet paths with.
-3. Its issues' earliest milestone, then highest board Priority, else `priority:P*` label; none last.
+Order entries by first difference:
+
+1. Active incident or all-work-blocked state.
+2. Red configured base or a decision unblocking the most approved work.
+3. Earliest milestone, then board Priority or priority label; none last.
 4. Oldest first.
 
-One line each: `1. #<pr> <title>: <owner rule or finding>; unblocks #<a>, #<b>`. None: "Nothing waits for the owner."
+Include every ready PR carrying review:owner and owner-authored PR with blockers. Count waiting dependent issues, not stacked drafts. Do not route ordinary technical recovery to the owner: retain its lane and list the bounded diagnosis/replan/wait. Separate optional suggestions from blockers.
+
+Use one concise line per entry:
+
+```text
+1. Milestone 1.2 / #42: prototype direction; recommend option A; evidence <link>.
+2. Candidate abc123 / staging: checks valid; production approval pending for prod-east.
+3. #51: technical wait for dependency #49; lane retained; retry when merged.
+```
+
+Give owner-reserved entries options and a recommendation. If none, state “Nothing waits for the owner.” Record routine delegated choices without asking again.
+
+Send a daily digest only when state changed. Send immediate notices for incidents or all-work-blocked conditions. Use only the authorized configured notification channel; do not infer permission to email, message or mention people from queue access. Without such a channel, retain the queue and return the notice in the run report. Deduplicate unchanged waits; record last evidence and next retry condition.

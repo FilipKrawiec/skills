@@ -6,9 +6,9 @@
 | --- | --- |
 | One function whose mistake corrupts data or misleads the user | Flip one condition or constant by hand; run its tests |
 | An area under audit | Seeded sample per file, until 10 mutants are scored or 20 sites tried |
-| A project gate | The language's mutation tool (named in its language file) on domain packages, scored per file and ratcheted |
+| A project gate | Configured reproducible mutation tool and scope, stricter on changed/critical behavior, scored and ratcheted |
 
-Without a fitting tool, a sampling script using these operators is enough.
+Without a fitting tool, manually sample these operators for diagnosis; sampling does not replace a required project gate. Missing required measurement blocks completion.
 
 ## Operators
 
@@ -36,7 +36,8 @@ Never mutate string literals, comments, imports, logging or generated files.
 
 | Result | Meaning |
 | --- | --- |
-| Killed | A test failed or timed out |
+| Killed | An attributable test assertion failed, or an isolated mutant timed out under the configured reproducible limit with a passing baseline |
+| Incomplete | Whole measurement timed out, runner failed or evidence is missing; never a kill or a gate pass |
 | Survived | All tests passed; not equivalent or tuning |
 | Invalid | Does not compile; excluded |
 | Equivalent | No observable behaviour can differ; excluded |
@@ -46,7 +47,8 @@ Never mutate string literals, comments, imports, logging or generated files.
 
 `score = killed / (killed + survived)`, per file and per area.
 
-- Bar: 80% for domain code, on the area total and on each file with ≥ 10 scored mutants.
-- A gate tool's per-file score is a ratchet: raise it, never lower it. A sampled score ratchets nothing.
-- Kill every survivor with a test, or delete its code.
+- Apply configured project mutation, coverage and risk gates; use stricter gates for changed and critical behavior, not a universal score.
+- Ratchet measured confidence. Weakening thresholds, narrowing scope, adding exclusions or resetting a baseline requires explicit owner approval with impact evidence. A sampled score ratchets nothing.
+- Classify survivors with behavioral evidence; add meaningful tests or remove unneeded behavior. Do not pin unspecified tuning constants or force churn for a score.
+- Record revision, toolchain, command/exit, scope, operators, seed, baseline and artifacts. Compare duration only for equivalent scope, environment and warm/cold conditions. Missing or incomplete evidence blocks a gate.
 - Report one table (file, sampled, killed, survived, equivalent, tuning, score), then each survivor as `file:line`, the mutant, and the missing case in words.

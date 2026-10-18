@@ -1,43 +1,45 @@
 ---
 name: ship
-description: Use when a change has merged (06 Ship), to check base-branch CI, revert the merge that broke it and confirm merged issues shipped.
-allowed-tools: Skill Read Bash(python3:*,git:*,gh:*,just:*)
+description: Use when a change has merged, to check actual base HEAD CI, respond to attributable failures and distinguish merged, deployed and accepted evidence.
+allowed-tools: Read Edit Bash
 ---
 
-# Ship (06)
+# Ship
 
-Revert only AFK merges. `<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`). With a board (lanes.json `project`), move cards with `gh project item-edit`.
+Read `<base>` and `<branchPrefix>` from `.github/lanes.json` (defaults `main`, `agent/afk-`). With a configured board, use `gh project item-edit` for card updates. This procedure checks merged work; it grants no production promotion or fix-forward authority.
 
-## 1. Observe
+## 1. Observe actual HEAD
 
-With a board, move Review cards whose open issue has no open PR to Todo. Then read push runs on `<base>`: `gh run list --branch <base> --event push --limit 200`.
+With a board, move Review cards whose open issue has no open PR to Todo. Fetch the base and record the actual `origin/<base>` HEAD, even when it has no runs. Read configured required workflows and `gh run list --branch <base> --event push --limit 200`; query further when needed for that HEAD.
 
-- Head = newest fetched `origin/<base>` commit with runs. Ignore cancelled runs and failed runs whose jobs all have empty `steps`.
-- Judge each workflow by its own newest run, even on an older commit: red if the newest completed one failed, pending if the newest is incomplete, else green. Base: red if any is red, else pending if any is, else green. Green → phase 3; pending or no runs → report only.
-- Red → per red workflow, newest green commit G, oldest red R after it. The culprit is R only when `git log --first-parent <G>..<R>` lists exactly R; else the range is ambiguous; no green run → `unknown`. It is AFK when its PR's head branch starts with `<branchPrefix>`.
+Judge each required workflow's latest applicable run for the actual HEAD: completed success is green, completed failure is red, missing/incomplete/cancelled is pending. A failed run with no executable job steps is infrastructure evidence, not success. Never substitute an older green commit or ignore a missing workflow. Base is red if any required check failed, otherwise pending if any evidence is missing, otherwise green.
 
-**Exit gate:** base state; for red, failing checks and culprit.
+For each red workflow, find newest green commit G and oldest red R after it. Attribute R only when `git log --first-parent <G>..<R>` lists exactly R; otherwise report an ambiguous range, or unknown without G. It is AFK only when its PR's head branch starts with `<branchPrefix>`.
 
-## 2. Respond
+**Exit gate:** actual HEAD and required-check state, with culprit evidence or pending reasons.
 
-When an AFK merge broke the base and no open PR has head `<branchPrefix>revert-<short-sha>`:
+## 2. Respond within authority
 
-1. In a new worktree on that branch from `origin/<base>`, `git revert --no-edit <sha>` and pass the verify gate (the project's `verify` task).
-2. Invoke `vcs` to open the revert PR `revert: <subject>` and make it ready to merge.
-3. Reopen its issue and park it: replace `lane:afk` and `state:*` with `lane:owner`; comment the failing checks, the revert PR and a retry recommendation in ≤ 5 lines.
+For an attributable AFK failure without an open `<branchPrefix>revert-<short-sha>` PR, prepare an isolated revert from actual base HEAD using `git revert --no-edit <sha>`; run the project's verify gate. Have the host dispatch VCS delivery as a leaf assignment with exact commit, branch, commands, failing evidence and merge restrictions. Never merge the revert without applicable authority. Reopen its issue, retain its lane authorization, remove stale `state:*` labels, record a technical wait/replan, and comment failing checks, revert PR and retry recommendation in ≤5 lines.
 
-Otherwise report it to the owner, naming a fix forward as a follow-up.
+For ambiguous or non-AFK failures, report the evidence and recommended follow-up; do not invent fix-forward authority. If production acceptance fails, execute only a safe configured rollback already authorized by production controls and notify the owner immediately with candidate, failure and rollback result. Never reverse destructive data changes. Missing rollback authority means stop and escalate.
 
-**Exit gate:** a revert PR, or that report.
+**Exit gate:** verified revert PR, configured rollback result, or explicit owner blocker; notification recorded.
 
-## 3. Confirm
+## 3. Confirm evidence separately
 
-For each issue closed as completed in the last 30 days whose newest merged closing PR #M has no `## Shipped #M` comment, and whose merge commit is an ancestor of the head: remove `state:` labels; comment `## Shipped #M` with the head commit and run link.
+For recently completed issues, identify the newest merged closing PR and prove its merge commit is an ancestor of actual HEAD. Record merged/CI status separately from deployed and accepted status. Require deployment identity and acceptance evidence for that exact artifact/configuration before marking shipped; a green base or merged PR is insufficient. Missing evidence stays pending.
 
-Close each open `type:epic` whose sub-issues are all closed with a `## Shipped` comment.
+For issues closed within 30 days without `## Shipped #M` for closing PR #M, add that comment only with deployed-and-accepted evidence, artifact/configuration, HEAD and run links; remove `state:` labels then. Close an open `type:epic` only when all sub-issues are closed and have matching shipped evidence.
 
-**Exit gate:** issues confirmed, epics closed, or none.
+**Exit gate:** merged, CI, deployed and accepted states supported separately; pending evidence explicit.
 
 ## Output
 
-≤ 5 lines. **Summary**, one line: base state, revert PR or culprit, issues confirmed, epics closed, linked. **Decision:** revert PR to merge, red base, or "Nothing needed."
+≤5 lines: **Summary** links actual HEAD, CI, culprit/revert, deployment/acceptance and confirmed issues; include commands/exits in run reports (≤8 lines). **Decision:** recommended owner action or “Nothing needed.”
+
+```text
+Summary: HEAD a1b2 merged; CI pending (required run missing); deployed pending.
+Evidence: git fetch exit 0; run query exit 0; no shipped issues confirmed.
+Decision: Nothing needed; await required run and deployment acceptance.
+```

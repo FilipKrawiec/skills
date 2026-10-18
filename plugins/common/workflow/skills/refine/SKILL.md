@@ -6,14 +6,14 @@ allowed-tools: Skill Read Edit Bash(gh:*,git:*)
 
 # Backlog Refinement
 
-Refine the queue across items. For GitHub issues, invoke `spec` for individual intent, criteria, estimate, scope and lane.
+Refine the queue across items. Invoke `spec` for individual intent, criteria, estimate, scope and lane. Approved milestone intent authorizes autonomous slicing, refinement and lane assignment without per-story approval. Validate owner-authored GitHub approval of the matching brief revision; silence grants nothing. Have the host invoke `milestone` separately for missing authority.
 
 ## 1. Inventory
 
 - Resolve the source from the request; never substitute another repository's backlog.
-- Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch all in-scope items, decisions, relationships and active work; paginate fully. Check board drift across draft and closed cards. Report inaccessible sources; an empty search never proves an empty backlog.
-- Read the base's code and tests; separate source evidence from unverified reports.
-- Also fetch unclaimed bug reports (`type:bug`, `<!-- explore-finding`) in `lane:proposed` or no lane without `<!-- refined base=`; `spec` triages each.
+- Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch all in-scope items, decisions, relationships and active work; paginate fully. Report inaccessible sources; an empty search never proves an empty backlog.
+- Read base code and tests; distinguish evidence from reports.
+- Include unclaimed, unrefined bug reports in `lane:proposed` or no lane.
 
 **Exit gate:** every in-scope item is inventoried, or missing coverage is named.
 
@@ -27,37 +27,35 @@ For each item, take the first matching case:
 4. A recorded owner decision supersedes the body: put the binding decision and its source in the body; update dependent slices and epic summaries together.
 5. Remaining work is unclear or too large (code over lanes.json `ownerLines`, default 800): invoke `spec` to ground and refine it into vertical slices within it.
 
-- Historical bot recommendations are not owner approval.
-- Lanes say who delivers, milestones when: give each open issue a milestone (a slice its epic's) and drop epics' lanes; defer work, including work awaiting a third party, to a later milestone, keeping its lane.
-- A `lane:owner` issue held only by a question the reviewer may decide goes to the reviewer (Apply), however old.
+- Historical bot recommendations are not owner approval; out-of-intent proposals never halt approved work.
+- Lanes say whether owner participation is required; milestones group deliverables: give each open issue a milestone (a slice its epic's) and drop epics' lanes; defer work, including work awaiting a third party, to a later milestone, keeping its lane.
+- Independently adjudicate technical choices and ADRs; reserve product/strategy reversal, new paid services or budget increases, and authority/credential/release/quality-gate weakening for the owner. New interactions require owner prototype direction. Bounded investigations may proceed with a question, time limit and evidence exit.
 - Trace dependencies through open and closed items. Remove a prerequisite only when its responsibility is gone. Detect cycles, missing prerequisites and shared-file races. Record merge order and shared-file ownership as blocked-by links, never only in comments; drop links to deferred work. Unattended, add links mirroring a packet or `### Dependencies` section; report removals instead.
-- An epic's old summary never gates on a deferred slice.
-- Check the scope packet covers every criterion, including tests, locales and required documentation; account for project-wide allowances. An empty packet cannot authorize edits. Record protected paths and owner actions visibly. If the base deleted a packet path, confirm the outcome still holds before asking.
+- Check the scope packet covers every criterion, including tests, locales and required documentation; account for project-wide allowances. Record protected paths and owner actions visibly. If the base deleted a packet path, confirm the outcome still holds before asking.
 
 **Exit gate:** each item has a disposition and each cross-item conflict has a correction or a visible blocker.
 
 ## 3. Apply
 
-- A review-only request produces recommendations; a refinement request authorizes issue and board edits in scope, never implementation, new unattended approvals, merges, releases or deployments.
-- For GitHub issues, invoke `spec` for specification and readiness changes. Unattended, run only its triage phase and report proposed specification changes. Edit other sources directly, using their own readiness convention. Preserve owner approvals; a board column never grants unattended authority.
-- Take and record routine recommendations. With lanes.json `agentReview`, the reviewer decides each fork you would ask the owner: dispatch a fresh worker with "Invoke `agent-review` to decide on #<N>: <question>; options <A>, <B>; recommended <A>: <evidence>."; ask the owner only on its `owner`. Without it, ask the owner only about UX beyond the criteria, cost, or departing from project patterns or best practice. Keep refining meanwhile.
+- A review-only request produces recommendations; a refinement request authorizes issue and board edits in scope, never implementation, new milestone authority, merges, releases or deployments. Standing milestone approval covers in-intent story lanes.
+- For GitHub issues, invoke `spec` for specification and readiness changes. Within approved milestone intent, refine and slice autonomously; otherwise report proposals. Edit other sources directly, using their own readiness convention. Preserve owner approvals; a board column never grants unattended authority.
+- Take and record routine recommendations. If independent adjudication is needed, ask the host to dispatch a leaf worker with: "Decide #<N>: <question>; options <A/B>; recommend <A> from <evidence>. Read <rules, criteria, code, constraints>; no dispatch or credential access. Return decision, evidence and reserved owner question if any in ≤ 5 lines." Keep refining independent work. Preserve lane authorization through temporary blockers; `lane:owner` only when owner participation is required.
 - Re-read each item before writing. Patch minimally; no comment per formatting change.
-- Derive board status from readiness, dependencies and active work. Preserve priorities unless a recorded decision or parent policy changes them. Correct stale board descriptions only.
+- Derive board status from readiness, dependencies and active work. Preserve priorities unless a recorded decision or parent policy changes them.
 
 **Exit gate:** authorized corrections are saved; pending choices remain visible and blocked work cannot appear ready.
 
 ## 4. Verify and Report
 
-Re-fetch changed items and cards. Confirm saved criteria, scope, dependencies, lanes and status; check the blocked-by graph for cycles and for links the bodies don't name. List the parallel set: Todo issues with no open blocker and disjoint packets. Account for every inventoried item; never present old test evidence as fresh.
+Re-fetch changed items and cards. Confirm saved criteria, scope, dependencies, lanes and status; check the blocked-by graph for cycles and for links the bodies don't name. List the parallel set: Todo issues with no open blocker and disjoint packets. Account for every item; label old evidence.
 
-Recurring runs leave unchanged items alone; open with `Blocked: <cause>` or `Waiting on <owner>: <what>` and stay flagged when either applies; else archive. Schedule the routine only when asked.
+Recurring runs leave unchanged items alone; flag blockers and owner waits. Schedule only when asked.
 
 **Exit gate:** saved changes match the refinement; coverage gaps and choices are reported.
 
 **Output:** ≤ 8 lines, with **Summary** (counts, changed-item/project links, corrections, verification and coverage limits) and **Decision** (owner choices with options and a recommendation, or "Nothing needed.").
 
 ```text
-Summary: Reviewed 12 items; refined 4, left 6 unchanged, and blocked 2.
-Parallel now: #14, #18 (disjoint packets); #20 waits on #14.
-Decision: #22 needs a sharing choice; recommend a private personal workspace.
+Summary: Refined #14 and #18; packets disjoint; #20 waits on #14.
+Decision: Nothing needed.
 ```

@@ -1,145 +1,56 @@
-# Repository Concepts & Architecture Guide
+# Delivery model
 
-This document provides a comprehensive guide to the architectural design, core concepts, and operational models used throughout the `skills` repository.
+This repository distributes portable skills, not a workflow runtime. Skills own procedures; the host owns sessions, model choice, scheduling, isolated credentials and coordination. GitHub holds durable intent, approvals, decisions, claims and evidence. A new session reconciles those records with actual branches, PR heads and checks before acting.
 
----
+## Two product checkpoints
 
-## 1. Core Philosophy & Principles
-
-The `skills` repository is designed around five foundational principles:
-
-1. **Provider Neutrality & Sovereign Git Distribution**: Skill instructions and verification contracts do not depend on third-party SaaS registries. They work seamlessly via standard Git checkout across Codex, Claude Code, Antigravity (`agy`), and local LLMs.
-2. **System-Prompt Style under Word Budgets**: Skills are direct orders to an agent, one rule per bullet, numbered phases with checkable exit gates, and nothing the agent would do untold. The validator enforces budgets: description ≤ 300 characters, `SKILL.md` body ≤ 800 words, reference ≤ 600.
-3. **Output Token Economics & Explicit Envelopes**: Output generation tokens are 3×–5× more expensive than input context. Skills enforce explicit compact output templates, high-density communication, and code anti-overengineering (Rule of Two Adapters).
-4. **Dual-Speed Flow Topology**: The library provides a Fast Tactical Loop (`tdd` ➔ `review` ➔ `vcs`) for direct changes alongside the Delivery Cycle (`spec` ➔ `plan` ➔ `tdd` ➔ `review` ➔ `ship` ➔ `improve`) for tracked work, attended or AFK.
-5. **Deterministic Verification**: AI agents validate all work against deterministic verification gates defined in `AGENTS.md` and executed via `scripts/project-verify.py`.
-
----
-
-## 2. Skill Architecture & Design
-
-A **skill** is a compact, reusable package of instructions, scripts, and context pointers that guide an AI agent when performing specialized software engineering tasks.
-
-```
-plugins/common/<package>/skills/<skill-name>/
-├── SKILL.md                 # Primary instruction entrypoint with frontmatter
-├── references/              # Optional branches some runs skip (≤600 words)
-│   └── domain-details.md
-├── scripts/                 # Non-interactive CLI helper tools
-└── assets/                  # Templates, boilerplate, or visual assets
+```text
+Owner approves outcome brief + design direction
+                    |
+Team refines → plans → implements → independent review
+                    |
+       merge → automatic test delivery
+                    |
+      prepared demo → owner approves exact candidate
+                    |
+       production → acceptance → engineering health
 ```
 
-### Key Components of a Skill
+A milestone groups a deliverable outcome, constraints, non-goals and acceptance. New interactions need lightweight prototype direction; established interactions reference an accepted pattern. Approval covers the matching brief revision and delegates story slicing, refinement and engineering decisions. An out-of-intent discovery becomes a proposal without stopping approved work.
 
-* **YAML Frontmatter**: Defines the skill's identity, trigger, and invocation type.
-  ```yaml
-  ---
-  name: ddd
-  description: Use when defining a business domain's language, contexts and maps, aggregates, entities, value objects, repositories, domain events, or strategic design.
-  ---
-  ```
-  For human-triggered workflows, add `disable-model-invocation: true`.
-  A skill a scheduled task or another session starts stays model-invoked: a brief can't type a slash command, so the run stalls.
-* **Description Craft**: Descriptions reside in the agent's startup context. They must begin with `"Use when..."`, focus on user intent, and specify clear trigger boundaries within 300 characters.
-* **Phase Sequencing**: Steps are numbered phases, each ending in an exit gate the agent can check (a command's exit code, a file, a label, a PR or CI state).
-* **Explicit Output Envelopes**: Every phase defines the exact compact Markdown template the agent should emit, preventing conversational wandering.
-* **Universal ASCII Diagram Standard**: Uses clean ASCII/Unicode box diagrams and Markdown tables; Mermaid code blocks are prohibited to guarantee rendering across all editor environments.
-* **On-Demand Doctrine Chaining**: Flow skills (`tdd`, `review`) invoke Doctrine skills (`ddd`, `hexagonal-architecture`) via native `Skill` tool calls on demand, preventing startup context clutter.
+Production approval is separate: demonstrate a working test environment or installable candidate, acceptance evidence, limitations and rollback readiness. The owner marks feedback as a blocker or follow-up. Approval binds the artifact and configuration; changed contents require renewed approval. Merge/CI success alone is not production acceptance. Default to a coherent milestone release; propose an earlier valuable subset when justified.
 
----
+## Language and decision ownership
 
-## 3. Plugin Packaging
+| Dimension | Meaning |
+| --- | --- |
+| Lane | Whether implementation needs owner participation: authorized autonomous work (`lane:afk`), proposed authorization (`lane:proposed`), or required owner participation (`lane:owner`). |
+| Milestone | A production deliverable or its linked engineering health iteration. |
+| Type | Story, bug, chore, bounded investigation/task or epic. |
+| Waiting reason | A temporary missing condition, recorded separately from lane authorization. |
 
-Skills are grouped into **plugins** for distribution and host discovery.
+The owner retains product/strategy reversals, new interaction direction, new paid services or budget increases, authority/credential/release-gate changes, quality-gate weakening and production approval. Existing services within explicit budgets are delegated. Independently review other technical choices and ADRs. Technical difficulty triggers bounded diagnosis/replanning, not automatic owner ownership. Fresh technical adjudication settles engineering disagreements without waiving acceptance or checks.
 
-```
-plugins/
-└── common/                  # Canonical portable plugins (Cross-Agent)
-    ├── core/                # DDD, Hexagonal Architecture
-    ├── workflow/            # The delivery cycle: spec, refine, plan, tdd, vcs, review, ship, improve, afk, agent-review, explore
-    └── authoring/           # Writing Great Skill
-```
+The Product partner refines outcomes; Craftsman implements; Reviewer judges independently; Delivery steward reconciles progress and release evidence. These are assignments, not a separate agent framework. Dispatch complete role-specific briefs using the owning skills. Required worker instructions never depend on an unread shared reference. Keep invocation depth at most two and avoid cycles.
 
-Common plugins hold fully portable skills in standard YAML and Markdown. They run on any host harness (Claude Code, Codex, Antigravity, custom agents) without host-specific code; each host reads its generated manifest beside them.
+## Enforcement and concurrency
 
----
+Implementer and Reviewer need separate contexts and credentials inaccessible to each other where their authorities differ. Selecting a different account in a shared secret store is not isolation. GitHub protections enforce required review/checks; production controls enforce owner approval of the exact candidate. Skill text cannot supply these controls. Missing setup is a visible capability gap.
 
-## 4. The Delivery Cycle
+Work in isolated short-lived branches/worktrees from a fetched base; preserve the main checkout. Start serially. Parallel implementation requires enforced claims, disjoint scope including tests and satisfied dependencies. Waiting work need not idle independent work. Reviews bind to the exact head; blocking findings request changes, optional suggestions stay optional.
 
-Delivery follows seven phases, each with a skill. The optional board doesn't mirror them: its standard columns say what a card waits for, and GitHub's built-in board workflows make most moves. Epics sit on the same board and use three of its columns; an Epics view shows only them and the Board view every other card.
+## Health and confidence
 
-```
- ┌───────────┐   ┌─────────┐   ┌─────────┐   ┌────────────┐
- │ 01 Define │──►│ 02 Spec │──►│ 03 Plan │──►│ 04 Execute │
- │   spec    │   │  spec   │   │  plan   │   │ tdd + vcs  │
- └───────────┘   └─────────┘   └─────────┘   └─────┬──────┘
-       ▲                                           ▼
- ┌─────┴──────┐   ┌──────────┐   ┌─────────────────────────┐
- │ 07 Improve │◄──│ 06 Ship  │◄──│        05 Review        │
- │  improve   │   │   ship   │   │ review, agent-review    │
- └────────────┘   └──────────┘   └─────────────────────────┘
-```
+After each product milestone, deliver autonomously scoped health work: dependency currency, meaningful testing gaps, duplication, test speed and justified refactoring. Freeze latest-stable targets at kickoff, including majors for direct dependencies, toolchains and CI actions; resolve transitives compatibly. Complete required migrations in bounded slices before the next product milestone. Unsupported combinations permit documented newest-compatible exceptions; external outages permit independent product work while health remains blocked. Later releases wait until next iteration except urgent security fixes.
 
-| Phase | Skill | Leaves behind |
-| :--- | :--- | :--- |
-| 01 Define | `spec` | An issue with intent and open questions |
-| 02 Spec | `spec` | Acceptance criteria and one lane; an estimate and a scope packet for AFK |
-| 03 Plan | `plan` | A plan the owner approves only when it holds a UX, cost or best-practice decision, posted as a `## Plan` comment for AFK or multi-session work |
-| 04 Execute | `tdd`, `vcs`, `review` (fresh-context worker) | Tested commits on a task branch, reviewed, and a PR |
-| 05 Review | `agent-review`, or the owner | A reviewed, mergeable PR |
-| 06 Ship | `ship` | A green base branch and a `## Shipped` comment, a revert PR, or an escalation |
-| 07 Improve | `improve` | A `## Lessons` comment, and one issue and PR per target repository for lessons whose failure repeated |
+Use reproducible project mutation, coverage and complexity/risk evidence with stricter changed/critical-code gates. Ratchet assurance; missing required evidence blocks merge. Lowered thresholds, narrower measurement scope, new exclusions or baseline resets require owner approval. Compare like environments and behavior, not test counts or one line-coverage percentage.
 
-06 Ship and 07 Improve run after the merge, so their record is an issue comment rather than a column. Each skill names the issue states it acts on and the card moves it makes itself; `afk`'s `references/setup.md` lists the columns and the board workflows to turn on. Lanes stay labels, so a card's labels show who acts next. Every step, from picking the next issue to the merge gate, is a plain `gh` or `git` command written in the skills; no local script decides.
+Safe configured rollback on agreed failing production checks is delegated, with immediate owner notification. Destructive data reversal and unapproved fix-forward releases are not included.
 
-### Worktree Provenance & Safety
+## Library boundaries
 
-Whenever a new worktree is created or new work is started, the original main branch must be updated first (e.g. `git fetch origin main:main` or pulling latest upstream changes). Every task executes inside an isolated Git worktree branched from this declared, updated base revision, so primary checkouts stay protected from unverified edits and non-overlapping tasks can run concurrently.
+Canonical packages live in `plugins/common/<package>/skills/`. Each skill is self-contained within 800 words; optional references within 600, descriptions within 300 characters. Portable docs use text diagrams; GitHub issue/PR bodies may use Mermaid with an explanation. Host-specific manifests are generated from package metadata; native host code does not belong in common skills.
 
-### Issue Lanes & AFK Delivery
+Use project-native build and quality tools. This repository runs `just verify` for unit tests and one plugin validation. The legacy `scripts/project-verify.py` entrypoint remains for compatibility; it does not orchestrate work. Prefer deleting duplicated checks and instructions over adding scripts, schemas or coordination frameworks.
 
-GitHub Issues are the only queue. A repository opts in with `.github/lanes.json`. Every issue carries one type: `type:story` (behaviour a user sees), `type:bug`, `type:chore` (a code change with no new behaviour), `type:task` (a spike or setting that ends in a finding, never AFK) or `type:epic`, the parent of the others.
-
-| Lane | Meaning | Applied by |
-| :--- | :--- | :--- |
-| `lane:afk` | Deliver unattended | The owner, or an agent the owner just said yes to |
-| `lane:proposed` | Agent recommends AFK | `spec` triage |
-| `lane:owner` | Needs a decision, credentials, settings or a device | Anyone |
-
-An `afk` run carries the cycle while the owner is away. It first invokes `ship`, which checks the base branch, opens a revert PR when an AFK merge turned it red, and confirms shipped issues. Then it tends its own PRs. It takes at most one eligible issue (acceptance criteria, a `scope` packet, closed dependencies) through `plan`, `tdd` and a fresh-context `review`, and opens a PR. A fork it may not take alone, such as widening its own scope packet, goes to the reviewer, who decides it as the project's craft and UX expert and records the decision on the issue; only an owner decision parks the issue back to `lane:owner` with one question. It ends by invoking `improve`, which turns a failure seen twice into a PR that waits for the owner's merge. A PR that matches none of the closed list of owner rules merges on the reviewer's approval and green checks; the rest wait for the owner. GitHub is the boundary, not a local hook: agents push and open PRs as an implementer machine user and review as a second, reviewer machine user, and branch protection, CODEOWNERS and token scopes keep merges into the base branch, owner paths, CI workflows, releases and settings with the owner (`skills/afk/references/github-safety.md`). Runs never touch the main checkout: queue decisions read the fetched base branch.
-
-`refine` inventories a backlog or project board, reconciles recorded decisions and cross-issue dependencies against the current implementation, invokes `spec` for individual issue changes, and verifies the saved queue. It preserves owner approvals and makes blocked or deferred work visible before an execution run picks an item.
-
-With `agentReview` in lanes.json, `agent-review` reviews every open PR once per head commit, the runner fixes its findings for up to `reviewRounds` rounds, and the reviewer approves and auto-merges a PR it judged ready that matches no owner rule; the others go to the owner with `review:owner`. The reviewer also decides the forks `afk`, `plan` and `refine` hand it; cost, reversing an owner decision, going beyond an issue's intent, owner paths, anything irreversible, credentials, settings and devices stay with the owner.
-
----
-
-## 5. Deterministic Verification Loop
-
-Agents verify their work using deterministic project checks rather than guesswork.
-
-```
-AGENTS.md (Frontmatter) ──► project-verify.py ──► Build Tool / Test Suite
-```
-
-### `AGENTS.md` Frontmatter Contract
-
-Project roots declare active skills and deterministic build tasks inside `AGENTS.md` frontmatter:
-
-```yaml
----
-active_skills:
-  - ddd
-  - hexagonal-architecture
-  - tdd
-
-build_tools:
-  python:
-    build_script: scripts/validate-plugin-definitions.py
-    lifecycle_tasks:
-      unit: python3 -m unittest discover -s scripts/tests
-      verify: python3 scripts/validate-plugin-definitions.py
----
-```
-
-Executing `python3 scripts/project-verify.py verify` reads this frontmatter, resolves the appropriate build tool, executes the deterministic verification command, and checks Git worktree hygiene.
+The board remains Backlog, Todo, In progress, Review, Done. Any change to its columns or membership requires coordinated devcontainer work. Keep one owner decision queue, a daily digest when things change and immediate incident/all-useful-work-blocked alerts through an explicitly authorized channel.

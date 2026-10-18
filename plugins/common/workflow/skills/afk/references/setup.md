@@ -2,13 +2,13 @@
 
 ## Configuration: `.github/lanes.json`
 
-Its presence opts the repository in; agents read it from the base branch. Only `repo` is required. Owner paths belong in CODEOWNERS.
+Its presence opts the repository in; agents read it from the base branch. For unattended work, require explicit repo, owner, implementer and reviewer identities plus the applicable host capability checks. Owner paths belong in CODEOWNERS.
 
 | Key | Meaning |
 | --- | --- |
 | `repo` | `owner/name`. |
 | `owner` | The owner's login; default the repository owner. |
-| `implementer`, `reviewer` | [Machine users](github-safety.md); default `owner`. |
+| `implementer`, `reviewer` | Distinct [machine users](github-safety.md); set both explicitly, never default to `owner`. |
 | `base` | Default `main`. |
 | `project` | `{"owner": "<login>", "number": <n>}`: the board. |
 | `alwaysInScope` | Path prefixes every AFK change may touch. |
@@ -22,6 +22,9 @@ Its presence opts the repository in; agents read it from the base branch. Only `
 {
   "repo": "acme/app",
   "project": {"owner": "acme", "number": 3},
+  "owner": "alice",
+  "implementer": "acme-builder",
+  "reviewer": "acme-reviewer",
   "alwaysInScope": ["docs/"],
   "agentReview": true
 }
@@ -30,13 +33,12 @@ Its presence opts the repository in; agents read it from the base branch. Only `
 ## One-time setup
 
 - Create each missing label below with `gh label create <name> --color <hex> --description "<text>"`.
-- GitHub: apply [github-safety.md](github-safety.md); `scripts/github-safety.sh check` exits 0 before unattended runs.
-- Add one line to the project's agent rules: delivery follows the workflow plugin's skills and the project's workflow page.
+- GitHub: apply [github-safety.md](github-safety.md); from the installed `afk` skill directory run `bash scripts/github-safety.sh check <owner/repo> <owner> <implementer> <reviewer> <check>...`. Exit 0 is necessary, not proof of credential isolation or exact production approval.
 
 ## Board
 
 - Status columns Backlog, Todo, In progress, Review, Done; single-select Priority (P0, P1, P2). Existing board: add options, move every card, delete old options.
-- Milestones: one per release (`1.0.0`); agents work the earliest first.
+- Milestones group production outcomes or their linked health work; agents prioritize approved outcomes and health prerequisites.
 - `gh auth refresh -s project`.
 - Workflows: Auto-add (`is:issue`); Item added → Backlog; PR linked → Review; closed → Done; reopened → Todo.
 - Views, first is default:
@@ -52,7 +54,7 @@ Its presence opts the repository in; agents read it from the base branch. Only `
 | --- | --- |
 | `lane:afk` | Approved for AFK. |
 | `lane:proposed` | Agent recommends AFK. |
-| `lane:owner` | Only the owner can deliver. |
+| `lane:owner` | Owner participation is required to implement. |
 | `state:claimed`, `state:started` | An AFK run, or another session, is on it. |
 | `review:owner` | PR for the owner; `agent-review` withholds approval. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue. |
@@ -61,17 +63,9 @@ Its presence opts the repository in; agents read it from the base branch. Only `
 
 Schedule runs in the main checkout so they never overlap. Prompt:
 
-```text
-Preflight, stop and report on any failure:
-1. The working directory is inside <owner>/<repo>.
-2. `gh api user --jq .login` prints lanes.json's `implementer`, and
-   `git remote get-url --push origin` starts `https://`.
-3. With a board in lanes.json, `gh project view <number> --owner <owner>`
-   succeeds; otherwise the token lacks the `project` scope.
-Then invoke the `afk` skill by name. The owner is away: park instead of asking. Never
-switch, pull, reset or stash the main checkout: it may hold the owner's work.
-```
+Preflight: verify the repository, isolated implementer identity (`gh api user --jq .login`), HTTPS push remote and configured project access. Invoke `afk`; never switch, pull, reset or stash the main checkout. Diagnose/replan/wait within approved constraints and retain lanes; ask only for reserved decisions.
 
-- With `agentReview`, schedule a task invoking `agent-review`, naming the repository, how to wake the runner and any legacy review marker. One task may run both: that pass waking no runner, then the AFK prompt above. Keep its prompt and installer in the repository.
-- A standing session may loop instead of a schedule: one `agent-review` pass, one `afk` run, then wait for the next GitHub event or owner message; a daily task restarts it when it stopped.
-- Approve its tool prompts on the first run.
+
+- With agentReview, schedule an isolated reviewer task naming repository and authorized runner wake mechanism.
+- Host owns model routing, enforced claims and credential isolation. Serialize until proven; parallel work requires disjoint enforced scopes including tests/dependencies. Label read/write is not atomic. Reviewer credentials must be inaccessible to craftsman; shared token-store selection is insufficient.
+- Production needs exact owner approval for candidate/destination; branch restrictions alone do not grant it. Notifications use only an authorized configured channel; queue changes produce a daily changed digest, incidents/all-work-blocked an immediate notice.

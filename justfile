@@ -14,118 +14,31 @@ verify: unit
 sync-manifests:
     python3 scripts/validate-plugin-definitions.py --sync
 
-# Check release version alignment across manifests and catalogs
-release-check:
-    python3 scripts/validate-plugin-definitions.py
-
 # Display verifier status and detected lifecycle tasks
 status:
     python3 scripts/project-verify.py status
 
-# Complete local contributor setup (configures git hooks and links plugins into local Antigravity IDE)
-setup: setup-hooks link-agy
-
-# Install/configure repository git hooks
-setup-hooks:
-    git config core.hooksPath scripts/git-hooks
-    @echo "Configured git core.hooksPath to scripts/git-hooks"
-
-# Install plugins as directory copies into local Antigravity IDE environment
-install-agy:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    repo_root="$(pwd -P)"
-    target_dir="${AGY_IDE_PLUGIN_DIR:-"$HOME/.gemini/config/plugins"}"
-    mkdir -p "${target_dir}"
-    rm -rf "${target_dir}/filipkrawiec-orchestration" "${target_dir}/filipkrawiec-agy-orchestration"
-    for dir in plugins/common/*; do
-      [ -d "$dir" ] || continue
-      pkg="filipkrawiec-$(basename "$dir")"
-      rm -rf "${target_dir}/${pkg}"
-      cp -r "$dir" "${target_dir}/${pkg}"
-    done
-    # Implicitly install SDLC and sibling devcontainer plugins if available
-    for devws in "${DEVCONTAINER_ROOT:-}" "${repo_root}/../devcontainer" "$HOME/Developer/github.com/FilipKrawiec/devcontainer" "/projects/github.com/FilipKrawiec/devcontainer"; do
-      if [ -n "$devws" ] && [ -d "$devws/plugins" ]; then
-        for dir in "$devws/plugins/"*; do
-          [ -d "$dir" ] || continue
-          pkg="filipkrawiec-$(basename "$dir")"
-          rm -rf "${target_dir}/${pkg}"
-          cp -r "$dir" "${target_dir}/${pkg}"
-        done
-        break
-      fi
-    done
-    echo "Installed plugins into ${target_dir}"
-
-# Link plugins as symlinks into local Antigravity IDE environment (dev mode)
+# Explicitly link common packages into the selected Antigravity IDE plugin directory
 link-agy:
     #!/usr/bin/env bash
     set -euo pipefail
     repo_root="$(pwd -P)"
     target_dir="${AGY_IDE_PLUGIN_DIR:-"$HOME/.gemini/config/plugins"}"
-    mkdir -p "${target_dir}"
-    rm -rf "${target_dir}/filipkrawiec-orchestration" "${target_dir}/filipkrawiec-agy-orchestration"
-    for dir in plugins/common/*; do
+    for dir in "$repo_root"/plugins/common/*; do
       [ -d "$dir" ] || continue
-      pkg="filipkrawiec-$(basename "$dir")"
-      rm -rf "${target_dir}/${pkg}"
-      ln -s "${repo_root}/${dir}" "${target_dir}/${pkg}"
-    done
-    # Implicitly link SDLC and sibling devcontainer plugins if available
-    for devws in "${DEVCONTAINER_ROOT:-}" "${repo_root}/../devcontainer" "$HOME/Developer/github.com/FilipKrawiec/devcontainer" "/projects/github.com/FilipKrawiec/devcontainer"; do
-      if [ -n "$devws" ] && [ -d "$devws/plugins" ]; then
-        for dir in "$devws/plugins/"*; do
-          [ -d "$dir" ] || continue
-          pkg="filipkrawiec-$(basename "$dir")"
-          rm -rf "${target_dir}/${pkg}"
-          ln -s "$(cd "$dir" && pwd -P)" "${target_dir}/${pkg}"
-        done
-        break
+      target="$target_dir/filipkrawiec-$(basename "$dir")"
+      if [ -e "$target" ] && [ ! -L "$target" ]; then
+        echo "Refusing to replace existing path: $target" >&2
+        exit 1
       fi
     done
-    echo "Linked plugins into ${target_dir}"
-
-# Refresh local plugin installations (Codex, Claude, Antigravity IDE)
-refresh: install-agy
-    #!/usr/bin/env bash
-    repo_root="$(pwd -P)"
-    if command -v codex >/dev/null 2>&1; then
-      codex plugin remove "filipkrawiec-orchestration@filipkrawiec" >/dev/null 2>&1 || true
-      for dir in plugins/common/*; do
-        [ -d "$dir" ] || continue
-        pkg="filipkrawiec-$(basename "$dir")"
-        codex plugin remove "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
-        codex plugin add "${pkg}@filipkrawiec" || true
-      done
-    fi
-    if command -v claude >/dev/null 2>&1; then
-      claude plugin remove "filipkrawiec-orchestration@filipkrawiec" >/dev/null 2>&1 || true
-      for dir in plugins/common/*; do
-        [ -d "$dir" ] || continue
-        pkg="filipkrawiec-$(basename "$dir")"
-        claude plugin remove "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
-        claude plugin install "${pkg}@filipkrawiec" || true
-        claude plugin update "${pkg}@filipkrawiec" || true
-      done
-    fi
-    # Also refresh SDLC plugin for Codex and Claude if devcontainer is present
-    for devws in "${DEVCONTAINER_ROOT:-}" "${repo_root}/../devcontainer" "$HOME/Developer/github.com/FilipKrawiec/devcontainer" "/projects/github.com/FilipKrawiec/devcontainer"; do
-      if [ -n "$devws" ] && [ -d "$devws/plugins" ]; then
-        for dir in "$devws/plugins/"*; do
-          [ -d "$dir" ] || continue
-          pkg="filipkrawiec-$(basename "$dir")"
-          if command -v codex >/dev/null 2>&1; then
-            codex plugin remove "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
-            codex plugin add "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
-          fi
-          if command -v claude >/dev/null 2>&1; then
-            claude plugin remove "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
-            claude plugin install "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
-            claude plugin update "${pkg}@filipkrawiec" >/dev/null 2>&1 || true
-          fi
-        done
-        break
+    mkdir -p "$target_dir"
+    for dir in "$repo_root"/plugins/common/*; do
+      [ -d "$dir" ] || continue
+      target="$target_dir/filipkrawiec-$(basename "$dir")"
+      if [ -L "$target" ]; then
+        rm -- "$target"
       fi
+      ln -s -- "$dir" "$target"
     done
-    echo "Refreshed local plugin installations."
+    echo "Linked plugins into $target_dir"

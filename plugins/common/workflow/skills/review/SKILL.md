@@ -6,20 +6,27 @@ allowed-tools: Skill Read Bash(git:*)
 
 # Code Review
 
-Review on two axes, A Standards and B Spec. Report only what gates miss: never a defect on an unchanged line, what a linter, compiler or CI catches, style no rule here names, or anything you did not confirm by reading the code. Noise buries the findings that matter. Read [hot-paths.md](references/hot-paths.md) for an area audit, or when the code runs per event, frame, keystroke or render, or at startup.
+Review on two axes, A Standards and B Spec. Report confirmed defects gates miss; omit unchanged-line defects, compiler/linter findings and unnamed style preferences. Read [hot-paths.md](references/hot-paths.md) for area audits or hot paths/startup.
 
 Severity: **Blocker** (`REQUEST_CHANGES`) is a runtime defect, unhandled edge, boundary breach, hollow or failing test; **Major** (`REQUEST_CHANGES` when the diff introduces it) a smell likely to cause a defect or rework soon; **Minor** (suggestion) style, naming, optional refactor. *Blocking* means `REQUEST_CHANGES`.
 
 ## 1. Scope
 
-Take the diff and the issue's criteria. Give each axis a fresh-context worker; without workers, run the axes in order. The brief is all the worker knows:
+Capture intent, criteria, owned scope including tests/dependencies, worktree, base ref/SHA, head ref/SHA, recorded decisions and evidence. The host assigns fresh independent reviewers; reviewer credentials must be inaccessible to the craftsman, not selected from a shared token store. Without isolation, return a capability wait rather than an independent approval. The host owns model routing. Serialize until proven capability; parallel work requires enforced disjoint scopes including tests and dependencies.
+
+A host dispatch supplies the whole brief:
 
 ```text
-Review axis <A|B> of <PR URL or branch> against issue <URL>.
-Diff: git diff origin/<base>...HEAD
-Invoke `review` and run only phase <2|3>. Return findings in the phase 4
-format. Post nothing, edit nothing.
+Intent/criteria: <issue, milestone, outcomes, prototype direction>.
+Scope: <paths including tests; exclusions and dependencies>.
+Checkout: <worktree>; base <ref/SHA>; head <branch/SHA>.
+Decisions/evidence: <approved constraints, commands/exits, captures, findings>.
+Review axis <A|B> only against the captured diff and criteria.
+No edits, external posting, worker dispatch or further skill invocation.
+Return phase 4 verdict, exact head, evidence and remaining decisions.
 ```
+
+A leaf runs only its assigned axis. Otherwise review both axes serially. Keep invocation depth at most two without cycles; ask the host for leaf expertise when needed.
 
 *Exit gate*: diff and criteria in hand; each axis assigned.
 
@@ -30,7 +37,7 @@ format. Post nothing, edit nothing.
 3. An interface needs two implementations (a test fake counts); no 1:1 DTO chains or passthrough modules.
 4. An outer layer maps a domain enum in one mapper; exhaustive matching on a sealed type is fine.
 5. Changed presentation keeps its semantics, accessibility and layout.
-6. Design smells, each confirmed by reading a sample (invoke `ddd` or `hexagonal-architecture` on modeling or layering doubts):
+6. Design smells, each confirmed by reading a sample (request leaf modeling or layering adjudication from the host on doubts):
    - one enum or mode switched in several places, or per-variant fields picked by mode → one variant type owning the behaviour;
    - the same literal set or regex in two files, or primitives beside an existing value object → one value object with one parser;
    - one new case edits N lists kept in step → one source generates the rest;
@@ -53,17 +60,18 @@ format. Post nothing, edit nothing.
 
 ## 4. Verdict
 
-Merge both axes, most severe first; ≤ 15 lines; omit a silent axis.
+Merge both axes, most severe first; ≤ 8 lines. Blockers require REQUEST_CHANGES; suggestions never require fixes. Recheck the head and required checks before declaring approval; changed heads invalidate review evidence.
 
 ```text
 Decision: APPROVED | REQUEST_CHANGES
 - [Blocker|Major|Minor] [A|B] <file:line> — <defect & failure scenario> → <remedy>
 Scope: clean | creep: <files>
+Evidence: <head SHA; commands/exits; remaining decisions>
 ```
 
 ## Area audit
 
-For a codebase or area instead of a diff: sweep every signal in phases 2 and 3 and the hot paths, and invoke `tdd` to sample mutants on domain files. Report one row per smell ranked by likely rework, then the mutation table; no line cap.
+For a codebase or area instead of a diff: sweep every signal in phases 2 and 3 and the hot paths, and ask the host for a leaf mutation sample on domain files. Report one row per smell ranked by likely rework, then the mutation table; no line cap.
 
 ```text
 | Smell | Count | Strongest examples (3 × file:line) | Refactoring | Estimate S/M/L |
