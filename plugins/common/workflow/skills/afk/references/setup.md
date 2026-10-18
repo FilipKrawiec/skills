@@ -2,7 +2,7 @@
 
 ## Configuration: `.github/lanes.json`
 
-Its presence opts the repository in; agents read it from the base branch. Only `repo` is required. Agents ignore retired keys (`protected`, `chores`, `dependencyFiles`, `guard`): owner paths belong in CODEOWNERS.
+Its presence opts the repository in; agents read it from the base branch. Only `repo` is required. Owner paths belong in CODEOWNERS.
 
 | Key | Meaning |
 | --- | --- |
@@ -31,11 +31,12 @@ Its presence opts the repository in; agents read it from the base branch. Only `
 
 - Create each missing label below with `gh label create <name> --color <hex> --description "<text>"`.
 - GitHub: apply [github-safety.md](github-safety.md); `scripts/github-safety.sh check` exits 0 before unattended runs.
-- Add one line to the project's agent rules: delivery follows the workflow plugin's skills, linking the project's workflow page of project values only.
+- Add one line to the project's agent rules: delivery follows the workflow plugin's skills and the project's workflow page.
 
 ## Board
 
 - Status columns Backlog, Todo, In progress, Review, Done; single-select Priority (P0, P1, P2). Existing board: add options, move every card, delete old options.
+- Milestones: one per release (`1.0.0`); agents work the earliest first.
 - `gh auth refresh -s project`.
 - Workflows: Auto-add (`is:issue`); Item added → Backlog; PR linked → Review; closed → Done; reopened → Todo.
 - Views, first is default:
@@ -51,7 +52,7 @@ Its presence opts the repository in; agents read it from the base branch. Only `
 | --- | --- |
 | `lane:afk` | Approved for AFK. |
 | `lane:proposed` | Agent recommends AFK. |
-| `lane:owner` | Needs the owner. |
+| `lane:owner` | Only the owner can deliver. |
 | `state:claimed`, `state:started` | An AFK run, or another session, is on it. |
 | `review:owner` | PR for the owner; `agent-review` withholds approval. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue. |
@@ -72,5 +73,5 @@ switch, pull, reset or stash the main checkout: it may hold the owner's work.
 ```
 
 - With `agentReview`, schedule a task invoking `agent-review`, naming the repository, how to wake the runner and any legacy review marker. One task may run both: that pass waking no runner, then the AFK prompt above. Keep its prompt and installer in the repository.
-- A standing session may instead loop instead of a schedule: one `agent-review` pass, one `afk` run, then wait for the next GitHub event or owner message; a daily task restarts it when it stopped.
+- A standing session may loop instead of a schedule: one `agent-review` pass, one `afk` run, then wait for the next GitHub event or owner message; a daily task restarts it when it stopped.
 - Approve its tool prompts on the first run.

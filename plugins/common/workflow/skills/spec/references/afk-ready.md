@@ -34,8 +34,8 @@ Unattended, or for issues from `gh issue list --search "-label:lane:afk -label:l
   2. Add only criteria restoring the report's expected behaviour, including that a test reproducing the report passes (a described render for a visual bug); propose others in the comment.
   3. Narrow the packet to the files the fix and its tests change (`alwaysInScope` paths need no entry); name the estimate's main unknown.
   4. Append `<!-- refined base=<short sha> -->` to the body whatever the outcome, closure proposals included.
-- All checks pass → `lane:proposed`; any fails → `lane:owner`. Apply the issue form in `SKILL.md` phase 4.
-- Comment once: each failing check and what would fix it; end a proposal with "Apply `lane:afk` to let an AFK run take it."
+- Every check passes, or only checks an agent can fix fail → `lane:proposed`; Decided or Unprivileged fails → `lane:owner`. Apply the issue form in `SKILL.md` phase 4.
+- Comment once: each failing check and what would fix it.
 
 ## Epic design changes
 

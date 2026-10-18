@@ -10,18 +10,18 @@ Turn a need into one issue another agent can plan from without guessing.
 
 **With the owner:** every phase. **Unattended:** phase 4, plus phase 1 when `improve` opens a lesson issue; other follow-ups go in its output.
 
-- Every open issue has one lane: `lane:afk` (owner approved), `lane:proposed` (you recommend AFK) or `lane:owner` (needs an owner decision, credentials, a device, or the owner steers it).
+- A lane says who delivers; a milestone says when. Each open non-epic issue has one lane: `lane:afk` (an agent delivers unattended), `lane:proposed` (you recommend AFK) or `lane:owner` (only the owner can: a reserved decision, credentials, settings, a device). Name milestones by release (`1.0.0`); the open one due first, else lowest, is current. Defer by milestone, never by lane.
 - Apply `lane:afk` only on the owner's yes in the session, or `agent-review`'s under lanes.json `reviewerLanes`.
 - Take the recommended option on every decision and record it in the issue, plan or PR; ask the owner only when it changes UX beyond the acceptance criteria, adds cost, or departs from best practice or the codebase's patterns. Unattended, such a decision moves the issue to `lane:owner` with the question. Approving or merging a PR stays theirs.
-- With a board (`.github/lanes.json` `project`), move cards with `gh project item-edit`; without one, use `priority:P*` labels instead of the Priority field.
+- With a board (lanes.json `project`), move cards with `gh project item-edit`; without one, use `priority:P*` labels.
 
 ## 1. Define
 
 Skip when the issue exists.
 
-- Search existing issues first; update a match instead of opening a new issue.
+- Update a matching existing issue instead of opening one.
 - Work that only runs tests becomes criteria of the issues it proves.
-- Create from the project's template: title `<type>(<area>): <outcome>`, `lane:owner`, priority only when the owner gave one, and one type label: `type:story` (`feat`), `type:bug` (`fix`), `type:chore` (`chore`, `docs`, `test`, `ci`, `refactor`, `perf`), `type:task` (`task`: a finding, never AFK) or `type:epic`.
+- Create from the project's template: title `<type>(<area>): <outcome>`, the current milestone unless the owner names one, priority only when the owner gave one, and one type label: `type:story` (`feat`), `type:bug` (`fix`), `type:chore` (`chore`, `docs`, `test`, `ci`, `refactor`, `perf`), `type:task` (`task`: a finding, never AFK) or `type:epic`.
 
 **Exit gate:** the issue URL.
 
@@ -33,10 +33,10 @@ Read the code, tests, agent rules and ADRs until the open decisions are clear; c
 
 ## 3. Grill
 
-- Ask through a native question tool when permitted, with options and a recommendation; otherwise in text. Wait for the owner's answer.
+- Ask through a native question tool when permitted, else in text, and wait for the answer.
 - Settle each open decision on your recommendation; ask the owner the ones the rule above names, one per round in ≤ 5 lines (question, trade-offs, recommendation).
 - Write answers into the issue: intent, non-goals, and `### Acceptance criteria` each provable by a test or a described render. ADRs only for architectural decisions.
-- More than one PR: one sub-issue per vertical slice under a `type:epic`. Only epics have sub-issues, and they hold all its remaining work; nobody claims or opens a PR for an epic. Slices sharing a file name the one slice owning it.
+- More than one PR: one sub-issue per vertical slice under a `type:epic`. Only epics have sub-issues, holding all their remaining work; nobody claims an epic. Slices sharing a file name the one slice owning it.
 
 **Exit gate:** no open decision remains.
 
@@ -45,13 +45,13 @@ Read the code, tests, agent rules and ADRs until the open decisions are clear; c
 Read [afk-ready.md](references/afk-ready.md) when proposing, approving or triaging an issue for AFK. Attended issues need no estimate or scope packet.
 
 - Ask the owner, or with `reviewerLanes` invoke `agent-review`: AFK? Yes → `lane:afk`; no → `lane:owner`; unsure → `lane:proposed`.
-- Tidy (when asked): bring every open issue and card to the issue form below; list the owner's fixes.
+- Tidy (when asked): bring open issues and cards to the issue form below.
 - Merged PRs already meet the criteria: comment one PR link per criterion and propose closing; the owner closes.
 - With a board, move each issue now Ready (meets the issue form, no `state:` label) to Todo.
 
-Issue form: one type label and the matching title; one lane when open, no `state:` label when closed; `### Acceptance criteria`, plus `### Estimate` and a scope packet (a ```` ```scope ```` block of the paths the work may touch) in `lane:afk` and `lane:proposed`; slices under their epic; each dependency (packet or `### Dependencies`, including a slice's merge order) is a blocked-by link (`gh api -X POST repos/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker's REST id>`) and each open link a dependency; a card with Priority P0–P2, a slice taking its epic's; an epic's card In progress once it has sub-issues.
+Issue form: one type label and the matching title; when open, a milestone and (epics excepted) one lane; no `state:` label when closed; `### Acceptance criteria`, plus `### Estimate` and a scope packet (a ```` ```scope ```` block of the paths the work may touch) in `lane:afk` and `lane:proposed`; slices under their epic; each dependency (packet or `### Dependencies`, including a slice's merge order) is a blocked-by link (`gh api -X POST repos/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker's REST id>`) and each open link a dependency; a card with Priority P0–P2, a slice taking its epic's priority and milestone; an epic's card In progress once it has sub-issues.
 
-Keep the project's template fields and literal criterion, estimate and scope markers. Use this body envelope: summary ≤ 3 sentences; scope, risks and decision one line each. Keep criteria, scope boundaries, risks, blockers and owner choices visible. Collapse context and evidence using `<details>` / `<summary>` with blank lines around Markdown. Add fenced `mermaid` with text only when a diagram clarifies a flow or relationship; omit empty sections.
+Keep the project's template fields and literal criterion, estimate and scope markers. Use this body envelope: summary ≤ 3 sentences; scope, risks and decision one line each. Collapse context and evidence using `<details>` / `<summary>` with blank lines around Markdown. Omit empty sections.
 
 ````markdown
 ### Executive summary

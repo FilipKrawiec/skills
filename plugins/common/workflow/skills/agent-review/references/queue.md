@@ -4,7 +4,7 @@ With `reviewQueue`, keep that issue the owner's ordered review list: pin it once
 
 1. Fixes a red `<base>`.
 2. Unblocks more: drafts whose body says `Stacked on #<pr>`, plus open issues it blocks or shares packet paths with.
-3. Its issues' highest board Priority, else `priority:P*` label; none last.
+3. Its issues' earliest milestone, then highest board Priority, else `priority:P*` label; none last.
 4. Oldest first.
 
 One line each: `1. #<pr> <title>: <owner rule or finding>; unblocks #<a>, #<b>`. None: "Nothing waits for the owner."
