@@ -3,3 +3,5 @@
 Use this directory for dated research notes, implementation records, and follow-up findings that are worth keeping but are not architectural decisions.
 
 Name records as `YYYY-MM-DD-short-topic.md`.
+
+- [Production promotion readiness](2026-10-18-production-promotion-readiness.md): candidate demo, owner-controlled setup and publication hold activation evidence.
