@@ -1,148 +1,52 @@
 name: Release
-run-name: Release ${{ inputs.tag }} at ${{ inputs.source_sha }} · workflow ${{ github.workflow_sha }}
 
+# Every verified push to main is released: release.py bumps the version from the conventional
+# commits since the last tag, syncs the manifests, commits and tags. RELEASE_TOKEN, an admin's
+# fine-grained token with contents write on this repository, pushes both past main's review rule
+# and the v* tag ruleset. The release commit's own push verifies and finds nothing to release.
 on:
-  workflow_dispatch:
-    inputs:
-      source_sha:
-        description: Full reviewed, already-versioned source commit SHA on main
-        required: true
-        type: string
-      tag:
-        description: Prepared stable semantic version tag (vMAJOR.MINOR.PATCH)
-        required: true
-        type: string
+  workflow_run:
+    workflows: [Verify repository]
+    types: [completed]
+    branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  preflight:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+  release:
+    name: Release main
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
-    outputs:
-      source_sha: ${{ steps.candidate.outputs.source_sha }}
-      tag: ${{ steps.candidate.outputs.tag }}
-      workflow_sha: ${{ steps.candidate.outputs.workflow_sha }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.workflow_sha }}
-          path: control
-          persist-credentials: false
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
           python-version: "3.11"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: ${{ inputs.source_sha }}
-          path: candidate
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Bind approved inputs
-        id: candidate
+      - name: Bump, commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 scripts/release.py
+      - name: Push and publish
         env:
-          SOURCE_SHA: ${{ inputs.source_sha }}
-          TAG: ${{ inputs.tag }}
-          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 control/scripts/release.py candidate "$SOURCE_SHA" "$TAG" --root candidate
-          printf 'source_sha=%s\ntag=%s\nworkflow_sha=%s\n' "$SOURCE_SHA" "$TAG" "$WORKFLOW_SHA" >> "$GITHUB_OUTPUT"
-
-  candidate-tests:
-    needs: preflight
-    runs-on: ubuntu-latest
-    # Candidate code gets its own runner, without trusted control files or outputs.
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: ${{ needs.preflight.outputs.source_sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
-        with:
-          python-version: "3.11"
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3
-        with:
-          just-version: '1.59.0'
-      - run: python3 -m pip install pyyaml
-      - name: Test exact source
-        run: |
-          python3 -m unittest discover -s scripts/tests
-          python3 scripts/validate-plugin-definitions.py
-
-  production-readiness:
-    needs: preflight
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: ${{ needs.preflight.outputs.workflow_sha }}
-          path: control
-          persist-credentials: false
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
-        with:
-          python-version: "3.11"
-      # Fail before referencing an environment: GitHub otherwise creates it unprotected.
-      # Unsupported plans or insufficient API permissions deliberately block publication.
-      - name: Prove production requires the owner
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/environments/production" |
-            python3 control/scripts/release.py production-gate
-
-  promote:
-    # Publication held pending separately reviewed owner provisioning: sole owner
-    # reviewer, environment-scoped identity and protected tags. No input bypass.
-    if: ${{ false }}
-    needs: [preflight, candidate-tests, production-readiness]
-    name: Publish ${{ needs.preflight.outputs.tag }} at ${{ needs.preflight.outputs.source_sha }} · workflow ${{ needs.preflight.outputs.workflow_sha }}
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: ${{ needs.preflight.outputs.source_sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      # External provisioning is not proven here; the literal hold above stays until
-      # separately reviewed. Never run candidate code, push main or rewrite a tag.
-      - name: Tag approved source and publish (retry safe)
-        env:
-          GH_TOKEN: ${{ secrets.PRODUCTION_RELEASE_TOKEN }}
-          APPROVED_WORKFLOW: ${{ needs.preflight.outputs.workflow_sha }}
-          WORKFLOW_SHA: ${{ github.workflow_sha }}
-          SOURCE_SHA: ${{ needs.preflight.outputs.source_sha }}
-          TAG: ${{ needs.preflight.outputs.tag }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$GH_TOKEN" || { echo 'Missing environment-scoped PRODUCTION_RELEASE_TOKEN'; exit 1; }
-          test "$APPROVED_WORKFLOW" = "$WORKFLOW_SHA"
-          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          git config user.name 'FilipKrawiec'
-          git config user.email 'contact@filipkrawiec.com'
-          git config credential.helper ''
-          gh auth setup-git
-          git fetch --tags origin
-          if git show-ref --verify --quiet "refs/tags/$TAG"; then
-            test "$(git rev-parse "refs/tags/$TAG^{}")" = "$SOURCE_SHA" || {
-              echo 'Tag collision: different commit'; exit 1;
-            }
-          else
-            git tag -a "$TAG" "$SOURCE_SHA" -m "Release $TAG at $SOURCE_SHA"
-            git push origin "refs/tags/$TAG:refs/tags/$TAG"
+          tag="$(git describe --exact-match --tags HEAD 2>/dev/null || true)"
+          if [ -z "${tag}" ] || git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null; then
+            echo "Nothing to publish."
+            exit 0
           fi
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$TAG"
-          fi
+          git push --atomic origin HEAD:main "refs/tags/${tag}"
+          gh release create "${tag}" -R "${GITHUB_REPOSITORY}" --verify-tag --generate-notes --title "${tag}"

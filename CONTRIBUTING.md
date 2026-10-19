@@ -38,10 +38,6 @@ Use the host's direct local plugin loading or `just link-agy`. The latter uses `
 
 If an earlier installation configured this repository's removed hooks, first inspect `git config --local --get core.hooksPath`; when it points to the old `scripts/git-hooks`, remove that setting with `git config --local --unset core.hooksPath`. Preserve unrelated custom hooks. Explicitly migrate old copied plugin directories before linking; the command will not delete them.
 
-## Exact-candidate release preparation
+## Releases
 
-Stable publication remains disabled by the literal false condition on `promote` in `.github/workflows/release.yml`; no input or variable bypasses it. Merging changes does not publish. The manual workflow validates a full source SHA already on main and a stable tag whose version already matches every package manifest. Prepare version changes through a reviewed PR and run `just sync-manifests`; release no longer computes bumps, edits versions or pushes main.
-
-Candidate tests run on a separate runner from trusted validation. Production-readiness checks require the existing `production` environment to list FilipKrawiec as its sole required user reviewer; missing setup cannot authorize publication. These checks do not establish credential isolation or tag protection.
-
-Before activating promotion, follow the [production readiness record](docs/records/2026-10-18-production-promotion-readiness.md): demonstrate the exact installable candidate, independently review environment-scoped credentials and protected tags, then propose removal of the literal hold in a separate reviewed change. The owner approves the demonstrated source plus workflow configuration through the native production gate. Same-tag/source retries preserve the tag; changed content needs a fresh candidate and approval.
+Every verified push to `main` is released: `.github/workflows/release.yml` runs `scripts/release.py`, which picks the bump from the conventional commits since the last `v*` tag (`type!:` or `BREAKING CHANGE:` major, `feat:` minor, else patch), syncs every manifest, commits and tags, then pushes both atomically with `RELEASE_TOKEN` and publishes the GitHub Release. Commit types decide the version, so title PRs accordingly. Preview with `python3 scripts/release.py --dry-run`.
