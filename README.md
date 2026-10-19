@@ -53,7 +53,7 @@ Use focused tests while editing and run the final gate once. `scripts/project-ve
 
 Lanes record implementation authorization, milestones group deliverable outcomes, and types classify work. Temporary waiting reasons do not erase authorization. Parallel implementation requires enforced claims and disjoint scope including tests; serialize until those capabilities are proven.
 
-Production requires approval of the exact demonstrated artifact and configuration, with acceptance evidence, limitations and rollback readiness. This repository's stable publication remains held. Manual exact-candidate verification is available; activation still requires independently reviewed production setup and a separate change removing the literal hold. See the [production readiness record](docs/records/2026-10-18-production-promotion-readiness.md).
+Production requires approval of the exact demonstrated artifact and configuration, with acceptance evidence, limitations and rollback readiness. This plugin library itself releases on every verified push to `main`, because hosts install only released versions; see the [release record](docs/records/2026-10-19-release-on-main.md).
 
 Each product milestone is followed by bounded engineering health: compatible current dependencies, meaningful testing gaps, test deduplication, test speed and justified refactoring. Measure confidence with reproducible project-specific mutation, coverage and risk gates; missing required evidence blocks merging. Test count and line coverage alone are insufficient.
 

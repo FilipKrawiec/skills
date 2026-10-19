@@ -28,6 +28,6 @@ A script for every contract or role would turn this library into another runtime
 
 - `milestone`, `release` and `health` own their distinct procedures; existing delivery and doctrine skills remain their leaf tools.
 - Always-needed instructions stay in the owning `SKILL.md`; references are conditional branches, not shared/injected procedures.
-- Actual production promotion remains blocked until its native controls are configured. This repository's stable publication hold stays active until exact-candidate promotion replaces release-on-main.
+- Consuming projects promote exact candidates through their native production controls. This plugin library releases on every verified push to `main` (see `docs/records/2026-10-19-release-on-main.md`), since hosts install only released versions.
 - Engineering guidance can improve independently; weakening authority, credentials, release or quality gates requires owner approval by effect, regardless of filename.
 - Host integrations and project initialization belong outside common packages. The retired Autonomous SDLC framework stays retired; Git history preserves its history.
