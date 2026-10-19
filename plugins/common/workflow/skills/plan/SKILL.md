@@ -6,7 +6,7 @@ allowed-tools: Skill Read Bash(gh:*,git:*)
 
 # Plan (03)
 
-Plan outcomes, files, tests and constraints; delegate routine implementation judgment. The host starts the isolated worktree before planning; do not invoke delivery skills from this phase.
+Plan outcomes, files, tests and constraints; delegate routine implementation judgment. The orchestrator supplies the isolated worktree; return the plan before implementation. Do not invoke delivery skills from this phase.
 
 Use a trusted direct owner request for assigned work or the matching approved milestone brief for delegated slices. Record the source on GitHub when work must survive the session; silence, labels and bot summaries grant nothing. Have the host invoke `milestone` separately only for missing milestone direction. Preserve lane authorization through temporary blockers; `lane:owner` means owner participation is required.
 
@@ -22,8 +22,8 @@ Read the issue, its acceptance criteria, scope packet (its ```` ```scope ```` bl
 - Specify actual shared interface contracts: inputs, outputs, errors and compatibility obligations. Do not enumerate every signature or prescribe a judgment-free executor. Delegate routine choices to implementation.
 - Reserve product/strategy reversal, new paid services or budget increases, and authority/credential/release/quality-gate weakening for the owner. New interactions require owner prototype direction. Independently adjudicate other technical choices and ADRs.
 - Bound investigations by question, time limit and evidence exit. A substantive contradiction with intent, contracts or constraints requires replanning; routine discoveries do not. Propose out-of-intent work separately and continue approved independent work.
-- For independent adjudication, ask the host to dispatch a leaf worker with: "Decide #<N>: <question>; options <A/B>; recommend <A> from <evidence>. Read <issue, rules, contracts, code>; no dispatch or credential access. Return decision, evidence and reserved owner question if any in ≤ 5 lines." Re-read the saved decision before continuing. Never nest dispatch or invoke a caller.
-- Plan automatic test-environment delivery after independent review, with implementation/review credentials isolated from production. Require exact owner approval for the production action and artifact; milestone approval never substitutes. Schedule bounded health after production acceptance; unfinished required migrations remain next-product prerequisites.
+- If independent adjudication is needed, return a bounded request to the orchestrator with the repository and issue, question and options, recommendation with evidence, applicable issue/rules/contracts/code/constraints, investigation bound, dependencies, and any reserved owner question. Do not dispatch or write another worker's brief. The orchestrator decides whether to assign a fresh leaf worker and fills the complete brief in `milestone`. Re-read the saved decision before continuing.
+- Plan merge after the independent GitHub approval gate, then automatic test-environment delivery, with production credentials behind native promotion controls. Require exact owner approval for the production action and artifact; milestone approval never substitutes. Schedule bounded health after production acceptance; unfinished required migrations remain next-product prerequisites.
 
 **Exit gate:** outcomes map to files, tests, contracts and constraints; reserved decisions are resolved or visibly blocked with options and a recommendation.
 
@@ -42,7 +42,7 @@ Reject duplicate reservations before saving; keep the existing API response.
 
 **Scope:** reservation service and its unit tests.
 **Risks:** concurrent requests need a separate transaction fix.
-**Decision:** Nothing needed; concurrency is outside the agreed criteria.
+**Decision:** Craftsman implements the approved slice; concurrency stays out of scope.
 
 <details>
 <summary>Change flow</summary>
@@ -79,4 +79,4 @@ flowchart LR
 
 ## Output
 
-≤ 5 lines. **Summary:** step count, and the comment link when posted. **Decision:** the plan to approve when it takes an owner decision, or why the issue went back and its question, with a recommendation, or "Nothing needed."
+≤ 5 lines. **Summary:** step count, and the comment link when posted. **Decision:** the plan to approve when it takes an owner decision, or why the issue went back and its question, with a recommendation, or the next action and responsible actor. Use "Nothing needed" only with no pending action.

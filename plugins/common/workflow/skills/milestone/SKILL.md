@@ -1,49 +1,60 @@
 ---
 name: milestone
-description: Use when an owner wants to approve a product milestone and delegate its implementation through acceptance and the next ranked proposal.
-allowed-tools: Read Edit Bash
+description: Use when an owner approves a product outcome and an orchestrator must delegate its delivery through production acceptance and bounded health.
+allowed-tools: Skill Read Edit Bash
 ---
 
 # Milestone
 
-## 1. Agree the direction
+## 1. Establish direction
 
-Record the owner brief: outcome, constraints, non-goals, acceptance criteria, confidence gates, and bounded slices. For new interactions, show a working prototype and obtain owner direction; for an established interaction, identify the existing pattern to reuse. Resolve material ambiguity before implementation. Bind approval to the exact brief and prototype revision; prior enthusiasm or approval of another revision is insufficient.
+Act as orchestrator using the harness's native subagents. The Product Engineer approves outcomes, constraints, interaction direction, critical exceptions and exact demonstrated production candidates. Agents own routine refinement, implementation, technical decisions, review, merge and test delivery.
 
-**Exit gate:** trusted owner approval names the exact revision and interaction direction or existing pattern.
+Create or reuse a native GitHub milestone for each production chunk. Record its outcome, constraints, non-goals, acceptance, confidence gates, brief revision and approval source in its description; link included issues. For new interactions, obtain direction on a lightweight prototype; established interactions name an accepted pattern. A trusted direct owner request authorizes its specified work without another approval loop.
 
-## 2. Deliver autonomous slices
+**Exit gate:** recorded authority binds the outcome and direction; missing reserved decisions are explicit.
 
-Within that approval, choose routine implementation details, implement and verify each bounded slice, and continue without asking for routine permission. Replan material contradictions. Owner approval is needed for changed product intent, interaction direction, strategy, new paid services, budget increases or protected authority; independent technical review decides other engineering/ADR changes. Continue unaffected approved slices.
+## 2. Assign and reconcile
 
-Have the host dispatch leaf assignments for planning, implementation, independent review and delivery. Do not invoke a chain of workflow skills or let workers redispatch; keep invocation depth at most two and avoid cycles. Each assignment includes the approved revision, acceptance, owned paths, preserved concurrent edits, commands and confidence gates, dependencies, stop conditions and required output. Reviewers get a fresh context and read-only evidence, no implementation or production credentials; implementers cannot approve their own work or access promotion credentials. Release credentials belong only to the configured promotion control.
+Own phase advancement, assignments, dependencies, recovery and durable GitHub records. Resume from actual issue decisions, milestone revision, worktree, PR head, checks, review and deployment evidence; summaries never prove completion. Reuse existing issues, plans, PRs and candidate records rather than duplicating them.
 
-Use this complete dispatch brief, filling every field:
+Assign Product partner to refinement/specification and planning; Craftsman to bounded implementation and verification; fresh Reviewer to independent judgment and GitHub approval; Delivery steward to merge observation, test delivery, demo and production readiness. These are responsibilities, not a registry. Use the owning skills; workers return their exit gate and never redispatch or advance phases. They may request another assignment. Run serially unless native coordination and disjoint implementation scopes, including tests, are proven; read-only reviews can run independently.
+
+Fill this complete brief for every assignment; each worker loads only its task and supplied context:
 
 ```text
-Implement slice: save the approved filter selection.
-Approval: owner brief revision b17; prototype p4.
-Acceptance: saved selection survives reload; existing defaults still work.
-Own: filter model and its tests; preserve every other edit.
-Dependencies: existing storage port; no new interaction or paid service.
-Verify: run the project's filter tests and configured confidence gates;
-report exact commands, exits, artifact revision and missing evidence.
-Stop: material contradiction, changed direction/cost, unavailable evidence.
-Do not redispatch, promote, or access production credentials.
-Return: Summary with paths/evidence; Decision with blocker or Nothing needed;
-at most eight lines. Reviewer separately checks behavior and risk read-only.
+Responsibility/task: <Product partner|Craftsman|Reviewer|Delivery steward>;
+load <owning skill>; perform only <phase/intent>; no dispatch/next phase.
+Intent/authority: <repo, milestone, issue, approved revision/source>.
+Acceptance/direction: <observable criteria; prototype or accepted pattern>.
+Scope: <owned paths/tests, exclusions, preserved edits, dependencies>.
+Checkout: <worktree>; base <ref/SHA>; head <branch/SHA>.
+Decisions/bounds: <decisions; delegated authority; reserved exceptions>.
+Evidence: <plan, attempts, findings, checks, deployment/demo links>.
+Verify: <concrete focused commands, confidence gates, required outputs>.
+Stop: <contradictions, bounds, missing evidence>; return dependent waits.
+Authority: Craftsman never approves; Reviewer never implements; use only
+existing authorized GitHub identity mechanisms; no production credentials.
+Return <=8 lines: Summary with paths, exact head, commands/exits and exit
+gate; Decision with next action/actor, reserved options/recommendation.
 ```
 
-The host replaces example commands and paths with concrete project values before dispatch. Keep required worker behavior in the owning skill or the complete brief; pointers alone do not transfer instructions.
+Before each advance, reconcile the returned head, evidence and scope with GitHub. Dispatch `spec` for issue/label transitions and `vcs` for branch/PR lifecycle. Collect both `review` axes for the exact head before opening a ready PR; pass those verdicts to `agent-review` to independently verify evidence and record the Reviewer's binding GitHub decision. A local verdict alone never permits merge. After blockers, assign Craftsman repairs then Reviewer verification at the new head. Changed-head evidence expires.
 
-**Exit gate:** every accepted slice has passing evidence and independent review; unresolved blockers remain explicit.
+**Exit gate:** each assignment has an actor and verified result or explicit wait; review and required protections gate merge.
 
-## 3. Hand off the result
+## 3. Recover within authority
 
-Have the host dispatch release with the exact candidate and approval evidence, then bounded health after production acceptance. Automatically deliver the working test candidate for owner evaluation; production still needs exact owner approval. Rank the next milestone proposals by user value, risk and dependency, recommend one, and include any health prerequisite. Do not treat the next proposal as approved.
+After two evidence-led failed repairs, assign bounded diagnosis/replanning or fresh technical adjudication. Preserve work, lane authorization, attempts and retry condition. Never turn technical difficulty into owner ownership. Await the owner only for changed intent/direction/strategy, new paid services/budget increases, protected authority or weakened quality gates. Record the exact question, options and recommendation; continue independent authorized preparation.
 
-**Exit gate:** test delivery and limitations recorded, health scheduled after production acceptance or completed, next proposal ranked.
+**Exit gate:** recovery or reserved decision has an actor, evidence and resumption condition.
+
+## 4. Deliver and continue
+
+After merge, assign `ship` to observe base health and `release` for automatic test delivery, prepared demo and separately approved production. Close the product milestone only with exact deployed-and-accepted evidence. Then assign `health` to create and deliver its linked bounded GitHub milestone. Rank next product proposals; do not treat them as approved or skip required health prerequisites.
+
+**Exit gate:** production acceptance and health state recorded, next proposal ranked; pending stages retain responsible actors.
 
 ## Output
 
-Use **Summary** for approved revision, delivered evidence and ranked next proposal; **Decision** for the exact owner choice, recommended option, or “Nothing needed.” Session replies ≤5 lines; run reports ≤8. Record commands and exit codes in reports.
+Session replies <=5 lines; reports <=8. **Summary:** milestone revision, evidence, waits and ranked proposal. **Decision:** next action and actor; reserved options and recommendation. Include commands/exits; use “Nothing needed” only with no pending action.

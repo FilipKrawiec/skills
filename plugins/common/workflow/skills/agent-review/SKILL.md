@@ -1,71 +1,65 @@
 ---
 name: agent-review
-description: Use when a scheduled task asks for one unattended review pass over open PRs, or an AFK run or refinement asks the reviewer to decide a fork, in a repository whose .github/lanes.json turns on agentReview. Never for an owner's own interactive review.
-allowed-tools: Skill Read Bash(git:*,gh:*)
+description: Use when an orchestrator assigns binding GitHub PR review under configured Reviewer protection, technical adjudication, or AFK eligibility review where reviewerLanes is enabled.
+allowed-tools: Read Bash(git:*,gh:*)
 ---
 
 # Agent Review
 
-Read `.github/lanes.json`: owner, implementer, reviewer, ownerPaths, ownerLabels, ownerLines (default 800), reviewRounds (default 3), alwaysInScope and reviewQueue. Never implement, commit or push. Post only authorized decisions, reviews, replies, resolutions, queue updates and auto-merge requests.
+Read base-branch `.github/lanes.json`: owner, implementer, reviewer, ownerPaths, ownerLabels, ownerLines (default 800), reviewRounds (default 3), alwaysInScope, reviewerLanes and reviewQueue. Act as Reviewer; never implement, commit or push. The orchestrator dispatches workers and advances phases. Post only authorized decisions, reviews, replies, thread resolutions and queue updates.
 
-The host must provide a fresh reviewer context and reviewer credentials inaccessible to the craftsman. Account selection from a shared token store is not isolation. If isolation is unavailable, withhold approval and report the capability gap. The host owns model routing and claims. Serialize until capability is proven; parallel assignments require enforced disjoint scopes including tests and dependencies. Keep dispatch depth at most two without cycles; have the host assign review axes as leaves.
+Separate judgment, identity and secrets. Fresh native subagent context supplies independent judgment; it needs no GitHub credential and no separate machine. Posting uses the configured reviewer identity through an existing authorized credential mechanism. Craftsman must never exercise that identity. A shared store proves no secret isolation; do not claim it does. Never use the owner's token as a fallback. Production credentials stay behind native promotion controls. Missing posting/protection capability blocks merge, not code analysis or preparation; report the precise gap without starting infrastructure work.
 
-## 1. Adjudicate a technical fork
+## 1. Adjudicate a fork
 
-When given a fork, read intent, criteria, options, recommendation and evidence. Decide routine engineering within approved milestone constraints; prefer the recommendation unless evidence contradicts it. Never reverse owner decisions, add a paid service, exceed budgets, alter product intent, cross owner paths or approve production. New interactions await owner prototype direction.
+For a technical fork, read intent, criteria, options, recommendation and evidence. Decide routine engineering within approved constraints, including dependency major migrations. Never reverse owner decisions, change product/interaction direction, add paid services, exceed budgets or weaken authority/quality gates. Record the choice, reason and any within-intent packet correction on the issue; preserve other assignments. Only `spec` owns lane transitions; return authorized corrections to the orchestrator. Return here without continuing to PR review.
 
-A necessary packet expansion must remain within intent and outside enforced active scopes. Record the choice, reason and updated criteria/packet on the issue. Change lanes only under configured reviewerLanes authority; failure alone retains its lane. Return a reserved owner decision with options and recommendation, or an evidence-led replan/wait. Never substitute repeated review for bounded diagnosis.
+When assigned issue-level AFK eligibility and `reviewerLanes` is true, evaluate readiness using `spec` and its criteria; record `APPROVED AFK` or `REQUEST_CHANGES` with evidence on the issue. Do not change lane labels or board status; return the decision to the orchestrator for the `spec` transition.
 
-**Exit gate:** `decided: <choice>` and evidence link, or reserved decision/capability wait.
+**Exit gate:** linked technical decision or exact reserved question/wait, options and recommendation.
 
-## 2. Collect and inspect
+## 2. Inspect the exact change
 
-Select at most four ready PRs, oldest updated first. Capture base and head SHAs, issue criteria, unresolved threads, current checks and previous rounds. Skip drafts. Reuse a verdict only for the identical head with still-valid evidence. At reviewRounds, stop repetitive retries and record diagnosis/replan/wait; do not grant approval by exhaustion.
+For a queue pass, select at most four ready PRs, oldest first; skip drafts. For an assignment, inspect it. Capture author/pusher, base/head, criteria, scope, checks, threads and rounds. At reviewRounds, require diagnosis/replan, not approval by exhaustion.
 
-Have the host dispatch each axis with this complete leaf brief:
+Consume the orchestrator's fresh A/B `review` verdicts for this exact base/head. If either is absent or stale, return that requirement; do not dispatch workers. Independently check the head/evidence before the binding GitHub decision.
 
 ```text
-Intent: <milestone/issue URLs and outcome>.
-Criteria: <criteria, prototype decision and reserved approvals>.
-Scope: review axis <A|B>, <paths including tests>, <dependencies/exclusions>.
-Checkout: <worktree>; base <ref + SHA>; head <branch + SHA>.
-Decisions: <approved constraints and unresolved technical questions>.
-Evidence: <diff command, check commands/exits, captures, prior findings>.
-Use review's assigned axis only; no dispatch, edits or external posting.
-Verify unresolved threads against code. Return APPROVED or REQUEST_CHANGES,
-confirmed file:line findings/scenarios, suggestions separately, commands/exits,
-head SHA and remaining decisions in at most 8 lines.
+Load review; judge only axis <A|B>. No edits, posting or dispatch.
+Intent/authority: <repo, milestone/issue, approved revision/source>.
+Criteria/direction: <acceptance, prototype/pattern, reserved decisions>.
+Scope: <paths/tests, exclusions, dependencies, preserved edits>.
+Checkout: <worktree>; base <ref/SHA>; head <branch/SHA>.
+Evidence: <diff command, commands/exits, captures, prior findings/repairs>.
+Return <=8 lines: APPROVED or REQUEST_CHANGES; confirmed file:line
+findings/scenarios; optional suggestions separately; base/head,
+commands/exits, missing evidence and next action/actor. Stop if head moves.
 ```
 
-**Exit gate:** confirmed findings for an unchanged exact head.
+Independently verify corrections and agent-thread resolutions against the new head. Human threads stay theirs. Missing criteria/evidence or scope violations require repair/refinement, not routine transfer to the owner.
 
-## 3. Post the verdict
+**Exit gate:** both axes and corrections evaluated at the same exact base/head.
 
-Reserve owner approval when the PR matches any of these rules:
+## 3. Record the merge decision
+
+Blocking findings require GitHub REQUEST_CHANGES, including at the round limit. Suggestions stay optional. Clean eligible work requires APPROVE through the configured reviewer identity; comments/local verdicts never substitute. Check `gh api user --jq .login`; require reviewer identity distinct from PR author and latest pusher. Never approve your own PR or fabricate attribution. Record exact `commit_id` when submitting a review through GitHub's API.
+
+Additional owner approval is required for:
 
 - Explicit owner review, unknown author, no files or at least 3000 files.
 - `ownerPaths` (both rename paths), `ownerLabels`, or code over `ownerLines`. CODEOWNERS is the required GitHub Reviewer gate, not an owner hold.
-- Dependabot major update, or minor update below 1.0.
-- Code without a closing issue's packet, or outside packet/alwaysInScope without authorized adjudication.
+- Effects reserved to the owner: product/strategy/direction, cost, authority or weakened gates.
 
-Docs, tests, manifests and lockfiles from Dependabot do not count as code for the last two code limits. Owner paths and product/production authority still apply.
+Docs, tests, manifests and Dependabot lockfiles do not count toward code limits. Approved health major upgrades alone do not require the owner. Owner approval supplements, never replaces, Reviewer APPROVE. For reserved work record `review:owner` and the exact extra decision. If an owner-only CODEOWNERS match means the configured Reviewer is not the effective required owner, report a protection gap and keep merge disabled; an owner approval or procedural Reviewer approval cannot satisfy the missing native Reviewer gate. Remove only your own obsolete hold, never an explicit owner request.
 
-Blocking findings require REQUEST_CHANGES, including at the round limit; optional suggestions never force fixes. Clean reserved work gets COMMENT and review:owner. Otherwise APPROVE only the captured head with valid required checks, no unresolved blockers and an independent author/reviewer. Never approve your own PR.
+Before approval, verify branch protection requires code-owner review and the configured Reviewer is sole owner for every changed path on the base branch. Otherwise keep merge disabled and report the gap. Recheck head and checks after posting; a changed head needs fresh review. Missing capability blocks merge. Never dismiss blockers or approve your own PR.
 
-Before approving, verify branch protection requires code-owner review and the configured Reviewer is the sole matching code owner on every changed path from the base branch. If any path lacks that native gate, keep merge disabled and report the path and policy gap; procedural approval cannot replace GitHub enforcement.
+Post `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|owner|fixes|rounds> -->`, matched rule, findings, evidence and attribution. Return the recorded decision to the orchestrator for VCS reconciliation; production approval remains separate.
 
-Post marker `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|owner|fixes|rounds> -->`, matched rule, confirmed findings, evidence and attribution. Reply with fixing commits; resolve only agent threads whose fixes were independently verified. Recheck head and checks immediately before approval; head movement invalidates it.
+**Exit gate:** binding exact-head review, additional owner hold, or explicit repair/capability wait.
 
-**Exit gate:** review tied to exact head, or stale evidence wait.
+## 4. Queue and report
 
-## 4. Merge and queue
+With reviewQueue, read [queue.md](references/queue.md). Wake runners only through caller-authorized mechanisms; failed wakes retain retry conditions. Never recursively invoke AFK.
 
-For eligible approved heads, request `gh pr merge <pr> --squash --auto --match-head-commit <head>`; required protection must still hold. Never treat merge approval as production approval.
-
-With reviewQueue, read [queue.md](references/queue.md) to update it. Wake runners only through caller-authorized mechanisms; never recursively invoke AFK. Report failed wakes with a retry condition.
-
-**Exit gate:** auto-merge/check state and queue recorded.
-
-## Output
-
-At most 8 lines: **Summary:** linked verdicts, exact heads, commands/exits and waits. **Decision:** reserved choices with options/recommendation, or “Nothing needed.” Daily changed digest and immediate incidents/all-work-blocked notices use only the authorized configured notification channel.
+**Exit gate/output:** queue and next actor recorded. <=8 lines: **Summary:** linked verdicts, exact heads, commands/exits and waits. **Decision:** next action/actor or reserved options/recommendation. Notify only through the authorized configured channel.

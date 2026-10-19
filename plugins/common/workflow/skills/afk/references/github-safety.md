@@ -18,11 +18,11 @@ In this repository the path is `plugins/common/workflow/skills/afk/scripts/githu
 
 Set all three identities explicitly in lanes.json. Verify configured collaborator and Project access. Missing identity or access is a setup gap; creating accounts or provisioning credentials needs separate owner authorization. Never give workers the owner's credentials.
 
-Use a fresh native Reviewer context for judgment and verify `gh api user --jq .login` matches the configured Reviewer before posting. Shared-host subagents provide separate judgment contexts, not proof of secret isolation; keep Craftsman from Reviewer authority by assignment. Do not assume separate containers, OS accounts or machines. Push only through an authorized identity; production credentials remain behind native controls.
+Use fresh native contexts for judgment and existing authorized credentials for posting. Shared hosts do not prove secret isolation or require separate OS accounts. Keep Craftsman from reviewer authority by assignment. Verify `gh api user --jq .login` matches the Reviewer without printing tokens. Push HTTPS; production credentials stay behind native controls.
 
 ## Base protection
 
-Each repository owner configures its own `.github/CODEOWNERS` and branch protection. Require latest-push approval, code-owner review, stale-review dismissal, named CI checks, resolved conversations and linear history. The configured Reviewer must be the sole owner in every CODEOWNERS rule; approval count alone cannot pin identity, and listed owners are alternatives. Keep owner decisions in `ownerPaths` and `agent-review` holds. Disable force pushes and deletion; inspect effective rules and bypasses separately.
+Each project owner configures its own `.github/CODEOWNERS` and branch protection; this library installs no shared rule. Require latest-push approval, CODEOWNERS review, stale-review dismissal, named checks, resolved threads and linear history; disable force pushes/deletion and inspect bypasses. Make the configured Reviewer sole matching CODEOWNER on every reviewable path; approval count alone cannot pin identity and multiple owners are alternatives. `agent-review` separately holds owner decisions. If a changed path lacks native Reviewer enforcement, name the path/rule gap, keep merge disabled and continue independent preparation. Never substitute procedural approval or start infrastructure.
 
 ## Repository and deployment
 
@@ -31,21 +31,20 @@ Each repository owner configures its own `.github/CODEOWNERS` and branch protect
 - No repository secrets; deployment secrets belong in protected environments.
 - Production requires exact owner approval of candidate and destination, enforced through environment approval or an equivalent host gate. Branch/tag restrictions alone never grant production authority.
 - Restrict `v*` tag creation, updates and deletion to admins.
-- Create both machine users before applying reviews/collaborators; the script skips those settings until users exist.
 
 ## Reviewer CODEOWNERS gate
 
-On the base branch, include a global Reviewer rule. Any narrower rule must keep that same sole owner:
+On the base branch, include a global Reviewer rule. Keep that same sole owner on every narrower rule:
 
 ```text
 *              @<reviewer>
 /.github/      @<reviewer>
 ```
 
-The checker rejects any later rule with a different or additional owner. Put owner-reserved work in configured `ownerPaths`; never list the owner as an alternative code owner when Reviewer approval must be mandatory.
+The checker rejects any rule with another or additional owner. Put owner-reserved work in configured `ownerPaths`; never list the owner as an alternative CODEOWNER when Reviewer approval must be mandatory.
 
 ## Checker limits
 
-The checker inspects selected settings, identities, protection, repository secrets, environments and all CODEOWNERS rules. Success does not prove exact production approval, runtime isolation, trusted check provenance, every effective bypass or owner-only base pushes. Verify those independently before enabling unattended authority.
+The checker requires a global Reviewer rule and rejects every CODEOWNERS rule that names another or additional owner. This makes the Reviewer the sole owner for every path under GitHub's last-match semantics. It does not verify branch-protection effectiveness, every bypass, secret isolation or exact production approval; inspect those separately. The checker is not the merge gate.
 
-Reviewer approval is the merge gate for every PR; an owner hold adds a separate required decision. Neither author approval nor merge approval grants production permission.
+Neither engineering nor merge approval grants production permission.

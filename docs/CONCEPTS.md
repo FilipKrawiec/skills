@@ -1,6 +1,6 @@
 # Delivery model
 
-This repository distributes portable skills, not a workflow runtime. Skills own procedures; the host owns sessions, model choice, scheduling, isolated credentials and coordination. GitHub holds durable intent, approvals, decisions, claims and evidence. A new session reconciles those records with actual branches, PR heads and checks before acting.
+This repository distributes portable skills, not a workflow runtime. Skills own procedures; the orchestrator uses native host subagents to manage phases, assignments, dependencies and recovery. The host supplies sessions, model choice and credential mechanisms. GitHub holds durable intent, approvals, decisions, claims and evidence. A new session reconciles those records with actual branches, PR heads and checks before acting.
 
 ## Two product checkpoints
 
@@ -31,13 +31,13 @@ Production approval is separate: demonstrate a working test environment or insta
 
 The owner retains product/strategy reversals, new interaction direction, new paid services or budget increases, authority/credential/release-gate changes, quality-gate weakening and production approval. Existing services within explicit budgets are delegated. Independently review other technical choices and ADRs. Technical difficulty triggers bounded diagnosis/replanning, not automatic owner ownership. Fresh technical adjudication settles engineering disagreements without waiving acceptance or checks.
 
-The Product partner refines outcomes; Craftsman implements; Reviewer judges independently; Delivery steward reconciles progress and release evidence. These are assignments, not a separate agent framework. Dispatch complete role-specific briefs using the owning skills. Required worker instructions never depend on an unread shared reference. Keep invocation depth at most two and avoid cycles.
+The Product Engineer approves milestone outcomes, constraints, interaction direction, critical exceptions and demonstrated production candidates. The Product partner refines acceptance; Craftsman implements and verifies slices; Reviewer independently gates merge; Delivery steward prepares test delivery, demo and production readiness. Assign these responsibilities with native subagents, without a registry or runtime. `milestone` owns the orchestrator handoff; workers load their assigned skill and return evidence before the orchestrator advances. Keep invocation depth at most two and avoid cycles.
 
 ## Enforcement and concurrency
 
-Implementer and Reviewer need separate contexts and credentials inaccessible to each other where their authorities differ. Selecting a different account in a shared secret store is not isolation. GitHub protections enforce required review/checks; production controls enforce owner approval of the exact candidate. Skill text cannot supply these controls. Missing setup is a visible capability gap.
+Separate three facts: fresh-context review judgment (`review`), GitHub attribution and approval (`agent-review`), and credential access supplied by the host. Native subagents may share a machine and existing credential mechanism; that is procedural independence, not secret isolation. Craftsman must never exercise reviewer authority. Record approval through the configured reviewer identity, distinct from the PR author and latest pusher, and require it through effective branch protections. Approval count alone does not pin an identity; setup must inspect ownership/rules and bypasses. Preserve additional owner gates. Missing posting or protection capability blocks merge, while refinement, implementation and review can continue. Never infer isolation from an account switch or provision infrastructure to satisfy prose. Keep production credentials behind native promotion controls.
 
-Work in isolated short-lived branches/worktrees from a fetched base; preserve the main checkout. Start serially. Parallel implementation requires enforced claims, disjoint scope including tests and satisfied dependencies. Waiting work need not idle independent work. Reviews bind to the exact head; blocking findings request changes, optional suggestions stay optional.
+Work in isolated short-lived branches/worktrees from a fetched base; preserve the main checkout. Start serially. Parallel implementation requires native coordination, disjoint assigned scope including tests and satisfied dependencies; when coordination is unproven, stay serial. Waiting work need not idle independent work. Reviews bind to the exact head; blocking findings request changes, optional suggestions stay optional.
 
 ## Health and confidence
 

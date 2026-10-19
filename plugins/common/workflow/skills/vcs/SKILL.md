@@ -6,99 +6,72 @@ allowed-tools: Bash(git:*,gh:*,lsof:*) Read
 
 # Version Control
 
-`<base>` and `<branchPrefix>` come from `.github/lanes.json` (defaults `main`, `agent/afk-`). Never edit, switch or stash the main checkout `<root>` (the first entry of `git worktree list`). Use the host's worktree or `<root>/.worktrees/`; wait if another worktree holds the branch. With a board (lanes.json `project`), move cards with `gh project item-edit`.
+Read base and branchPrefix from `.github/lanes.json` (defaults `main`, `agent/afk-`). Preserve the main checkout (first `git worktree list` entry): never edit, switch or stash it. Use an isolated worktree; wait if another holds the branch. The orchestrator owns phase advancement; return this assignment's result before another phase. `spec` owns issue transition semantics; apply execution labels below.
 
 ## 1. Start
 
-- Start an issue only when each of your open PRs is ready to merge (phase 5) and shares no files with it, including a proposed parent; otherwise return `blocked by #<pr>`.
-- Reuse the issue's unmerged branch, and its worktree unless the host made one for the session; else fetch and branch from `origin/<base>`; wait for any parent to merge first: unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue (`feature`, `bugfix`, `hotfix`, `refactor`, `chore`, `test`).
-- Unattended: add `state:claimed` and comment ``Claimed by an AFK run on `<branch>`.``. Attended: add `state:started`. Card to In progress.
+Fetch `origin/<base>` and reconcile existing branch/PR/assignment before creating anything. Reuse this issue's unmerged branch/worktree; never overwrite another assignment. Branch from `origin/<base>` otherwise. Wait for a dependent parent to merge; no stacked drafts. Other ready, disjoint PRs do not prevent independent work; unresolved overlapping work does.
 
-**Exit gate:** on the task's branch, the issue labelled; or `blocked by #<pr>` or `<worktree>`.
+Use unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue. Re-read state labels; stop on another assignment. Add `state:claimed` unattended or `state:started` attended, recording actor, branch, scope and authority. Card to In progress. Labels are records, not atomic locks; serialize if coordination is unproven.
 
-## 2. Commit
+**Exit gate:** isolated assigned branch and execution record, or explicit dependency/assignment wait.
 
-Stage only the task's paths. One Conventional Commit per green slice; squash `wip:` commits before the PR opens.
+## 2. Commit and push
 
-**Exit gate and output:** `📦 <short-sha> <type>: <description>`.
+Stage only assigned paths. Use Conventional Commits per verified slice. Pass the project's verify gate once for changed code before push; retain commands/exits for that revision. Push HTTPS as the existing authorized implementer identity; never silently use the owner's SSH identity or provision credentials.
 
-## 3. Push
+Before PR creation, rebase on fetched base if needed. After opening, merge base instead: rewriting history detaches review threads. Before any push to an open PR, disable auto-merge, invalidate prior review evidence and return the changed head for fresh review. Never force-push protected/default branches without explicit owner authority.
 
-Pass the verify gate (the project's `verify` task) for each changed push. Push over HTTPS as the host's machine user, never SSH: SSH pushes as the key's owner. Before the PR opens, rebase on `origin/<base>` and push `--force-with-lease`; once it is open, merge `origin/<base>`, never rebase: a rewritten history detaches review threads and races the reviewer.
+**Exit gate/output:** commit SHA and push exit 0, or exact capability wait; report commands/exits.
 
-**Exit gate:** the push exits 0.
+## 3. Open a ready PR
 
-## 4. Open the PR
+Require both fresh `review` axes for the exact base/head before opening; the orchestrator supplies Reviewer results. Fix blockers; suggestions stay optional. Local verdicts never replace the binding GitHub `agent-review` gate. Return missing review assignments to the orchestrator rather than dispatching from a worker.
 
-- Ready, never a draft. Wait for a parent to merge before starting dependent work; do not open stacked drafts. For an issue, use its title. Every PR uses this body envelope (omit inapplicable sections): summary ≤ 3 sentences; scope, risks and decision one line each. Keep blockers, unfixed findings and owner choices visible, with options and a recommendation when needed. Collapse evidence with `<details>` / `<summary>` and blank lines around Markdown.
+Open ready, never draft; reuse an existing PR. Use the issue title and its `## Plan` link. Use `Closes #<N>` only when the bounded outcome completes on merge; for a product milestone awaiting test delivery, demo or production acceptance, use `Part of #<N>` and keep the issue open. After acceptance, the orchestrator closes it through `spec`. For partial epic work use `Part of #<N>`. A revert uses `Reverts #<M>`, never `Closes` on the reverted issue.
 
-  ```markdown
-  ## Executive summary
-  A second reservation previously persisted; it now fails before saving.
+Use this envelope; include before/after captures for visible behavior and keep blockers/owner choices visible. Omit inapplicable sections.
 
-  **Scope:** reservation service and unit tests; API unchanged.
-  **Risks:** concurrent requests remain outside this change.
-  **Decision:** Required owner approval pending; recommend approval.
+```markdown
+## Executive summary
+A duplicate reservation now fails before saving.
 
-  Closes #42
+**Scope:** service and tests; API unchanged.
+**Risks:** concurrency remains separate.
+**Decision:** Reviewer records GitHub approval; agents reconcile merge.
 
-  Plan: https://github.com/example/project/issues/42#issuecomment-123
+Closes #42
+Plan: https://github.com/example/project/issues/42#issuecomment-123
 
-  <details>
-  <summary>Review and checks</summary>
+<details>
+<summary>Review and verification</summary>
 
-  ## Review
-  APPROVED after round 2; findings fixed in 1a2b3c4, 5d6e7f8.
+A/B: APPROVED at <base/head>; evidence <links>.
+Checks: `just verify` exit 0. GitHub approval still pending.
 
-  ## Checks
-  `just verify` exit 0.
+</details>
+```
 
-  </details>
+Require effective branch protection for the configured Reviewer and required checks before enabling auto-merge. Resolve any additional owner hold first. Request `gh pr merge <pr> --squash --auto --match-head-commit <head>` when the base and head are final; native protection still blocks merge until Reviewer approval and checks pass. Never use exact-head approvals as a substitute for missing enforcement. The flag checks the head at invocation; it does not freeze later pushes. Remove execution labels and report desired board status to the orchestrator (sole board writer). Return PR/head to the orchestrator for `agent-review`.
 
-  <details>
-  <summary>Before / after evidence</summary>
+**Exit gate:** ready PR, auto-merge awaiting required review/checks, or explicit protection gap.
 
-  ## Before / after
-  `test_duplicate_is_rejected`: second call fails; one reservation persists.
+## 4. Reconcile merge readiness
 
-  </details>
-  ```
+Run after every push, base change or returned review. Read actual head/checks, conflicts, threads and review state. Return repairs to Craftsman and review/verified corrections to Reviewer through the orchestrator. Human threads stay theirs; never dismiss blocking reviews to bypass them.
 
-- For a revert: title `revert: <subject>`; body `Reverts #<M>` and the failing checks, never `Closes`, which would close the reverted issue.
-- Include before/after captures for each visible change in the evidence section.
-- Require fresh independent review of both axes for this exact head before opening; host-dispatched leaves return verdicts and evidence. Reviewer credentials must be inaccessible to the craftsman; shared token-store account selection is not isolation. Fix blockers; record optional suggestions without forcing fixes. Quote exact-head verdicts and valid checks in the PR.
-- Every PR, attended or not, revert and lesson PRs too: `gh pr merge <pr> --squash --auto`; auto-merge still waits for required approvals and checks. Remove the `state:` label.
+Require effective configured Reviewer protection and resolve additional owner holds before enabling or keeping auto-merge. Pending Reviewer approval and required checks may remain because native protection blocks merge until they pass. A changed head or review-relevant base invalidates evidence: disable auto-merge, obtain fresh exact-head review, then re-enable with the head guard. Pending checks/reviews retain next actor and retry condition. Confirm actual merge instead of treating an auto-merge request as completion.
 
-**Exit gate:** the PR URL, auto-merge on.
+**Exit gate:** merged exact reviewed change, or named remaining action/actor.
 
-## 5. Ready to merge
+## 5. Tidy
 
-Run after every push, when `<base>` moves, and before calling a PR ready.
+Remove only this assignment's completed clean worktrees/branches when `lsof -a -d cwd +D <worktree>` exits 1. Preserve unrelated sessions.
 
-1. Blockers: draft, failing checks, conflicts or `BEHIND`, unresolved threads, `CHANGES_REQUESTED`. Fix blocking findings; reply on each thread naming the commit.
-2. Ask the host for a fresh read-only leaf to verify agent thread fixes; human threads stay theirs. Supply this complete brief:
+**Exit gate:** safe owned cleanup complete or deferred with reason.
 
-   ```text
-   Intent/criteria: <issue outcome and acceptance criteria>.
-   Scope: <paths, tests, exclusions, dependencies>.
-   Checkout: <worktree>; base <ref/SHA>; head <branch/SHA>.
-   Decisions/evidence: <constraints, findings, commands/exits>.
-   Verify fixes only; no dispatch or edits. Return exact-head verdict,
-   fixing commits, evidence and remaining decisions in at most 8 lines.
-   ```
-3. Recheck head SHA and required checks; invalidate approvals/evidence after head movement. Request a fresh independent review for the exact head. Bind auto-merge to it with `--match-head-commit <head>`.
-4. Repeat until only pending checks, the required approval or an open parent remain.
+## Authority and output
 
-**Exit gate:** no other blocker.
+Reviewer approval authorizes eligible routine merges. Owner rules add reserved approval; production requires separate exact-candidate approval under `release`. Never change settings, secrets, variables or releases from VCS. Configured automatic test delivery belongs to delivery, not a request for production permission.
 
-**Output:** ≤ 5 lines. **Summary:** the PR and its blockers, or "ready". **Decision:** approve it, or "Nothing needed." while blockers remain.
-
-## 6. Tidy
-
-Remove only this assignment’s `<branchPrefix>` worktrees and branches whose PR merged or closed, when clean and `lsof -a -d cwd +D <worktree>` exits 1 (no session inside).
-
-**Exit gate:** owned completed worktrees removed; others preserved.
-
-## Authority
-
-Merge, approve or force-push a protected or default branch only on the owner's word. Production requires exact owner approval for candidate and destination, beyond branch restriction. Never dispatch workflows, touch releases, secrets or variables, or delete branches, tags or repositories other than your own merged head.
+<=5 lines: **Summary:** PR/head, checks and evidence. **Decision:** next action and actor, reserved options/recommendation. Use “Nothing needed” only when the assignment has no pending action.

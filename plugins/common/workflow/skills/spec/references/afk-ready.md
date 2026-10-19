@@ -1,8 +1,6 @@
 # AFK-ready checks
 
-New readiness requires every check or a specific recorded owner waiver within owner authority; host isolation, required evidence and production controls cannot be waived by a readiness label. Failed rechecks preserve lane authorization. Before lane assignment, add `### Estimate` and the scope packet.
-
-Keep estimates, scope, waivers and risks visible.
+New readiness requires every check or a specific recorded owner waiver within owner authority; independent review, required evidence and production controls cannot be waived by a readiness label. Failed rechecks preserve lane authorization. Before lane assignment, add `### Estimate` and the scope packet.
 
 | Check | Holds when |
 | --- | --- |
@@ -23,7 +21,7 @@ Keep estimates, scope, waivers and risks visible.
 ````
 
 - A trailing `/` allows a subtree. Add the package manifest and lockfile when a criterion needs a library the project lacks.
-- `afk` claims nothing without a packet; `agent-review` hands a code-changing PR without one to the owner.
+- `afk` claims nothing without a packet; Missing packets return to Product partner refinement; only reserved effects need the owner.
 
 ## Triage
 

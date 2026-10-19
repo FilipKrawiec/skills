@@ -38,7 +38,7 @@ build_tools:
 ## Output
 
 - Approved milestone intent delegates slicing, routine engineering, technical ADRs and ready autonomous lanes. Record recommendations; reserve changed product/strategy intent, unfamiliar interaction direction, new paid services/budget increases, authority/credential/release changes, quality-gate weakening and exact production approval for the owner. Temporary blockers retain lane authorization; diagnose and replan technical failures.
-- Every owner message has a **Summary** (the outcome, linking the PR, issue or `file:line` with the detail) and a **Decision** (what the owner must decide, with options and a recommendation, or "Nothing needed."). A session reply ≤ 5 lines; a run or review report ≤ 8.
+- Every owner message has a **Summary** (the outcome, linking the PR, issue or `file:line` with the detail) and a **Decision** (what the owner must decide, with options and a recommendation, or the next action and responsible actor; use "Nothing needed." only with no pending action). A session reply ≤ 5 lines; a run or review report ≤ 8.
 - Start with the action or its evidence, not a preamble. Link changed files instead of pasting them.
 - In PRs, logs and agent-to-agent output, give the commands run, their exit codes and the decisions left.
 - Add an interface only once two implementations exist (a test fake counts, and so does each case of a repeated conditional). Verify state, not mock calls.
@@ -82,8 +82,8 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 
 - Work happens in an isolated worktree on a short-lived branch made from the fetched base branch; the main checkout stays as it is. The start, open-PR and tidy steps are in `plugins/common/workflow/skills/vcs/SKILL.md`.
 - Before opening a PR, run `review` on the branch as two fresh-context workers (axes A and B), fix every finding, and quote the verdict in the PR body.
-- Committed changes stay within the issue's scope packet when it has one. After verification, an agent pushes the branch and opens or updates the PR that closes the issue (`Closes #<N>`, linking the `## Plan` comment when one was posted).
+- Committed changes stay within the issue's scope packet when it has one. After verification, an agent pushes the branch and opens or updates its PR, linking the `## Plan` comment when one was posted. Use `Closes #<N>` only when that issue's bounded outcome completes on merge; otherwise use `Part of #<N>` and keep the product-milestone issue open through production acceptance.
 - Open ready PRs and turn on squash auto-merge bound to the reviewed head; it waits for required independent approvals and checks. Wait for a prerequisite PR instead of opening stacked drafts. Optional review suggestions do not block delivery.
-- The owner retains merge authority: merging, approving and force-pushing a protected or default branch happen only on the owner's explicit word; for a PR that matches no owner rule, `agent-review`'s approval is that word. GitHub branch protection and CODEOWNERS enforce this, not local hooks.
+- A fresh Reviewer is the engineering merge gate; `agent-review` records its exact-head decision through the configured GitHub reviewer identity. Routine eligible merges are delegated. Owner rules add approval for reserved effects; they never replace independent review. Force-pushing protected/default branches still requires explicit owner authority. Preserve GitHub protections; never claim they enforce a named reviewer without inspecting effective rules.
 
 - Production requires owner approval of the demonstrated artifact and configuration, not merely merge approval. Keep stable publication held until native promotion controls exist.
