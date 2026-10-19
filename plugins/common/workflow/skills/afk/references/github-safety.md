@@ -8,21 +8,21 @@ bash scripts/github-safety.sh check <owner/repo> <owner> <implementer> <reviewer
 
 In this repository the path is `plugins/common/workflow/skills/afk/scripts/github-safety.sh`. Exit 1 reports drift. Use `apply` with those arguments only under owner authorization, with owner credentials outside worker access.
 
-## Distinct identities and isolation
+## Judgment, identity and credentials
 
 | Identity | Role | Credentials |
 | --- | --- | --- |
-| Owner | Admin, code owner | Owner-only token |
-| Implementer | Write machine user | Classic PAT: repo, project, read:org; never workflow/admin scopes |
-| Reviewer | Separate Write machine user | Separate PAT: repo, project, read:org |
+| Owner | Admin, owner decisions | Owner-only credentials |
+| Implementer | Write identity | Existing authorized mechanism; no owner/production fallback |
+| Reviewer | Distinct Write identity | Existing authorized mechanism for Reviewer decisions |
 
-Set all three identities explicitly in lanes.json. Add machine users as repository collaborators and Project Write collaborators; accept invitations. Never give workers the owner's token.
+Set all three identities explicitly in lanes.json. Verify configured collaborator and Project access. Missing identity or access is a setup gap; creating accounts or provisioning credentials needs separate owner authorization. Never give workers the owner's credentials.
 
-Host isolates runtime stores, environment, filesystem and credential helpers so craftsman processes cannot access reviewer secrets. Selecting another account from a shared token store is not isolation. Verify this before autonomous approval. Push over HTTPS with the isolated implementer helper; SSH may use the owner's key. Verify actual identity with `gh api user --jq .login` without printing secrets.
+Use a fresh native Reviewer context for judgment and verify `gh api user --jq .login` matches the configured Reviewer before posting. Shared-host subagents provide separate judgment contexts, not proof of secret isolation; keep Craftsman from Reviewer authority by assignment. Do not assume separate containers, OS accounts or machines. Push only through an authorized identity; production credentials remain behind native controls.
 
 ## Base protection
 
-Require one independent approval, approval of the latest push, CODEOWNERS review, stale-approval dismissal, named CI checks, resolved conversations and linear history. Disable force pushes and deletion. Administrators remain excluded so the owner can merge their own work. Check effective rules and bypasses separately; do not infer push restrictions from these settings alone.
+Each repository owner configures its own `.github/CODEOWNERS` and branch protection. Require latest-push approval, code-owner review, stale-review dismissal, named CI checks, resolved conversations and linear history. The configured Reviewer must be the sole owner in every CODEOWNERS rule; approval count alone cannot pin identity, and listed owners are alternatives. Keep owner decisions in `ownerPaths` and `agent-review` holds. Disable force pushes and deletion; inspect effective rules and bypasses separately.
 
 ## Repository and deployment
 
@@ -33,20 +33,19 @@ Require one independent approval, approval of the latest push, CODEOWNERS review
 - Restrict `v*` tag creation, updates and deletion to admins.
 - Create both machine users before applying reviews/collaborators; the script skips those settings until users exist.
 
-## Owner-only CODEOWNERS
+## Reviewer CODEOWNERS gate
 
-On the base branch, include:
+On the base branch, include a global Reviewer rule. Any narrower rule must keep that same sole owner:
 
 ```text
-/.github/      @<owner>
-/AGENTS.md     @<owner>
-/justfile      @<owner>
+*              @<reviewer>
+/.github/      @<reviewer>
 ```
 
-Add security rules, stored data shapes, migrations, agent instructions and release configuration. Check last-match semantics and broader rules that could override ownership.
+The checker rejects any later rule with a different or additional owner. Put owner-reserved work in configured `ownerPaths`; never list the owner as an alternative code owner when Reviewer approval must be mandatory.
 
 ## Checker limits
 
-The checker inspects selected settings, identities, protection, repository secrets, environments and CODEOWNERS. It accepts custom base/tag deployment restrictions without owner review; success therefore does not prove exact production approval. It does not prove runtime isolation, enforced claims, trusted check provenance, all effective bypasses or owner-only base pushes. Verify those independently before enabling unattended authority.
+The checker inspects selected settings, identities, protection, repository secrets, environments and all CODEOWNERS rules. Success does not prove exact production approval, runtime isolation, trusted check provenance, every effective bypass or owner-only base pushes. Verify those independently before enabling unattended authority.
 
-An independent reviewer may approve delegated engineering at an exact head with valid checks; owner-matching changes await owner approval. Neither author approval nor merge approval grants production permission.
+Reviewer approval is the merge gate for every PR; an owner hold adds a separate required decision. Neither author approval nor merge approval grants production permission.

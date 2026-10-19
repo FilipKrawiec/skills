@@ -109,21 +109,18 @@ done < <(gh api "repos/$repo/environments" --jq ".environments[] | [.name,
   (.deployment_branch_policy | if . == null then \"any branch\" elif .custom_branch_policies then \"custom\" else \"protected branches\" end),
   ([.protection_rules[]? | select(.type == \"required_reviewers\") | .reviewers[] | select(.type == \"User\") | .reviewer.login | ascii_downcase] | index(\"$owner\" | ascii_downcase) != null)] | @tsv")
 
-# GitHub reads the first CODEOWNERS of .github/, the root and docs/. The owner must be listed on
-# the last rule covering all of /.github/, on every narrower /.github/ rule, and, since the last
-# match wins, as a whole token on every later rule that can reach .github/: one that matches at any
-# depth (`*.yml`, `docs/`) or whose first segment is not a literal directory (`*/workflows/`, `/.git*`).
+# The Reviewer must be the sole owner on every CODEOWNERS rule. A global rule plus this check
+# prevents a narrower or broader later match from replacing that gate.
 codeowners=""
 for path in .github/CODEOWNERS CODEOWNERS docs/CODEOWNERS; do
   codeowners=$(gh api "repos/$repo/contents/$path?ref=$base" --jq .content 2>/dev/null | base64 --decode 2>/dev/null) && break
   codeowners=""
 done
-report "CODEOWNERS owns /.github/" "$(printf '%s\n' "$codeowners" | awk -v o="@$owner" '
+report "Reviewer is sole CODEOWNER on every path" "$(printf '%s\n' "$codeowners" | awk -v r="@$reviewer" '
   { sub(/#.*/, ""); if (NF == 0) next
-    has = 0; for (i = 2; i <= NF; i++) if (tolower($i) == tolower(o)) has = 1
-    if ($1 ~ /^(\*|\*\*|\/\*\*|\/?\.github\/(\*\*)?)$/) { whole = has; later = 0 }
-    else if ($1 ~ /^\/?\.github(\/|$)/) bad = bad || !has
-    else if ($1 !~ /^\/?[^*?[\\\/]+(\/|$)/ || $1 !~ /\/./) later = later || !has }
-  END { print (whole && !bad && !later) ? "yes" : "no" }')" yes
+    rules++
+    if (NF != 2 || tolower($2) != tolower(r)) bad = 1
+    if ($1 == "*") whole = 1 }
+  END { print (whole && rules > 0 && !bad) ? "yes" : "no" }')" yes
 
 exit "$drift"

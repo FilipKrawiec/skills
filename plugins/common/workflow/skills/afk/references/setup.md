@@ -2,7 +2,7 @@
 
 ## Configuration: `.github/lanes.json`
 
-Its presence opts the repository in; agents read it from the base branch. For unattended work, require explicit repo, owner, implementer and reviewer identities plus the applicable host capability checks. Owner paths belong in CODEOWNERS.
+Its presence opts the repository in; agents read it from the base branch. Require explicit repo, owner, implementer and reviewer identities plus host capabilities. Put paths reserved for owner decisions in `ownerPaths`; CODEOWNERS defines the required GitHub Reviewer gate.
 
 | Key | Meaning |
 | --- | --- |
@@ -14,7 +14,7 @@ Its presence opts the repository in; agents read it from the base branch. For un
 | `alwaysInScope` | Path prefixes every AFK change may touch. |
 | `branchPrefix`, `staleClaimHours` | Defaults `agent/afk-`, `3`. |
 | `agentReview`, `reviewRounds` | `true` when `agent-review` reviews open PRs; rounds cap per PR. Defaults `false`, `3`. |
-| `ownerPaths`, `ownerLabels`, `ownerLines` | `agent-review`'s owner rules: paths beyond CODEOWNERS, ship-on-merge labels, line limit (800). |
+| `ownerPaths`, `ownerLabels`, `ownerLines` | `agent-review`'s additional owner holds: paths, ship-on-merge labels, line limit (800). |
 | `reviewQueue` | Issue `agent-review` pins as the owner's queue. |
 | `reviewerLanes` | `true` lets `agent-review` move AFK-ready `lane:proposed` issues to `lane:afk`. |
 
@@ -33,7 +33,7 @@ Its presence opts the repository in; agents read it from the base branch. For un
 ## One-time setup
 
 - Create each missing label below with `gh label create <name> --color <hex> --description "<text>"`.
-- GitHub: apply [github-safety.md](github-safety.md); from the installed `afk` skill directory run `bash scripts/github-safety.sh check <owner/repo> <owner> <implementer> <reviewer> <check>...`. Exit 0 is necessary, not proof of credential isolation or exact production approval.
+- GitHub: apply [github-safety.md](github-safety.md); from the installed `afk` skill directory run `bash scripts/github-safety.sh check <owner/repo> <owner> <implementer> <reviewer> <check>...`. Exit 0 also confirms the Reviewer is sole owner in every CODEOWNERS rule; verify production approval separately.
 
 ## Board
 

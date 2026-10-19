@@ -44,13 +44,15 @@ head SHA and remaining decisions in at most 8 lines.
 Reserve owner approval when the PR matches any of these rules:
 
 - Explicit owner review, unknown author, no files or at least 3000 files.
-- CODEOWNERS/ownerPaths (both rename paths), ownerLabels, or code over ownerLines.
+- `ownerPaths` (both rename paths), `ownerLabels`, or code over `ownerLines`. CODEOWNERS is the required GitHub Reviewer gate, not an owner hold.
 - Dependabot major update, or minor update below 1.0.
 - Code without a closing issue's packet, or outside packet/alwaysInScope without authorized adjudication.
 
 Docs, tests, manifests and lockfiles from Dependabot do not count as code for the last two code limits. Owner paths and product/production authority still apply.
 
 Blocking findings require REQUEST_CHANGES, including at the round limit; optional suggestions never force fixes. Clean reserved work gets COMMENT and review:owner. Otherwise APPROVE only the captured head with valid required checks, no unresolved blockers and an independent author/reviewer. Never approve your own PR.
+
+Before approving, verify branch protection requires code-owner review and the configured Reviewer is the sole matching code owner on every changed path from the base branch. If any path lacks that native gate, keep merge disabled and report the path and policy gap; procedural approval cannot replace GitHub enforcement.
 
 Post marker `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|owner|fixes|rounds> -->`, matched rule, confirmed findings, evidence and attribution. Reply with fixing commits; resolve only agent threads whose fixes were independently verified. Recheck head and checks immediately before approval; head movement invalidates it.
 
