@@ -31,7 +31,7 @@ Comment `## Lessons` on the shipped issue ("no lessons" when none): lessons with
 
 Classify by effects: routine engineering guidance within approved constraints is delegated; product intent, cost, owner paths, credential/merge authority and production approval remain reserved. A documentation label never makes an authority change routine. Keep configuration/CODEOWNERS changes for explicit owner authority. Link duplicate proposals.
 
-Have the host assign implementation and delivery to leaf workers; keep invocation depth at most two with no cycles. The host owns model routing, isolated reviewer credentials and enforced claims. Serialize until capabilities are proven; parallel scopes must be enforced and disjoint, including tests and dependencies.
+The orchestrator assigns bounded implementation and delivery to workers through the harness's native subagents. Workers load the owning skill, perform one phase and return evidence; they do not dispatch or advance phases. `agent-review` owns GitHub approval. Serialize unless native coordination and disjoint scopes, including tests and dependencies, are proven.
 
 ```text
 Intent: <lesson, occurrences, milestone/issue and desired effect>.
@@ -42,7 +42,7 @@ Decisions: <delegated engineering choices; owner-reserved effects>.
 Evidence: <lessons links, prior decisions, commands/exits, findings>.
 Perform only assigned authoring or VCS work using its owning skill; no
 worker dispatch or orchestration. Preserve other edits. Independent review
-must have credentials inaccessible to the craftsman. Return changed paths,
+must judge a fresh exact head; Craftsman cannot approve. Return changed paths,
 head, checks/exits, exit gate and remaining decisions in at most 8 lines.
 ```
 
@@ -52,4 +52,4 @@ Use one issue/ready PR per target repository; link the Lessons evidence. Verify 
 
 ## Output
 
-≤ 8 lines. **Summary:** each lesson PR with targets and change, or "no lessons" and the observation count. **Decision:** proposals left, with target, reason and a recommendation, or "Nothing needed."
+≤ 8 lines. **Summary:** each lesson PR with targets and change, or "no lessons" and the observation count. **Decision:** proposals left, with target, reason and a recommendation, or the next action and responsible actor. Use "Nothing needed" only with no pending action.

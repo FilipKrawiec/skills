@@ -8,7 +8,7 @@ allowed-tools: Read Bash
 
 ## 1. Establish a candidate
 
-Identify the immutable artifact and configuration revision, acceptance evidence, independent review, reproducible project coverage/mutation/risk gates, limitations, and tested rollback. Use stricter project gates for changed and critical behavior. Missing required evidence blocks delivery; never infer a pass from an absent run. A plugin's versioned Git tree can be the artifact; record its exact tree or commit and publication configuration.
+Verify the source is merged to the configured base, then identify the immutable artifact and configuration revision, acceptance evidence, independent GitHub review, configured reproducible project coverage/mutation/risk gates, limitations, and tested rollback. Use stricter project gates for changed and critical behavior. Missing evidence for a configured gate blocks delivery; never infer a pass from a skipped configured run. A plugin's versioned Git tree can be the artifact; record its exact tree or commit and publication configuration.
 
 Read configured native CI, test delivery and production controls. Implementers and reviewers cannot hold promotion credentials; only the configured promotion mechanism may use them. Do not invent a new release framework. Missing controls block the affected stage and become a setup blocker.
 
@@ -16,7 +16,7 @@ Read configured native CI, test delivery and production controls. Implementers a
 
 ## 2. Deliver test automatically
 
-Run configured test delivery when evidence passes, without waiting for production approval. Provide a working test environment or installable candidate and a reproducible demo, limitations, evidence links and rollback procedure. Separate pending test delivery from completed delivery.
+Observe configured automatic test delivery after merge; reuse a valid deployment for the exact candidate or run its authorized retry. Missing test integration is a setup wait, not authority to build a platform. Production setup/approval never blocks authorized test delivery. Provide a working test environment or installable candidate and a reproducible demo, limitations, evidence links and rollback procedure. Separate pending test delivery from completed delivery.
 
 Ask the owner to classify feedback as a release blocker or a follow-up. Resolve blockers and revalidate the candidate; record follow-ups without silently expanding scope. Do not promote while classification is outstanding.
 
@@ -32,7 +32,7 @@ Any change to the approved artifact or configuration requires fresh owner approv
 
 ## Output
 
-Session replies ≤5 lines; run reports ≤8. Include **Summary** with candidate/configuration, test/demo, limitations, rollback and production state links; **Decision** with blocker/follow-up classification, exact promotion approval requested, or “Nothing needed.” Report commands and exit codes.
+Session replies ≤5 lines; run reports ≤8. Include **Summary** with candidate/configuration, test/demo, limitations, rollback and production state links; **Decision** with blocker/follow-up classification, exact promotion approval requested, or next action and responsible actor. Use “Nothing needed” only with no pending action. Report commands and exit codes.
 
 ```text
 Summary: tree a1b2/config c3 passed gates (verify: exit 0); test/demo linked.

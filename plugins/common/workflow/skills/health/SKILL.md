@@ -8,7 +8,7 @@ allowed-tools: Read Edit Bash
 
 ## 1. Bound the iteration
 
-After production acceptance of each product milestone in the target repository, autonomously inspect dependencies, toolchains, automation actions and confidence evidence within the approved maintenance constraints. Record a bounded scope and acceptance criteria, then defer new discoveries. Use project resource/retry limits and stop conditions; a time limit does not waive required migrations. Freeze the latest stable versions available at iteration start, including major versions of direct dependencies, toolchains and actions. Record registry/release evidence and resolve transitive compatibility. Do not chase versions arriving later; queue them for the next iteration unless urgent security requires immediate reassessment.
+After production acceptance in the consuming repository, create or reuse one native GitHub health milestone linked to the product milestone. Inspect stale dependencies, toolchains/actions, justified refactoring, test duplication, meaningful testing gaps and test speed within approved maintenance constraints. Record bounded slices, acceptance and confidence gates; defer new discoveries. These instructions do not install a metrics framework in the skills library. Use project resource/retry limits and stop conditions; a time limit does not waive required migrations. Freeze the latest stable versions available at iteration start, including major versions of direct dependencies, toolchains and actions. Record registry/release evidence and resolve transitive compatibility. Do not chase versions arriving later; queue them for the next iteration unless urgent security requires immediate reassessment.
 
 **Exit gate:** dated target inventory, compatibility evidence and bounded slices recorded.
 
@@ -18,13 +18,13 @@ Implement each target and its migration in bounded slices; preserve user behavio
 
 When upstream does not support the target combination, record authoritative compatibility evidence and choose the newest compatible stable combination as an explicit exception with a revisit condition. Difficulty alone is not an exception. An external outage may defer blocked health work and allow an independent product milestone only when its delivery and safety do not depend on that work; record the outage evidence, dependency reasoning and resumption trigger. Split large migrations into further bounded slices; size alone requires no owner decision. Escalate only a reserved decision; do not silently waive the prerequisite.
 
-Use host-dispatched leaf work with exact targets, owned files, acceptance, commands, isolation and stop conditions; workers do not redispatch. Keep review independent of implementation and isolate production credentials from both. Do not invoke an orchestration cycle.
+Return needed implementation/review assignments to the orchestrator with exact targets, files/tests, acceptance, commands and stop conditions. Workers do not redispatch or advance phases. Keep review independent and production credentials behind native controls.
 
 **Exit gate:** targets and migrations complete with passing evidence, or explicit supported exception/outage deferral or owner blocker.
 
 ## 3. Preserve confidence
 
-Run reproducible project mutation, coverage and risk gates, stricter for changed and critical behavior. Ratchet measured confidence: weakening thresholds, narrowing scope, adding exclusions or resetting a baseline requires explicit owner approval with evidence of the impact. Missing measurements block completion. Record command, revision, toolchain, scope, seed, results and environment; compare timing using equivalent environments, scope and warm/cold conditions. Treat an incomplete measurement as missing evidence, not a pass.
+Run configured reproducible project mutation, coverage and complexity/risk gates (or `tdd` mutation sampling when no mutation tool is configured), stricter for changed and critical behavior. Ratchet measured confidence: weakening thresholds, narrowing scope, adding exclusions or resetting a baseline requires explicit owner approval with evidence of the impact. Missing configured measurements block completion. Record command, revision, toolchain, scope, seed, results and environment; compare timing using equivalent environments, scope and warm/cold conditions. Treat an incomplete measurement as missing evidence, not a pass.
 
 Improve tests or structure for demonstrated risk, maintenance cost or measured regression. Do not force churn merely to increase test counts, scores or upgrade activity. Verify preserved meaningful behavior when deleting redundant tests. The host arranges the applicable delivery controls for the resulting exact artifact; health does not authorize production promotion.
 
@@ -32,7 +32,7 @@ Improve tests or structure for demonstrated risk, maintenance cost or measured r
 
 ## Output
 
-Session replies ≤5 lines; run reports ≤8. **Summary:** frozen targets, completed migrations, exceptions, confidence/timing evidence, commands and exits. **Decision:** next-product prerequisite or recommended owner action, otherwise “Nothing needed.”
+Session replies ≤5 lines; run reports ≤8. **Summary:** frozen targets, completed migrations, exceptions, confidence/timing evidence, commands and exits. **Decision:** next action/actor, next-product prerequisite or reserved owner choice/recommendation.
 
 ```text
 Summary: frozen stable targets installed; migration complete; verify exit 0.

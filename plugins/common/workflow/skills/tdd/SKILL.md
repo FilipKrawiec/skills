@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Bash
 
 # Test-Driven Development (Chicago School)
 
-Run Red-Green-Refactor per behaviour slice; the host owns delivery. Project rules override commands, layout and coverage here. First name the targeted test command and the verify gate (the project's `verify` task).
+Run Red-Green-Refactor per behaviour slice; return implementation evidence to the orchestrator for review and delivery. Project rules override commands, layout and coverage here. First name the targeted test command and the verify gate (the project's `verify` task).
 
 Executing an approved plan, choose routine implementation details autonomously within its acceptance and constraints. On a material contradiction, stop dependent work and return `replan: <step>: <evidence and recommended change>`. Independent technical review settles engineering/ADR changes; only revised product/strategy direction, new paid services, budget increases or protected authority needs owner approval. Do not redispatch workers or invoke workflow orchestration.
 
@@ -35,7 +35,7 @@ Run the verify gate once, at the end; re-running it on unchanged code proves not
 ## Test Design Rules
 
 - **Hard to test is a design defect.** Redesign the production code: extract a type a test drives publicly, inject the dependency through a port, or delete the unreachable line. Do not weaken gates to hide untestable code. Never widen a member for tests, add a backdoor setter or drive private state.
-- Use reproducible project coverage, mutation and risk gates, stricter for changed and critical behavior; no universal percentage. Record revision, commands, scope, toolchain, seed and results. Ratchet confidence; weakening thresholds, scope, exclusions or resetting baselines needs explicit owner approval. Missing configured gates or evidence blocks completion; propose concrete gates rather than claiming confidence. A whole measurement timeout is incomplete evidence, never a mutant kill or gate pass. Compare timing only with equivalent environment, scope and warm/cold conditions. No tests merely of a test double or trivial generated behavior.
+- Use configured reproducible project coverage, mutation and risk gates (or mutation sampling when unconfigured), stricter for changed and critical behavior; no universal percentage. Record revision, commands, scope, toolchain, seed and results. Ratchet confidence; weakening thresholds, scope, exclusions or resetting baselines needs explicit owner approval. Missing evidence for a configured gate blocks completion; when unconfigured, record verification and mutation-sampling evidence and propose concrete gates. A whole measurement timeout is incomplete evidence, never a mutant kill or gate pass. Compare timing only with equivalent environment, scope and warm/cold conditions. No tests merely of a test double or trivial generated behavior.
 - Assert behaviour, never private details, pixels or tuning constants. End on an outcome assertion; let missed interactions fail.
 - Test each documented range at both edges and its wrap-around. Use the fake clock.
 - A gate gets a pass and a fail fixture per rule and a just-outside case per exemption; match parsed syntax.
@@ -44,7 +44,7 @@ Run the verify gate once, at the end; re-running it on unchanged code proves not
 
 ## Output
 
-Session replies ≤5 lines; run reports ≤8. **Summary:** behavior, changed paths, commands/exits and confidence evidence. **Decision:** recommended replan/owner action or “Nothing needed.”
+Session replies ≤5 lines; run reports ≤8. **Summary:** behavior, changed paths, commands/exits and confidence evidence. **Decision:** recommended replan/owner action or the next action and responsible actor. Use “Nothing needed” only with no pending action.
 
 ## Context Pointers
 

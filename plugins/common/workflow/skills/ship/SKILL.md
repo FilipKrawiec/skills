@@ -6,11 +6,11 @@ allowed-tools: Read Edit Bash
 
 # Ship
 
-Read `<base>` and `<branchPrefix>` from `.github/lanes.json` (defaults `main`, `agent/afk-`). With a configured board, use `gh project item-edit` for card updates. This procedure checks merged work; it grants no production promotion or fix-forward authority.
+Read `<base>` and `<branchPrefix>` from `.github/lanes.json` (defaults `main`, `agent/afk-`). This procedure checks merged work; it grants no production promotion or fix-forward authority. Report desired board transitions to the orchestrator; only the orchestrator changes board status under `spec`.
 
 ## 1. Observe actual HEAD
 
-With a board, move Review cards whose open issue has no open PR to Todo. Fetch the base and record the actual `origin/<base>` HEAD, even when it has no runs. Read configured required workflows and `gh run list --branch <base> --event push --limit 200`; query further when needed for that HEAD.
+Report Review cards whose open issue has no open PR for readiness-aware routing under `spec`. Keep a product-milestone issue in Review after its `Part of` PR merges; report Done only after deployed acceptance. Fetch the base and record the actual `origin/<base>` HEAD, even when it has no runs. Read configured required workflows and `gh run list --branch <base> --event push --limit 200`; query further when needed for that HEAD.
 
 Judge each required workflow's latest applicable run for the actual HEAD: completed success is green, completed failure is red, missing/incomplete/cancelled is pending. A failed run with no executable job steps is infrastructure evidence, not success. Never substitute an older green commit or ignore a missing workflow. Base is red if any required check failed, otherwise pending if any evidence is missing, otherwise green.
 
@@ -20,11 +20,11 @@ For each red workflow, find newest green commit G and oldest red R after it. Att
 
 ## 2. Respond within authority
 
-For an attributable AFK failure without an open `<branchPrefix>revert-<short-sha>` PR, prepare an isolated revert from actual base HEAD using `git revert --no-edit <sha>`; run the project's verify gate. Have the host dispatch VCS delivery as a leaf assignment with exact commit, branch, commands, failing evidence and merge restrictions. Never merge the revert without applicable authority. Reopen its issue, retain its lane authorization, remove stale `state:*` labels, record a technical wait/replan, and comment failing checks, revert PR and retry recommendation in ≤5 lines.
+For an attributable AFK failure without an open `<branchPrefix>revert-<short-sha>` PR, prepare an isolated revert from actual base HEAD using `git revert --no-edit <sha>`; run the project's verify gate. Return VCS delivery to the orchestrator with exact commit, branch, commands, failing evidence and merge restrictions. Never merge the revert without applicable authority. Reopen its issue, retain its lane authorization, remove stale `state:*` labels, record a technical wait/replan, and comment failing checks, revert PR and retry recommendation in ≤5 lines.
 
-For ambiguous or non-AFK failures, report the evidence and recommended follow-up; do not invent fix-forward authority. If production acceptance fails, execute only a safe configured rollback already authorized by production controls and notify the owner immediately with candidate, failure and rollback result. Never reverse destructive data changes. Missing rollback authority means stop and escalate.
+For ambiguous or non-AFK failures, report the evidence and recommended follow-up; do not invent fix-forward authority. For production failure, return exact candidate/failure evidence immediately to the orchestrator for `release` recovery under configured authority. Source reverts and deployment rollback are different actions; never infer one from the other.
 
-**Exit gate:** verified revert PR, configured rollback result, or explicit owner blocker; notification recorded.
+**Exit gate:** verified revert ready for VCS, or assigned recovery/owner decision with actor and retry condition.
 
 ## 3. Confirm evidence separately
 
@@ -36,10 +36,10 @@ For issues closed within 30 days without `## Shipped #M` for closing PR #M, add 
 
 ## Output
 
-≤5 lines: **Summary** links actual HEAD, CI, culprit/revert, deployment/acceptance and confirmed issues; include commands/exits in run reports (≤8 lines). **Decision:** recommended owner action or “Nothing needed.”
+≤5 lines: **Summary** links actual HEAD, CI, culprit/revert, deployment/acceptance and confirmed issues; include commands/exits in run reports (≤8 lines). **Decision:** next action and responsible actor, or reserved owner options/recommendation.
 
 ```text
 Summary: HEAD a1b2 merged; CI pending (required run missing); deployed pending.
 Evidence: git fetch exit 0; run query exit 0; no shipped issues confirmed.
-Decision: Nothing needed; await required run and deployment acceptance.
+Decision: Delivery steward rechecks required run and deployment acceptance.
 ```
