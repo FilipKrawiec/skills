@@ -9,11 +9,13 @@ Owner approves outcome brief + design direction
                     |
 Team refines → plans → implements → independent review
                     |
-  merge → MAJOR.MINOR.PATCH candidate → test
+  merge → tag vMAJOR.MINOR.PATCH → test
+                    |
+  nightly: newest version → rc/vMAJOR.MINOR.PATCH → test channels
                     |
       prepared demo → owner approves exact candidate
                     |
-  tag vMAJOR.MINOR.PATCH → production → acceptance → engineering health
+  owner publishes release → production → acceptance → engineering health
 ```
 
 A milestone, titled only `v<MAJOR>`, groups a deliverable outcome, constraints, non-goals and acceptance. New interactions need lightweight prototype direction; established interactions reference an accepted pattern. Approval covers the matching brief revision and delegates story slicing, refinement and engineering decisions. A trusted direct owner request also authorizes its specified work without an artificial milestone-approval loop; retain its source for durable GitHub work. An out-of-intent discovery becomes a proposal without stopping approved work.
@@ -25,7 +27,7 @@ Production approval is separate: demonstrate a working test environment or insta
 | Dimension | Meaning |
 | --- | --- |
 | Lane | Whether implementation needs owner participation: authorized autonomous work (`lane:afk`), proposed authorization (`lane:proposed`), or required owner participation (`lane:owner`). |
-| Milestone | A production deliverable or its linked engineering health iteration, titled `v<MAJOR>`; each merge in it is a `<MAJOR>.<MINOR>.<PATCH>` release candidate deployed to test, and a `v<MAJOR>.<MINOR>.<PATCH>` tag promotes that exact candidate to production. |
+| Milestone | A production deliverable or its linked engineering health iteration, titled `v<MAJOR>`; each merge in it is a `v<MAJOR>.<MINOR>.<PATCH>` version deployed to test, the newest version becomes a nightly `rc/` release candidate, and an owner-published release on a candidate promotes it to production. |
 | Type | Story, bug, chore, bounded investigation/task or epic. |
 | Waiting reason | A temporary missing condition, recorded separately from lane authorization. |
 
