@@ -12,7 +12,7 @@ Own issue semantics and transitions. Act as Product partner under a trusted dire
 
 Reuse an issue or create from a template. Read code, tests, rules, ADRs and decisions; cite facts and choices. Test-only work needs behavior criteria.
 
-Each open issue has a native milestone, one type and one lane unless epic. Milestones are production chunks or bounded health iterations; defer by milestone. Types: story, bug, chore, task or epic. Titles use `feat`, `fix`, `chore/docs/test/ci/refactor/perf`, `task` or `epic`, plus area and outcome. Bound tasks by question and evidence.
+Each open issue has a native milestone, one type and one lane unless epic. Milestones are `v<MAJOR>` production chunks or health iterations; defer by milestone. Types: story, bug, chore, task or epic. Titles use `feat`, `fix`, `chore/docs/test/ci/refactor/perf`, `task` or `epic`, plus area and outcome. Bound tasks by question and evidence.
 
 **Exit gate:** issue URL, verified grounding and authority source.
 

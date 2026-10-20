@@ -30,7 +30,7 @@ Each project owner configures its own `.github/CODEOWNERS` and branch protection
 - Actions token read-only; Actions cannot approve PRs.
 - No repository secrets; deployment secrets belong in protected environments.
 - Production requires exact owner approval of candidate and destination, enforced through environment approval or an equivalent host gate. Branch/tag restrictions alone never grant production authority.
-- Restrict `v*` tag creation, updates and deletion to admins.
+- Restrict `v*` tag creation, updates and deletion to admins. The test environment deploys from the base branch; production deploys only from `v*` tags.
 
 ## Reviewer CODEOWNERS gate
 
