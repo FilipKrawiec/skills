@@ -27,7 +27,7 @@ json_list() { local out="" item; for item in "$@"; do out+="${out:+,}\"$item\"";
 tag_ruleset() {
   local id
   for id in $(gh api "repos/$repo/rulesets" --jq '.[] | select(.target == "tag" and .enforcement == "active") | .id'); do
-    if [ "$(gh api "repos/$repo/rulesets/$id" --jq '(.conditions.ref_name.include | contains(["refs/tags/v*", "refs/tags/rc/*"]))
+    if [ "$(gh api "repos/$repo/rulesets/$id" --jq '((["refs/tags/v*", "refs/tags/rc/*"] - .conditions.ref_name.include) == [])
         and ([.rules[].type] | contains(["creation", "update", "deletion"]))
         and ([.bypass_actors[]? | select([.actor_type, .actor_id] | IN(["RepositoryRole", 5], ["Integration", 15368]) | not)] | length == 0)')" = true ]; then
       echo yes; return
@@ -95,19 +95,19 @@ report "$base force pushes and deletions" "$(protection '[.allow_force_pushes.en
 report "$base admins excluded" "$(protection '.enforce_admins.enabled')" "false"
 report "repository secrets" "$(gh api "repos/$repo/actions/secrets" --jq .total_count)" "0"
 
-# An environment is safe when the owner must approve it, or it deploys only through custom
-# policies naming the base branch and tags under v*, which the release tag ruleset keeps to admins
-# and the versioning automation. Production authority still needs the owner's release (release skill).
+# An environment is safe when the owner must approve it, or it deploys only through a custom
+# policy naming the base branch. A tag policy is not enough: the versioning automation's bypass
+# lets any workflow run, including one a Write user pushes on a branch, create a matching tag.
 # Without a policy, or with "protected branches", any branch a Write user can push may deploy.
 while IFS=$'\t' read -r env policy reviewed; do
   [ -n "$env" ] || continue
   if [ "$reviewed" = true ]; then report "environment $env" safe safe; continue; fi
   if [ "$policy" != custom ]; then report "environment $env" "deploys from $policy without owner review" safe; continue; fi
   others=$(gh api "repos/$repo/environments/$(jq -rn --arg e "$env" '$e | @uri')/deployment-branch-policies" \
-    --jq "[.branch_policies[] | select((.type == \"branch\" and .name == \"$base\") or (.type == \"tag\" and (.name | startswith(\"v\"))) | not) | .name] | join(\",\")" 2>/dev/null) \
+    --jq "[.branch_policies[] | select(.type == \"branch\" and .name == \"$base\" | not) | .name] | join(\",\")" 2>/dev/null) \
     || others=unreadable
-  if [ -z "$others" ] && [ "$tags" = yes ]; then report "environment $env" safe safe
-  else report "environment $env" "deploys from '${others:-v* tags without the ruleset}' without owner review" safe; fi
+  if [ -z "$others" ]; then report "environment $env" safe safe
+  else report "environment $env" "deploys from '$others' without owner review" safe; fi
 done < <(gh api "repos/$repo/environments" --jq ".environments[] | [.name,
   (.deployment_branch_policy | if . == null then \"any branch\" elif .custom_branch_policies then \"custom\" else \"protected branches\" end),
   ([.protection_rules[]? | select(.type == \"required_reviewers\") | .reviewers[] | select(.type == \"User\") | .reviewer.login | ascii_downcase] | index(\"$owner\" | ascii_downcase) != null)] | @tsv")

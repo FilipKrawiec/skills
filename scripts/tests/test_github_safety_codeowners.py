@@ -111,6 +111,7 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
     def test_release_tags_cover_candidates_and_allow_only_admins_and_actions(self) -> None:
         for ruleset in (
             RELEASE_TAGS.replace(', "refs/tags/rc/*"', ""),
+            RELEASE_TAGS.replace('"refs/tags/v*"', '"refs/tags/v*-x"'),
             RELEASE_TAGS.replace('"Integration", "actor_id": 15368', '"Integration", "actor_id": 99'),
             RELEASE_TAGS.replace('{"type": "deletion"}', '{"type": "non_fast_forward"}'),
         ):
