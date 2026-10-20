@@ -9,9 +9,9 @@ Owner approves outcome brief + design direction
                     |
 Team refines → plans → implements → independent review
                     |
-  merge → tag vMAJOR.MINOR.PATCH → test
+  merge → tag rc/vMAJOR.MINOR.PATCH → test
                     |
-  nightly: newest version → rc/vMAJOR.MINOR.PATCH → test channels
+  nightly: newest candidate → vMAJOR.MINOR.PATCH → test channels
                     |
       prepared demo → owner approves exact candidate
                     |
@@ -27,7 +27,7 @@ Production approval is separate: demonstrate a working test environment or insta
 | Dimension | Meaning |
 | --- | --- |
 | Lane | Whether implementation needs owner participation: authorized autonomous work (`lane:afk`), proposed authorization (`lane:proposed`), or required owner participation (`lane:owner`). |
-| Milestone | A production deliverable or its linked engineering health iteration, titled `v<MAJOR>`; each merge in it is a `v<MAJOR>.<MINOR>.<PATCH>` version deployed to test, the newest version becomes a nightly `rc/` release candidate, and an owner-published release on a candidate promotes it to production. |
+| Milestone | A production deliverable or its linked engineering health iteration, titled `v<MAJOR>`; each merge in it is an `rc/v<MAJOR>.<MINOR>.<PATCH>` release candidate deployed to test, the newest candidate becomes the nightly `v<MAJOR>.<MINOR>.<PATCH>` test release, and an owner-published release on a test release promotes it to production. |
 | Type | Story, bug, chore, bounded investigation/task or epic. |
 | Waiting reason | A temporary missing condition, recorded separately from lane authorization. |
 

@@ -10,7 +10,7 @@ allowed-tools: Skill Read Edit Bash
 
 Act as orchestrator using the harness's native subagents. The Product Engineer approves outcomes, constraints, interaction direction, critical exceptions and exact demonstrated production candidates. Agents own routine refinement, implementation, technical decisions, review, merge and test delivery.
 
-Create or reuse a native GitHub milestone for each production chunk, titled only `v<MAJOR>` with the next unused major; its merges become `<MAJOR>.<MINOR>.<PATCH>` versions under `release`. Record its outcome, constraints, non-goals, acceptance, confidence gates, brief revision and approval source in its description; link included issues. For new interactions, obtain direction on a lightweight prototype; established interactions name an accepted pattern. A trusted direct owner request authorizes its specified work without another approval loop.
+Create or reuse a native GitHub milestone for each production chunk, titled only `v<MAJOR>` with the next unused major; its merges become `<MAJOR>.<MINOR>.<PATCH>` release candidates under `release`. Record its outcome, constraints, non-goals, acceptance, confidence gates, brief revision and approval source in its description; link included issues. For new interactions, obtain direction on a lightweight prototype; established interactions name an accepted pattern. A trusted direct owner request authorizes its specified work without another approval loop.
 
 **Exit gate:** recorded authority binds the outcome and direction; missing reserved decisions are explicit.
 
