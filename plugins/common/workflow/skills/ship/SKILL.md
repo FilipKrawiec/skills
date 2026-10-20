@@ -28,7 +28,7 @@ For ambiguous or non-AFK failures, report the evidence and recommended follow-up
 
 ## 3. Confirm evidence separately
 
-For recently completed issues, identify the newest merged closing PR and prove its merge commit is an ancestor of actual HEAD. Record merged/CI status separately from deployed and accepted status. A merge is deployed to test when the test environment runs its `MAJOR.MINOR.PATCH` candidate, and shipped only when a `v*` tag containing it is deployed to production and accepted for that exact artifact/configuration; a green base or merged PR is insufficient. Missing evidence stays pending.
+For recently completed issues, identify the newest merged closing PR and prove its merge commit is an ancestor of actual HEAD. Record merged/CI status separately from deployed and accepted status. A merge is deployed to test when the test environment runs a candidate or test release containing it, and shipped only when a published release on a test release containing it is deployed to production and accepted for that exact artifact/configuration; a green base or merged PR is insufficient. Missing evidence stays pending.
 
 For issues closed within 30 days without `## Shipped #M` for closing PR #M, add that comment only with deployed-and-accepted evidence, artifact/configuration, HEAD and run links; remove `state:` labels then. Close an open `type:epic` only when all sub-issues are closed and have matching shipped evidence.
 
