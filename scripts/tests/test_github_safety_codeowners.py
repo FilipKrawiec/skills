@@ -134,7 +134,6 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
         result = self.check("* @reviewer\n*.yml @alice\n")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
 
-
     def test_release_tags_cover_candidates_and_allow_only_admins_and_the_versioning_app(self) -> None:
         for ruleset in (
             RELEASE_TAGS.replace(', "refs/tags/rc/*"', ""),
@@ -158,6 +157,8 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
             (environment(None), policies(), RELEASE_TAGS, False),
             (environment({"protected_branches": True, "custom_branch_policies": False}), policies(), RELEASE_TAGS, False),
             (environment(CUSTOM), policies(("branch", "main"), ("branch", "feature/*")), RELEASE_TAGS, False),
+            (environment(CUSTOM), policies(("branch", "main")),
+             RELEASE_TAGS.replace('"actor_id": 4242', '"actor_id": 15368'), True),
             (environment(CUSTOM), policies(("tag", "rc/**")), RELEASE_TAGS, False),
             (environment(CUSTOM), policies(("tag", "v*/*")), RELEASE_TAGS, False),
             (environment(CUSTOM), policies(("tag", "v*")),

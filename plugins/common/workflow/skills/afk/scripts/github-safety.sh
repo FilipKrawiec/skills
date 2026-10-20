@@ -10,7 +10,7 @@
 # Example: github-safety.sh check acme/app alice acme-bot acme-reviewer verify
 set -euo pipefail
 
-usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [ $# -ge 6 ] || usage
 mode=$1 repo=$2 owner=$3 implementer=$4 reviewer=$5; shift 5
 [ "$mode" = check ] || [ "$mode" = apply ] || usage
