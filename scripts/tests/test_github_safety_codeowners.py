@@ -98,7 +98,8 @@ def policies(*named: tuple[str, str]) -> str:
 class GitHubSafetyCodeownersTests(unittest.TestCase):
     def check(self, codeowners: str, script: Path = SCRIPT,
               ruleset: str = RELEASE_TAGS, environments: str = NO_ENVIRONMENTS,
-              branch_policies: str = '{"branch_policies": []}') -> subprocess.CompletedProcess[str]:
+              branch_policies: str = '{"branch_policies": []}',
+              app: str = "") -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             gh = root / "gh"
@@ -106,7 +107,7 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
             gh.chmod(0o755)
             env = os.environ | {"PATH": f"{root}:{os.environ['PATH']}", "CODEOWNERS": codeowners,
                                 "RULESET": ruleset, "ENVIRONMENTS": environments,
-                                "POLICIES": branch_policies}
+                                "POLICIES": branch_policies, "RELEASE_APP_ID": app}
             return subprocess.run(
                 ["bash", str(script), "check", "acme/app", "alice", "builder", "reviewer", "verify"],
                 capture_output=True,
@@ -141,6 +142,8 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
             RELEASE_TAGS.replace('"actor_id": 4242', '"actor_id": 15368'),
             RELEASE_TAGS.replace('"RepositoryRole", "actor_id": 5', '"RepositoryRole", "actor_id": 4'),
             RELEASE_TAGS.replace('{"type": "deletion"}', '{"type": "non_fast_forward"}'),
+            RELEASE_TAGS.replace('"refs/tags/rc/*"]', '"refs/tags/rc/*"], "exclude": ["refs/tags/v9*"]'),
+            RELEASE_TAGS.replace('"actor_id": 4242}', '"actor_id": 4242}, {"actor_type": "Integration", "actor_id": 77}'),
         ):
             with self.subTest(ruleset=ruleset):
                 result = self.check("* @reviewer\n", ruleset=ruleset)
@@ -155,6 +158,8 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
             (environment(None), policies(), RELEASE_TAGS, False),
             (environment({"protected_branches": True, "custom_branch_policies": False}), policies(), RELEASE_TAGS, False),
             (environment(CUSTOM), policies(("branch", "main"), ("branch", "feature/*")), RELEASE_TAGS, False),
+            (environment(CUSTOM), policies(("tag", "rc/**")), RELEASE_TAGS, False),
+            (environment(CUSTOM), policies(("tag", "v*/*")), RELEASE_TAGS, False),
             (environment(CUSTOM), policies(("tag", "v*")),
              RELEASE_TAGS.replace('"actor_id": 4242', '"actor_id": 15368'), False),
         )
@@ -164,6 +169,11 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
                                     branch_policies=branch_policies)
                 line = "ok     environment deploy" if safe else "DRIFT  environment deploy"
                 self.assertIn(line, result.stdout, result.stdout + result.stderr)
+
+    def test_a_named_versioning_app_is_the_only_app_allowed(self) -> None:
+        self.assertEqual(self.check("* @reviewer\n", app="4242").returncode, 0)
+        result = self.check("* @reviewer\n", app="77")
+        self.assertIn("DRIFT  release tag ruleset for v* and rc/*", result.stdout, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

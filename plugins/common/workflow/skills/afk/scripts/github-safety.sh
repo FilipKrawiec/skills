@@ -5,7 +5,8 @@
 #   check  prints one line per setting (ok or DRIFT) and exits 1 on any drift.
 #   apply  sets what the API can set, then checks. Run it with the owner's token.
 #          Reviews and collaborators are skipped until both machine users exist.
-#          RELEASE_APP_ID names the versioning app the release tag ruleset lets through.
+#          RELEASE_APP_ID names the versioning app the release tag ruleset lets through;
+#          check then accepts only that app, otherwise any one app except GitHub Actions.
 # Example: github-safety.sh check acme/app alice acme-bot acme-reviewer verify
 set -euo pipefail
 
@@ -14,6 +15,7 @@ usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 mode=$1 repo=$2 owner=$3 implementer=$4 reviewer=$5; shift 5
 [ "$mode" = check ] || [ "$mode" = apply ] || usage
 checks=("$@")
+[ -z "${RELEASE_APP_ID:-}" ] || { [[ $RELEASE_APP_ID =~ ^[1-9][0-9]*$ ]] && [ "$RELEASE_APP_ID" != 15368 ]; } || usage
 
 base=$(gh api "repos/$repo" --jq .default_branch)
 drift=0
@@ -22,17 +24,19 @@ report() { # report <name> <actual> <expected>
 }
 exists() { gh api "users/$1" --silent 2>/dev/null; }
 json_list() { local out="" item; for item in "$@"; do out+="${out:+,}\"$item\""; done; echo "[$out]"; }
-# yes when an active tag ruleset covers refs/tags/v* and refs/tags/rc/*, blocks creation, update
-# and deletion, and lets only admins (role 5) and the versioning app bypass it. GitHub Actions
+# yes when an active tag ruleset covers refs/tags/v* and refs/tags/rc/* with no exclusions, blocks creation, update
+# and deletion, and lets only admins (role 5) and one versioning app bypass it. GitHub Actions
 # (integration 15368) never may: its bypass serves every workflow run, a branch's included.
 # The list endpoint omits conditions, so read each.
 tag_ruleset() {
-  local id
+  local id app=${RELEASE_APP_ID:-0}
   for id in $(gh api "repos/$repo/rulesets" --jq '.[] | select(.target == "tag" and .enforcement == "active") | .id'); do
-    if [ "$(gh api "repos/$repo/rulesets/$id" --jq '((["refs/tags/v*", "refs/tags/rc/*"] - .conditions.ref_name.include) == [])
+    if [ "$(gh api "repos/$repo/rulesets/$id" --jq "$app"' as $app | ((["refs/tags/v*", "refs/tags/rc/*"] - .conditions.ref_name.include) == [])
+        and ((.conditions.ref_name.exclude // []) == [])
+        and ([.bypass_actors[]? | select(.actor_type == "Integration")] | length <= 1)
         and ([.rules[].type] | contains(["creation", "update", "deletion"]))
         and ([.bypass_actors[]? | select(([.actor_type, .actor_id] == ["RepositoryRole", 5])
-          or (.actor_type == "Integration" and .actor_id != 15368) | not)] | length == 0)')" = true ]; then
+          or (.actor_type == "Integration" and .actor_id != 15368 and ($app == 0 or .actor_id == $app)) | not)] | length == 0)')" = true ]; then
       echo yes; return
     fi
   done
@@ -46,7 +50,6 @@ if [ "$mode" = apply ]; then
     -F can_approve_pull_request_reviews=false >/dev/null
   if [ "$(tag_ruleset)" = no ]; then
     app=""
-    [ -z "${RELEASE_APP_ID:-}" ] || [[ $RELEASE_APP_ID =~ ^[1-9][0-9]*$ ]] || usage
     [ -z "${RELEASE_APP_ID:-}" ] || app=", {\"actor_id\": $RELEASE_APP_ID, \"actor_type\": \"Integration\", \"bypass_mode\": \"always\"}"
     gh api -X POST "repos/$repo/rulesets" --input - >/dev/null <<EOF
 {"name": "release tags", "target": "tag", "enforcement": "active",
@@ -101,7 +104,7 @@ report "$base admins excluded" "$(protection '.enforce_admins.enabled')" "false"
 report "repository secrets" "$(gh api "repos/$repo/actions/secrets" --jq .total_count)" "0"
 
 # An environment is safe when the owner must approve it, or it deploys only through custom
-# policies naming the base branch and v* or rc/* tags, which the release tag ruleset keeps to
+# policies naming the base branch and exactly the v* or rc/* tags, which the release tag ruleset keeps to
 # admins and the versioning app. Production authority still needs the owner's release.
 # Without a policy, or with "protected branches", any branch a Write user can push may deploy.
 while IFS=$'\t' read -r env policy reviewed; do
@@ -110,7 +113,7 @@ while IFS=$'\t' read -r env policy reviewed; do
   if [ "$policy" != custom ]; then report "environment $env" "deploys from $policy without owner review" safe; continue; fi
   others=$(gh api "repos/$repo/environments/$(jq -rn --arg e "$env" '$e | @uri')/deployment-branch-policies" \
     --jq "[.branch_policies[] | select((.type == \"branch\" and .name == \"$base\")
-      or (.type == \"tag\" and (.name | startswith(\"v\") or startswith(\"rc/\"))) | not) | .name] | join(\",\")" 2>/dev/null) \
+      or (.type == \"tag\" and (.name == \"v*\" or .name == \"rc/*\")) | not) | .name] | join(\",\")" 2>/dev/null) \
     || others=unreadable
   tagged=$(gh api "repos/$repo/environments/$(jq -rn --arg e "$env" '$e | @uri')/deployment-branch-policies" \
     --jq '[.branch_policies[] | select(.type == "tag")] | length' 2>/dev/null) || tagged=unreadable
