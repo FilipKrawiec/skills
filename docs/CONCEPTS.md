@@ -9,14 +9,14 @@ Owner approves outcome brief + design direction
                     |
 Team refines → plans → implements → independent review
                     |
-       merge → automatic test delivery
+  merge → MAJOR.MINOR.PATCH candidate → test
                     |
       prepared demo → owner approves exact candidate
                     |
-       production → acceptance → engineering health
+  tag vMAJOR.MINOR.PATCH → production → acceptance → engineering health
 ```
 
-A milestone groups a deliverable outcome, constraints, non-goals and acceptance. New interactions need lightweight prototype direction; established interactions reference an accepted pattern. Approval covers the matching brief revision and delegates story slicing, refinement and engineering decisions. A trusted direct owner request also authorizes its specified work without an artificial milestone-approval loop; retain its source for durable GitHub work. An out-of-intent discovery becomes a proposal without stopping approved work.
+A milestone, titled only `v<MAJOR>`, groups a deliverable outcome, constraints, non-goals and acceptance. New interactions need lightweight prototype direction; established interactions reference an accepted pattern. Approval covers the matching brief revision and delegates story slicing, refinement and engineering decisions. A trusted direct owner request also authorizes its specified work without an artificial milestone-approval loop; retain its source for durable GitHub work. An out-of-intent discovery becomes a proposal without stopping approved work.
 
 Production approval is separate: demonstrate a working test environment or installable candidate, acceptance evidence, limitations and rollback readiness. The owner marks feedback as a blocker or follow-up. Approval binds the artifact and configuration; changed contents require renewed approval. Merge/CI success alone is not production acceptance. Default to a coherent milestone release; propose an earlier valuable subset when justified.
 
@@ -25,7 +25,7 @@ Production approval is separate: demonstrate a working test environment or insta
 | Dimension | Meaning |
 | --- | --- |
 | Lane | Whether implementation needs owner participation: authorized autonomous work (`lane:afk`), proposed authorization (`lane:proposed`), or required owner participation (`lane:owner`). |
-| Milestone | A production deliverable or its linked engineering health iteration. |
+| Milestone | A production deliverable or its linked engineering health iteration, titled `v<MAJOR>`; each merge in it is a `<MAJOR>.<MINOR>.<PATCH>` release candidate deployed to test, and a `v<MAJOR>.<MINOR>.<PATCH>` tag promotes that exact candidate to production. |
 | Type | Story, bug, chore, bounded investigation/task or epic. |
 | Waiting reason | A temporary missing condition, recorded separately from lane authorization. |
 
