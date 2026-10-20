@@ -16,6 +16,7 @@ SCRIPT = ROOT / "plugins/common/workflow/skills/afk/scripts/github-safety.sh"
 FAKE_GH = r'''#!/usr/bin/env python3
 import base64
 import os
+import subprocess
 import sys
 
 args = sys.argv[1:]
@@ -28,7 +29,8 @@ if endpoint == "repos/acme/app":
 elif endpoint.endswith("/rulesets"):
     value = "1"
 elif endpoint.endswith("/rulesets/1"):
-    value = "true"
+    value = subprocess.run(["jq", "-r", query], input=os.environ["RULESET"], capture_output=True,
+                           text=True, check=True).stdout.strip()
 elif endpoint.endswith("/actions/permissions/workflow"):
     value = '"read",false'
 elif endpoint.endswith("/collaborators/alice/permission"):
@@ -63,14 +65,22 @@ print(value)
 '''
 
 
+RELEASE_TAGS = """{"conditions": {"ref_name": {"include": ["refs/tags/v*", "refs/tags/rc/*"]}},
+  "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}],
+  "bypass_actors": [{"actor_type": "RepositoryRole", "actor_id": 5},
+                    {"actor_type": "Integration", "actor_id": 15368}]}"""
+
+
 class GitHubSafetyCodeownersTests(unittest.TestCase):
-    def check(self, codeowners: str, script: Path = SCRIPT) -> subprocess.CompletedProcess[str]:
+    def check(self, codeowners: str, script: Path = SCRIPT,
+              ruleset: str = RELEASE_TAGS) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             gh = root / "gh"
             gh.write_text(FAKE_GH, encoding="utf-8")
             gh.chmod(0o755)
-            env = os.environ | {"PATH": f"{root}:{os.environ['PATH']}", "CODEOWNERS": codeowners}
+            env = os.environ | {"PATH": f"{root}:{os.environ['PATH']}", "CODEOWNERS": codeowners,
+                                "RULESET": ruleset}
             return subprocess.run(
                 ["bash", str(script), "check", "acme/app", "alice", "builder", "reviewer", "verify"],
                 capture_output=True,
@@ -96,6 +106,18 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
     def test_rejects_later_broad_rule_without_reviewer(self) -> None:
         result = self.check("* @reviewer\n*.yml @alice\n")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+
+    def test_release_tags_cover_candidates_and_allow_only_admins_and_actions(self) -> None:
+        for ruleset in (
+            RELEASE_TAGS.replace(', "refs/tags/rc/*"', ""),
+            RELEASE_TAGS.replace('"Integration", "actor_id": 15368', '"Integration", "actor_id": 99'),
+            RELEASE_TAGS.replace('{"type": "deletion"}', '{"type": "non_fast_forward"}'),
+        ):
+            with self.subTest(ruleset=ruleset):
+                result = self.check("* @reviewer\n", ruleset=ruleset)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("DRIFT  release tag ruleset for v* and rc/*", result.stdout)
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ Team refines → plans → implements → independent review
                     |
   nightly: newest candidate → vMAJOR.MINOR.PATCH → test channels
                     |
-      prepared demo → owner approves exact candidate
+      prepared demo → owner approves exact test release
                     |
   owner publishes release → production → acceptance → engineering health
 ```

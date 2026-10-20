@@ -21,14 +21,15 @@ report() { # report <name> <actual> <expected>
 }
 exists() { gh api "users/$1" --silent 2>/dev/null; }
 json_list() { local out="" item; for item in "$@"; do out+="${out:+,}\"$item\""; done; echo "[$out]"; }
-# yes when an active tag ruleset covers refs/tags/v*, blocks creation, update and deletion,
-# and lets only admins (role 5) bypass it. The list endpoint omits conditions, so read each.
+# yes when an active tag ruleset covers refs/tags/v* and refs/tags/rc/*, blocks creation, update
+# and deletion, and lets only admins (role 5) and the versioning automation, GitHub Actions
+# (integration 15368), bypass it. The list endpoint omits conditions, so read each.
 tag_ruleset() {
   local id
   for id in $(gh api "repos/$repo/rulesets" --jq '.[] | select(.target == "tag" and .enforcement == "active") | .id'); do
-    if [ "$(gh api "repos/$repo/rulesets/$id" --jq '(.conditions.ref_name.include | index("refs/tags/v*") != null)
+    if [ "$(gh api "repos/$repo/rulesets/$id" --jq '(.conditions.ref_name.include | contains(["refs/tags/v*", "refs/tags/rc/*"]))
         and ([.rules[].type] | contains(["creation", "update", "deletion"]))
-        and ([.bypass_actors[]? | select(.actor_type != "RepositoryRole" or .actor_id != 5)] | length == 0)')" = true ]; then
+        and ([.bypass_actors[]? | select([.actor_type, .actor_id] | IN(["RepositoryRole", 5], ["Integration", 15368]) | not)] | length == 0)')" = true ]; then
       echo yes; return
     fi
   done
@@ -43,8 +44,9 @@ if [ "$mode" = apply ]; then
   if [ "$(tag_ruleset)" = no ]; then
     gh api -X POST "repos/$repo/rulesets" --input - >/dev/null <<'EOF'
 {"name": "release tags", "target": "tag", "enforcement": "active",
- "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
- "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}],
+ "conditions": {"ref_name": {"include": ["refs/tags/v*", "refs/tags/rc/*"], "exclude": []}},
+ "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"},
+                   {"actor_id": 15368, "actor_type": "Integration", "bypass_mode": "always"}],
  "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}]}
 EOF
   fi
@@ -68,7 +70,7 @@ fi
 report "merge methods" "$(gh api "repos/$repo" --jq '[.allow_squash_merge,.allow_merge_commit,.allow_rebase_merge,.allow_auto_merge,.delete_branch_on_merge] | @csv')" "true,false,false,true,true"
 report "actions token" "$(gh api "repos/$repo/actions/permissions/workflow" --jq '[.default_workflow_permissions,.can_approve_pull_request_reviews] | @csv')" '"read",false'
 tags=$(tag_ruleset)
-report "release tag ruleset for v*" "$tags" yes
+report "release tag ruleset for v* and rc/*" "$tags" yes
 report "$owner role" "$(gh api "repos/$repo/collaborators/$owner/permission" --jq .role_name)" "admin"
 for user in "$implementer" "$reviewer"; do
   role=$(gh api "repos/$repo/collaborators/$user/permission" --jq .role_name 2>/dev/null) || role=none
@@ -94,7 +96,8 @@ report "$base admins excluded" "$(protection '.enforce_admins.enabled')" "false"
 report "repository secrets" "$(gh api "repos/$repo/actions/secrets" --jq .total_count)" "0"
 
 # An environment is safe when the owner must approve it, or it deploys only through custom
-# policies naming the base branch and tags under v*, which the release tag ruleset keeps to admins.
+# policies naming the base branch and tags under v*, which the release tag ruleset keeps to admins
+# and the versioning automation. Production authority still needs the owner's release (release skill).
 # Without a policy, or with "protected branches", any branch a Write user can push may deploy.
 while IFS=$'\t' read -r env policy reviewed; do
   [ -n "$env" ] || continue
