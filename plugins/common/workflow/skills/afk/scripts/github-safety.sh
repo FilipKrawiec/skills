@@ -104,7 +104,7 @@ report "$base admins excluded" "$(protection '.enforce_admins.enabled')" "false"
 report "repository secrets" "$(gh api "repos/$repo/actions/secrets" --jq .total_count)" "0"
 
 # An environment is safe when the owner must approve it, or it deploys only through custom
-# policies naming the base branch and exactly the v* or rc/* tags, which the release tag ruleset keeps to
+# policies naming the base branch and tags within v* or rc/* (no / past the prefix, no **), which the release tag ruleset keeps to
 # admins and the versioning app. Production authority still needs the owner's release.
 # Without a policy, or with "protected branches", any branch a Write user can push may deploy.
 while IFS=$'\t' read -r env policy reviewed; do
@@ -113,7 +113,7 @@ while IFS=$'\t' read -r env policy reviewed; do
   if [ "$policy" != custom ]; then report "environment $env" "deploys from $policy without owner review" safe; continue; fi
   others=$(gh api "repos/$repo/environments/$(jq -rn --arg e "$env" '$e | @uri')/deployment-branch-policies" \
     --jq "[.branch_policies[] | select((.type == \"branch\" and .name == \"$base\")
-      or (.type == \"tag\" and (.name == \"v*\" or .name == \"rc/*\")) | not) | .name] | join(\",\")" 2>/dev/null) \
+      or (.type == \"tag\" and (.name | (test(\"^v[^/]*$\") or test(\"^rc/[^/]*$\")) and (contains(\"**\") | not))) | not) | .name] | join(\",\")" 2>/dev/null) \
     || others=unreadable
   tagged=$(gh api "repos/$repo/environments/$(jq -rn --arg e "$env" '$e | @uri')/deployment-branch-policies" \
     --jq '[.branch_policies[] | select(.type == "tag")] | length' 2>/dev/null) || tagged=unreadable
