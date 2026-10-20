@@ -29,8 +29,8 @@ Each project owner configures its own `.github/CODEOWNERS` and branch protection
 - Squash only; allow auto-merge; delete merged head branches.
 - Actions token read-only; Actions cannot approve PRs.
 - No repository secrets; deployment secrets belong in protected environments.
-- Production requires exact owner approval of test release and destination, enforced through environment approval with the owner as required reviewer. Branch/tag restrictions alone never grant production authority: the versioning automation's tag bypass serves every workflow run, so an environment that deploys from tags without owner review exposes its secrets to branch code.
-- Restrict `v*` and `rc/*` tag creation, updates and deletion to admins and the versioning automation (GitHub Actions). The test environment deploys release candidates from the base branch and test channels take `v*` test release tags; production deploys only from an owner-published release on an existing `v*` test release tag.
+- Production requires the owner's exact approval of test release and destination: an owner-published release on an existing `v*` test release tag, or environment approval with the owner as required reviewer. Branch/tag restrictions alone never grant production authority.
+- Restrict `v*` and `rc/*` tag creation, updates and deletion to admins and the versioning automation: a dedicated app whose key lives in an environment only the base branch deploys. Never let GitHub Actions bypass: its bypass serves every workflow run, a branch's included. The test environment deploys release candidates from the base branch and test channels take `v*` test release tags. `apply` adds the app when `RELEASE_APP_ID` names it.
 
 ## Reviewer CODEOWNERS gate
 
