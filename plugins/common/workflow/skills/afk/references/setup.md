@@ -14,7 +14,8 @@
 | `alwaysInScope` | Path prefixes every AFK change may touch. |
 | `branchPrefix`, `staleClaimHours` | Defaults `agent/afk-`, `3`. |
 | `agentReview`, `reviewRounds` | AFK PR review; cap rounds. Defaults `false`, `3`; required Reviewer gates still apply. |
-| `ownerPaths`, `ownerLabels`, `ownerLines` | Additional owner holds: paths, ship-on-merge labels, line limit (800). |
+| `ownerPaths`, `ownerLabels` | Additional owner holds: paths, ship-on-merge labels. |
+| `ownerLines` | `refine` slice limit (800); not an owner hold. |
 | `reviewQueue` | Issue `agent-review` pins as the owner's queue. |
 | `reviewerLanes` | `true`: `agent-review` approves AFK eligibility; orchestrator applies lane/board changes through `spec`. |
 

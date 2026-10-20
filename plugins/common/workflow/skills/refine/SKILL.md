@@ -25,7 +25,7 @@ For each item, take the first matching case:
 2. Implementation evidence meets every criterion: link evidence per criterion; invoke `spec` to close completed routine work within authority. Keep deployment acceptance separate.
 3. Another item owns the same outcome: name the canonical owner and narrow overlapping criteria; preserve unique remaining work. Never close duplicates without the owner's word.
 4. A recorded owner decision supersedes the body: put the binding decision and its source in the body; update dependent slices and epic summaries together.
-5. Remaining work is unclear or too large (code over lanes.json `ownerLines`, default 800): invoke `spec` to ground and refine it into vertical slices within it.
+5. Remaining work is unclear or too large (code over lanes.json `ownerLines`, default 800; docs, tests, manifests and lockfiles don't count): invoke `spec` to ground and refine it into vertical slices within it.
 
 - Historical bot recommendations are not owner approval; out-of-intent proposals never halt approved work.
 - Lanes say whether owner participation is required; milestones group deliverables: give each open issue a milestone (a slice its epic's) and drop epics' lanes; defer only work outside the current acceptance; required work stays in its milestone with a visible wait, keeping its lane.
