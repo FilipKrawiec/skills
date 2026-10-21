@@ -22,15 +22,15 @@ For milestone orchestration, use `milestone` at the orchestrator level; never as
 
 ## 2. Tend owned PRs
 
-Before selecting new work, inspect each owned open PR and its issue. Assign VCS to reconcile head, checks and threads, and implementation to fix confirmed blockers within approved scope. Preserve lane authorization. Apply bounded diagnosis/replanning from phase 5; keep a visible wait and retry condition if unresolved. Existing PRs stay in this recovery loop instead of being abandoned by candidate filtering.
+Before selecting new work, inspect each owned open PR and its issue. Assign VCS to reconcile head, checks and threads, and implementation to fix confirmed blockers within approved scope. Preserve lane authorization. Apply bounded diagnosis/replanning from phase 5; keep a visible wait and retry condition if unresolved. Never abandon an owned PR to pick new work.
 
 **Exit gate:** owned PRs ready or recorded for recovery/wait; exact heads and next actions known.
 
 ## 3. Select and claim
 
-Choose an open `lane:afk` issue with criteria and a scope packet, excluding epics, active claims and issues referenced by any open PR. Run `gh pr list --state open --limit 1000 --json number,body`; exclude issue numbers mentioned in bodies, including `Part of`, which may not create a GitHub linked PR. If the listing is incomplete, wait. Verify dependencies' required outcomes, not just closed state, and no overlap with active work, including tests. Rank earliest milestone, then board Priority or priority label, then issue number. Wait for a parent PR to merge; never create a stacked draft.
+Choose an open `lane:afk` issue with criteria and a scope packet, excluding epics, active claims and issues any open PR references. Run `gh pr list --state open --limit 1000 --json number,body`; exclude issue numbers in bodies, including `Part of`, which may not create a linked PR. If the listing is incomplete, wait. Verify dependencies' required outcomes, not just closed state, and no overlap with active work, including tests. Rank earliest milestone, then the parent epic's board position (unparented last), then board Priority or priority label, then issue number, so epics finish one at a time. Wait for a parent PR to merge; never create a stacked draft.
 
-Use the host's enforced claim if available; otherwise run serially. Re-read claims before and after recording `state:claimed`; stop on conflict. A stale claim is investigated, not permission to overwrite work. Update board state only by the transitions owned by `spec`; status never grants authority.
+Use the host's enforced claim if available; otherwise run serially. Re-read claims before and after recording `state:claimed`; stop on conflict. Investigate a stale claim; never overwrite its work. Update board state only by the transitions owned by `spec`; status never grants authority.
 
 **Exit gate:** one exclusive assignment, or queue empty/wait reason.
 
@@ -52,7 +52,7 @@ Return evidence, changed paths, resulting head, exit gate and remaining decision
 in at most 8 lines; never expose credentials.
 ```
 
-Require focused tests, scope containment and the project's verify gate before delivery. Every changed/untracked path must belong to the packet or approved alwaysInScope prefixes. Collect fresh `review` axes for the exact head, then assign VCS to open the ready PR and `agent-review` to record the binding GitHub decision. Craftsman never approves. Resolve blockers, not optional suggestions; missing posting capability waits on merge, not preparation.
+Require focused tests, scope containment and the project's verify gate before delivery. Every changed/untracked path must belong to the packet or approved alwaysInScope prefixes. Collect fresh `review` axes for the exact head, then assign VCS to open the ready PR and `agent-review` to record the binding GitHub decision. Resolve blockers, not optional suggestions; missing posting capability waits on merge, not preparation.
 
 **Exit gate:** ready PR and evidence for its exact head, or bounded failure record.
 

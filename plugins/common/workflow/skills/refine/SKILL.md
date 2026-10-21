@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Bash(gh:*,git:*)
 
 # Backlog Refinement
 
-Refine the queue across items. Invoke `spec` for individual intent, criteria, estimate, scope and lane. Use a trusted direct owner request or matching approved milestone brief as authority; record its source on GitHub for durable work. Refine authorized slices without per-story approval. Silence and bot summaries grant nothing; missing milestone direction goes to the host.
+Invoke `spec` for individual intent, criteria, estimate, scope and lane. Use a trusted direct owner request or matching approved milestone brief as authority; record its source on GitHub for durable work. Refine authorized slices without per-story approval. Silence and bot summaries grant nothing; missing milestone direction goes to the host.
 
 ## 1. Inventory
 
@@ -27,8 +27,8 @@ For each item, take the first matching case:
 4. A recorded owner decision supersedes the body: put the binding decision and its source in the body; update dependent slices and epic summaries together.
 5. Remaining work is unclear or too large (code over lanes.json `ownerLines`, default 800; docs, tests, manifests and lockfiles don't count): invoke `spec` to ground and refine it into vertical slices within it.
 
-- Historical bot recommendations are not owner approval; out-of-intent proposals never halt approved work.
-- Lanes say whether owner participation is required; milestones group deliverables: give each open issue a milestone (a slice its epic's) and drop epics' lanes; defer only work outside the current acceptance; required work stays in its milestone with a visible wait, keeping its lane.
+- Out-of-intent proposals never halt approved work.
+- Lanes say whether owner participation is required; milestones group deliverables: give each open issue a milestone (a slice its epic's) and a parent epic; drop epics' lanes; order epics on the board in delivery order; defer only work outside the current acceptance; required work stays in its milestone with a visible wait, keeping its lane.
 - Independently adjudicate technical choices and ADRs; reserve product/strategy reversal, new paid services or budget increases, and authority/credential/release/quality-gate weakening for the owner. New interactions require owner prototype direction. Bounded investigations may proceed with a question, time limit and evidence exit.
 - Trace dependencies through open and closed items. Remove a prerequisite only when its responsibility is gone. Detect cycles, missing prerequisites and shared-file races. Record merge order and shared-file ownership as blocked-by links, never only in comments; keep deferred prerequisites blocking until fulfilled or genuinely removed from scope. Unattended, add links mirroring a packet or `### Dependencies` section; report removals instead.
 - Check the scope packet covers every criterion, including tests, locales and required documentation; account for project-wide allowances. Record protected paths and owner actions visibly. If the base deleted a packet path, confirm the outcome still holds before asking.
