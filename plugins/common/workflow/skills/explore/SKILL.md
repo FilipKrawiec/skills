@@ -59,10 +59,10 @@ Per target, even after a failure: SIGINT the launch process, wait up to 30 s (it
 
 - Merge findings seen on several targets; keep the top `maxIssues` by grade.
 - Search issues by screen and symptom (`gh issue list --state all --search "<words>"`), first match wins:
-  1. Open match: comment once with new evidence, if any.
+  1. Open match, or the milestone says `Intake: frozen` (then the nearest open issue or epic): comment new evidence.
   2. Closed within 30 days: a new `type:bug` regression issue linking it.
   3. No match: a new issue.
-- Captures: commit screenshots to orphan `capturesBranch` at `runs/<date>-<persona>/<n>-<target>.png` (`gh api -X PUT repos/<repo>/contents/<path>`); embed `https://github.com/<repo>/blob/<branch>/<path>?raw=true`. If a workflow's `push` trigger matches it, describe screens instead: captures never start CI.
+- Captures: commit screenshots to orphan `capturesBranch` at `runs/<date>-<persona>/<n>-<target>.png` (`gh api -X PUT repos/<repo>/contents/<path>`); embed `https://github.com/<repo>/blob/<branch>/<path>?raw=true`. If a workflow's `push` trigger matches it, describe screens instead.
 - A new issue: title `<type>(<area>): <outcome for the user>`; `type:bug` when it breaks a product promise or loses data, else `type:story`; `lane:proposed` for the owner. Only now read code: trace the screen's text to the code drawing it for the scope packet.
 
 ````markdown
