@@ -209,6 +209,12 @@ class TakeEpicTest(unittest.TestCase):
         self.take(FakeGitHub(issues=self.EPICS), runs=["local_me"], synced=synced)
         self.assertEqual(synced, [1])
 
+    def test_the_base_does_not_sync_once_a_later_run_is_live(self):
+        synced, listings = [], iter([["local_later"]])
+        lanes.take_epic(FakeGitHub(issues=self.EPICS), lanes.Runs([], lambda: next(listings, ["local_later"])),
+                        "local_me", lambda: synced.append(1) or ["Synced"])
+        self.assertEqual(synced, [])
+
     def test_release_rewrites_only_this_runs_holds(self):
         gh = FakeGitHub(issues=self.EPICS, comments={1: [{"id": 3, "body": lanes.HOLD.format("local_me")}],
                                                      2: [{"id": 4, "body": lanes.HOLD.format("local_other")}]})
@@ -260,6 +266,17 @@ class HoldTest(unittest.TestCase):
         self.assertEqual(lanes.hold(won, LiveSet("local_other"), "local_me", 1), won.comments(1)[0]["id"])
         # The other run, checking now, sees this hold and gives way before posting.
         self.assertIsNone(lanes.hold(FakeGitHub({1: won.comments(1)[:1]}), LiveSet("local_me"), "local_other", 1))
+
+    def test_a_run_started_after_this_runs_listing_still_wins_with_the_older_hold(self):
+        class Later(FakeGitHub):
+            def comment(self, number, body):
+                super().comment(number, lanes.HOLD.format("local_later"))
+                return super().comment(number, body)
+
+        listings = iter([[], ["local_later"]])
+        gh = Later()
+        self.assertIsNone(lanes.hold(gh, lanes.Runs([], lambda: next(listings)), "local_me", 1))
+        self.assertEqual(gh.comments(1)[1]["body"], lanes.RELEASED.format("local_me"))
 
 
 if __name__ == "__main__":

@@ -56,10 +56,15 @@ def ok(*args: str) -> bool:
 
 
 class Runs:
-    """The scheduled task's live runs, as the host's --runs command lists them."""
+    """The scheduled task's live runs, as the host's --runs command lists them; `refresh` lists them again."""
 
-    def __init__(self, ids: list[str]):
-        self.ids = set(ids)
+    def __init__(self, ids: list[str], lister=None):
+        self.ids, self.lister = set(ids), lister
+
+    def refresh(self) -> Runs:
+        if self.lister:
+            self.ids = set(self.lister())
+        return self
 
     def live(self, session: str | None) -> bool:
         return session in self.ids
@@ -316,10 +321,10 @@ def live_holds(comments: list[dict], runs: Runs, me: str) -> list[tuple[int, str
 
 def hold(gh: GitHub, runs: Runs, me: str, epic: int) -> int | None:
     """Post this run's hold on the epic; None when another live run holds it. The oldest live hold wins."""
-    if any(s != me for _, s in live_holds(gh.comments(epic), runs, me)):
+    if any(s != me for _, s in live_holds(gh.comments(epic), runs.refresh(), me)):
         return None
     mine = gh.comment(epic, HOLD.format(me) + "\nAn AFK run works in this epic; it releases this hold when it ends.")
-    holds = live_holds(gh.comments(epic), runs, me)
+    holds = live_holds(gh.comments(epic), runs.refresh(), me)
     if holds and holds[0][1] != me:
         gh.edit(mine, RELEASED.format(me))
         return None
@@ -333,18 +338,22 @@ def own_hold(gh: GitHub, epic: int, me: str) -> int | None:
 def start(args: argparse.Namespace, me: str) -> int:
     cfg = load_config()
     preflight(cfg)
-    listed = subprocess.run(args.runs, shell=True, capture_output=True, text=True)
-    if listed.returncode:
-        raise Blocked(f"`{args.runs}` exited {listed.returncode}: {listed.stderr.strip()[-200:]}; fix the host's run listing")
     sync_base = (lambda: sync(cfg, me, args.sync)) if args.sync else None
-    return take_epic(GitHub(cfg), Runs(listed.stdout.split()), me, sync_base)
+    return take_epic(GitHub(cfg), Runs([], lambda: list_runs(args.runs)), me, sync_base)
+
+
+def list_runs(command: str) -> list[str]:
+    listed = subprocess.run(command, shell=True, capture_output=True, text=True)
+    if listed.returncode:
+        raise Blocked(f"`{command}` exited {listed.returncode}: {listed.stderr.strip()[-200:]}; fix the host's run listing")
+    return listed.stdout.split()
 
 
 def take_epic(gh: GitHub, runs: Runs, me: str, sync_base=None) -> int:
     """Merge approved PRs, sync while no other run is live, then hold the first free epic with work."""
     reviewer = gh.cfg["reviewer"]
     out = merge_approved(gh, gh.prs())
-    if sync_base and not runs.others_live(me):
+    if sync_base and not runs.refresh().others_live(me):
         out += sync_base()
     nodes = gh.prs()
     threads: dict[int, list[dict]] = {}
