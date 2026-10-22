@@ -62,9 +62,9 @@
 
 ## Unattended runs
 
-Schedule runs in the main checkout so they never overlap. Prompt:
+Schedule runs in the main checkout, one per epic. Prompt:
 
-Preflight: verify the repository, authorized implementer identity (`gh api user --jq .login`), HTTPS push remote and configured project access. Invoke `afk`; never switch, pull, reset or stash the main checkout. Diagnose/replan/wait within approved constraints and retain lanes; ask only for reserved decisions.
+First `scripts/lanes.py start`: exit 3 ends the run, exit 2 reports `Blocked:`. Invoke `afk` on the held epic; never switch, pull, reset or stash the main checkout. Diagnose/replan/wait within approved constraints and retain lanes; ask only for reserved decisions. End with `lanes.py end`.
 
 
 - When `agentReview` automates PR review, assign a fresh native Reviewer task naming repository, configured GitHub identity and authorized runner wake mechanism.
