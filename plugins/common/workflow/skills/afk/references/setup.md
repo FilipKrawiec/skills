@@ -64,7 +64,7 @@
 
 Schedule runs in the main checkout, one per epic. Prompt:
 
-First `scripts/lanes.py start`: exit 3 ends the run, exit 2 reports `Blocked:`. Invoke `afk` on the held epic; never switch, pull, reset or stash the main checkout. Diagnose/replan/wait within approved constraints and retain lanes; ask only for reserved decisions. End with `lanes.py end`.
+First the plugin's `skills/afk/scripts/lanes.py start --me <run id> --runs <command>`: exit 3 ends, 2 reports `Blocked:`. Invoke `afk` on the held epic; never change the main checkout. Diagnose/replan/wait within approved constraints and retain lanes; ask only for reserved decisions. End with `lanes.py end`.
 
 
 - When `agentReview` automates PR review, assign a fresh native Reviewer task naming repository, configured GitHub identity and authorized runner wake mechanism.

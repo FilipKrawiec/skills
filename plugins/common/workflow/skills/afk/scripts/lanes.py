@@ -14,6 +14,13 @@ start  preflights the identities, merges approved PRs, runs --sync in a checkout
 merge  squash-merges each open PR (or the named ones) whose newest Reviewer review approves its
        exact head with `verdict=ready`, unless it is labelled review:owner.
 end    releases every epic this run holds.
+
+Markers, each the first line of a comment, name runs by the --me id:
+  <!-- afk-epic-hold session=<id> -->      on an epic: that run works in it; the oldest live
+                                            hold wins, and `end` rewrites it to afk-epic-released.
+  <!-- afk-claim session=<id> -->           on an issue: the newest names the run delivering it;
+                                            `state:claimed` without a live claim is leftover.
+  <!-- agent-review ... issue=<n> ... -->   the Reviewer's AFK eligibility verdict on an issue.
 """
 from __future__ import annotations
 
@@ -29,7 +36,7 @@ HOLD = "<!-- afk-epic-hold session={} -->"
 RELEASED = "<!-- afk-epic-released session={} -->"
 HOLD_RE = re.compile(r"<!-- afk-epic-hold session=(\S+) -->")
 CLAIM_RE = re.compile(r"<!-- afk-claim session=(\S+) -->")
-ELIGIBILITY_RE = re.compile(r"<!-- agent-review [\w-]*eligibility ")
+ELIGIBILITY_RE = re.compile(r"<!-- agent-review [^>]*\bissue=\d+")
 PRIORITIES = {"P0": 0, "P1": 1, "P2": 2}
 
 
@@ -301,14 +308,19 @@ def sync(cfg: dict, me: str, command: str) -> list[str]:
     return [f"Synced: ran `{command}` on origin/{cfg['base']}"]
 
 
+def live_holds(comments: list[dict], runs: Runs, me: str) -> list[tuple[int, str]]:
+    """(comment id, run) of each hold by a live run or by this run, oldest first."""
+    return sorted((c["id"], s) for c in comments for s in HOLD_RE.findall(c["body"])
+                  if s == me or runs.live(s))
+
+
 def hold(gh: GitHub, runs: Runs, me: str, epic: int) -> int | None:
-    """Post this run's hold on the epic; None when another live run holds it."""
-    held = [s for c in gh.comments(epic) for s in HOLD_RE.findall(c["body"])]
-    if any(s != me and runs.live(s) for s in held):
+    """Post this run's hold on the epic; None when another live run holds it. The oldest live hold wins."""
+    if any(s != me for _, s in live_holds(gh.comments(epic), runs, me)):
         return None
     mine = gh.comment(epic, HOLD.format(me) + "\nAn AFK run works in this epic; it releases this hold when it ends.")
-    newer = [s for c in gh.comments(epic) if c["id"] > mine for s in HOLD_RE.findall(c["body"])]
-    if any(s != me and runs.live(s) for s in newer):
+    holds = live_holds(gh.comments(epic), runs, me)
+    if holds and holds[0][1] != me:
         gh.edit(mine, RELEASED.format(me))
         return None
     return mine
@@ -321,14 +333,19 @@ def own_hold(gh: GitHub, epic: int, me: str) -> int | None:
 def start(args: argparse.Namespace, me: str) -> int:
     cfg = load_config()
     preflight(cfg)
-    gh = GitHub(cfg)
     listed = subprocess.run(args.runs, shell=True, capture_output=True, text=True)
     if listed.returncode:
         raise Blocked(f"`{args.runs}` exited {listed.returncode}: {listed.stderr.strip()[-200:]}; fix the host's run listing")
-    runs = Runs(listed.stdout.split())
+    sync_base = (lambda: sync(cfg, me, args.sync)) if args.sync else None
+    return take_epic(GitHub(cfg), Runs(listed.stdout.split()), me, sync_base)
+
+
+def take_epic(gh: GitHub, runs: Runs, me: str, sync_base=None) -> int:
+    """Merge approved PRs, sync while no other run is live, then hold the first free epic with work."""
+    reviewer = gh.cfg["reviewer"]
     out = merge_approved(gh, gh.prs())
-    if args.sync and not runs.others_live(me):
-        out += sync(cfg, me, args.sync)
+    if sync_base and not runs.others_live(me):
+        out += sync_base()
     nodes = gh.prs()
     threads: dict[int, list[dict]] = {}
 
@@ -342,10 +359,9 @@ def start(args: argparse.Namespace, me: str) -> int:
         return claim not in (None, me) and runs.live(claim)
 
     def awaits(issue: Issue) -> bool:
-        return awaits_check(thread(issue.number), issue.edited, cfg["reviewer"])
+        return awaits_check(thread(issue.number), issue.edited, reviewer)
 
-    issues = gh.issues()
-    epics = plan(issues, [to_pr(n, cfg["reviewer"]) for n in nodes], claimed_elsewhere, awaits)
+    epics = plan(gh.issues(), [to_pr(n, reviewer) for n in nodes], claimed_elsewhere, awaits)
     for epic in epics:
         if not epic.work:
             continue
@@ -361,9 +377,11 @@ def start(args: argparse.Namespace, me: str) -> int:
 
 
 def end(me: str) -> int:
-    gh = GitHub(load_config())
-    epics = [i.number for i in gh.issues() if i.is_epic]
-    for epic in epics:
+    return release(GitHub(load_config()), me)
+
+
+def release(gh: GitHub, me: str) -> int:
+    for epic in (i.number for i in gh.issues() if i.is_epic):
         for c in gh.comments(epic):
             if HOLD.format(me) in c["body"]:
                 gh.edit(c["id"], RELEASED.format(me))
@@ -381,7 +399,13 @@ def main(argv: list[str]) -> int:
     m.add_argument("prs", nargs="*", type=int)
     for command in (s, sub.add_parser("end")):
         command.add_argument("--me", required=True, help="this run's id, as --runs and the markers name it")
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as err:
+        if not err.code:
+            return 0
+        print("Blocked: lanes.py was called with the wrong arguments; fix the host's call to match its usage")
+        return 2
     try:
         if args.command != "merge" and not args.me:
             raise Blocked("--me is empty; pass this run's id from the host")

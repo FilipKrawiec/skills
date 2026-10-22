@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import contextlib
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -52,7 +54,10 @@ class PlanTest(unittest.TestCase):
         def comment(who, at, body="note"):
             return {"user": {"login": who}, "created_at": at, "body": body}
 
-        check = comment("rev", "2026-10-21T10:00:00Z", "<!-- agent-review eligibility issue=2 verdict=fixes -->")
+        check = comment("rev", "2026-10-21T10:00:00Z", "<!-- agent-review issue=2 base=1a2b verdict=owner -->")
+        for marker in ("<!-- agent-review eligibility issue=2 base=1a2b verdict=fixes -->",
+                       "<!-- agent-review afk-eligibility issue=2 base=1a2b verdict=owner -->"):
+            self.assertFalse(lanes.awaits_check([comment("rev", "2026-10-21T10:00:00Z", marker)], "", "rev"))
         self.assertTrue(lanes.awaits_check([comment("bot", "2026-10-20T10:00:00Z")], "", "rev"))
         self.assertFalse(lanes.awaits_check([check], "2026-10-20T10:00:00Z", "rev"))
         self.assertTrue(lanes.awaits_check([check], "2026-10-22T10:00:00Z", "rev"))
@@ -111,9 +116,21 @@ class ReviewTest(unittest.TestCase):
 
 
 class FakeGitHub:
-    def __init__(self, comments):
-        self.threads = comments
+    def __init__(self, comments=None, issues=(), prs=()):
+        self.threads = comments or {}
         self.next_id = 100
+        self.cfg = {"reviewer": "rev"}
+        self.open_issues, self.open_prs, self.merged = list(issues), list(prs), []
+
+    def issues(self):
+        return self.open_issues
+
+    def prs(self):
+        return [p for p in self.open_prs if p["number"] not in self.merged]
+
+    def merge(self, number, head):
+        self.merged.append(number)
+        return "merged"
 
     def comments(self, number):
         return list(self.threads.get(number, []))
@@ -134,6 +151,79 @@ def LiveSet(*sessions):
     return lanes.Runs(list(sessions))
 
 
+def pr_node(number, *issues, labels=(), verdict=None, reviewed="head"):
+    reviews = [] if verdict is None else [{
+        "author": {"login": "rev"}, "state": "APPROVED" if verdict == "ready" else "CHANGES_REQUESTED",
+        "commit": {"oid": reviewed}, "body": f"<!-- agent-review sha={reviewed} round=1 verdict={verdict} -->"}]
+    return {"number": number, "title": f"change {number}", "headRefOid": "head", "reviews": reviews,
+            "labels": [{"name": l} for l in labels], "body": " ".join(f"Closes #{n}" for n in issues)}
+
+
+class MergeTest(unittest.TestCase):
+    def test_only_ready_approvals_of_the_exact_head_outside_owner_review_merge(self):
+        gh = FakeGitHub(prs=[pr_node(1, verdict="ready"), pr_node(2, verdict="ready", labels=["review:owner"]),
+                             pr_node(3, verdict="ready", reviewed="older"), pr_node(4, verdict="fixes"),
+                             pr_node(5)])
+        self.assertEqual(lanes.merge_approved(gh, gh.prs()), ["PR #1 merged"])
+        self.assertEqual(gh.merged, [1])
+
+    def test_merge_can_be_limited_to_named_prs(self):
+        gh = FakeGitHub(prs=[pr_node(1, verdict="ready"), pr_node(2, verdict="ready")])
+        lanes.merge_approved(gh, gh.prs(), {2})
+        self.assertEqual(gh.merged, [2])
+
+
+class TakeEpicTest(unittest.TestCase):
+    EPICS = [issue(1, "type:epic", priority=1), issue(2, "type:epic", priority=0)]
+
+    def take(self, gh, runs=(), synced=None):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = lanes.take_epic(gh, LiveSet(*runs), "local_me",
+                                   (lambda: synced.append(1) or ["Synced"]) if synced is not None else None)
+        return code, out.getvalue()
+
+    def test_nothing_to_do_exits_3(self):
+        code, out = self.take(FakeGitHub(issues=self.EPICS))
+        self.assertEqual((code, out.splitlines()[0]), (3, "Done: every epic with work has its runner."))
+
+    def test_the_first_free_epic_with_work_is_held_after_approved_prs_merge(self):
+        gh = FakeGitHub(issues=self.EPICS + [issue(5, "lane:afk", parents=[1]), issue(6, "lane:afk", parents=[2]),
+                                             issue(7, parents=[1])],
+                        prs=[pr_node(9, 7, verdict="ready")],
+                        comments={2: [{"id": 1, "body": lanes.HOLD.format("local_other")}]})
+        code, out = self.take(gh, runs=["local_other"])
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines()[:3], ["Hold: epic #1 (comment 101)", "PR #9 merged", "Work: #5 is ready"])
+
+    def test_a_run_that_already_holds_an_epic_keeps_that_hold(self):
+        gh = FakeGitHub(issues=self.EPICS + [issue(6, "lane:afk", parents=[2])],
+                        comments={2: [{"id": 7, "body": lanes.HOLD.format("local_me")}]})
+        code, out = self.take(gh)
+        self.assertEqual((code, out.splitlines()[0], len(gh.comments(2))), (0, "Hold: epic #2 (comment 7)", 1))
+
+    def test_the_base_syncs_only_while_no_other_run_is_live(self):
+        synced = []
+        self.take(FakeGitHub(issues=self.EPICS), runs=["local_other"], synced=synced)
+        self.assertEqual(synced, [])
+        self.take(FakeGitHub(issues=self.EPICS), runs=["local_me"], synced=synced)
+        self.assertEqual(synced, [1])
+
+    def test_release_rewrites_only_this_runs_holds(self):
+        gh = FakeGitHub(issues=self.EPICS, comments={1: [{"id": 3, "body": lanes.HOLD.format("local_me")}],
+                                                     2: [{"id": 4, "body": lanes.HOLD.format("local_other")}]})
+        with contextlib.redirect_stdout(io.StringIO()):
+            lanes.release(gh, "local_me")
+        self.assertEqual([gh.comments(1)[0]["body"], gh.comments(2)[0]["body"]],
+                         [lanes.RELEASED.format("local_me"), lanes.HOLD.format("local_other")])
+
+    def test_wrong_arguments_print_a_blocked_line(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = lanes.main(["start"])
+        self.assertEqual((code, out.getvalue()[:8]), (2, "Blocked:"))
+
+
 class HoldTest(unittest.TestCase):
     def test_a_free_epic_gets_this_runs_hold(self):
         gh = FakeGitHub({1: [{"id": 1, "body": lanes.HOLD.format("local_gone")}]})
@@ -146,16 +236,30 @@ class HoldTest(unittest.TestCase):
         self.assertIsNone(lanes.hold(gh, LiveSet("local_other"), "local_me", 1))
         self.assertEqual(len(gh.comments(1)), 1)
 
-    def test_a_run_that_lost_the_race_releases_its_hold(self):
+    def test_the_oldest_live_hold_wins_whichever_run_checks_first(self):
         class Racing(FakeGitHub):
+            """Another run posts its hold just before or just after this run's."""
+
+            def __init__(self, other_first):
+                super().__init__()
+                self.other_first = other_first
+
             def comment(self, number, body):
+                other = lanes.HOLD.format("local_other")
+                if self.other_first:
+                    super().comment(number, other)
+                    return super().comment(number, body)
                 mine = super().comment(number, body)
-                super().comment(number, lanes.HOLD.format("local_other"))
+                super().comment(number, other)
                 return mine
 
-        gh = Racing({})
-        self.assertIsNone(lanes.hold(gh, LiveSet("local_other"), "local_me", 1))
-        self.assertEqual(gh.comments(1)[0]["body"], lanes.RELEASED.format("local_me"))
+        lost = Racing(other_first=True)
+        self.assertIsNone(lanes.hold(lost, LiveSet("local_other"), "local_me", 1))
+        self.assertEqual(lost.comments(1)[1]["body"], lanes.RELEASED.format("local_me"))
+        won = Racing(other_first=False)
+        self.assertEqual(lanes.hold(won, LiveSet("local_other"), "local_me", 1), won.comments(1)[0]["id"])
+        # The other run, checking now, sees this hold and gives way before posting.
+        self.assertIsNone(lanes.hold(FakeGitHub({1: won.comments(1)[:1]}), LiveSet("local_me"), "local_other", 1))
 
 
 if __name__ == "__main__":
