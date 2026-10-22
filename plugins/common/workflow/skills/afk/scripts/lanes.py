@@ -20,7 +20,8 @@ Markers, each the first line of a comment, name runs by the --me id:
                                             hold wins, and `end` rewrites it to afk-epic-released.
   <!-- afk-claim session=<id> -->           on an issue: the newest names the run delivering it;
                                             `state:claimed` without a live claim is leftover.
-  <!-- agent-review ... issue=<n> ... -->   the Reviewer's AFK eligibility verdict on an issue.
+  <!-- agent-review eligibility ... -->     the Reviewer's AFK eligibility verdict on an issue
+                                            (also `afk-eligibility`, or any form naming `issue=<n>`).
 """
 from __future__ import annotations
 
@@ -36,7 +37,7 @@ HOLD = "<!-- afk-epic-hold session={} -->"
 RELEASED = "<!-- afk-epic-released session={} -->"
 HOLD_RE = re.compile(r"<!-- afk-epic-hold session=(\S+) -->")
 CLAIM_RE = re.compile(r"<!-- afk-claim session=(\S+) -->")
-ELIGIBILITY_RE = re.compile(r"<!-- agent-review [^>]*\bissue=\d+")
+ELIGIBILITY_RE = re.compile(r"<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)")
 PRIORITIES = {"P0": 0, "P1": 1, "P2": 2}
 
 
