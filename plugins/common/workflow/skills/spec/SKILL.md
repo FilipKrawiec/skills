@@ -10,9 +10,9 @@ Own issue semantics and transitions. Act as Product partner under a trusted dire
 
 ## 1. Define and ground
 
-Reuse an issue or create from a template. Read code, tests, rules, ADRs and decisions; cite facts and choices. Test-only work needs behavior criteria.
+Reuse an issue or create from a template; if the milestone says `Intake: frozen`, comment on the matching open issue or epic instead. Read code, tests, rules, ADRs and decisions; cite facts and choices. Test-only work needs behavior criteria.
 
-Each open issue has a native milestone, one type and one lane unless epic. Milestones are `v<MAJOR>` production chunks or health iterations; defer by milestone. Types: story, bug, chore, task or epic. Titles use `feat`, `fix`, `chore/docs/test/ci/refactor/perf`, `task` or `epic`, plus area and outcome. Bound tasks by question and evidence.
+Each open issue has a native milestone, one type and one lane unless epic. Milestones are `v<MAJOR>` production chunks or health iterations; defer by milestone. Types: story, bug, chore, task or epic. Titles use `feat`, `fix`, `chore/docs/test/ci/refactor/perf`, `task` or `epic`, plus area and outcome.
 
 **Exit gate:** issue URL, verified grounding and authority source.
 
@@ -22,7 +22,7 @@ Record intent, constraints, non-goals and `### Acceptance criteria`, provable by
 
 Reserve changed product/strategy/direction, new paid services/budget increases and authority/credential/release/quality-gate weakening for the owner. Record options and recommendation; continue independent authorized preparation.
 
-For multiple PRs, create vertical sub-issues under `type:epic`; only epics have children and nobody claims one. Include remaining work; identify one owner for shared files. Represent each dependency (including merge order) with a blocked-by link: `gh api -X POST repos/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker's REST id>`. Verify the required outcome; closure alone does not prove completion.
+For multiple PRs, create vertical sub-issues under `type:epic`; only epics have children and nobody claims one. A delivery follow-up joins its slice's epic. Include remaining work; identify one owner for shared files. Represent each dependency (including merge order) with a blocked-by link: `gh api -X POST repos/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker's REST id>`. Verify the required outcome, not closure.
 
 **Exit gate:** observable outcomes, scope/dependencies and unresolved reserved questions are explicit.
 
