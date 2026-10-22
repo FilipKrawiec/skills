@@ -60,6 +60,10 @@ class PlanTest(unittest.TestCase):
                        "<!-- agent-review eligibility verdict=REQUEST_CHANGES base=1a2b -->",
                        "<!-- agent-review afk-eligibility base=1a2b verdict=APPROVED -->"):
             self.assertFalse(lanes.awaits_check([comment("rev", "2026-10-21T10:00:00Z", marker)], "", "rev"))
+        for marker in ("<!-- agent-review sha=1a2b round=1 verdict=ready -->",
+                       "<!-- agent-review adjudication pr=7 -->",
+                       "<!-- agent-review fork pr=7 -->", "<!-- agent-review fork sha=1a2b -->"):
+            self.assertTrue(lanes.awaits_check([comment("rev", "2026-10-21T10:00:00Z", marker)], "", "rev"))
         self.assertTrue(lanes.awaits_check([comment("bot", "2026-10-20T10:00:00Z")], "", "rev"))
         self.assertFalse(lanes.awaits_check([check], "2026-10-20T10:00:00Z", "rev"))
         self.assertTrue(lanes.awaits_check([check], "2026-10-22T10:00:00Z", "rev"))
