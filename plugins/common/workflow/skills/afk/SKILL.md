@@ -28,7 +28,7 @@ Before selecting new work, inspect each owned open PR and its issue. Assign VCS 
 
 ## 3. Select and claim
 
-Choose an open `lane:afk` issue with criteria and a scope packet, excluding epics, active claims and issues any open PR references. Run `gh pr list --state open --limit 1000 --json number,body`; exclude issue numbers in bodies, including `Part of`, which may not create a linked PR. If the listing is incomplete, wait. Verify dependencies' required outcomes, not just closed state, and no overlap with active work, including tests. Rank earliest milestone, then the parent epic's board position (unparented last), then board Priority or priority label, then issue number, so epics finish one at a time. Wait for a parent PR to merge; never create a stacked draft.
+Choose an open `lane:afk` issue with criteria and a scope packet, excluding epics, active claims and issues any open PR references. Run `gh pr list --state open --limit 1000 --json number,body`; exclude issue numbers in bodies, including `Part of`, which may not create a linked PR. If the listing is incomplete, wait. Verify dependencies' required outcomes, not just closed state, and no overlap with active work, including tests. A run holding an epic picks inside it. Rank earliest milestone, then the parent epic's board position (unparented last), then Priority field or label, then issue number. Wait for a parent PR to merge; never create a stacked draft.
 
 Use the host's enforced claim if available; otherwise run serially. Re-read claims before and after recording `state:claimed`; stop on conflict. Investigate a stale claim; never overwrite its work. Update board state only by the transitions owned by `spec`; status never grants authority.
 
