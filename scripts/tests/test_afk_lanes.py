@@ -200,6 +200,11 @@ class TakeEpicTest(unittest.TestCase):
         self.assertEqual((code, out.getvalue().splitlines()[0]),
                          (4, "Explore: no epic has work for this run; play `explore` unattended."))
 
+    def test_a_run_the_idle_explore_refuses_ends_with_done(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = lanes.take_epic(FakeGitHub(issues=self.EPICS), LiveSet(), "local_me", explore=lambda: False)
+        self.assertEqual(code, 3)
+
     def test_a_run_with_an_epic_to_hold_never_explores(self):
         asked = []
         gh = FakeGitHub(issues=self.EPICS + [issue(5, "lane:afk", parents=[1])])
@@ -299,9 +304,6 @@ class HoldTest(unittest.TestCase):
         self.assertEqual(gh.comments(1)[1]["body"], lanes.RELEASED.format("local_me"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class IdleExploreTest(unittest.TestCase):
     HOUR = 3600
@@ -330,6 +332,14 @@ class IdleExploreTest(unittest.TestCase):
         self.assertTrue(self.claim("local_b", 24 * self.HOUR))
         self.assertEqual(json.loads(self.path.read_text())["session"], "local_b")
 
+    def test_the_run_that_holds_the_explore_keeps_it_within_the_cadence(self):
+        self.claim("local_a", 0)
+        self.assertTrue(self.claim("local_a", self.HOUR, "local_a"))
+
     def test_an_unreadable_record_counts_as_none(self):
         self.path.write_text("not json")
         self.assertTrue(self.claim("local_a", 0))
+
+
+if __name__ == "__main__":
+    unittest.main()

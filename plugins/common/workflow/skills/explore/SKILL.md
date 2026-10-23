@@ -14,7 +14,7 @@ Settings, from `.github/lanes.json`: `repo`, `project`, and `explore`:
 - `targets`: by name, a simulator `{"launch": "<command>", "device": "<name>"}` (its id goes in variable `deviceEnv`) or a browser `{"launch": "<command>", "url": "<origin>", "viewport": "<w>x<h>"}`; `urlFromLog`, a regex whose first group is the origin in the launch log, replaces `url`.
 - `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree` (default `.worktrees/explore`), `epic` (a fallback parent).
 
-Read [idle.md](references/idle.md) when an idle AFK run starts this one.
+Read [idle.md](references/idle.md) when an idle AFK run starts this.
 
 ## 1. Prepare
 
@@ -59,7 +59,7 @@ Per target, even after a failure: SIGINT your launch process, wait up to 30 s, t
 
 ## 5. File
 
-- Merge findings across targets; keep the top `maxIssues` by grade.
+- Merge findings across targets; keep the top `maxIssues`.
 - Search issues by screen and symptom (`gh issue list --state all --search`), first match wins:
   1. Open match: comment once with new evidence, if any.
   2. Closed within 30 days: a new `type:bug` regression issue linking it.
@@ -91,7 +91,7 @@ S.
 <!-- explore-finding persona=<persona> journey=<journey> -->
 ````
 
-- With a `project`, `gh project item-add` each new issue. Make it a sub-issue of the open epic naming its area, else of `epic`.
+- With a `project`, `gh project item-add` each new issue. Make it a sub-issue (`gh api -X POST repos/<repo>/issues/<epic>/sub_issues -F sub_issue_id=<REST id>`) of the open epic naming its area, else of `epic`, if set.
 
 **Exit gate:** each finding filed, commented or dropped with a reason.
 
@@ -105,5 +105,7 @@ At most 8 lines:
 **Summary:** <persona>, <journey>, <targets>: #<n> Blocker (opened), #<m> Confusion (commented). Not judged: <notJudged>.
 **Decision:** #<n> awaits its lane; I recommend `lane:afk`.
 ```
+
+Unattended, flag blockers or reserved owner waits; otherwise archive.
 
 **Exit gate:** log line committed, report sent.
