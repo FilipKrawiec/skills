@@ -12,9 +12,9 @@ Settings, from `.github/lanes.json`: `repo`, `project`, and `explore`:
 
 - `personas`: Markdown; each `## <persona>` says who they are and how they sign in, with `### <journey>` goals.
 - `targets`: by name, a simulator `{"launch": "<command>", "device": "<name>"}` (its id goes in variable `deviceEnv`) or a browser `{"launch": "<command>", "url": "<origin>", "viewport": "<w>x<h>"}`; `urlFromLog`, a regex whose first group is the origin in the launch log, replaces `url`.
-- `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree` (default `.worktrees/explore`), `epic` (a fallback parent).
+- `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree` (default `.worktrees/explore`), `epic` (a fallback parent), `idleHours` (minimum hours between idle AFK explores).
 
-Read [idle.md](references/idle.md) when an idle AFK run starts this.
+Read [idle.md](references/idle.md) when such a run starts this.
 
 ## 1. Prepare
 
@@ -40,8 +40,8 @@ Poll the log, then screenshots, every 30 s for up to 20 min. A failed build ends
 
 ## 3. Play
 
-- Be the persona: read only the screen, never code or guide; pursue the journey's goal. Screenshot each step, reading the console or launch log; at most 60 actions per target.
-- Injected input lags: wait 2 s before each screenshot; on a simulator hold taps 0.15 s. Record "did nothing" only if a later screenshot agrees; retype text sent before the caret. Drop unreproducible friction.
+- Be the persona: read only the screen, never code or guide; pursue the goal. Screenshot each step, reading the console or launch log; at most 60 actions a target.
+- Input lags: wait 2 s before each screenshot; on a simulator hold taps 0.15 s. Record "did nothing" only if a later screenshot agrees; retype text sent before the caret. Drop unreproducible friction.
 - In a browser, follow the repository's preview rules; list touch-only gestures as `notJudged`, not findings.
 - Push past friction. Record each with step, expected, observed and screenshot, graded first match wins:
   1. **Blocker:** the goal is unreachable, data is lost or wrong, or the app crashes or freezes.
@@ -61,8 +61,8 @@ Per target, even after a failure: SIGINT your launch process, wait up to 30 s, t
 
 - Merge findings across targets; keep the top `maxIssues`.
 - Search issues by screen and symptom (`gh issue list --state all --search`), first match wins:
-  1. Open match: comment once with new evidence, if any.
-  2. Closed within 30 days: a new `type:bug` regression issue linking it.
+  1. Open match: comment new evidence once.
+  2. Closed within 30 days: a `type:bug` regression issue linking it.
   3. No match: a new issue.
 - Captures: commit screenshots to orphan `capturesBranch` at `runs/<date>-<persona>/<n>-<target>.png` (`gh api -X PUT repos/<repo>/contents/<path>`); embed them as below. If a workflow's `push` trigger matches it, describe screens instead: captures never start CI.
 - A new issue: title `<type>(<area>): <outcome for the user>`; `type:bug` when it breaks a product promise or loses data, else `type:story`; `lane:proposed`, for the Reviewer under `reviewerLanes`, else the owner. Only now read code: trace the screen's text to its code for the scope packet.

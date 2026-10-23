@@ -7,6 +7,7 @@ import json
 import contextlib
 import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -309,7 +310,6 @@ class IdleExploreTest(unittest.TestCase):
     HOUR = 3600
 
     def setUp(self):
-        import tempfile
         self.dir = tempfile.TemporaryDirectory()
         self.path = Path(self.dir.name) / "idle.json"
 
