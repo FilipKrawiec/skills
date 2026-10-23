@@ -6,15 +6,15 @@ allowed-tools: Read Bash(git:*,gh:*)
 
 # Agent Review
 
-Read base-branch `.github/lanes.json`: owner, implementer, reviewer, ownerPaths, ownerLabels, reviewRounds (default 3), alwaysInScope, reviewerLanes and reviewQueue. Act as Reviewer; never implement, commit or push. The orchestrator dispatches workers and advances phases. Post only authorized decisions, reviews, replies, thread resolutions and queue updates.
+Read base-branch `.github/lanes.json`: owner, implementer, reviewer, ownerPaths, ownerLabels, reviewerPins, reviewRounds (default 3), alwaysInScope, reviewerLanes and reviewQueue. Act as Reviewer; never implement, commit or push. The orchestrator dispatches workers and advances phases. Post only authorized decisions, reviews, replies, thread resolutions and queue updates.
 
-Separate judgment, identity and secrets. Fresh native subagent context supplies independent judgment; it needs no GitHub credential and no separate machine. Posting uses the configured reviewer identity through an existing authorized credential mechanism. Craftsman must never exercise that identity. A shared store proves no secret isolation; do not claim it does. Never use the owner's token as a fallback. Production credentials stay behind native promotion controls. Missing posting/protection capability blocks merge, not code analysis or preparation; report the precise gap without starting infrastructure work.
+Separate judgment, identity and secrets: a fresh native subagent judges, needing no GitHub credential or separate machine. Posting uses the configured reviewer identity through an existing authorized credential mechanism. Craftsman must never exercise that identity. A shared store proves no secret isolation; do not claim it does. Never use the owner's token as a fallback. Production credentials stay behind native promotion controls. Missing posting/protection capability blocks merge, not code analysis or preparation; report the precise gap without starting infrastructure work.
 
 ## 1. Adjudicate a fork
 
 For a technical fork, read intent, criteria, options, recommendation and evidence. Decide routine engineering within approved constraints, including dependency major migrations. Never reverse owner decisions, change product/interaction direction, add paid services, exceed budgets or weaken authority/quality gates. Record the choice, reason and any within-intent packet correction on the issue; preserve other assignments. Only `spec` owns lane transitions; return authorized corrections to the orchestrator. Return here without continuing to PR review.
 
-When assigned issue-level AFK eligibility and `reviewerLanes` is true, evaluate readiness using `spec` and its criteria; record `APPROVED AFK` or `REQUEST_CHANGES` with evidence on the issue. Do not change lane labels or board status; return the decision to the orchestrator for the `spec` transition.
+When assigned issue-level AFK eligibility and `reviewerLanes` is true, evaluate readiness using `spec` and its criteria; record `APPROVED AFK` or `REQUEST_CHANGES` with evidence on the issue. Return it to the orchestrator for the `spec` transition; never change labels or board status.
 
 **Exit gate:** linked technical decision or exact reserved question/wait, options and recommendation.
 
@@ -42,12 +42,12 @@ Independently verify corrections and agent-thread resolutions against the new he
 
 ## 3. Record the merge decision
 
-Blocking findings require GitHub REQUEST_CHANGES, including at the round limit. Suggestions stay optional. Clean eligible work requires APPROVE through the configured reviewer identity; comments/local verdicts never substitute. Check `gh api user --jq .login`; require reviewer identity distinct from PR author and latest pusher. Never approve your own PR or fabricate attribution. Record exact `commit_id` when submitting a review through GitHub's API.
+Blocking findings require GitHub REQUEST_CHANGES, including at the round limit. Suggestions stay optional. Clean eligible work requires APPROVE through the configured reviewer identity; comments/local verdicts never substitute. Check `gh api user --jq .login`; require reviewer identity distinct from PR author and latest pusher. Never fabricate attribution. Record exact `commit_id` when submitting a review through GitHub's API.
 
 Additional owner approval is required for:
 
 - Explicit owner review, unknown author, no files or at least 3000 files.
-- `ownerPaths` (both rename paths) or `ownerLabels`. Size alone never holds a PR: large engineering changes are the Reviewer's to judge, and `ownerLines` only sizes slices. CODEOWNERS is the required GitHub Reviewer gate, not an owner hold.
+- `ownerPaths` (both rename paths) or `ownerLabels`, unless `reviewerPins` is `true` and the dependency bot's only change there repins an action to its release tag commit, at least 7 days old. Size alone never holds a PR; `ownerLines` only sizes slices. CODEOWNERS is the required GitHub Reviewer gate, not an owner hold.
 - Effects reserved to the owner: product/strategy/direction, cost, authority or weakened gates.
 
 Approved health major upgrades alone do not require the owner. Owner approval supplements, never replaces, Reviewer APPROVE. For reserved work record `review:owner` and the exact extra decision. If an owner-only CODEOWNERS match means the configured Reviewer is not the effective required owner, report a protection gap and keep merge disabled; an owner approval or procedural Reviewer approval cannot satisfy the missing native Reviewer gate. Remove only your own obsolete hold, never an explicit owner request.
