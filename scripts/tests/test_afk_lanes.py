@@ -193,6 +193,20 @@ class TakeEpicTest(unittest.TestCase):
         code, out = self.take(FakeGitHub(issues=self.EPICS))
         self.assertEqual((code, out.splitlines()[0]), (3, "Done: every epic with work has its runner."))
 
+    def test_an_idle_run_explores_when_the_idle_explore_grants_it(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = lanes.take_epic(FakeGitHub(issues=self.EPICS), LiveSet(), "local_me", explore=lambda: True)
+        self.assertEqual((code, out.getvalue().splitlines()[0]),
+                         (4, "Explore: no epic has work for this run; play `explore` unattended."))
+
+    def test_a_run_with_an_epic_to_hold_never_explores(self):
+        asked = []
+        gh = FakeGitHub(issues=self.EPICS + [issue(5, "lane:afk", parents=[1])])
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = lanes.take_epic(gh, LiveSet(), "local_me", explore=lambda: asked.append(1) or True)
+        self.assertEqual((code, asked), (0, []))
+
     def test_the_first_free_epic_with_work_is_held_after_approved_prs_merge(self):
         gh = FakeGitHub(issues=self.EPICS + [issue(5, "lane:afk", parents=[1]), issue(6, "lane:afk", parents=[2]),
                                              issue(7, parents=[1])],
@@ -287,3 +301,35 @@ class HoldTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IdleExploreTest(unittest.TestCase):
+    HOUR = 3600
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.TemporaryDirectory()
+        self.path = Path(self.dir.name) / "idle.json"
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def claim(self, me, now, *live, hours=24):
+        return lanes.idle_explore(self.path, LiveSet(*live), me, hours, now)
+
+    def test_the_first_idle_run_explores(self):
+        self.assertTrue(self.claim("local_a", 0))
+
+    def test_no_second_run_explores_while_the_first_is_live_or_within_the_cadence(self):
+        self.claim("local_a", 0)
+        self.assertFalse(self.claim("local_b", 30 * self.HOUR, "local_a"))
+        self.assertFalse(self.claim("local_b", 23 * self.HOUR))
+
+    def test_the_next_explore_starts_once_the_cadence_has_passed_and_its_run_ended(self):
+        self.claim("local_a", 0)
+        self.assertTrue(self.claim("local_b", 24 * self.HOUR))
+        self.assertEqual(json.loads(self.path.read_text())["session"], "local_b")
+
+    def test_an_unreadable_record_counts_as_none(self):
+        self.path.write_text("not json")
+        self.assertTrue(self.claim("local_a", 0))
