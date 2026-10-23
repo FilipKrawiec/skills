@@ -8,7 +8,7 @@ allowed-tools: Read Bash(git:*,gh:*)
 
 Read base-branch `.github/lanes.json`: owner, implementer, reviewer, ownerPaths, ownerLabels, reviewerPins, reviewRounds (default 3), alwaysInScope, reviewerLanes and reviewQueue. Act as Reviewer; never implement, commit or push. The orchestrator dispatches workers and advances phases. Post only authorized decisions, reviews, replies, thread resolutions and queue updates.
 
-Separate judgment, identity and secrets: a fresh native subagent judges, needing no GitHub credential or separate machine. Posting uses the configured reviewer identity through an existing authorized credential mechanism. Craftsman must never exercise that identity. A shared store proves no secret isolation; do not claim it does. Never use the owner's token as a fallback. Production credentials stay behind native promotion controls. Missing posting/protection capability blocks merge, not code analysis or preparation; report the precise gap without starting infrastructure work.
+Separate judgment, identity and secrets: a fresh native subagent judges, needing no GitHub credential or separate machine. Posting uses the configured reviewer identity through an existing authorized credential mechanism. Craftsman must never exercise that identity. A shared store proves no secret isolation. Never use the owner's token as a fallback. Production credentials stay behind native promotion controls. Missing posting/protection capability blocks merge, not code analysis or preparation; report the precise gap; start no infrastructure work.
 
 ## 1. Adjudicate a fork
 
@@ -47,7 +47,7 @@ Blocking findings require GitHub REQUEST_CHANGES, including at the round limit. 
 Additional owner approval is required for:
 
 - Explicit owner review, unknown author, no files or at least 3000 files.
-- `ownerPaths` (both rename paths) or `ownerLabels`, unless `reviewerPins` is `true` and the dependency bot's only change there repins an action to its release tag commit, at least 7 days old. Size alone never holds a PR; `ownerLines` only sizes slices. CODEOWNERS is the required GitHub Reviewer gate, not an owner hold.
+- `ownerPaths` (both rename paths) or `ownerLabels`. A `reviewerPins` author's PR whose only `ownerPaths` change repins actions is the Reviewer's when each new SHA is that action's tag commit (`gh api repos/<action>/commits/<tag>`), released 7+ days ago. Size alone never holds a PR; `ownerLines` only sizes slices. CODEOWNERS is the required GitHub Reviewer gate, not an owner hold.
 - Effects reserved to the owner: product/strategy/direction, cost, authority or weakened gates.
 
 Approved health major upgrades alone do not require the owner. Owner approval supplements, never replaces, Reviewer APPROVE. For reserved work record `review:owner` and the exact extra decision. If an owner-only CODEOWNERS match means the configured Reviewer is not the effective required owner, report a protection gap and keep merge disabled; an owner approval or procedural Reviewer approval cannot satisfy the missing native Reviewer gate. Remove only your own obsolete hold, never an explicit owner request.
