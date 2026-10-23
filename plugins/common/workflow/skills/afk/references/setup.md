@@ -62,9 +62,9 @@
 
 ## Unattended runs
 
-Schedule runs in the main checkout, one per epic. Prompt:
+Schedule runs in the main checkout, one per epic:
 
-First the plugin's `skills/afk/scripts/lanes.py start --me <run id> --runs <command>`: exit 3 ends, 2 reports `Blocked:`. Invoke `afk` on the held epic; never change the main checkout. Diagnose/replan/wait within approved constraints and retain lanes; ask only for reserved decisions. End with `lanes.py end`.
+Run the plugin's `skills/afk/scripts/lanes.py start --me <run id> --runs <command>`: exit 3 ends, 2 reports `Blocked:`, 4: `explore`. Invoke `afk` on the held epic; never change the main checkout. Diagnose/replan/wait within approved constraints, retaining lanes; ask only for reserved decisions. End with `lanes.py end`.
 
 
 - When `agentReview` automates PR review, assign a fresh native Reviewer task naming repository, configured GitHub identity and authorized runner wake mechanism.

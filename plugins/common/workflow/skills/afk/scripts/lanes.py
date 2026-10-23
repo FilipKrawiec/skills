@@ -10,7 +10,10 @@ start  preflights the identities, merges approved PRs, runs --sync in a checkout
        while no other run is live, then holds the first open epic, in Epics view order, that no
        other live run holds and that has work. --runs is the host's command that prints the ids
        of the scheduled task's live runs, one per line. Exit 0 prints the held epic and its work;
-       2 prints one `Blocked:` line; 3 prints one `Done:` line: nothing for this run.
+       2 prints one `Blocked:` line; 3 prints one `Done:` line: nothing for this run; 4 prints one
+       `Explore:` line: no epic has work for this run, lanes.json `explore.idleHours` is set, no
+       other live run explores and the last idle explore began at least that many hours ago, so
+       this run plays `explore` unattended instead.
 merge  squash-merges each open PR (or the named ones) whose newest Reviewer review approves its
        exact head with `verdict=ready`, unless it is labelled review:owner.
 end    releases every epic this run holds.
@@ -26,10 +29,12 @@ Markers, each the first line of a comment, name runs by the --me id:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -314,6 +319,26 @@ def sync(cfg: dict, me: str, command: str) -> list[str]:
     return [f"Synced: ran `{command}` on origin/{cfg['base']}"]
 
 
+def idle_explore(path: Path, runs: Runs, me: str, hours: float, now: float) -> bool:
+    """Claim this host's idle explore when no other live run has it and the last began `hours` ago or more."""
+    with path.open("a+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        f.seek(0)
+        try:
+            last = json.loads(f.read() or "{}")
+        except ValueError:
+            last = {}
+        session, started = last.get("session"), last.get("started")
+        if session == me:
+            return True
+        if (session and runs.refresh().live(session)) or (started is not None and now - started < hours * 3600):
+            return False
+        f.seek(0)
+        f.truncate()
+        f.write(json.dumps({"session": me, "started": now}))
+        return True
+
+
 def live_holds(comments: list[dict], runs: Runs, me: str) -> list[tuple[int, str]]:
     """(comment id, run) of each hold by a live run or by this run, oldest first."""
     return sorted((c["id"], s) for c in comments for s in HOLD_RE.findall(c["body"])
@@ -340,7 +365,13 @@ def start(args: argparse.Namespace, me: str) -> int:
     cfg = load_config()
     preflight(cfg)
     sync_base = (lambda: sync(cfg, me, args.sync)) if args.sync else None
-    return take_epic(GitHub(cfg), Runs([], lambda: list_runs(args.runs)), me, sync_base)
+    runs = Runs([], lambda: list_runs(args.runs))
+    hours = cfg.get("explore", {}).get("idleHours")
+    explore = None
+    if hours is not None:
+        state = Path(sh("git", "rev-parse", "--path-format=absolute", "--git-common-dir")) / "afk-idle-explore.json"
+        explore = lambda: idle_explore(state, runs, me, float(hours), time.time())
+    return take_epic(GitHub(cfg), runs, me, sync_base, explore)
 
 
 def list_runs(command: str) -> list[str]:
@@ -350,8 +381,9 @@ def list_runs(command: str) -> list[str]:
     return listed.stdout.split()
 
 
-def take_epic(gh: GitHub, runs: Runs, me: str, sync_base=None) -> int:
-    """Merge approved PRs, sync while no other run is live, then hold the first free epic with work."""
+def take_epic(gh: GitHub, runs: Runs, me: str, sync_base=None, explore=None) -> int:
+    """Merge approved PRs, sync while no other run is live, then hold the first free epic with work,
+    else claim the idle explore when `explore` grants it."""
     reviewer = gh.cfg["reviewer"]
     out = merge_approved(gh, gh.prs())
     if sync_base and not runs.refresh().others_live(me):
@@ -381,6 +413,10 @@ def take_epic(gh: GitHub, runs: Runs, me: str, sync_base=None) -> int:
             print(f"Hold: epic #{number} (comment {comment})")
             print("\n".join(out + [f"Work: {w}" for w in epic.work]))
             return 0
+    if explore and explore():
+        print("Explore: no epic has work for this run; play `explore` unattended.")
+        print("\n".join(out))
+        return 4
     print("Done: every epic with work has its runner.")
     print("\n".join(out))
     return 3
