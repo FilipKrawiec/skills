@@ -89,6 +89,14 @@ class PlanTest(unittest.TestCase):
         self.assertEqual([(e.issue.number, e.work) for e in epics],
                          [(4, ["PR #10 (change 10) is under no epic"]), (1, [])])
 
+    def test_an_issue_under_no_epic_is_work_of_the_first_epic(self):
+        issues = [issue(1, "type:epic", priority=2), issue(4, "type:epic", priority=0),
+                  issue(7, "lane:afk"), issue(8, "lane:proposed")]
+        epics = lanes.plan(issues, [], nobody_claims)
+        self.assertEqual([(e.issue.number, e.work) for e in epics],
+                         [(4, ["#7 is ready under no epic", "#8 awaits its AFK eligibility check under no epic"]),
+                          (1, [])])
+
     def test_a_pr_whose_issue_another_live_run_claimed_is_skipped(self):
         issues = [issue(1, "type:epic"), issue(2, parents=[1])]
         [epic] = lanes.plan(issues, [pr(10, 2)], lambda n: n == 2)
