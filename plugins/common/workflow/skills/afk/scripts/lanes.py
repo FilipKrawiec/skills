@@ -182,21 +182,24 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
         return next((a for a in issue.ancestors if a in numbers), None) if issue else None
 
     in_pr = {n for pr in prs for n in pr.issues}
+    first = epics[0].issue.number if epics else None
     for epic in epics:
         for issue in issues:
-            if issue.is_epic or epic_of(issue.number) != epic.issue.number or issue.number in in_pr:
+            owner = epic_of(issue.number)
+            if issue.is_epic or (owner or first) != epic.issue.number or issue.number in in_pr:
                 continue
+            where = "" if owner else " under no epic"
             if "lane:proposed" in issue.labels and awaits(issue):
-                epic.work.append(f"#{issue.number} awaits its AFK eligibility check")
+                epic.work.append(f"#{issue.number} awaits its AFK eligibility check{where}")
             elif "lane:afk" in issue.labels and not issue.blocked and not claimed_elsewhere(issue.number):
-                epic.work.append(f"#{issue.number} is ready")
+                epic.work.append(f"#{issue.number} is ready{where}")
     for pr in prs:
         if not needs_work(pr):
             continue
         owners = [e for e in (epic_of(n) for n in pr.issues) if e]
         if owners and any(claimed_elsewhere(n) for n in pr.issues if epic_of(n)):
             continue
-        target = owners[0] if owners else (epics[0].issue.number if epics else None)
+        target = owners[0] if owners else first
         for epic in epics:
             if epic.issue.number == target:
                 epic.work.append(f"PR #{pr.number} ({pr.title})" + ("" if owners else " is under no epic"))
