@@ -48,7 +48,7 @@ Re-read before writing. Replace conflicting family labels; preserve others. Prod
 
 Temporary dependency, CI, capability or owner waits retain lane, milestone and assignment. Record `Waiting: <cause>; actor: <responsible>; resume condition; evidence: <link>` in the issue; clear with evidence. Replan/release idle assignments; never overwrite active claims. A lane records authorization, not readiness. Scope/authority changes need their own decision.
 
-With a board, retain columns/membership. Orchestrator moves ready AFK issues to Todo, active work to In Progress, open PRs to Review, merged routine slices to Done after verifying criteria, and product milestones after deployed acceptance; status grants no authority. Epics with children go to In Progress. Without a board, use priority labels.
+With a board, keep columns/membership. Orchestrator moves ready AFK issues to Todo, active work to In Progress, issues with an open closing PR to Review (`Part of` stays In Progress), merged routine slices to Done after verifying criteria, and product milestones after deployed acceptance; status grants no authority. Epics with children go to In Progress. Without a board, use priority labels.
 
 **Exit gate:** one type, native milestone, one non-epic lane; waits and transition actors explicit.
 
