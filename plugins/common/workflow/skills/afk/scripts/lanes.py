@@ -193,8 +193,12 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
                 epic.work.append(f"#{issue.number} awaits its AFK eligibility check{where}")
             elif "lane:afk" in issue.labels and not issue.blocked and not claimed_elsewhere(issue.number):
                 epic.work.append(f"#{issue.number} is ready{where}")
+    def parked(pr: Pr) -> bool:
+        stories = [by_number[n] for n in pr.issues if n in by_number and not by_number[n].is_epic]
+        return bool(stories) and all("lane:owner" in i.labels for i in stories)
+
     for pr in prs:
-        if not needs_work(pr):
+        if not needs_work(pr) or parked(pr):
             continue
         owners = [e for e in (epic_of(n) for n in pr.issues) if e]
         if owners and any(claimed_elsewhere(n) for n in pr.issues if epic_of(n)):
