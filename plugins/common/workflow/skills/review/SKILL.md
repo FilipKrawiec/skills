@@ -62,7 +62,7 @@ A personal audit may run both axes.
 
 ## 4. Verdict
 
-Re-read each `file:line`; drop unconfirmed findings. Report both axes by severity in ≤8 lines. A changed head or review-relevant base invalidates the verdict; name missing evidence.
+Re-read each `file:line`; drop unconfirmed findings. Report by severity in ≤8 lines. A changed head or review-relevant base invalidates the verdict; name missing evidence.
 
 ```text
 Decision: 1 blocking, 0 optional — REQUEST_CHANGES   (clean: "0 findings, nothing to fix — APPROVED")
