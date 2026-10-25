@@ -12,7 +12,7 @@ Separate judgment, identity and secrets: a fresh native subagent judges, needing
 
 ## 1. Adjudicate a fork
 
-For a technical fork, read intent, criteria, options, recommendation and evidence. Decide routine engineering within approved constraints, including dependency major migrations. Never reverse owner decisions, change product/interaction direction, add paid services, exceed budgets or weaken authority/quality gates. Record the choice, reason and any within-intent packet correction on the issue; preserve other assignments. Only `spec` owns lane transitions; return authorized corrections to the orchestrator. Return here without continuing to PR review.
+For a technical fork, read intent, criteria, options, recommendation and evidence. Decide routine engineering within approved constraints, including dependency major migrations. Never reverse owner decisions, add paid services, exceed budgets or weaken authority/quality gates. Record the choice, reason and any within-intent packet correction on the issue; preserve other assignments. Only `spec` owns lane transitions; return authorized corrections to the orchestrator. Return here without continuing to PR review.
 
 When assigned issue-level AFK eligibility and `reviewerLanes` is true, evaluate readiness using `spec` and its criteria; record `APPROVED AFK` or `REQUEST_CHANGES` with evidence on the issue. Return it to the orchestrator for the `spec` transition; never change labels or board status.
 
@@ -48,7 +48,7 @@ Additional owner approval is required for:
 
 - Explicit owner review, unknown author, no files or at least 3000 files.
 - `ownerPaths` (both rename paths) or `ownerLabels`. The `ownerPaths` hold alone lifts for a `reviewerPins` author's PR whose only change there repins actions to their tag commits (`gh api repos/<action>/commits/<tag>`), released 7+ days ago. Size alone never holds a PR; `ownerLines` only sizes slices. CODEOWNERS is the required GitHub Reviewer gate, not an owner hold.
-- Effects reserved to the owner: product/strategy/direction, cost, authority or weakened gates.
+- Owner-reserved effects: strategy, cost, authority or weakened gates. Product choices are `spec` decision records.
 
 Approved health major upgrades alone do not require the owner. Owner approval supplements, never replaces, Reviewer APPROVE. For reserved work record `review:owner` and the exact extra decision. If an owner-only CODEOWNERS match means the configured Reviewer is not the effective required owner, report a protection gap and keep merge disabled; an owner approval or procedural Reviewer approval cannot satisfy the missing native Reviewer gate. Remove only your own obsolete hold, never an explicit owner request.
 

@@ -19,6 +19,8 @@ Use one concise line per entry:
 3. #51: technical wait for dependency #49; lane retained; retry when merged.
 ```
 
+Under **Decisions you may challenge**, list each decision record made since the owner last replied in the queue, one line each: issue, choice taken, link. A reply naming another option is owner direction for a follow-up slice.
+
 Give owner-reserved entries options and a recommendation. If none, state “Nothing waits for the owner.” Record routine delegated choices without asking again.
 
 Send a daily digest only when state changed. Send immediate notices for incidents or all-work-blocked conditions. Use only the authorized configured notification channel; do not infer permission to email, message or mention people from queue access. Without such a channel, retain the queue and return the notice in the run report. Deduplicate unchanged waits; record last evidence and next retry condition.
