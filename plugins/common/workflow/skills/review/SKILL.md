@@ -27,7 +27,7 @@ Return the phase 4 verdict.
 
 A personal audit may run both axes.
 
-**Re-review** (an earlier verdict exists): judge only the change's own commits since the last reviewed head (`git range-diff <base>...<last> <base>...<head>` when base was merged in) and whether earlier findings are fixed; never repeat an answered finding, or rounds rediscover old code without converging.
+**Re-review** (an earlier verdict exists): judge only the change's own commits since the last reviewed head (`git range-diff <base> <last> <head>` when base was merged in) and whether earlier findings are fixed; never repeat an answered finding, or rounds rediscover old code without converging.
 
 *Exit gate*: diff and criteria in hand; each axis assigned.
 
