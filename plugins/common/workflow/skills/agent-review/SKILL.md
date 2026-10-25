@@ -29,7 +29,7 @@ Load review; judge only axis <A|B>. No edits, posting or dispatch.
 Intent/authority: <repo, milestone/issue, approved revision/source>.
 Criteria/direction: <acceptance, prototype/pattern, reserved decisions>.
 Scope: <paths/tests, exclusions, dependencies, preserved edits>.
-Checkout: <worktree>; base <ref/SHA>; head <branch/SHA>.
+Checkout: <worktree>; base <ref/SHA>; head <branch/SHA>; last reviewed <SHA|none>.
 Evidence: <diff command, commands/exits, captures, prior findings/repairs>.
 Return <=8 lines: APPROVED or REQUEST_CHANGES; confirmed file:line
 findings/scenarios; optional suggestions separately; base/head,
@@ -52,7 +52,7 @@ Additional owner approval is required for:
 
 Approved health major upgrades alone do not require the owner. Owner approval supplements, never replaces, Reviewer APPROVE. For reserved work record `review:owner` and the exact extra decision. If an owner-only CODEOWNERS match means the configured Reviewer is not the effective required owner, report a protection gap and keep merge disabled; an owner approval or procedural Reviewer approval cannot satisfy the missing native Reviewer gate. Remove only your own obsolete hold, never an explicit owner request.
 
-Before approval, verify branch protection requires code-owner review and the configured Reviewer is sole owner for every changed path on the base branch. Otherwise keep merge disabled and report the gap. Recheck head and checks after posting; a changed head needs fresh review. Missing capability blocks merge. Never dismiss blockers or approve your own PR.
+Before approval, verify branch protection requires code-owner review and the configured Reviewer is sole owner for every changed path on the base branch. Otherwise keep merge disabled and report the gap. Recheck head and checks after posting; a changed head needs fresh review. Never dismiss blockers or approve your own PR.
 
 Post `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|owner|fixes|rounds> -->`, matched rule, findings, evidence and attribution. Return the recorded decision to the orchestrator for VCS reconciliation; production approval remains separate.
 
