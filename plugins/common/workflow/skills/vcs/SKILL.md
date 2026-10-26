@@ -26,11 +26,11 @@ Before PR creation, rebase on fetched base if needed. After opening, merge base 
 
 ## 3. Open a ready PR
 
-Require both fresh `review` axes for the exact base/head before opening; the orchestrator supplies Reviewer results. Fix blockers; suggestions stay optional. Local verdicts never replace the binding GitHub `agent-review` gate. Return missing review assignments to the orchestrator rather than dispatching from a worker.
+Require both fresh `review` axes, blocking findings verified, for the exact base/head before opening; the orchestrator supplies Reviewer results. Fix blockers; suggestions are optional. Local verdicts never replace the `agent-review` gate. Return missing reviews to the orchestrator; never dispatch from a worker.
 
 Open ready, never draft; reuse an existing PR. Use the issue title and its `## Plan` link. Use `Closes #<N>` only when the bounded outcome completes on merge; for a product milestone awaiting test delivery, demo or production acceptance, use `Part of #<N>` and keep the issue open. After acceptance, the orchestrator closes it through `spec`. For partial epic work use `Part of #<N>`. A revert uses `Reverts #<M>`, never `Closes` on the reverted issue.
 
-Use this envelope; include before/after captures for visible behavior and keep blockers/owner choices visible. Omit inapplicable sections.
+Use this envelope, with before/after captures for visible behavior and blockers/owner choices visible. Omit inapplicable sections; add **Revert** only when a squash revert falls short (migration, data, flag, published release).
 
 ```markdown
 ## Executive summary
@@ -38,6 +38,7 @@ A duplicate reservation now fails before saving.
 
 **Scope:** service and tests; API unchanged.
 **Risks:** concurrency remains separate.
+**Revert:** squash revert, then drop the `reservations_unique` index.
 **Decision:** Reviewer records GitHub approval; agents reconcile merge.
 
 Closes #42
@@ -58,9 +59,9 @@ Require effective branch protection for the configured Reviewer and required che
 
 ## 4. Reconcile merge readiness
 
-Run after every push, base change or returned review. Read actual head/checks, conflicts, threads and review state. Return repairs to Craftsman and review/verified corrections to Reviewer through the orchestrator. Human threads stay theirs; never dismiss blocking reviews to bypass them.
+Run after every push, base change or returned review. Read actual head/checks, conflicts, threads and review state. Return repairs to Craftsman and review/verified corrections to Reviewer through the orchestrator. Never dismiss blocking reviews or resolve human threads.
 
-Require effective configured Reviewer protection and resolve additional owner holds before enabling or keeping auto-merge. Pending Reviewer approval and required checks may remain because native protection blocks merge until they pass. A changed head or review-relevant base invalidates evidence: disable auto-merge, obtain fresh exact-head review, then re-enable with the head guard. Pending checks/reviews retain next actor and retry condition. Confirm actual merge instead of treating an auto-merge request as completion.
+Enable or keep auto-merge only under effective Reviewer protection with owner holds resolved; pending approval and checks may remain. A changed head or review-relevant base invalidates evidence: disable auto-merge, obtain fresh exact-head review, then re-enable with the head guard. Pending checks/reviews retain next actor and retry condition. An auto-merge request is not a merge; confirm it.
 
 **Exit gate:** merged exact reviewed change, or named remaining action/actor.
 
