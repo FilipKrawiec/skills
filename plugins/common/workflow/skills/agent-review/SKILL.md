@@ -22,7 +22,7 @@ When assigned issue-level AFK eligibility and `reviewerLanes` is true, evaluate 
 
 For a queue pass, select at most four ready PRs, oldest first; skip drafts. For an assignment, inspect it. Capture author/pusher, base/head, criteria, scope, checks, threads and rounds. At reviewRounds, require diagnosis/replan, not approval by exhaustion.
 
-Consume the orchestrator's fresh A/B `review` verdicts for this exact base/head, blocking findings confirmed by a fresh `review` verifier. If any is absent or stale, return that requirement; do not dispatch workers. Check the head/evidence before the binding decision.
+Consume the orchestrator's fresh A/B `review` verdicts for this exact base/head, blocking findings confirmed by a fresh `review` verifier. If any is absent or stale, return that requirement; do not dispatch workers. Independently check the head/evidence before the binding decision.
 
 ```text
 Load review; judge only axis <A|B>. No edits, posting or dispatch.
@@ -42,12 +42,12 @@ Independently verify corrections and agent-thread resolutions against the new he
 
 ## 3. Record the merge decision
 
-Blocking findings require GitHub REQUEST_CHANGES, including at the round limit. Clean eligible work requires APPROVE through the configured reviewer identity; comments/local verdicts never substitute. Check `gh api user --jq .login`; require reviewer identity distinct from PR author and latest pusher. Record exact `commit_id` when submitting a review through GitHub's API.
+Blocking findings require REQUEST_CHANGES, even at the round limit. Clean eligible work requires APPROVE from the configured reviewer identity, never a comment. Check `gh api user --jq .login`; require reviewer identity distinct from PR author and latest pusher. Never fabricate attribution. Record the exact `commit_id` in API reviews.
 
 Additional owner approval is required for:
 
 - Explicit owner review, unknown author, no files or at least 3000 files.
-- `ownerPaths` (both rename paths), `ownerLabels`, or, even if unlisted, `.github/workflows/`, `.github/CODEOWNERS` or `.github/lanes.json`, so agents never loosen their own gates. This hold alone lifts for a `reviewerPins` author's PR whose only change there repins actions to their tag commits (`gh api repos/<action>/commits/<tag>`), released 7+ days ago. Size alone never holds a PR; `ownerLines` only sizes slices. CODEOWNERS is the required GitHub Reviewer gate, not an owner hold.
+- `ownerPaths` (both rename paths), `ownerLabels`, or, even if unlisted, `.github/workflows/`, `.github/CODEOWNERS` or `.github/lanes.json`, so agents never loosen their own gates. The path hold alone lifts for a `reviewerPins` author's PR whose only change there repins actions to their tag commits (`gh api repos/<action>/commits/<tag>`), released 7+ days ago. Size alone never holds a PR; `ownerLines` only sizes slices. A CODEOWNERS match is the Reviewer gate, not an owner hold.
 - Owner-reserved effects: strategy, cost, authority or weakened gates. Product choices are `spec` decision records.
 
 Approved health major upgrades alone do not require the owner. Owner approval supplements, never replaces, Reviewer APPROVE. For reserved work record `review:owner` and the exact extra decision. If an owner-only CODEOWNERS match means the configured Reviewer is not the effective required owner, report a protection gap and keep merge disabled; an owner approval or procedural Reviewer approval cannot satisfy the missing native Reviewer gate. Remove only your own obsolete hold, never an explicit owner request.

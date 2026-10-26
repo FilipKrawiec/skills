@@ -1,7 +1,7 @@
 ---
 name: health
 description: Use when completing bounded autonomous maintenance after each product milestone, including stable upgrades, migrations and confidence evidence before the next product.
-allowed-tools: Skill Read Edit Bash
+allowed-tools: Read Edit Bash
 ---
 
 # Health
@@ -26,7 +26,7 @@ Return needed implementation/review assignments to the orchestrator with exact t
 
 Run configured reproducible project mutation, coverage and complexity/risk gates (or `tdd` mutation sampling when no mutation tool is configured), stricter for changed and critical behavior. Ratchet measured confidence: weakening thresholds, narrowing scope, adding exclusions or resetting a baseline requires explicit owner approval with evidence of the impact. Missing configured measurements block completion. Record command, revision, toolchain, scope, seed, results and environment; compare timing using equivalent environments, scope and warm/cold conditions. Treat an incomplete measurement as missing evidence, not a pass.
 
-Invoke `review` for an area audit of the areas the product milestone changed; file each confirmed Blocker or Major as an issue in this health milestone. Diff reviews skip old defects, so this is where they surface.
+Return to the orchestrator a `review` area audit of the areas the product milestone changed, with a fresh verifier for its Blocker and Major rows; file each confirmed row as an issue in this health milestone. Diff reviews skip old defects, so this is where they surface.
 
 Improve tests or structure for demonstrated risk, maintenance cost or measured regression. Do not force churn merely to increase test counts, scores or upgrade activity. Verify preserved meaningful behavior when deleting redundant tests. The host arranges the applicable delivery controls for the resulting exact artifact; health does not authorize production promotion.
 

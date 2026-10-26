@@ -39,7 +39,7 @@ Return <=8 lines: Summary with paths, exact head, commands/exits and exit
 gate; Decision with next action/actor, reserved options/recommendation.
 ```
 
-Before each advance, reconcile the returned head, evidence and scope with GitHub. Dispatch `spec` for issue/label transitions and `vcs` for branch/PR lifecycle. Collect both `review` axes for the exact head before opening a ready PR; pass those verdicts to `agent-review` to independently verify evidence and record the Reviewer's binding GitHub decision. A local verdict alone never permits merge. After blockers, assign Craftsman repairs then Reviewer verification at the new head. Changed-head evidence expires.
+Before each advance, reconcile the returned head, evidence and scope with GitHub. Dispatch `spec` for issue/label transitions and `vcs` for branch/PR lifecycle. Collect both `review` axes for the exact head, plus a fresh verifier for any blocking finding, before opening a ready PR; pass those verdicts to `agent-review` to independently verify evidence and record the Reviewer's binding GitHub decision. A local verdict alone never permits merge. After blockers, assign Craftsman repairs then Reviewer verification at the new head. Changed-head evidence expires.
 
 **Exit gate:** each assignment has an actor and verified result or explicit wait; review and required protections gate merge.
 
