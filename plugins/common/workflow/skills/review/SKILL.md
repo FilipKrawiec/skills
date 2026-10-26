@@ -8,7 +8,7 @@ allowed-tools: Skill Read Bash(git:*)
 
 Review on two axes, A Standards and B Spec. Report confirmed defects gates miss, not linter findings or unnamed style preferences. On diffs, omit unrelated pre-existing defects. Read [area-audit.md](references/area-audit.md) for a codebase or area instead of a diff; [hot-paths.md](references/hot-paths.md) for a diff touching hot paths or startup.
 
-**Blocker**: runtime defect, unhandled edge, boundary breach or hollow/failing test. **Major**: smell likely to cause defects or rework; blocking on a diff when introduced. Blocking findings require `REQUEST_CHANGES`. **Minor**: optional style, naming or refactoring suggestion; at most three: agent authors spend a round on each.
+**Blocker**: runtime or security defect, unhandled edge, boundary breach or hollow/failing test. **Major**: smell likely to cause defects or rework; blocking on a diff when introduced. Blocking findings require `REQUEST_CHANGES`. **Minor**: optional style, naming or refactoring suggestion; at most three: agent authors spend a round on each.
 
 ## 1. Scope
 
