@@ -89,6 +89,13 @@ class PlanTest(unittest.TestCase):
         [epic] = lanes.plan(issues, [pr(10, 2, 1), pr(11, 2, 3)], nobody_claims)
         self.assertEqual(epic.work, ["PR #11 (change 11)"])
 
+    def test_a_new_head_of_a_pr_held_for_the_owner_gets_a_fresh_review(self):
+        issues = [issue(1, "type:epic"), issue(2, "lane:afk", parents=[1])]
+        held = pr(10, 2, labels=["review:owner"])
+        held.awaits_review = True
+        [epic] = lanes.plan(issues, [held], nobody_claims)
+        self.assertEqual(epic.work, ["PR #10 (change 10) awaits its review"])
+
     def test_a_pr_whose_issues_wait_on_the_owner_still_gets_its_first_review(self):
         issues = [issue(1, "type:epic"), issue(2, "lane:owner", parents=[1])]
         unreviewed = pr(10, 2)

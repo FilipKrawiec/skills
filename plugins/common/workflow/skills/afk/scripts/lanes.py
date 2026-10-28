@@ -240,8 +240,9 @@ def to_pr(node: dict, reviewer: str) -> Pr:
 
 
 def needs_work(pr: Pr) -> bool:
-    """A PR the run must act on: a red check or a conflict, else not left for the owner and not approved."""
-    return pr.broken or ("review:owner" not in pr.labels and not pr.approved)
+    """A PR the run must act on: a red check, a conflict or a head the Reviewer has not reviewed (one held
+    for the owner too), else not left for the owner and not approved."""
+    return pr.broken or pr.awaits_review or ("review:owner" not in pr.labels and not pr.approved)
 
 
 def awaits_check(comments: list[dict], edited: str, reviewer: str) -> bool:
