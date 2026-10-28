@@ -51,7 +51,7 @@ just sync-manifests   # regenerate host manifests from metadata
 
 Use focused tests while editing and run the final gate once. `scripts/project-verify.py` remains a compatibility entrypoint; direct project build commands are the default. Model choice, scheduling, credentials, claim enforcement and native quality/deployment tools belong to the host or consuming project.
 
-Lanes record implementation authorization, milestones group deliverable outcomes, and types classify work. Temporary waiting reasons do not erase authorization. Parallel implementation requires enforced claims and disjoint scope including tests; serialize until those capabilities are proven.
+Lanes record implementation authorization, milestones group deliverable outcomes, and types classify work. Temporary waiting reasons do not erase authorization. Parallel implementation requires enforced claims, one run per issue; shared files never block, the later PR resolves conflicts.
 
 Production requires approval of the exact demonstrated artifact and configuration, with acceptance evidence, limitations and rollback readiness. This plugin library itself releases on every verified push to `main`, because hosts install only released versions; see the [release record](docs/records/2026-10-19-release-on-main.md).
 

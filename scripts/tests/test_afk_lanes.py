@@ -289,7 +289,7 @@ class TakeWorkTest(unittest.TestCase):
 
 
 class ShareEpicTest(unittest.TestCase):
-    """Runs share an epic through issues whose scope packets share no path."""
+    """Runs share an epic, one run per issue, even where scope packets overlap."""
     EPIC = issue(1, "type:epic")
 
     def take(self, issues, ledger, runs=("local_other",), cfg=None, prs=()):

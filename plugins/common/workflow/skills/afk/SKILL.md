@@ -8,7 +8,7 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 
 Deliver one authorized bounded slice per run. Read `.github/lanes.json` from `origin/<base>` (`base` defaults to `main`); use its branchPrefix, scope, project and claim settings. Never change the main checkout.
 
-Act as orchestrator through native subagents; own assignments, dependencies, recovery and GitHub records. The host supplies model routing and existing credential mechanisms. Serialize implementation unless native coordination and disjoint scopes including tests/dependencies are proven; labels are not atomic exclusion. Workers load the assigned skill, return evidence and never redispatch or advance phases.
+Act as orchestrator through native subagents; own assignments, dependencies, recovery and GitHub records. The host supplies model routing and existing credential mechanisms. Never hold an issue twice; shared files never block, the later PR resolves conflicts; labels are not atomic exclusion. Workers load the assigned skill, return evidence and never redispatch or advance phases.
 
 Read [setup.md](references/setup.md) when enabling or scheduling runs; read [github-safety.md](references/github-safety.md) when checking GitHub protections.
 
