@@ -47,7 +47,7 @@ Blocking findings require REQUEST_CHANGES, even at the round limit. Clean eligib
 Additional owner approval is required for:
 
 - Explicit owner review, unknown author, no files or at least 3000 files.
-- `ownerPaths` (both rename paths), `ownerLabels`, or, even if unlisted, `.github/workflows/`, `.github/CODEOWNERS` or `.github/lanes.json`, so agents never loosen their own gates. The path hold alone lifts for a `reviewerPins` author's PR whose only change there repins actions to their tag commits (`gh api repos/<action>/commits/<tag>`), released 7+ days ago. Size alone never holds a PR; `ownerLines` only sizes slices. A CODEOWNERS match is the Reviewer gate, not an owner hold.
+- `ownerPaths` (both rename paths), `ownerLabels`, or, even if unlisted, `.github/workflows/`, `.github/CODEOWNERS` or `.github/lanes.json`, so agents never loosen their own gates. The path hold lifts for a Dependabot or `reviewerPins` PR only repinning actions to tag commits (`gh api repos/<action>/commits/<tag>`) released 3+ days ago. Size alone never holds a PR; `ownerLines` only sizes slices. A CODEOWNERS match is the Reviewer gate, not an owner hold.
 - Owner-reserved effects: strategy, cost, authority or weakened gates. Product choices are `spec` decision records.
 
 Approved health major upgrades alone do not require the owner. Owner approval supplements, never replaces, Reviewer APPROVE. For reserved work record `review:owner` and the exact extra decision. Remove only your own obsolete hold, never an explicit owner request. Owner approval of an earlier head carries over while the held change is identical: record `ready`, cite it, drop your hold.
