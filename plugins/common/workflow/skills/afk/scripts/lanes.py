@@ -333,6 +333,9 @@ def card_column(state: str, column: str) -> str:
     otherwise moves the finished issue back to Todo."""
     return DONE if state == "CLOSED" else column
 
+BOARD = """query($owner:String!,$number:Int!){repositoryOwner(login:$owner){
+... on ProjectV2Owner{projectV2(number:$number){id}}}}"""
+
 
 class GitHub:
     def __init__(self, cfg: dict):
@@ -449,11 +452,14 @@ def preflight(cfg: dict) -> None:
     perms = sh("gh", "api", f"repos/{repo}", "--jq", "[.permissions.admin, .permissions.maintain]", check=False)
     if perms.replace(" ", "") != "[false,false]":
         raise Blocked(f"{login} has admin or maintain on {repo} ({perms}); drop it to write")
-    if project and not ok("gh", "project", "view", str(project["number"]), "--owner", project["owner"]):
-        left, reset = GitHub(cfg).budget()
-        if left == 0:
-            raise Blocked(f"GitHub's GraphQL budget for {login} is spent until {reset}; the next check retries")
-        raise Blocked(f"{login} cannot read project {project['number']}; gh auth refresh -s project")
+    if project:
+        read = subprocess.run(["gh", "api", "graphql", "-f", f"query={BOARD}", "-F", f"owner={project['owner']}",
+                               "-F", f"number={project['number']}", "--jq", ".data.repositoryOwner.projectV2.id"],
+                              capture_output=True, text=True)
+        if "rate limit" in (read.stdout + read.stderr).lower():
+            raise Blocked(f"GitHub's GraphQL rate limit stops {login} for now; the next check retries")
+        if read.returncode or not read.stdout.strip():
+            raise Blocked(f"{login} cannot read project {project['number']}; gh auth refresh -s project")
 
 
 def merge_approved(gh: GitHub, nodes: list[dict], only: set[int] | None = None) -> list[str]:
