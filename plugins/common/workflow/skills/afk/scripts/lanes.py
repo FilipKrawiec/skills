@@ -13,7 +13,8 @@ start  preflights the identities, merges approved PRs, runs --sync in a checkout
        even when its scope packet shares files with theirs or it has none: the later PR merges its
        base on a conflict, so runs share an epic (a PR that names no issue is held itself). A PR is work while a
        check of its head fails, it conflicts, it has no Reviewer review of its head (any run takes
-       that review at once) or it is neither approved nor held for the owner. Nothing is held once
+       that review at once, even when all its issues wait on the owner; otherwise those PRs are
+       parked) or it is neither approved nor held for the owner. Nothing is held once
        lanes.json `maxRuns` other runs are live; without `maxRuns` every hold is a whole epic.
        --runs is the host's command that prints the ids of the live runs, one per line. Exit 0 prints the hold and its work;
        2 prints one `Blocked:` line; 3 prints one `Done:` line: nothing for this run; 4 prints one
@@ -278,8 +279,9 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
                 epic.units.append(Unit(f"#{issue.number} is ready{where}", issue.number, issue.paths or []))
     def parked(pr: Pr) -> bool:
         stories = [by_number[n] for n in pr.issues if n in by_number and not by_number[n].is_epic]
-        # Only once the Reviewer has reviewed its head: every PR gets that review first
-        return not pr.awaits_review and bool(stories) and all("lane:owner" in i.labels for i in stories)
+        # A green head the Reviewer has not reviewed is still review work, whoever the issue waits on
+        review = pr.awaits_review and not pr.broken
+        return not review and bool(stories) and all("lane:owner" in i.labels for i in stories)
 
     for pr in prs:
         if not needs_work(pr) or parked(pr):
