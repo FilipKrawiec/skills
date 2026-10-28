@@ -193,15 +193,15 @@ def epic_order(epics: list[Issue]) -> list[Issue]:
     return sorted(epics, key=lambda e: (e.priority, e.milestone, e.number))
 
 
-def approved_head(pr: dict, reviewer: str) -> bool:
-    """The newest review by the Reviewer approves this exact head with `verdict=ready`."""
+def approved_head(pr: dict, reviewer: str, verdict: str = "ready") -> bool:
+    """The newest review by the Reviewer approves this exact head with `verdict=<verdict>`."""
     head = pr["headRefOid"]
     mine = [r for r in pr.get("reviews", []) if r["author"]["login"] == reviewer]
     if not mine:
         return False
     newest = mine[-1]
     return (newest["state"] == "APPROVED" and (newest.get("commit") or {}).get("oid") == head
-            and f"sha={head}" in newest["body"] and "verdict=ready" in newest["body"])
+            and f"sha={head}" in newest["body"] and f"verdict={verdict}" in newest["body"])
 
 
 def owner_approved(pr: dict, owner: str) -> bool:
@@ -440,8 +440,11 @@ def merge_approved(gh: GitHub, nodes: list[dict], only: set[int] | None = None) 
             done.append(f"PR #{node['number']} marked ready for review: its checks pass")
             continue
         pr = to_pr(node, gh.cfg["reviewer"])
-        held = "review:owner" in pr.labels and not owner_approved(node, gh.cfg.get("owner", ""))
-        if (only is None or pr.number in only) and pr.approved and not held:
+        # A held PR's Reviewer approval says `verdict=owner`; the owner's approval of the same head completes it
+        owner = owner_approved(node, gh.cfg.get("owner", ""))
+        held = "review:owner" in pr.labels and not owner
+        approved = pr.approved or (owner and approved_head(node, gh.cfg["reviewer"], "owner"))
+        if (only is None or pr.number in only) and approved and not held:
             done.append(f"PR #{pr.number} {gh.merge(pr.number, pr.head)}")
     return done
 
