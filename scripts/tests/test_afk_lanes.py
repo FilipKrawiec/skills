@@ -92,7 +92,7 @@ class PlanTest(unittest.TestCase):
         issues = [issue(1, "type:epic", priority=2), issue(4, "type:epic", priority=0)]
         epics = lanes.plan(issues, [pr(10)], nobody_claims)
         self.assertEqual([(e.issue.number, e.work) for e in epics],
-                         [(4, ["PR #10 (change 10) is under no epic"]), (1, [])])
+                         [(4, ["PR #10 (change 10) (under no epic)"]), (1, [])])
 
     def test_an_issue_under_no_epic_is_work_of_the_first_epic(self):
         issues = [issue(1, "type:epic", priority=2), issue(4, "type:epic", priority=0),
@@ -321,10 +321,20 @@ class ShareEpicTest(unittest.TestCase):
         code, _, _ = self.take([issue(6, "lane:afk", parents=[1], paths=["lib/b.dart"])], self.other_holds(1, None))
         self.assertEqual(code, 3)
 
-    def test_holds_of_runs_that_are_no_longer_live_are_dropped(self):
+    def test_holds_of_runs_that_are_no_longer_live_are_dropped_after_a_grace(self):
         ledger = self.other_holds(5, ["lib/a/"])
-        code, _, _ = self.take([issue(6, "lane:afk", parents=[1], paths=["lib/a/x.dart"])], ledger, runs=())
+        work = [issue(6, "lane:afk", parents=[1], paths=["lib/a/x.dart"])]
+        code, _, _ = self.take(work, ledger, runs=())
+        self.assertEqual(code, 3)
+        ledger.of("local_other")[0]["gone"] -= lanes.GRACE
+        code, _, _ = self.take(work, ledger, runs=())
         self.assertEqual((code, list(ledger.runs)), (0, ["local_me"]))
+
+    def test_a_run_listed_again_keeps_its_holds(self):
+        ledger = self.other_holds(5, ["lib/a/"])
+        ledger.others(LiveSet(), "local_me", now=0)
+        self.assertEqual(len(ledger.others(LiveSet("local_other"), "local_me", now=lanes.GRACE)), 1)
+        self.assertNotIn("gone", ledger.of("local_other")[0])
 
     def test_an_eligibility_check_writes_no_file_so_it_overlaps_nothing(self):
         code, out, _ = self.take([issue(6, "lane:proposed", parents=[1])], self.other_holds(5, ["/"]))
@@ -383,6 +393,76 @@ class ShareEpicTest(unittest.TestCase):
             path.write_text("not json")
             with lanes.Ledger(path).locked() as ledger:
                 self.assertEqual(ledger.runs, {})
+
+
+class EventTest(unittest.TestCase):
+    """The free watcher's check: which PRs are work, what merges, how many runs to start."""
+    EPIC = issue(1, "type:epic")
+
+    def check(self, issues=(), prs=(), runs=(), ledger=None, cfg=None):
+        gh = FakeGitHub(issues=[self.EPIC, *issues], prs=prs)
+        gh.cfg.update({"maxRuns": 3, "owner": "boss"} if cfg is None else cfg)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = lanes.check(gh, LiveSet(*runs), ledger or lanes.Ledger())
+        return code, out.getvalue().splitlines(), gh
+
+    def ready(self, *numbers):
+        return [issue(n, "lane:afk", parents=[1], paths=[f"lib/{n}.dart"]) for n in numbers]
+
+    def test_one_run_starts_for_each_free_piece_up_to_max_runs(self):
+        self.assertEqual(self.check(self.ready(5, 6))[:2], (0, ["Start: 2"]))
+        self.assertEqual(self.check(self.ready(5, 6, 7, 8))[:2], (0, ["Start: 3"]))
+        self.assertEqual(self.check(self.ready(5, 6, 7), runs=["local_a", "local_b"],
+                                    ledger=self.holding("local_a", 5, "local_b", 6))[:2], (0, ["Start: 1"]))
+
+    def holding(self, *pairs):
+        ledger = lanes.Ledger()
+        for run, number in zip(pairs[::2], pairs[1::2]):
+            ledger.add(run, {"number": number, "epic": 1, "paths": [f"lib/{number}.dart"], "comment": 1})
+        return ledger
+
+    def test_a_live_run_that_holds_nothing_yet_counts_as_taking_a_piece(self):
+        self.assertEqual(self.check(self.ready(5, 6), runs=["local_booting"])[:2], (0, ["Start: 1"]))
+        code, out, _ = self.check(self.ready(5), runs=["local_booting"])
+        self.assertEqual((code, out[0]), (3, "Done: no new run has work (1 live)."))
+
+    def test_nothing_free_starts_nothing(self):
+        self.assertEqual(self.check()[:2], (3, ["Done: no new run has work (0 live)."]))
+
+    def test_approved_prs_merge_before_anything_starts(self):
+        code, out, gh = self.check(prs=[pr_node(9, verdict="ready")])
+        self.assertEqual((code, out, gh.merged), (3, ["Done: no new run has work (0 live).", "PR #9 merged"], [9]))
+
+    def test_a_red_check_or_conflict_is_work_even_on_an_approved_pr(self):
+        red = pr_node(9, 6, verdict="ready")
+        red["statusCheckRollup"] = [{"conclusion": "FAILURE"}]
+        conflict = pr_node(10, 7, verdict="fixes")
+        conflict["mergeable"] = "CONFLICTING"
+        self.assertTrue(lanes.to_pr(red, "rev").broken and lanes.to_pr(conflict, "rev").broken)
+        self.assertFalse(lanes.to_pr(pr_node(11, verdict="ready"), "rev").broken)
+        [epic] = lanes.plan([self.EPIC, issue(6, parents=[1]), issue(7, parents=[1])],
+                            [lanes.to_pr(red, "rev"), lanes.to_pr(conflict, "rev")], nobody_claims)
+        self.assertEqual(epic.work, ["PR #9 (change 9) has a red check or a conflict",
+                                     "PR #10 (change 10) has a red check or a conflict"])
+
+    def test_an_owner_held_pr_merges_once_the_owner_approves_its_head(self):
+        held = pr_node(9, verdict="ready", labels=["review:owner"])
+        gh = FakeGitHub(prs=[held])
+        gh.cfg["owner"] = "boss"
+        self.assertEqual(lanes.merge_approved(gh, gh.prs()), [])
+        held["reviews"].append({"author": {"login": "boss"}, "state": "APPROVED", "commit": {"oid": "older"}, "body": ""})
+        self.assertEqual(lanes.merge_approved(gh, gh.prs()), [])
+        held["reviews"].append({"author": {"login": "boss"}, "state": "APPROVED", "commit": {"oid": "head"}, "body": ""})
+        self.assertEqual(lanes.merge_approved(gh, gh.prs()), ["PR #9 merged"])
+
+    def test_an_unchanged_signal_is_quiet_for_half_an_hour(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "check.json"
+            self.assertFalse(lanes.quiet(state, "e1", 0))
+            self.assertTrue(lanes.quiet(state, "e1", 1000))
+            self.assertFalse(lanes.quiet(state, "e2", 1001))
+            self.assertFalse(lanes.quiet(state, "e2", 1001 + 1800))
 
 
 class PacketTest(unittest.TestCase):

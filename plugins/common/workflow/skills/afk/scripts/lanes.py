@@ -2,6 +2,7 @@
 """Deterministic start and end of a scheduled AFK run, so the model spends no tokens on them.
 
 Usage: lanes.py start --me <run id> --runs <command> [--sync <command>]
+       lanes.py check --runs <command> [--quiet]
        lanes.py merge [<pr>...]
        lanes.py end --me <run id>
 Run in a checkout of the repository; reads .github/lanes.json from origin/<base>.
@@ -10,15 +11,23 @@ start  preflights the identities, merges approved PRs, runs --sync in a checkout
        while no other run is live, then holds the first free piece of work, in Epics view order:
        one issue (a ready issue, its open PR, or its eligibility check) whose scope packet shares
        no path with an issue another live run holds, so runs share an epic; or, when that work
-       has no packet, its whole epic, while no other live run works in it. Nothing is held once
-       lanes.json `maxRuns` other runs are live; without `maxRuns` every hold is a whole epic. --runs is the host's command that prints the ids
-       of the scheduled task's live runs, one per line. Exit 0 prints the hold and its work;
+       has no packet, its whole epic, while no other live run works in it. A PR is work while a
+       check of its head fails, it conflicts, it has no Reviewer review of its head (any run takes
+       that review at once) or it is neither approved nor held for the owner. Nothing is held once
+       lanes.json `maxRuns` other runs are live; without `maxRuns` every hold is a whole epic.
+       --runs is the host's command that prints the ids of the live runs, one per line. Exit 0 prints the hold and its work;
        2 prints one `Blocked:` line; 3 prints one `Done:` line: nothing for this run; 4 prints one
        `Explore:` line: no work is free for this run, lanes.json `explore.idleHours` is set, no
        other live run explores and the last idle explore began at least that many hours ago, so
        this run plays `explore` unattended instead.
+check  for a host's watcher that starts runs on events instead of a schedule, with no model: merges
+       approved PRs, then prints `Start: <n>` (exit 0), the runs to start now so that each has free
+       work, counting live runs that hold nothing yet as taking some; else one `Done:` line (exit 3).
+       With --quiet it first prints `Quiet:` (exit 3) while the newest repository event, the newest
+       workflow runs and the live runs are as at the last check, for up to 30 minutes.
 merge  squash-merges each open PR (or the named ones) whose newest Reviewer review approves its
-       exact head with `verdict=ready`, unless it is labelled review:owner.
+       exact head with `verdict=ready`; a review:owner one only once the owner's newest review
+       approves that head too.
 end    releases every hold of this run.
 
 Runs on one host record their holds, with the held paths, in afk-holds.json in the git common
@@ -56,6 +65,7 @@ SCOPE_RE = re.compile(r"```scope[ \t]*\n(.*?)\n```", re.S)
 CLAIM_RE = re.compile(r"<!-- afk-claim session=(\S+) -->")
 ELIGIBILITY_RE = re.compile(r"<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)")
 PRIORITIES = {"P0": 0, "P1": 1, "P2": 2}
+GRACE = 600
 
 
 class Blocked(Exception):
@@ -119,6 +129,7 @@ class Pr:
     issues: list[int]
     approved: bool
     awaits_review: bool = False
+    broken: bool = False
 
 
 @dataclass
@@ -195,21 +206,39 @@ def approved_head(pr: dict, reviewer: str) -> bool:
             and f"sha={head}" in newest["body"] and "verdict=ready" in newest["body"])
 
 
+def owner_approved(pr: dict, owner: str) -> bool:
+    """The owner's newest review approves this exact head, as a review:owner PR needs on top of the Reviewer's."""
+    mine = [r for r in pr.get("reviews", []) if r["author"]["login"] == owner]
+    return bool(owner and mine) and mine[-1]["state"] == "APPROVED" and (
+        mine[-1].get("commit") or {}).get("oid") == pr["headRefOid"]
+
+
 def reviewed_head(pr: dict, reviewer: str) -> bool:
     """The Reviewer has reviewed this exact head."""
     return any(r["author"]["login"] == reviewer and (r.get("commit") or {}).get("oid") == pr["headRefOid"]
                for r in pr.get("reviews", []))
 
 
+FAILED = {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"}
+
+
+def broken(pr: dict) -> bool:
+    """A check of the head failed, or the PR conflicts with its base."""
+    checks = pr.get("statusCheckRollup") or []
+    return pr.get("mergeable") == "CONFLICTING" or any(
+        (c.get("conclusion") or c.get("state") or "").upper() in FAILED for c in checks)
+
+
 def to_pr(node: dict, reviewer: str) -> Pr:
     numbers = [int(n) for n in re.findall(r"(?<![\w/])#(\d+)\b", node.get("body") or "")]
     return Pr(node["number"], node["title"], node["headRefOid"], {l["name"] for l in node["labels"]},
-              list(dict.fromkeys(numbers)), approved_head(node, reviewer), not reviewed_head(node, reviewer))
+              list(dict.fromkeys(numbers)), approved_head(node, reviewer), not reviewed_head(node, reviewer),
+              broken(node))
 
 
 def needs_work(pr: Pr) -> bool:
-    """A PR the run must act on: not left for the owner and not already approved for merge."""
-    return "review:owner" not in pr.labels and not pr.approved
+    """A PR the run must act on: a red check or a conflict, else not left for the owner and not approved."""
+    return pr.broken or ("review:owner" not in pr.labels and not pr.approved)
 
 
 def awaits_check(comments: list[dict], edited: str, reviewer: str) -> bool:
@@ -259,10 +288,12 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
         stories = [by_number[n] for n in pr.issues if n in by_number and not by_number[n].is_epic]
         paths = [p for s in stories for p in s.paths or []]
         known = bool(stories) and all(s.paths for s in stories)
-        where = "" if owners else " is under no epic"
+        where = "" if owners else " (under no epic)"
         # A review writes no file, so any free run takes it at once, held on the PR itself.
-        unit = (Unit(f"PR #{pr.number} ({pr.title}){where} awaits its review", pr.number, []) if pr.awaits_review
-                else Unit(f"PR #{pr.number} ({pr.title}){where}", stories[0].number if known else None,
+        state = " has a red check or a conflict" if pr.broken else ""
+        unit = (Unit(f"PR #{pr.number} ({pr.title}){where} awaits its review", pr.number, [])
+                if pr.awaits_review and not pr.broken
+                else Unit(f"PR #{pr.number} ({pr.title}){where}{state}", stories[0].number if known else None,
                           paths if known else None))
         for epic in epics:
             if epic.issue.number == target:
@@ -301,7 +332,7 @@ class GitHub:
 
     def prs(self) -> list[dict]:
         return json.loads(sh("gh", "pr", "list", "--repo", self.repo, "--state", "open", "--limit", "1000",
-                             "--json", "number,title,body,labels,headRefOid,reviews"))
+                             "--json", "number,title,body,labels,headRefOid,reviews,mergeable,statusCheckRollup"))
 
     def comments(self, number: int) -> list[dict]:
         pages = sh("gh", "api", "--paginate", "--slurp", f"repos/{self.repo}/issues/{number}/comments")
@@ -367,7 +398,8 @@ def merge_approved(gh: GitHub, nodes: list[dict], only: set[int] | None = None) 
     done = []
     for node in nodes:
         pr = to_pr(node, gh.cfg["reviewer"])
-        if (only is None or pr.number in only) and pr.approved and "review:owner" not in pr.labels:
+        held = "review:owner" in pr.labels and not owner_approved(node, gh.cfg.get("owner", ""))
+        if (only is None or pr.number in only) and pr.approved and not held:
             done.append(f"PR #{pr.number} {gh.merge(pr.number, pr.head)}")
     return done
 
@@ -458,10 +490,18 @@ class Ledger:
     def drop(self, me: str) -> list[dict]:
         return self.runs.pop(me, [])
 
-    def others(self, runs: Runs, me: str) -> list[dict]:
-        """The holds of other live runs; a run that is no longer live loses its holds."""
-        for gone in [s for s in self.runs if s != me and not runs.live(s)]:
-            del self.runs[gone]
+    def others(self, runs: Runs, me: str, now: float | None = None) -> list[dict]:
+        """The holds of other runs; a run the listing has missed for GRACE seconds loses its holds,
+        so one listing that misses a live run frees none of its paths."""
+        now = time.time() if now is None else now
+        for run, holds in list(self.runs.items()):
+            if run == me:
+                continue
+            if runs.live(run):
+                for h in holds:
+                    h.pop("gone", None)
+            elif not holds or now - min(h.setdefault("gone", now) for h in holds) >= GRACE:
+                del self.runs[run]
         return [h for s, holds in self.runs.items() if s != me for h in holds]
 
 
@@ -501,15 +541,9 @@ def show(held: dict, epics: list[Epic], out: list[str]) -> int:
     return 0
 
 
-def take_work(gh: GitHub, runs: Runs, me: str, ledger: Ledger | None = None, sync_base=None, explore=None) -> int:
-    """Merge approved PRs, sync while no other run is live, then hold the first free work (see `start`),
-    else claim the idle explore when `explore` grants it."""
+def survey(gh: GitHub, runs: Runs, me: str) -> tuple[list[Epic], object]:
+    """The open epics with their work as `me` sees it, and a cached reader of issue comments."""
     reviewer = gh.cfg["reviewer"]
-    ledger = ledger or Ledger()
-    out = merge_approved(gh, gh.prs())
-    if sync_base and not runs.refresh().others_live(me):
-        out += sync_base()
-    nodes = gh.prs()
     threads: dict[int, list[dict]] = {}
 
     def thread(n: int) -> list[dict]:
@@ -524,7 +558,37 @@ def take_work(gh: GitHub, runs: Runs, me: str, ledger: Ledger | None = None, syn
     def awaits(issue: Issue) -> bool:
         return awaits_check(thread(issue.number), issue.edited, reviewer)
 
-    epics = plan(gh.issues(), [to_pr(n, reviewer) for n in nodes], claimed_elsewhere, awaits)
+    return plan(gh.issues(), [to_pr(n, reviewer) for n in gh.prs()], claimed_elsewhere, awaits), thread
+
+
+def candidates(epics: list[Epic], theirs: list[dict], share: bool, held_elsewhere):
+    """Each hold a new run could take beside `theirs`, in order: {number, epic, paths}, `paths` None for a
+    whole epic. `held_elsewhere(epic)` says whether a live hold comment of another run is on the epic."""
+    taken = {h["number"] for h in theirs}
+    busy = {h["epic"] for h in theirs}
+    whole = {h["epic"] for h in theirs if h["paths"] is None}
+    held_paths = [p for h in theirs for p in h["paths"] or []]
+    for epic in epics:
+        number = epic.issue.number
+        if not epic.units or number in whole or held_elsewhere(number):
+            continue
+        for unit in epic.units:
+            if unit.paths is None or not share:
+                if number not in busy:
+                    yield {"number": number, "epic": number, "paths": None}
+                    break
+            elif unit.issue not in taken and not overlaps(unit.paths, held_paths):
+                yield {"number": unit.issue, "epic": number, "paths": unit.paths}
+
+
+def take_work(gh: GitHub, runs: Runs, me: str, ledger: Ledger | None = None, sync_base=None, explore=None) -> int:
+    """Merge approved PRs, sync while no other run is live, then hold the first free work (see `start`),
+    else claim the idle explore when `explore` grants it."""
+    ledger = ledger or Ledger()
+    out = merge_approved(gh, gh.prs())
+    if sync_base and not runs.refresh().others_live(me):
+        out += sync_base()
+    epics, thread = survey(gh, runs, me)
     with ledger.locked():
         if ledger.of(me):
             return show(ledger.of(me)[0], epics, out)
@@ -533,32 +597,14 @@ def take_work(gh: GitHub, runs: Runs, me: str, ledger: Ledger | None = None, syn
             print(f"Done: {len(live)} other runs are live, as many as lanes.json maxRuns allows.")
             print("\n".join(out))
             return 3
-        theirs = ledger.others(runs, me)
-        taken = {h["number"] for h in theirs}
-        busy = {h["epic"] for h in theirs}
-        whole = {h["epic"] for h in theirs if h["paths"] is None}
-        held_paths = [p for h in theirs for p in h["paths"] or []]
-        for epic in epics:
-            number = epic.issue.number
-            if not epic.units or number in whole or any(s != me for _, s in live_holds(thread(number), runs, me)):
-                continue
-            for unit in epic.units:
-                if unit.paths is None or not cap:
-                    if number in busy:
-                        continue
-                    held = {"number": number, "epic": number, "paths": None}
-                    comment = hold(gh, runs, me, number)
-                elif unit.issue in taken or overlaps(unit.paths, held_paths):
-                    continue
-                else:
-                    held = {"number": unit.issue, "epic": number, "paths": unit.paths}
-                    comment = hold(gh, runs, me, unit.issue, ISSUE_HOLD)
-                if comment:
-                    held["comment"] = comment
-                    ledger.add(me, held)
-                    return show(held, epics, out)
-                if held["paths"] is None:
-                    break
+        elsewhere = lambda n: any(s != me for _, s in live_holds(thread(n), runs, me))
+        for held in candidates(epics, ledger.others(runs, me), bool(cap), elsewhere):
+            whole = held["paths"] is None
+            comment = hold(gh, runs, me, held["number"], HOLD if whole else ISSUE_HOLD)
+            if comment:
+                held["comment"] = comment
+                ledger.add(me, held)
+                return show(held, epics, out)
     if explore and explore():
         print("Explore: no work is free for this run; play `explore` unattended.")
         print("\n".join(out))
@@ -566,6 +612,59 @@ def take_work(gh: GitHub, runs: Runs, me: str, ledger: Ledger | None = None, syn
     print("Done: every free piece of work has its runner.")
     print("\n".join(out))
     return 3
+
+
+def signal(gh: GitHub, runs: Runs) -> str:
+    """What changes when there may be new work: the newest repository event, the newest workflow runs'
+    states, and which runs are live."""
+    event = sh("gh", "api", f"repos/{gh.repo}/events?per_page=1", "--jq", ".[0].id // empty")
+    checks = sh("gh", "api", f"repos/{gh.repo}/actions/runs?per_page=10", "--jq",
+                '[.workflow_runs[] | "\\(.id):\\(.status):\\(.conclusion)"] | join(",")')
+    return " ".join([event, checks, *sorted(runs.refresh().ids)])
+
+
+def quiet(state: Path, now_signal: str, now: float, hours: float = 0.5) -> bool:
+    """Nothing changed since the last full check, which was less than `hours` ago; records a change."""
+    try:
+        last = json.loads(state.read_text())
+    except (OSError, ValueError):
+        last = {}
+    if last.get("signal") == now_signal and now - last.get("at", 0) < hours * 3600:
+        return True
+    state.write_text(json.dumps({"signal": now_signal, "at": now}))
+    return False
+
+
+def check(gh: GitHub, runs: Runs, ledger: Ledger | None = None, state: Path | None = None, now=time.time) -> int:
+    """For a host's free watcher: when GitHub or the live runs changed, merge approved PRs and say how many
+    new runs have work. Exit 0 prints `Start: <n>`; 3 prints one `Quiet:` or `Done:` line."""
+    ledger = ledger or Ledger()
+    if state and quiet(state, signal(gh, runs), now()):
+        print("Quiet: nothing changed since the last check.")
+        return 3
+    out = merge_approved(gh, gh.prs())
+    epics, thread = survey(gh, runs, "")
+    with ledger.locked():
+        live = sorted(runs.refresh().ids)
+        theirs = ledger.others(runs, "")
+        booting = [s for s in live if not ledger.of(s)]
+        cap = gh.cfg.get("maxRuns")
+        slots = cap - len(live) if cap else len(epics)
+        elsewhere = lambda n: bool(live_holds(thread(n), runs, ""))
+        chosen: list[dict] = []
+        while len(chosen) < slots + len(booting):
+            held = next(candidates(epics, theirs + chosen, bool(cap), elsewhere), None)
+            if held is None:
+                break
+            chosen.append(held)
+    start = max(0, min(slots, len(chosen) - len(booting)))
+    if start:
+        print(f"Start: {start}")
+    else:
+        print(f"Done: no new run has work ({len(live)} live).")
+    if out:
+        print("\n".join(out))
+    return 0 if start else 3
 
 
 def end(me: str) -> int:
@@ -593,6 +692,9 @@ def main(argv: list[str]) -> int:
     s = sub.add_parser("start")
     s.add_argument("--runs", required=True, help="command printing the ids of the task's live runs")
     s.add_argument("--sync", help="command that installs the base's prompts, run in a checkout of it")
+    c = sub.add_parser("check")
+    c.add_argument("--runs", required=True, help="command printing the ids of the task's live runs")
+    c.add_argument("--quiet", action="store_true", help="skip the check while GitHub and the live runs are unchanged")
     m = sub.add_parser("merge")
     m.add_argument("prs", nargs="*", type=int)
     for command in (s, sub.add_parser("end")):
@@ -605,6 +707,10 @@ def main(argv: list[str]) -> int:
         print("Blocked: lanes.py was called with the wrong arguments; fix the host's call to match its usage")
         return 2
     try:
+        if args.command == "check":
+            runs = Runs([], lambda: list_runs(args.runs))
+            state = host_file("afk-check.json") if args.quiet else None
+            return check(GitHub(load_config()), runs, Ledger(host_file("afk-holds.json")), state)
         if args.command != "merge" and not args.me:
             raise Blocked("--me is empty; pass this run's id from the host")
         if args.command == "start":

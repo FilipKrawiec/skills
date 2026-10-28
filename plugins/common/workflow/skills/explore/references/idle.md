@@ -1,6 +1,6 @@
 # Idle Explore
 
-An AFK run plays `explore` unattended when `lanes.py start` exits 4: no epic had work for it, lanes.json `explore.idleHours` is set, no other live run holds the idle explore on this host and the last one began at least `idleHours` ago. The record is `afk-idle-explore.json` in the repository's git common directory.
+An AFK run plays `explore` unattended when `lanes.py start` exits 4: no work was free for it, lanes.json `explore.idleHours` is set, no other live run holds the idle explore on this host and the last one began at least `idleHours` ago. The record is `afk-idle-explore.json` in the repository's git common directory.
 
 - Play only browser targets unless the brief names others: a simulator boot can stall a host other runs share.
 - Pick the persona and journey as phase 1 says, with no caller's choice: the journey never run, else the one run longest ago.
