@@ -20,11 +20,13 @@ start  preflights the identities, merges approved PRs, runs --sync in a checkout
        `Explore:` line: no work is free for this run, lanes.json `explore.idleHours` is set, no
        other live run explores and the last idle explore began at least that many hours ago, so
        this run plays `explore` unattended instead.
-check  for a host's watcher that starts runs on events instead of a schedule, with no model: merges
-       approved PRs, then prints `Start: <n>` (exit 0), the runs to start now so that each has free
+check  for a host's watcher that starts runs on events instead of a schedule, with no model: preflights
+       the identities, merges approved PRs, then prints `Start: <n>` (exit 0), the runs to start now so that each has free
        work, counting live runs that hold nothing yet as taking some; else one `Done:` line (exit 3).
        With --quiet it first prints `Quiet:` (exit 3) while the newest repository event, the newest
-       workflow runs and the live runs are as at the last check, for up to 30 minutes.
+       workflow runs and the live runs are as at the last completed check, for up to 30 minutes;
+       what that signal misses (board fields, issue links, a lagging event feed) waits for the next
+       full check.
 merge  squash-merges each open PR (or the named ones) whose newest Reviewer review approves its
        exact head with `verdict=ready`; a review:owner one only once the owner's newest review
        approves that head too.
@@ -635,26 +637,28 @@ def signal(gh: GitHub, runs: Runs) -> str:
 
 
 def quiet(state: Path, now_signal: str, now: float, hours: float = 0.5) -> bool:
-    """Nothing changed since the last full check, which was less than `hours` ago; records a change."""
+    """Nothing changed since the last full check, which was less than `hours` ago."""
     try:
         last = json.loads(state.read_text())
     except (OSError, ValueError):
         last = {}
     if last.get("signal") == now_signal and now - last.get("at", 0) < hours * 3600:
         return True
-    state.write_text(json.dumps({"signal": now_signal, "at": now}))
     return False
 
 
 def check(gh: GitHub, runs: Runs, ledger: Ledger | None = None, state: Path | None = None, now=time.time,
-          explored: Path | None = None) -> int:
+          explored: Path | None = None, ready=lambda: None) -> int:
     """For a host's free watcher: when GitHub or the live runs changed, merge approved PRs and say how many
     new runs have work, or one for the idle explore when nothing is free, no run is live and it is due.
-    Exit 0 prints `Start: <n>`; 3 prints one `Quiet:` or `Done:` line."""
+    Exit 0 prints `Start: <n>`; 3 prints one `Quiet:` or `Done:` line. `ready` (the preflight) runs before
+    anything merges; a change is recorded only once its check completed, so a failed check retries."""
     ledger = ledger or Ledger()
-    if state and quiet(state, signal(gh, runs), now()):
+    seen = signal(gh, runs) if state else None
+    if state and quiet(state, seen, now()):
         print("Quiet: nothing changed since the last check.")
         return 3
+    ready()
     out = merge_approved(gh, gh.prs())
     epics, thread = survey(gh, runs, "")
     with ledger.locked():
@@ -679,6 +683,8 @@ def check(gh: GitHub, runs: Runs, ledger: Ledger | None = None, state: Path | No
         print(f"Done: no new run has work ({len(live)} live).")
     if out:
         print("\n".join(out))
+    if state:
+        state.write_text(json.dumps({"signal": seen, "at": now()}))
     return 0 if start else 3
 
 
@@ -725,8 +731,9 @@ def main(argv: list[str]) -> int:
         if args.command == "check":
             runs = Runs([], lambda: list_runs(args.runs))
             state = host_file("afk-check.json") if args.quiet else None
-            return check(GitHub(load_config()), runs, Ledger(host_file("afk-holds.json")), state,
-                         explored=host_file("afk-idle-explore.json"))
+            cfg = load_config()
+            return check(GitHub(cfg), runs, Ledger(host_file("afk-holds.json")), state,
+                         explored=host_file("afk-idle-explore.json"), ready=lambda: preflight(cfg))
         if args.command != "merge" and not args.me:
             raise Blocked("--me is empty; pass this run's id from the host")
         if args.command == "start":

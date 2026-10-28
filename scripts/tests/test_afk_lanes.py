@@ -9,6 +9,7 @@ import io
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -473,9 +474,28 @@ class EventTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp) / "check.json"
             self.assertFalse(lanes.quiet(state, "e1", 0))
+            state.write_text('{"signal": "e1", "at": 0}')
             self.assertTrue(lanes.quiet(state, "e1", 1000))
             self.assertFalse(lanes.quiet(state, "e2", 1001))
-            self.assertFalse(lanes.quiet(state, "e2", 1001 + 1800))
+            self.assertFalse(lanes.quiet(state, "e1", 1800))
+
+    def test_a_failed_preflight_merges_nothing_and_the_next_check_retries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "check.json"
+            gh = FakeGitHub(issues=[self.EPIC], prs=[pr_node(9, verdict="ready")])
+
+            def refuse():
+                raise lanes.Blocked("gh acts as boss")
+            with mock.patch.object(lanes, "signal", lambda gh, runs: "e1"):
+                with self.assertRaises(lanes.Blocked):
+                    lanes.check(gh, LiveSet(), lanes.Ledger(), state, now=lambda: 0, ready=refuse)
+                self.assertEqual(gh.merged, [])
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(lanes.check(gh, LiveSet(), lanes.Ledger(), state, now=lambda: 60), 3)
+                self.assertEqual(gh.merged, [9])
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    lanes.check(gh, LiveSet(), lanes.Ledger(), state, now=lambda: 120)
+                self.assertTrue(out.getvalue().startswith("Quiet:"))
 
 
 class PacketTest(unittest.TestCase):
