@@ -65,7 +65,7 @@
 
 Schedule runs in one host's checkout:
 
-Run the plugin's `skills/afk/scripts/lanes.py start --me <run id> --runs <command>`: exit 3 ends, 2 reports `Blocked:`, 4: `explore`. Exit 0 holds an issue no live run's packet overlaps, else an epic; invoke `afk` on it; never change the main checkout. End with `lanes.py end`.
+Run the plugin's `skills/afk/scripts/lanes.py start --me <run id> --runs <command>`: exit 3 ends, 2 reports `Blocked:`, 4: `explore`. Exit 0 holds an issue no live run holds, else an epic; invoke `afk` on it; never change the main checkout. End with `lanes.py end`.
 
 
 - When `agentReview` automates PR review, assign a fresh native Reviewer task naming repository, configured GitHub identity and authorized runner wake mechanism.

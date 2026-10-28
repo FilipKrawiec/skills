@@ -31,7 +31,7 @@ Comment `## Lessons` on the shipped issue ("no lessons" when none): lessons with
 
 Classify by effects: routine engineering guidance within approved constraints is delegated; product intent, cost, owner paths, credential/merge authority and production approval remain reserved. A documentation label never makes an authority change routine. Keep configuration/CODEOWNERS changes for explicit owner authority. Link duplicate proposals.
 
-The orchestrator assigns bounded implementation and delivery to workers through the harness's native subagents. Workers load the owning skill, perform one phase and return evidence; they do not dispatch or advance phases. `agent-review` owns GitHub approval. Serialize unless native coordination and disjoint scopes, including tests and dependencies, are proven.
+The orchestrator assigns bounded implementation and delivery to workers through the harness's native subagents. Workers load the owning skill, perform one phase and return evidence; they do not dispatch or advance phases. `agent-review` owns GitHub approval. Never hold an issue twice; shared files never block, the later PR resolves conflicts.
 
 ```text
 Intent: <lesson, occurrences, milestone/issue and desired effect>.

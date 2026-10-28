@@ -9,8 +9,9 @@ Run in a checkout of the repository; reads .github/lanes.json from origin/<base>
 
 start  preflights the identities, merges approved PRs, runs --sync in a checkout of origin/<base>
        while no other run is live, then holds the first free piece of work, in Epics view order:
-       one issue (a ready issue, its open PR, or its eligibility check) whose scope packet shares
-       no path with an issue another live run holds, so runs share an epic; or, when that work
+       one issue (a ready issue, its open PR, or its eligibility check) no other live run holds,
+       even when its scope packet shares files with theirs: the later PR merges its base on a
+       conflict, so runs share an epic; or, when that work
        has no packet, its whole epic, while no other live run works in it. A PR is work while a
        check of its head fails, it conflicts, it has no Reviewer review of its head (any run takes
        that review at once) or it is neither approved nor held for the owner. Nothing is held once
@@ -33,7 +34,7 @@ merge  squash-merges each open PR (or the named ones) whose newest Reviewer revi
 end    releases every hold of this run.
 
 Runs on one host record their holds, with the held paths, in afk-holds.json in the git common
-directory, under a lock, so two starting runs never hold overlapping work.
+directory, under a lock, so two starting runs never hold the same work.
 
 Markers, each the first line of a comment, name runs by the --me id:
   <!-- afk-epic-hold session=<id> -->      on an epic: that run works in all of it; the oldest
@@ -164,13 +165,6 @@ def packet(body: str) -> list[str] | None:
     return [p[2:] if p.startswith("./") else p.lstrip("/") for p in paths]
 
 
-def overlaps(mine: list[str], theirs: list[str]) -> bool:
-    """Two path lists share a file; a path ending in `/` covers its subtree."""
-    def covers(a: str, b: str) -> bool:
-        return a == b or (a.endswith("/") and b.startswith(a))
-    return any(covers(a, b) or covers(b, a) for a in mine for b in theirs)
-
-
 def ancestors(node: dict) -> list[int]:
     chain, parent = [], node.get("parent")
     while parent:
@@ -279,7 +273,7 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
                 continue
             where = "" if owner else " under no epic"
             if "lane:proposed" in issue.labels and awaits(issue):
-                # A check writes no file, so it overlaps nothing.
+                # A check writes no file.
                 epic.units.append(Unit(f"#{issue.number} awaits its AFK eligibility check{where}", issue.number, []))
             elif "lane:afk" in issue.labels and not issue.blocked and not claimed_elsewhere(issue.number):
                 epic.units.append(Unit(f"#{issue.number} is ready{where}", issue.number, issue.paths))
@@ -596,7 +590,6 @@ def candidates(epics: list[Epic], theirs: list[dict], share: bool, held_elsewher
     taken = {h["number"] for h in theirs}
     busy = {h["epic"] for h in theirs}
     whole = {h["epic"] for h in theirs if h["paths"] is None}
-    held_paths = [p for h in theirs for p in h["paths"] or []]
     for epic in epics:
         number = epic.issue.number
         if not epic.units or number in whole or held_elsewhere(number):
@@ -606,7 +599,7 @@ def candidates(epics: list[Epic], theirs: list[dict], share: bool, held_elsewher
                 if number not in busy:
                     yield {"number": number, "epic": number, "paths": None}
                     break
-            elif unit.issue not in taken and not overlaps(unit.paths, held_paths):
+            elif unit.issue not in taken:
                 yield {"number": unit.issue, "epic": number, "paths": unit.paths}
 
 

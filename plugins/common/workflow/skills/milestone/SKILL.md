@@ -18,7 +18,7 @@ Create or reuse a native GitHub milestone for each production chunk, titled only
 
 Own phase advancement, assignments, dependencies, recovery and durable GitHub records. Resume from actual issue decisions, milestone revision, worktree, PR head, checks, review and deployment evidence; summaries never prove completion. Reuse existing issues, plans, PRs and candidate records rather than duplicating them.
 
-Assign Product partner to refinement/specification and planning; Craftsman to bounded implementation and verification; fresh Reviewer to independent judgment and GitHub approval; Delivery steward to merge observation, test delivery, demo and production readiness. These are responsibilities, not a registry. Use the owning skills; workers return their exit gate and never redispatch or advance phases. They may request another assignment. Run serially unless native coordination and disjoint implementation scopes, including tests, are proven; read-only reviews can run independently.
+Assign Product partner to refinement/specification and planning; Craftsman to bounded implementation and verification; fresh Reviewer to independent judgment and GitHub approval; Delivery steward to merge observation, test delivery, demo and production readiness. These are responsibilities, not a registry. Use the owning skills; workers return their exit gate and never redispatch or advance phases. They may request another assignment. Run implementation in parallel when native coordination holds each issue once; shared files never block, the later PR resolves conflicts. Read-only reviews run independently.
 
 Fill this complete brief for every assignment; each worker loads only its task and supplied context:
 

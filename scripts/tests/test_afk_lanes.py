@@ -289,7 +289,7 @@ class TakeWorkTest(unittest.TestCase):
 
 
 class ShareEpicTest(unittest.TestCase):
-    """Runs share an epic through issues whose scope packets share no path."""
+    """Runs share an epic, one run per issue, even where scope packets overlap."""
     EPIC = issue(1, "type:epic")
 
     def take(self, issues, ledger, runs=("local_other",), cfg=None, prs=()):
@@ -313,15 +313,14 @@ class ShareEpicTest(unittest.TestCase):
         self.assertTrue(gh.comments(6)[0]["body"].startswith(lanes.ISSUE_HOLD.format("local_me")))
         self.assertEqual(ledger.of("local_me"), [{"number": 6, "epic": 1, "paths": ["lib/b.dart"], "comment": 101}])
 
-    def test_an_issue_whose_packet_overlaps_a_held_one_waits(self):
+    def test_an_issue_whose_packet_overlaps_a_held_one_still_runs_beside_it(self):
         code, out, _ = self.take([issue(6, "lane:afk", parents=[1], paths=["lib/a/x.dart"])],
                                  self.other_holds(5, ["lib/a/"]))
-        self.assertEqual(code, 3)
+        self.assertEqual((code, out[0]), (0, "Hold: issue #6 in epic #1 (comment 101)"))
 
-    def test_paths_held_in_another_epic_count_too(self):
-        code, _, _ = self.take([issue(2, "type:epic", priority=0),
-                                issue(6, "lane:afk", parents=[1], paths=["lib/a.dart"])],
-                               self.other_holds(5, ["lib/a.dart"], epic=2))
+    def test_an_issue_another_live_run_holds_waits(self):
+        code, _, _ = self.take([issue(6, "lane:afk", parents=[1], paths=["lib/a.dart"])],
+                               self.other_holds(6, ["lib/a.dart"]))
         self.assertEqual(code, 3)
 
     def test_work_without_a_packet_holds_its_whole_epic_while_no_other_run_works_in_it(self):
@@ -336,7 +335,7 @@ class ShareEpicTest(unittest.TestCase):
         self.assertEqual(code, 3)
 
     def test_holds_of_runs_that_are_no_longer_live_are_dropped_after_a_grace(self):
-        ledger = self.other_holds(5, ["lib/a/"])
+        ledger = self.other_holds(6, ["lib/a/"])
         work = [issue(6, "lane:afk", parents=[1], paths=["lib/a/x.dart"])]
         code, _, _ = self.take(work, ledger, runs=())
         self.assertEqual(code, 3)
@@ -359,7 +358,7 @@ class ShareEpicTest(unittest.TestCase):
         work = [issue(6, parents=[1], paths=["lib/a.dart"])]
         code, out, _ = self.take(work, self.other_holds(5, ["lib/b.dart"]), prs=prs)
         self.assertEqual(out, ["Hold: issue #6 in epic #1 (comment 101)", "Work: PR #9 (change 9)"])
-        code, _, _ = self.take(work, self.other_holds(5, ["lib/a.dart"]), prs=prs)
+        code, _, _ = self.take(work, self.other_holds(6, ["lib/a.dart"]), prs=prs)
         self.assertEqual(code, 3)
 
     def test_without_max_runs_every_hold_is_a_whole_epic(self):
@@ -521,11 +520,6 @@ class PacketTest(unittest.TestCase):
                      '```scope\n["a"]\n```'):
             self.assertIsNone(lanes.packet(body), body)
 
-    def test_a_directory_covers_its_subtree(self):
-        self.assertTrue(lanes.overlaps(["lib/a/"], ["lib/a/x.dart"]))
-        self.assertTrue(lanes.overlaps(["lib/a.dart"], ["lib/a.dart"]))
-        self.assertFalse(lanes.overlaps(["lib/a"], ["lib/ab.dart"]))
-        self.assertFalse(lanes.overlaps(["lib/a/"], ["lib/b/"]))
 
 
 class HoldTest(unittest.TestCase):

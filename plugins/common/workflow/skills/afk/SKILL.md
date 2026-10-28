@@ -8,7 +8,7 @@ allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 
 Deliver one authorized bounded slice per run. Read `.github/lanes.json` from `origin/<base>` (`base` defaults to `main`); use its branchPrefix, scope, project and claim settings. Never change the main checkout.
 
-Act as orchestrator through native subagents; own assignments, dependencies, recovery and GitHub records. The host supplies model routing and existing credential mechanisms. Serialize implementation unless native coordination and disjoint scopes including tests/dependencies are proven; labels are not atomic exclusion. Workers load the assigned skill, return evidence and never redispatch or advance phases.
+Act as orchestrator through native subagents; own assignments, dependencies, recovery and GitHub records. The host supplies model routing and existing credential mechanisms. Never hold an issue twice; shared files never block, the later PR resolves conflicts; labels are not atomic exclusion. Workers load the assigned skill, return evidence and never redispatch or advance phases.
 
 Read [setup.md](references/setup.md) when enabling or scheduling runs; read [github-safety.md](references/github-safety.md) when checking GitHub protections.
 
@@ -28,7 +28,7 @@ Before selecting new work, inspect each owned open PR and its issue. Assign VCS 
 
 ## 3. Select and claim
 
-Choose an open `lane:afk` issue with criteria and a scope packet, excluding epics, active claims and issues referenced by any open PR. Run `gh pr list --state open --limit 1000 --json number,body`; exclude issue numbers mentioned in bodies, including `Part of`, which may not create a GitHub linked PR. If the listing is incomplete, wait. Verify dependencies' required outcomes, not just closed state, and no overlap with active work, including tests. Rank earliest milestone, then board Priority or priority label, then issue number. Wait for a parent PR to merge; never create a stacked draft.
+Choose an open `lane:afk` issue with criteria and a scope packet, excluding epics, active claims and issues referenced by any open PR. Run `gh pr list --state open --limit 1000 --json number,body`; exclude issue numbers mentioned in bodies, including `Part of`, which may not create a GitHub linked PR. If the listing is incomplete, wait. Verify dependencies' required outcomes, not just closed state; shared files never block. Rank earliest milestone, then board Priority or priority label, then issue number. Wait for a parent PR to merge; never create a stacked draft.
 
 Use the host's enforced claim if available; otherwise run serially. Re-read claims before and after recording `state:claimed`; stop on conflict. A stale claim is investigated, not permission to overwrite work. Update board state only by the transitions owned by `spec`; status never grants authority.
 

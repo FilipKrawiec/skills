@@ -47,7 +47,7 @@ For each item, take the first matching case:
 
 ## 4. Verify and Report
 
-Re-fetch changed items and cards. Confirm saved criteria, scope, dependencies, lanes and status; check the blocked-by graph for cycles and for links the bodies don't name. List the parallel set: Todo issues with no open blocker and disjoint packets. Account for every item; label old evidence.
+Re-fetch changed items and cards. Confirm saved criteria, scope, dependencies, lanes and status; check the blocked-by graph for cycles and for links the bodies don't name. List the parallel set: Todo issues with no open blocker. Account for every item; label old evidence.
 
 Recurring runs preserve unchanged items; flag waits. Schedule only when asked.
 
@@ -56,6 +56,6 @@ Recurring runs preserve unchanged items; flag waits. Schedule only when asked.
 **Output:** ≤ 8 lines, with **Summary** (counts, changed-item/project links, corrections, verification and coverage limits) and **Decision** (next action/actor, or reserved owner choices with options and recommendation).
 
 ```text
-Summary: Refined #14 and #18; packets disjoint; #20 waits on #14.
+Summary: Refined #14 and #18; both parallel; #20 waits on #14.
 Decision: Orchestrator selects #18; Product partner rechecks #20 after #14 delivers.
 ```
