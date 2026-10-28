@@ -418,6 +418,17 @@ def sync(cfg: dict, me: str, command: str) -> list[str]:
     return [f"Synced: ran `{command}` on origin/{cfg['base']}"]
 
 
+def explore_due(path: Path | None, hours, now: float) -> bool:
+    """Whether the idle explore's record lets a new run take it: `hours` set and the last began that long ago."""
+    if hours is None or path is None:
+        return False
+    try:
+        started = json.loads(path.read_text() or "{}").get("started")
+    except (OSError, ValueError):
+        started = None
+    return started is None or now - started >= float(hours) * 3600
+
+
 def idle_explore(path: Path, runs: Runs, me: str, hours: float, now: float) -> bool:
     """Claim this host's idle explore when no other live run has it and the last began `hours` ago or more."""
     with path.open("a+") as f:
@@ -635,9 +646,11 @@ def quiet(state: Path, now_signal: str, now: float, hours: float = 0.5) -> bool:
     return False
 
 
-def check(gh: GitHub, runs: Runs, ledger: Ledger | None = None, state: Path | None = None, now=time.time) -> int:
+def check(gh: GitHub, runs: Runs, ledger: Ledger | None = None, state: Path | None = None, now=time.time,
+          explored: Path | None = None) -> int:
     """For a host's free watcher: when GitHub or the live runs changed, merge approved PRs and say how many
-    new runs have work. Exit 0 prints `Start: <n>`; 3 prints one `Quiet:` or `Done:` line."""
+    new runs have work, or one for the idle explore when nothing is free, no run is live and it is due.
+    Exit 0 prints `Start: <n>`; 3 prints one `Quiet:` or `Done:` line."""
     ledger = ledger or Ledger()
     if state and quiet(state, signal(gh, runs), now()):
         print("Quiet: nothing changed since the last check.")
@@ -658,6 +671,8 @@ def check(gh: GitHub, runs: Runs, ledger: Ledger | None = None, state: Path | No
                 break
             chosen.append(held)
     start = max(0, min(slots, len(chosen) - len(booting)))
+    if not start and not live and explore_due(explored, gh.cfg.get("explore", {}).get("idleHours"), now()):
+        start = 1
     if start:
         print(f"Start: {start}")
     else:
@@ -710,7 +725,8 @@ def main(argv: list[str]) -> int:
         if args.command == "check":
             runs = Runs([], lambda: list_runs(args.runs))
             state = host_file("afk-check.json") if args.quiet else None
-            return check(GitHub(load_config()), runs, Ledger(host_file("afk-holds.json")), state)
+            return check(GitHub(load_config()), runs, Ledger(host_file("afk-holds.json")), state,
+                         explored=host_file("afk-idle-explore.json"))
         if args.command != "merge" and not args.me:
             raise Blocked("--me is empty; pass this run's id from the host")
         if args.command == "start":

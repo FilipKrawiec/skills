@@ -456,6 +456,19 @@ class EventTest(unittest.TestCase):
         held["reviews"].append({"author": {"login": "boss"}, "state": "APPROVED", "commit": {"oid": "head"}, "body": ""})
         self.assertEqual(lanes.merge_approved(gh, gh.prs()), ["PR #9 merged"])
 
+    def test_one_run_starts_for_a_due_idle_explore_when_nothing_is_live(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record = Path(tmp) / "explore.json"
+            gh = FakeGitHub(issues=[self.EPIC])
+            gh.cfg.update({"maxRuns": 3, "explore": {"idleHours": 1}})
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                due = lanes.check(gh, LiveSet(), lanes.Ledger(), now=lambda: 7200, explored=record)
+                record.write_text('{"started": 5000}')
+                early = lanes.check(gh, LiveSet(), lanes.Ledger(), now=lambda: 7200, explored=record)
+                busy = lanes.check(gh, LiveSet("local_a"), lanes.Ledger(), now=lambda: 99999, explored=record)
+            self.assertEqual((due, early, busy), (0, 3, 3))
+
     def test_an_unchanged_signal_is_quiet_for_half_an_hour(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp) / "check.json"
