@@ -227,6 +227,18 @@ class MergeTest(unittest.TestCase):
         self.assertEqual(lanes.merge_approved(gh, gh.prs()), ["PR #1 marked ready for review: its checks pass"])
         self.assertEqual(gh.readied, [1])
 
+    def test_an_owner_held_pr_merges_once_the_owner_approves_the_reviewed_head(self):
+        def held(number, owner_oid):
+            node = pr_node(number, verdict="owner", labels=["review:owner"])
+            node["reviews"][0]["state"] = "APPROVED"
+            node["reviews"].append({"author": {"login": "boss"}, "state": "APPROVED", "commit": {"oid": owner_oid},
+                                    "body": ""})
+            return node
+        gh = FakeGitHub(prs=[held(1, "head"), held(2, "older")])
+        gh.cfg["owner"] = "boss"
+        lanes.merge_approved(gh, gh.prs())
+        self.assertEqual(gh.merged, [1])
+
     def test_merge_can_be_limited_to_named_prs(self):
         gh = FakeGitHub(prs=[pr_node(1, verdict="ready"), pr_node(2, verdict="ready")])
         lanes.merge_approved(gh, gh.prs(), {2})
