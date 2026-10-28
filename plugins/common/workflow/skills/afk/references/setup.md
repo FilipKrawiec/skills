@@ -18,6 +18,7 @@
 | `ownerLines` | `refine` slice limit (800); not an owner hold. |
 | `reviewQueue` | Issue `agent-review` pins as the owner's queue. |
 | `reviewerLanes` | `true`: `agent-review` approves AFK eligibility; orchestrator applies lane/board changes through `spec`. |
+| `maxRuns` | Live-run cap; unset, one run per epic. |
 
 ```json
 {
@@ -62,11 +63,11 @@
 
 ## Unattended runs
 
-Schedule runs in the main checkout, one per epic:
+Schedule runs in one host's checkout:
 
-Run the plugin's `skills/afk/scripts/lanes.py start --me <run id> --runs <command>`: exit 3 ends, 2 reports `Blocked:`, 4: `explore`. Invoke `afk` on the held epic; never change the main checkout. Diagnose/replan/wait within approved constraints, retaining lanes; ask only for reserved decisions. End with `lanes.py end`.
+Run the plugin's `skills/afk/scripts/lanes.py start --me <run id> --runs <command>`: exit 3 ends, 2 reports `Blocked:`, 4: `explore`. Exit 0 holds an issue no live run's packet overlaps, else an epic; invoke `afk` on it; never change the main checkout. End with `lanes.py end`.
 
 
 - When `agentReview` automates PR review, assign a fresh native Reviewer task naming repository, configured GitHub identity and authorized runner wake mechanism.
-- The orchestrator owns assignments/recovery; the host supplies routing, coordination and credentials. Serialize implementation without proven disjoint coordination, including tests. Labels are not atomic locks. Shared-host subagents give context independence, not secret isolation. Craftsman never exercises reviewer authority.
+- The orchestrator owns assignments/recovery; the host supplies routing, coordination and credentials. Labels are not atomic locks. Shared-host subagents give context independence, not secret isolation. Craftsman never exercises reviewer authority.
 - Production needs exact owner approval for candidate/destination; branch restrictions alone do not grant it. Notifications use only an authorized configured channel; queue changes produce a daily changed digest, incidents/all-work-blocked an immediate notice.
