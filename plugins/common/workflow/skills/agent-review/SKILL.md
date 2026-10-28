@@ -42,7 +42,7 @@ Independently verify corrections and agent-thread resolutions against the new he
 
 ## 3. Record the merge decision
 
-Blocking findings require REQUEST_CHANGES, even at the round limit. Clean eligible work requires APPROVE from the configured reviewer identity, never a comment. Check `gh api user --jq .login`; require reviewer identity distinct from PR author and latest pusher. Never fabricate attribution. Record the exact `commit_id` in API reviews.
+Blocking findings require REQUEST_CHANGES, even at the round limit. Clean eligible work requires APPROVE from the configured reviewer identity, never a comment. Check `gh api user --jq .login`; require reviewer identity distinct from PR author and latest pusher. Never fabricate attribution. Record the exact `commit_id` in API reviews. With APPROVE, resolve every thread of yours the head answers: an unresolved thread blocks the merge.
 
 Additional owner approval is required for:
 
@@ -50,7 +50,7 @@ Additional owner approval is required for:
 - `ownerPaths` (both rename paths), `ownerLabels`, or, even if unlisted, `.github/workflows/`, `.github/CODEOWNERS` or `.github/lanes.json`, so agents never loosen their own gates. The path hold alone lifts for a `reviewerPins` author's PR whose only change there repins actions to their tag commits (`gh api repos/<action>/commits/<tag>`), released 7+ days ago. Size alone never holds a PR; `ownerLines` only sizes slices. A CODEOWNERS match is the Reviewer gate, not an owner hold.
 - Owner-reserved effects: strategy, cost, authority or weakened gates. Product choices are `spec` decision records.
 
-Approved health major upgrades alone do not require the owner. Owner approval supplements, never replaces, Reviewer APPROVE. For reserved work record `review:owner` and the exact extra decision. If an owner-only CODEOWNERS match means the configured Reviewer is not the effective required owner, report a protection gap and keep merge disabled; an owner approval or procedural Reviewer approval cannot satisfy the missing native Reviewer gate. Remove only your own obsolete hold, never an explicit owner request.
+Approved health major upgrades alone do not require the owner. Owner approval supplements, never replaces, Reviewer APPROVE. For reserved work record `review:owner` and the exact extra decision. Remove only your own obsolete hold, never an explicit owner request.
 
 Before approval, verify branch protection requires code-owner review and the configured Reviewer is sole owner for every changed path on the base branch. Otherwise keep merge disabled and report the gap. Recheck head and checks after posting; a changed head needs fresh review. Never dismiss blockers or approve your own PR.
 
