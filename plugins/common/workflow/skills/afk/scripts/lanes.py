@@ -194,10 +194,12 @@ def epic_order(epics: list[Issue]) -> list[Issue]:
 
 
 def approved_head(pr: dict, reviewer: str, verdict: str = "ready") -> bool:
-    """The newest review by the Reviewer approves this exact head with `verdict=<verdict>`."""
+    """The newest review by the Reviewer approves this exact head with `verdict=<verdict>`, and no review of
+    the Reviewer's asked for changes on it: two review passes racing on one head must not merge a blocked PR."""
     head = pr["headRefOid"]
     mine = [r for r in pr.get("reviews", []) if r["author"]["login"] == reviewer]
-    if not mine:
+    if not mine or any(r["state"] == "CHANGES_REQUESTED" and (r.get("commit") or {}).get("oid") == head
+                       for r in mine):
         return False
     newest = mine[-1]
     return (newest["state"] == "APPROVED" and (newest.get("commit") or {}).get("oid") == head
