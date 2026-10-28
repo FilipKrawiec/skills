@@ -10,7 +10,7 @@ Read base and branchPrefix from `.github/lanes.json` (defaults `main`, `agent/af
 
 ## 1. Start
 
-Fetch `origin/<base>` and reconcile existing branch/PR/assignment before creating anything. Reuse this issue's unmerged branch/worktree; never overwrite another assignment. Branch from `origin/<base>` otherwise. Wait for a dependent parent to merge; never stack PRs. Other ready, disjoint PRs do not prevent independent work; unresolved overlapping work does.
+Fetch `origin/<base>` and reconcile existing branch/PR/assignment before creating anything. Reuse this issue's unmerged branch/worktree; never overwrite another assignment. Branch from `origin/<base>` otherwise. Wait for a dependent parent to merge; never stack PRs. Open PRs never block work, even on shared files; the later one resolves conflicts.
 
 Use unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue. Re-read state labels; stop on another assignment. Add `state:claimed` unattended or `state:started` attended, recording actor, branch, scope and authority. Card to In progress. Labels are records, not atomic locks; serialize if coordination is unproven.
 
