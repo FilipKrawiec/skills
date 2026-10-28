@@ -21,7 +21,7 @@ start  preflights the identities, merges approved PRs, runs --sync in a checkout
        other live run explores and the last idle explore began at least that many hours ago, so
        this run plays `explore` unattended instead.
 check  for a host's watcher that starts runs on events instead of a schedule, with no model: preflights
-       the identities, merges approved PRs, then prints `Start: <n>` (exit 0), the runs to start now so that each has free
+       the identities, marks ready each draft whose checks pass, merges approved PRs, then prints `Start: <n>` (exit 0), the runs to start now so that each has free
        work, counting live runs that hold nothing yet as taking some; else one `Done:` line (exit 3).
        With --quiet it first prints `Quiet:` (exit 3) while the newest repository event, the newest
        workflow runs and the live runs are as at the last completed check, for up to 30 minutes;
@@ -231,6 +231,13 @@ def broken(pr: dict) -> bool:
         (c.get("conclusion") or c.get("state") or "").upper() in FAILED for c in checks)
 
 
+def passed(pr: dict) -> bool:
+    """Every check of the head completed without failing, and the PR merges cleanly."""
+    checks = pr.get("statusCheckRollup") or []
+    return bool(checks) and pr.get("mergeable") == "MERGEABLE" and all(
+        (c.get("conclusion") or c.get("state") or "").upper() in {"SUCCESS", "NEUTRAL", "SKIPPED"} for c in checks)
+
+
 def to_pr(node: dict, reviewer: str) -> Pr:
     numbers = [int(n) for n in re.findall(r"(?<![\w/])#(\d+)\b", node.get("body") or "")]
     return Pr(node["number"], node["title"], node["headRefOid"], {l["name"] for l in node["labels"]},
@@ -334,7 +341,7 @@ class GitHub:
 
     def prs(self) -> list[dict]:
         return json.loads(sh("gh", "pr", "list", "--repo", self.repo, "--state", "open", "--limit", "1000",
-                             "--json", "number,title,body,labels,headRefOid,reviews,mergeable,statusCheckRollup"))
+                             "--json", "number,title,body,labels,headRefOid,reviews,mergeable,statusCheckRollup,isDraft"))
 
     def comments(self, number: int) -> list[dict]:
         pages = sh("gh", "api", "--paginate", "--slurp", f"repos/{self.repo}/issues/{number}/comments")
@@ -345,6 +352,9 @@ class GitHub:
 
     def edit(self, comment: int, body: str) -> None:
         sh("gh", "api", "-X", "PATCH", f"repos/{self.repo}/issues/comments/{comment}", "-f", f"body={body}")
+
+    def ready(self, number: int) -> None:
+        sh("gh", "pr", "ready", str(number), "--repo", self.repo)
 
     def merge(self, number: int, head: str) -> str:
         base = ["gh", "pr", "merge", str(number), "--repo", self.repo, "--squash", "--match-head-commit", head]
@@ -397,8 +407,14 @@ def preflight(cfg: dict) -> None:
 
 
 def merge_approved(gh: GitHub, nodes: list[dict], only: set[int] | None = None) -> list[str]:
+    """Mark ready each draft whose head passed every check, since a host may open PRs as drafts and the owner
+    hears of a PR only once it is ready; then merge each PR approved at its exact head."""
     done = []
     for node in nodes:
+        if node.get("isDraft") and (only is None or node["number"] in only) and passed(node):
+            gh.ready(node["number"])
+            done.append(f"PR #{node['number']} marked ready for review: its checks pass")
+            continue
         pr = to_pr(node, gh.cfg["reviewer"])
         held = "review:owner" in pr.labels and not owner_approved(node, gh.cfg.get("owner", ""))
         if (only is None or pr.number in only) and pr.approved and not held:

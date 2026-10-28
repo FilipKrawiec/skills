@@ -10,7 +10,7 @@ Read base and branchPrefix from `.github/lanes.json` (defaults `main`, `agent/af
 
 ## 1. Start
 
-Fetch `origin/<base>` and reconcile existing branch/PR/assignment before creating anything. Reuse this issue's unmerged branch/worktree; never overwrite another assignment. Branch from `origin/<base>` otherwise. Wait for a dependent parent to merge; no stacked drafts. Other ready, disjoint PRs do not prevent independent work; unresolved overlapping work does.
+Fetch `origin/<base>` and reconcile existing branch/PR/assignment before creating anything. Reuse this issue's unmerged branch/worktree; never overwrite another assignment. Branch from `origin/<base>` otherwise. Wait for a dependent parent to merge; never stack PRs. Other ready, disjoint PRs do not prevent independent work; unresolved overlapping work does.
 
 Use unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue. Re-read state labels; stop on another assignment. Add `state:claimed` unattended or `state:started` attended, recording actor, branch, scope and authority. Card to In progress. Labels are records, not atomic locks; serialize if coordination is unproven.
 
@@ -24,11 +24,11 @@ Before PR creation, rebase on fetched base if needed. After opening, merge base 
 
 **Exit gate/output:** commit SHA and push exit 0, or exact capability wait; report commands/exits.
 
-## 3. Open a ready PR
+## 3. Open the PR
 
-Require both fresh `review` axes, blocking findings verified, for the exact base/head before opening; the orchestrator supplies Reviewer results. Fix blockers; suggestions are optional. Local verdicts never replace the `agent-review` gate. Right after opening, the orchestrator assigns `agent-review`; workers never dispatch.
+Require both fresh `review` axes, blocking findings verified, for the exact base/head before opening; the orchestrator supplies Reviewer results. Fix blockers; suggestions are optional. Local verdicts never replace `agent-review`. Right after opening, the orchestrator assigns `agent-review`; workers never dispatch.
 
-Open ready, never draft; reuse an existing PR. Use the issue title and its `## Plan` link. Use `Closes #<N>` only when the bounded outcome completes on merge; for a product milestone awaiting test delivery, demo or production acceptance, use `Part of #<N>` and keep the issue open. After acceptance, the orchestrator closes it through `spec`. For partial epic work use `Part of #<N>`. A revert uses `Reverts #<M>`, never `Closes` on the reverted issue.
+Open as the host asks; ready a draft once its checks pass, then tell the owner. Reuse an existing PR. Use the issue title and its `## Plan` link. Use `Closes #<N>` only when the bounded outcome completes on merge; for a product milestone awaiting test delivery, demo or production acceptance, use `Part of #<N>` and keep the issue open. After acceptance, the orchestrator closes it through `spec`. For partial epic work use `Part of #<N>`. A revert uses `Reverts #<M>`, never `Closes` on the reverted issue.
 
 Use this envelope, with before/after captures for visible behavior and blockers/owner choices visible. Omit inapplicable sections; add **Revert** only when a squash revert falls short (migration, data, flag, published release).
 
@@ -55,7 +55,7 @@ Checks: `just verify` exit 0. GitHub approval still pending.
 
 Require effective branch protection for the configured Reviewer and required checks before enabling auto-merge. Resolve any additional owner hold first. Request `gh pr merge <pr> --squash --auto --match-head-commit <head>` when the base and head are final; native protection still blocks merge until Reviewer approval and checks pass. Never use exact-head approvals as a substitute for missing enforcement. The flag checks the head at invocation; it does not freeze later pushes. Remove execution labels and report desired board status to the orchestrator (sole board writer). Return PR/head to the orchestrator for `agent-review`.
 
-**Exit gate:** ready PR, auto-merge awaiting required review/checks, or explicit protection gap.
+**Exit gate:** PR, auto-merge awaiting required review/checks, or explicit protection gap.
 
 ## 4. Reconcile merge readiness
 
@@ -73,6 +73,6 @@ Remove only this assignment's completed clean worktrees/branches when `lsof -a -
 
 ## Authority and output
 
-Reviewer approval authorizes eligible routine merges. Owner rules add reserved approval; production requires separate exact-candidate approval under `release`. Never change settings, secrets, variables or releases from VCS. Configured automatic test delivery belongs to delivery, not a request for production permission.
+Reviewer approval authorizes eligible routine merges. Owner rules add reserved approval; production requires separate exact-candidate approval under `release`. Never change settings, secrets, variables or releases from VCS.
 
 <=5 lines: **Summary:** PR/head, checks and evidence. **Decision:** next action and actor, reserved options/recommendation. Use “Nothing needed” only when the assignment has no pending action.

@@ -141,7 +141,7 @@ class FakeGitHub:
         self.threads = comments or {}
         self.next_id = 100
         self.cfg = {"reviewer": "rev"}
-        self.open_issues, self.open_prs, self.merged = list(issues), list(prs), []
+        self.open_issues, self.open_prs, self.merged, self.readied = list(issues), list(prs), [], []
 
     def issues(self):
         return self.open_issues
@@ -152,6 +152,9 @@ class FakeGitHub:
     def merge(self, number, head):
         self.merged.append(number)
         return "merged"
+
+    def ready(self, number):
+        self.readied.append(number)
 
     def comments(self, number):
         return list(self.threads.get(number, []))
@@ -187,6 +190,16 @@ class MergeTest(unittest.TestCase):
                              pr_node(5)])
         self.assertEqual(lanes.merge_approved(gh, gh.prs()), ["PR #1 merged"])
         self.assertEqual(gh.merged, [1])
+
+    def test_a_draft_turns_ready_only_once_every_check_of_its_head_passed(self):
+        def draft(number, checks, mergeable="MERGEABLE"):
+            return {**pr_node(number), "isDraft": True, "mergeable": mergeable,
+                    "statusCheckRollup": [{"status": "COMPLETED", "conclusion": c} if c else {"status": "IN_PROGRESS"}
+                                          for c in checks]}
+        gh = FakeGitHub(prs=[draft(1, ["SUCCESS", "SKIPPED"]), draft(2, ["SUCCESS", None]), draft(3, ["FAILURE"]),
+                             draft(4, []), draft(5, ["SUCCESS"], "CONFLICTING"), {**pr_node(6), "isDraft": False}])
+        self.assertEqual(lanes.merge_approved(gh, gh.prs()), ["PR #1 marked ready for review: its checks pass"])
+        self.assertEqual(gh.readied, [1])
 
     def test_merge_can_be_limited_to_named_prs(self):
         gh = FakeGitHub(prs=[pr_node(1, verdict="ready"), pr_node(2, verdict="ready")])
