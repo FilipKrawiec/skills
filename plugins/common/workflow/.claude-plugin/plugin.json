@@ -1,6 +1,6 @@
 {
   "name": "filipkrawiec-workflow",
   "description": "Milestone-led delivery, independent review, owner-approved releases and engineering health.",
-  "version": "11.43.9",
+  "version": "11.43.10",
   "skills": "./skills/"
 }
