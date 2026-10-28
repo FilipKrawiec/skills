@@ -10,9 +10,8 @@ Run in a checkout of the repository; reads .github/lanes.json from origin/<base>
 start  preflights the identities, merges approved PRs, runs --sync in a checkout of origin/<base>
        while no other run is live, then holds the first free piece of work, in Epics view order:
        one issue (a ready issue, its open PR, or its eligibility check) no other live run holds,
-       even when its scope packet shares files with theirs: the later PR merges its base on a
-       conflict, so runs share an epic; or, when that work
-       has no packet, its whole epic, while no other live run works in it. A PR is work while a
+       even when its scope packet shares files with theirs or it has none: the later PR merges its
+       base on a conflict, so runs share an epic (a PR that names no issue is held itself). A PR is work while a
        check of its head fails, it conflicts, it has no Reviewer review of its head (any run takes
        that review at once) or it is neither approved nor held for the owner. Nothing is held once
        lanes.json `maxRuns` other runs are live; without `maxRuns` every hold is a whole epic.
@@ -137,10 +136,10 @@ class Pr:
 
 @dataclass
 class Unit:
-    """One run's share of an epic: `issue` is held, `paths` may change (None: no scope packet)."""
+    """One run's share of an epic: `issue` is held, `paths` may change (empty: no scope packet)."""
     text: str
-    issue: int | None
-    paths: list[str] | None
+    issue: int
+    paths: list[str]
 
 
 @dataclass
@@ -276,7 +275,7 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
                 # A check writes no file.
                 epic.units.append(Unit(f"#{issue.number} awaits its AFK eligibility check{where}", issue.number, []))
             elif "lane:afk" in issue.labels and not issue.blocked and not claimed_elsewhere(issue.number):
-                epic.units.append(Unit(f"#{issue.number} is ready{where}", issue.number, issue.paths))
+                epic.units.append(Unit(f"#{issue.number} is ready{where}", issue.number, issue.paths or []))
     def parked(pr: Pr) -> bool:
         stories = [by_number[n] for n in pr.issues if n in by_number and not by_number[n].is_epic]
         return bool(stories) and all("lane:owner" in i.labels for i in stories)
@@ -290,14 +289,13 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
         target = owners[0] if owners else first
         stories = [by_number[n] for n in pr.issues if n in by_number and not by_number[n].is_epic]
         paths = [p for s in stories for p in s.paths or []]
-        known = bool(stories) and all(s.paths for s in stories)
         where = "" if owners else " (under no epic)"
         # A review writes no file, so any free run takes it at once, held on the PR itself.
         state = " has a red check or a conflict" if pr.broken else ""
         unit = (Unit(f"PR #{pr.number} ({pr.title}){where} awaits its review", pr.number, [])
                 if pr.awaits_review and not pr.broken
-                else Unit(f"PR #{pr.number} ({pr.title}){where}{state}", stories[0].number if known else None,
-                          paths if known else None))
+                else Unit(f"PR #{pr.number} ({pr.title}){where}{state}",
+                          stories[0].number if stories else pr.number, paths))
         for epic in epics:
             if epic.issue.number == target:
                 epic.units.append(unit)
@@ -595,7 +593,7 @@ def candidates(epics: list[Epic], theirs: list[dict], share: bool, held_elsewher
         if not epic.units or number in whole or held_elsewhere(number):
             continue
         for unit in epic.units:
-            if unit.paths is None or not share:
+            if not share:
                 if number not in busy:
                     yield {"number": number, "epic": number, "paths": None}
                     break
