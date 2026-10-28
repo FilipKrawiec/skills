@@ -323,12 +323,9 @@ class ShareEpicTest(unittest.TestCase):
                                self.other_holds(6, ["lib/a.dart"]))
         self.assertEqual(code, 3)
 
-    def test_work_without_a_packet_holds_its_whole_epic_while_no_other_run_works_in_it(self):
-        work = [issue(6, "lane:afk", parents=[1])]
-        code, out, _ = self.take(work, lanes.Ledger())
-        self.assertEqual((code, out[0]), (0, "Hold: epic #1 (comment 101)"))
-        code, _, _ = self.take(work, self.other_holds(5, ["lib/a/"]))
-        self.assertEqual(code, 3)
+    def test_work_without_a_packet_holds_only_its_issue_beside_another_run(self):
+        code, out, _ = self.take([issue(6, "lane:afk", parents=[1])], self.other_holds(5, ["lib/a/"]))
+        self.assertEqual((code, out[0]), (0, "Hold: issue #6 in epic #1 (comment 101)"))
 
     def test_an_epic_another_run_holds_whole_shares_nothing(self):
         code, _, _ = self.take([issue(6, "lane:afk", parents=[1], paths=["lib/b.dart"])], self.other_holds(1, None))
