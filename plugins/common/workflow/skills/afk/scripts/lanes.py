@@ -278,7 +278,8 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
                 epic.units.append(Unit(f"#{issue.number} is ready{where}", issue.number, issue.paths or []))
     def parked(pr: Pr) -> bool:
         stories = [by_number[n] for n in pr.issues if n in by_number and not by_number[n].is_epic]
-        return bool(stories) and all("lane:owner" in i.labels for i in stories)
+        # Only once the Reviewer has reviewed its head: every PR gets that review first
+        return not pr.awaits_review and bool(stories) and all("lane:owner" in i.labels for i in stories)
 
     for pr in prs:
         if not needs_work(pr) or parked(pr):
