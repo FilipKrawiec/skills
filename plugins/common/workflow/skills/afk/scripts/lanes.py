@@ -10,7 +10,7 @@ Run in a checkout of the repository; reads .github/lanes.json from origin/<base>
 start  preflights the identities, merges approved PRs, runs --sync in a checkout of origin/<base>
        while no other run is live, then holds the first free piece of work, in Epics view order:
        one issue (a ready issue, its open PR, or its eligibility check) whose scope packet shares
-       no path with an issue another live run holds, so runs share an epic; or, when that work
+       no path outside lanes.json `alwaysInScope` with an issue another live run holds, so runs share an epic; or, when that work
        has no packet, its whole epic, while no other live run works in it. A PR is work while a
        check of its head fails, it conflicts, it has no Reviewer review of its head (any run takes
        that review at once) or it is neither approved nor held for the owner. Nothing is held once
@@ -169,6 +169,12 @@ def overlaps(mine: list[str], theirs: list[str]) -> bool:
     def covers(a: str, b: str) -> bool:
         return a == b or (a.endswith("/") and b.startswith(a))
     return any(covers(a, b) or covers(b, a) for a in mine for b in theirs)
+
+
+def exclusive(paths: list[str] | None, shared: list[str]) -> list[str] | None:
+    """The packet paths other runs must not share: lanes.json `alwaysInScope` prefixes are open to every change,
+    so they never keep two runs apart."""
+    return None if paths is None else [p for p in paths if not any(p.startswith(s) for s in shared)]
 
 
 def ancestors(node: dict) -> list[int]:
@@ -334,7 +340,9 @@ class GitHub:
             if page_after:
                 args += ["-F", f"page={page_after}"]
             page = json.loads(sh(*args))["data"]["repository"]["issues"]
-            found += [to_issue(n, project) for n in page["nodes"]]
+            for issue in (to_issue(n, project) for n in page["nodes"]):
+                issue.paths = exclusive(issue.paths, self.cfg.get("alwaysInScope", []))
+                found.append(issue)
             if not page["pageInfo"]["hasNextPage"]:
                 return found
             page_after = page["pageInfo"]["endCursor"]

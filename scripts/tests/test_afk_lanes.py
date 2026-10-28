@@ -521,6 +521,12 @@ class PacketTest(unittest.TestCase):
                      '```scope\n["a"]\n```'):
             self.assertIsNone(lanes.packet(body), body)
 
+    def test_paths_every_change_may_touch_hold_no_one_back(self):
+        shared = ["docs/", "lib/l10n/"]
+        self.assertEqual(lanes.exclusive(["docs/a.md", "lib/l10n/en.arb", "lib/a/", "lib/l10n"], shared), ["lib/a/", "lib/l10n"])
+        self.assertEqual(lanes.exclusive(["docs/"], shared), [])
+        self.assertIsNone(lanes.exclusive(None, shared))
+
     def test_a_directory_covers_its_subtree(self):
         self.assertTrue(lanes.overlaps(["lib/a/"], ["lib/a/x.dart"]))
         self.assertTrue(lanes.overlaps(["lib/a.dart"], ["lib/a.dart"]))
