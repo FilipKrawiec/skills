@@ -186,6 +186,9 @@ class FakeGitHub:
     def prs(self):
         return [p for p in self.open_prs if p["number"] not in self.merged]
 
+    def budget(self):
+        return getattr(self, "left", 5000), "23:55"
+
     def merge(self, number, head):
         self.merged.append(number)
         return "merged"
@@ -555,6 +558,14 @@ class EventTest(unittest.TestCase):
             self.assertTrue(lanes.quiet(state, "e1", 1000))
             self.assertFalse(lanes.quiet(state, "e2", 1001))
             self.assertFalse(lanes.quiet(state, "e1", 1800))
+
+    def test_a_low_graphql_budget_starts_and_merges_nothing_so_live_runs_keep_it(self):
+        gh = FakeGitHub(issues=[self.EPIC], prs=[pr_node(9, verdict="ready")])
+        gh.left = lanes.RESERVE - 1
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(lanes.check(gh, LiveSet(), lanes.Ledger()), 3)
+        self.assertEqual(gh.merged, [])
+        self.assertIn("until 23:55", out.getvalue())
 
     def test_a_failed_preflight_merges_nothing_and_the_next_check_retries(self):
         with tempfile.TemporaryDirectory() as tmp:
