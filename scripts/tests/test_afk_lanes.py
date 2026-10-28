@@ -151,6 +151,12 @@ class ReviewTest(unittest.TestCase):
         self.assertFalse(lanes.approved_head(self.node(
             ("rev", "APPROVED", self.HEAD, "ready"), ("rev", "CHANGES_REQUESTED", self.HEAD, "fixes")), "rev"))
 
+    def test_an_approval_after_a_request_for_changes_on_the_same_head_is_not(self):
+        self.assertFalse(lanes.approved_head(self.node(
+            ("rev", "CHANGES_REQUESTED", self.HEAD, "fixes"), ("rev", "APPROVED", self.HEAD, "ready")), "rev"))
+        self.assertTrue(lanes.approved_head(self.node(
+            ("rev", "CHANGES_REQUESTED", "beef", "fixes"), ("rev", "APPROVED", self.HEAD, "ready")), "rev"))
+
     def test_pr_bodies_name_their_issues(self):
         node = {"number": 3, "title": "t", "headRefOid": "x", "labels": [], "reviews": [],
                 "body": "Closes #12\nPart of #4, see https://x/issues/99 and #12"}
