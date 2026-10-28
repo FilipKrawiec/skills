@@ -163,6 +163,7 @@ class FakeGitHub:
         self.next_id = 100
         self.cfg = {"reviewer": "rev"}
         self.open_issues, self.open_prs, self.merged, self.readied = list(issues), list(prs), [], []
+        self.cards = {}
 
     def issues(self):
         return self.open_issues
@@ -176,6 +177,10 @@ class FakeGitHub:
 
     def ready(self, number):
         self.readied.append(number)
+
+    def status(self, number, column):
+        self.cards[number] = column
+        return True
 
     def comments(self, number):
         return list(self.threads.get(number, []))
@@ -413,6 +418,21 @@ class ShareEpicTest(unittest.TestCase):
             lanes.release(gh, "local_me", ledger)
         self.assertEqual((gh.comments(6)[0]["body"], list(ledger.runs)),
                          (lanes.ISSUE_RELEASED.format("local_me"), ["local_other"]))
+
+    def test_a_held_issue_is_in_progress_and_its_release_moves_it_by_its_pr(self):
+        work = [issue(6, "lane:afk", parents=[1], paths=["a"]), issue(7, "lane:afk", parents=[1], paths=["a"])]
+        gh = FakeGitHub(issues=[self.EPIC, *work])
+        gh.cfg["maxRuns"] = 10
+        ledger = lanes.Ledger()
+        with contextlib.redirect_stdout(io.StringIO()):
+            lanes.take_work(gh, LiveSet("local_a"), "local_a", ledger)
+            lanes.take_work(gh, LiveSet("local_a", "local_b"), "local_b", ledger)
+        self.assertEqual(gh.cards, {6: "In progress", 7: "In progress"})
+        gh.open_prs.append(pr_node(9, 6))
+        with contextlib.redirect_stdout(io.StringIO()):
+            lanes.release(gh, "local_a", ledger)
+            lanes.release(gh, "local_b", ledger)
+        self.assertEqual(gh.cards, {6: "Review", 7: "Todo"})
 
     def test_the_ledger_file_keeps_holds_between_runs(self):
         with tempfile.TemporaryDirectory() as tmp:

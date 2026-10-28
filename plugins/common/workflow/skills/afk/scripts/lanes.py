@@ -59,6 +59,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Board Status options a run moves its issue between (spec owns the rest of the board)
+IN_PROGRESS, REVIEW, TODO = "In progress", "Review", "Todo"
 HOLD = "<!-- afk-epic-hold session={} -->"
 RELEASED = "<!-- afk-epic-released session={} -->"
 ISSUE_HOLD = "<!-- afk-issue-hold session={} -->"
@@ -316,6 +318,10 @@ projectItems(first:10){nodes{project{number} fieldValueByName(name:"Priority"){
 ... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}}"""
 
 
+CARDS = """query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){
+issue(number:$number){projectItems(first:20){nodes{id project{id}}}}}}"""
+
+
 class GitHub:
     def __init__(self, cfg: dict):
         self.cfg = cfg
@@ -351,6 +357,28 @@ class GitHub:
 
     def ready(self, number: int) -> None:
         sh("gh", "pr", "ready", str(number), "--repo", self.repo)
+
+    def status(self, number: int, column: str) -> bool:
+        """Move the issue's card on lanes.json `project` to the Status option named `column` (any case);
+        False when there is no board, card or such option, or GitHub refuses."""
+        board = self.cfg.get("project") or {}
+        if not board.get("number"):
+            return False
+        owner, project = board.get("owner") or self.repo.split("/")[0], str(board["number"])
+        try:
+            fields = json.loads(sh("gh", "project", "field-list", project, "--owner", owner, "--format", "json"))
+            field = next(f for f in fields["fields"] if f["name"] == "Status")
+            option = next(o["id"] for o in field["options"] if o["name"].lower() == column.lower())
+            pid = sh("gh", "project", "view", project, "--owner", owner, "--format", "json", "--jq", ".id")
+            name = self.repo.split("/")
+            items = json.loads(sh("gh", "api", "graphql", "-f", f"query={CARDS}", "-F", f"owner={name[0]}",
+                                  "-F", f"name={name[1]}", "-F", f"number={number}"))
+            item = next(n["id"] for n in items["data"]["repository"]["issue"]["projectItems"]["nodes"]
+                        if n["project"]["id"] == pid)
+        except (RuntimeError, StopIteration, KeyError, TypeError, ValueError):
+            return False
+        return ok("gh", "project", "item-edit", "--project-id", pid, "--id", item, "--field-id", field["id"],
+                  "--single-select-option-id", option)
 
     def merge(self, number: int, head: str) -> str:
         base = ["gh", "pr", "merge", str(number), "--repo", self.repo, "--squash", "--match-head-commit", head]
@@ -628,6 +656,8 @@ def take_work(gh: GitHub, runs: Runs, me: str, ledger: Ledger | None = None, syn
             if comment:
                 held["comment"] = comment
                 ledger.add(me, held)
+                if not whole:
+                    gh.status(held["number"], IN_PROGRESS)
                 return show(held, epics, out)
     if explore and explore():
         print("Explore: no work is free for this run; play `explore` unattended.")
@@ -704,12 +734,19 @@ def end(me: str) -> int:
 
 
 def release(gh: GitHub, me: str, ledger: Ledger | None = None) -> int:
+    """Rewrite this run's holds as released; a released issue's card goes to Review while an open PR names it,
+    else back to Todo, so In progress shows only work a live run is doing."""
     ledger = ledger or Ledger()
     with ledger.locked():
-        for held in ledger.drop(me):
-            whole = held["paths"] is None
-            gh.edit(held["comment"], (RELEASED if whole else ISSUE_RELEASED).format(me))
-            print(f"Released: {'epic' if whole else 'issue'} #{held['number']}")
+        dropped = ledger.drop(me)
+    named = {n for node in (gh.prs() if any(h["paths"] is not None for h in dropped) else [])
+             for n in to_pr(node, gh.cfg["reviewer"]).issues}
+    for held in dropped:
+        whole = held["paths"] is None
+        gh.edit(held["comment"], (RELEASED if whole else ISSUE_RELEASED).format(me))
+        print(f"Released: {'epic' if whole else 'issue'} #{held['number']}")
+        if not whole:
+            gh.status(held["number"], REVIEW if held["number"] in named else TODO)
     for epic in (i.number for i in gh.issues() if i.is_epic):
         for c in gh.comments(epic):
             if HOLD.format(me) in c["body"]:
