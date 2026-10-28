@@ -118,6 +118,7 @@ class Pr:
     labels: set[str]
     issues: list[int]
     approved: bool
+    awaits_review: bool = False
 
 
 @dataclass
@@ -194,10 +195,16 @@ def approved_head(pr: dict, reviewer: str) -> bool:
             and f"sha={head}" in newest["body"] and "verdict=ready" in newest["body"])
 
 
+def reviewed_head(pr: dict, reviewer: str) -> bool:
+    """The Reviewer has reviewed this exact head."""
+    return any(r["author"]["login"] == reviewer and (r.get("commit") or {}).get("oid") == pr["headRefOid"]
+               for r in pr.get("reviews", []))
+
+
 def to_pr(node: dict, reviewer: str) -> Pr:
     numbers = [int(n) for n in re.findall(r"(?<![\w/])#(\d+)\b", node.get("body") or "")]
     return Pr(node["number"], node["title"], node["headRefOid"], {l["name"] for l in node["labels"]},
-              list(dict.fromkeys(numbers)), approved_head(node, reviewer))
+              list(dict.fromkeys(numbers)), approved_head(node, reviewer), not reviewed_head(node, reviewer))
 
 
 def needs_work(pr: Pr) -> bool:
@@ -252,10 +259,14 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
         stories = [by_number[n] for n in pr.issues if n in by_number and not by_number[n].is_epic]
         paths = [p for s in stories for p in s.paths or []]
         known = bool(stories) and all(s.paths for s in stories)
+        where = "" if owners else " is under no epic"
+        # A review writes no file, so any free run takes it at once, held on the PR itself.
+        unit = (Unit(f"PR #{pr.number} ({pr.title}){where} awaits its review", pr.number, []) if pr.awaits_review
+                else Unit(f"PR #{pr.number} ({pr.title}){where}", stories[0].number if known else None,
+                          paths if known else None))
         for epic in epics:
             if epic.issue.number == target:
-                epic.units.append(Unit(f"PR #{pr.number} ({pr.title})" + ("" if owners else " is under no epic"),
-                                       stories[0].number if known else None, paths if known else None))
+                epic.units.append(unit)
     return epics
 
 

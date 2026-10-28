@@ -331,7 +331,7 @@ class ShareEpicTest(unittest.TestCase):
         self.assertEqual((code, out[0]), (0, "Hold: issue #6 in epic #1 (comment 101)"))
 
     def test_a_pr_takes_its_issues_packets(self):
-        prs = [pr_node(9, 6)]
+        prs = [pr_node(9, 6, verdict="fixes")]
         work = [issue(6, parents=[1], paths=["lib/a.dart"])]
         code, out, _ = self.take(work, self.other_holds(5, ["lib/b.dart"]), prs=prs)
         self.assertEqual(out, ["Hold: issue #6 in epic #1 (comment 101)", "Work: PR #9 (change 9)"])
@@ -344,6 +344,18 @@ class ShareEpicTest(unittest.TestCase):
         code, _, _ = self.take([issue(6, "lane:afk", parents=[1], paths=["lib/b.dart"])],
                                self.other_holds(5, ["lib/a/"]), cfg={})
         self.assertEqual(code, 3)
+
+    def test_a_pr_with_no_review_of_its_head_is_free_to_any_run_at_once(self):
+        prs = [pr_node(9, 6), pr_node(10, verdict="fixes", reviewed="older")]
+        code, out, gh = self.take([issue(6, parents=[1], paths=["lib/a.dart"])],
+                                  self.other_holds(5, ["lib/a.dart"]), prs=prs)
+        self.assertEqual(out, ["Hold: issue #9 in epic #1 (comment 101)", "Work: PR #9 (change 9) awaits its review"])
+        self.assertTrue(gh.comments(9)[0]["body"].startswith(lanes.ISSUE_HOLD.format("local_me")))
+
+    def test_a_reviewed_head_awaits_no_review(self):
+        node = pr_node(9, 6, verdict="fixes")
+        self.assertFalse(lanes.to_pr(node, "rev").awaits_review)
+        self.assertTrue(lanes.to_pr(pr_node(9, 6, verdict="fixes", reviewed="older"), "rev").awaits_review)
 
     def test_no_work_is_held_once_max_runs_other_runs_are_live(self):
         work = [issue(6, "lane:afk", parents=[1], paths=["lib/b.dart"])]

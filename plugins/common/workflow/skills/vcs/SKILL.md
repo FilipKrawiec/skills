@@ -26,7 +26,7 @@ Before PR creation, rebase on fetched base if needed. After opening, merge base 
 
 ## 3. Open a ready PR
 
-Require both fresh `review` axes, blocking findings verified, for the exact base/head before opening; the orchestrator supplies Reviewer results. Fix blockers; suggestions are optional. Local verdicts never replace the `agent-review` gate. Return missing reviews to the orchestrator; never dispatch from a worker.
+Require both fresh `review` axes, blocking findings verified, for the exact base/head before opening; the orchestrator supplies Reviewer results. Fix blockers; suggestions are optional. Local verdicts never replace the `agent-review` gate. Right after opening, the orchestrator assigns `agent-review`; workers never dispatch.
 
 Open ready, never draft; reuse an existing PR. Use the issue title and its `## Plan` link. Use `Closes #<N>` only when the bounded outcome completes on merge; for a product milestone awaiting test delivery, demo or production acceptance, use `Part of #<N>` and keep the issue open. After acceptance, the orchestrator closes it through `spec`. For partial epic work use `Part of #<N>`. A revert uses `Reverts #<M>`, never `Closes` on the reverted issue.
 
