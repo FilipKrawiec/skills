@@ -7,20 +7,28 @@ Usage: lanes.py start --me <run id> --runs <command> [--sync <command>]
 Run in a checkout of the repository; reads .github/lanes.json from origin/<base>.
 
 start  preflights the identities, merges approved PRs, runs --sync in a checkout of origin/<base>
-       while no other run is live, then holds the first open epic, in Epics view order, that no
-       other live run holds and that has work. --runs is the host's command that prints the ids
-       of the scheduled task's live runs, one per line. Exit 0 prints the held epic and its work;
+       while no other run is live, then holds the first free piece of work, in Epics view order:
+       one issue (a ready issue, its open PR, or its eligibility check) whose scope packet shares
+       no path with an issue another live run holds, so runs share an epic; or, when that work
+       has no packet, its whole epic, while no other live run works in it. Nothing is held once
+       lanes.json `maxRuns` other runs are live; without `maxRuns` every hold is a whole epic. --runs is the host's command that prints the ids
+       of the scheduled task's live runs, one per line. Exit 0 prints the hold and its work;
        2 prints one `Blocked:` line; 3 prints one `Done:` line: nothing for this run; 4 prints one
-       `Explore:` line: no epic has work for this run, lanes.json `explore.idleHours` is set, no
+       `Explore:` line: no work is free for this run, lanes.json `explore.idleHours` is set, no
        other live run explores and the last idle explore began at least that many hours ago, so
        this run plays `explore` unattended instead.
 merge  squash-merges each open PR (or the named ones) whose newest Reviewer review approves its
        exact head with `verdict=ready`, unless it is labelled review:owner.
-end    releases every epic this run holds.
+end    releases every hold of this run.
+
+Runs on one host record their holds, with the held paths, in afk-holds.json in the git common
+directory, under a lock, so two starting runs never hold overlapping work.
 
 Markers, each the first line of a comment, name runs by the --me id:
-  <!-- afk-epic-hold session=<id> -->      on an epic: that run works in it; the oldest live
-                                            hold wins, and `end` rewrites it to afk-epic-released.
+  <!-- afk-epic-hold session=<id> -->      on an epic: that run works in all of it; the oldest
+                                            live hold wins, and `end` rewrites it to afk-epic-released.
+  <!-- afk-issue-hold session=<id> -->     on an issue: that run works on it alone; the same rules,
+                                            and `end` rewrites it to afk-issue-released.
   <!-- afk-claim session=<id> -->           on an issue: the newest names the run delivering it;
                                             `state:claimed` without a live claim is leftover.
   <!-- agent-review eligibility ... -->     the Reviewer's AFK eligibility verdict on an issue
@@ -29,6 +37,7 @@ Markers, each the first line of a comment, name runs by the --me id:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fcntl
 import json
 import re
@@ -40,7 +49,10 @@ from pathlib import Path
 
 HOLD = "<!-- afk-epic-hold session={} -->"
 RELEASED = "<!-- afk-epic-released session={} -->"
-HOLD_RE = re.compile(r"<!-- afk-epic-hold session=(\S+) -->")
+ISSUE_HOLD = "<!-- afk-issue-hold session={} -->"
+ISSUE_RELEASED = "<!-- afk-issue-released session={} -->"
+HOLD_RE = re.compile(r"<!-- afk-(?:epic|issue)-hold session=(\S+) -->")
+SCOPE_RE = re.compile(r"```scope[ \t]*\n(.*?)\n```", re.S)
 CLAIM_RE = re.compile(r"<!-- afk-claim session=(\S+) -->")
 ELIGIBILITY_RE = re.compile(r"<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)")
 PRIORITIES = {"P0": 0, "P1": 1, "P2": 2}
@@ -91,6 +103,7 @@ class Issue:
     priority: int
     milestone: tuple
     edited: str = ""
+    paths: list[str] | None = None
 
     @property
     def is_epic(self) -> bool:
@@ -108,9 +121,40 @@ class Pr:
 
 
 @dataclass
+class Unit:
+    """One run's share of an epic: `issue` is held, `paths` may change (None: no scope packet)."""
+    text: str
+    issue: int | None
+    paths: list[str] | None
+
+
+@dataclass
 class Epic:
     issue: Issue
-    work: list[str] = field(default_factory=list)
+    units: list[Unit] = field(default_factory=list)
+
+    @property
+    def work(self) -> list[str]:
+        return [u.text for u in self.units]
+
+
+def packet(body: str) -> list[str] | None:
+    """The paths of an issue's ```scope block, or None when it has none that parse."""
+    found = SCOPE_RE.search(body or "")
+    try:
+        paths = json.loads(found.group(1)).get("paths") if found else None
+    except (ValueError, AttributeError):
+        return None
+    if not paths or not all(isinstance(p, str) and p.strip("./") for p in paths):
+        return None
+    return [p[2:] if p.startswith("./") else p.lstrip("/") for p in paths]
+
+
+def overlaps(mine: list[str], theirs: list[str]) -> bool:
+    """Two path lists share a file; a path ending in `/` covers its subtree."""
+    def covers(a: str, b: str) -> bool:
+        return a == b or (a.endswith("/") and b.startswith(a))
+    return any(covers(a, b) or covers(b, a) for a in mine for b in theirs)
 
 
 def ancestors(node: dict) -> list[int]:
@@ -131,7 +175,7 @@ def to_issue(node: dict, project: int) -> Issue:
     milestone = (0, ms.get("dueOn") or "9999", ms["number"]) if ms else (1, "", 0)
     return Issue(node["number"], {l["name"] for l in node["labels"]["nodes"]}, ancestors(node),
                  any(b["state"] == "OPEN" for b in node["blockedBy"]["nodes"]), priority, milestone,
-                 node.get("lastEditedAt") or "")
+                 node.get("lastEditedAt") or "", packet(node.get("body") or ""))
 
 
 def epic_order(epics: list[Issue]) -> list[Issue]:
@@ -190,9 +234,10 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
                 continue
             where = "" if owner else " under no epic"
             if "lane:proposed" in issue.labels and awaits(issue):
-                epic.work.append(f"#{issue.number} awaits its AFK eligibility check{where}")
+                # A check writes no file, so it overlaps nothing.
+                epic.units.append(Unit(f"#{issue.number} awaits its AFK eligibility check{where}", issue.number, []))
             elif "lane:afk" in issue.labels and not issue.blocked and not claimed_elsewhere(issue.number):
-                epic.work.append(f"#{issue.number} is ready{where}")
+                epic.units.append(Unit(f"#{issue.number} is ready{where}", issue.number, issue.paths))
     def parked(pr: Pr) -> bool:
         stories = [by_number[n] for n in pr.issues if n in by_number and not by_number[n].is_epic]
         return bool(stories) and all("lane:owner" in i.labels for i in stories)
@@ -204,16 +249,20 @@ def plan(issues: list[Issue], prs: list[Pr], claimed_elsewhere, awaits=lambda is
         if owners and any(claimed_elsewhere(n) for n in pr.issues if epic_of(n)):
             continue
         target = owners[0] if owners else first
+        stories = [by_number[n] for n in pr.issues if n in by_number and not by_number[n].is_epic]
+        paths = [p for s in stories for p in s.paths or []]
+        known = bool(stories) and all(s.paths for s in stories)
         for epic in epics:
             if epic.issue.number == target:
-                epic.work.append(f"PR #{pr.number} ({pr.title})" + ("" if owners else " is under no epic"))
+                epic.units.append(Unit(f"PR #{pr.number} ({pr.title})" + ("" if owners else " is under no epic"),
+                                       stories[0].number if known else None, paths if known else None))
     return epics
 
 
 # ─── GitHub ────────────────────────────────────────────────────────────────────
 
 ISSUES = """query($owner:String!,$name:String!,$page:String){repository(owner:$owner,name:$name){
-issues(states:OPEN,first:100,after:$page){pageInfo{hasNextPage endCursor} nodes{number lastEditedAt
+issues(states:OPEN,first:100,after:$page){pageInfo{hasNextPage endCursor} nodes{number lastEditedAt body
 labels(first:30){nodes{name}} blockedBy(first:30){nodes{state}} milestone{number dueOn}
 parent{number parent{number parent{number parent{number}}}}
 projectItems(first:10){nodes{project{number} fieldValueByName(name:"Priority"){
@@ -352,20 +401,61 @@ def live_holds(comments: list[dict], runs: Runs, me: str) -> list[tuple[int, str
                   if s == me or runs.live(s))
 
 
-def hold(gh: GitHub, runs: Runs, me: str, epic: int) -> int | None:
-    """Post this run's hold on the epic; None when another live run holds it. The oldest live hold wins."""
-    if any(s != me for _, s in live_holds(gh.comments(epic), runs.refresh(), me)):
+def hold(gh: GitHub, runs: Runs, me: str, number: int, marker: str = HOLD) -> int | None:
+    """Post this run's hold on the epic or issue; None when another live run holds it. The oldest live hold wins."""
+    if any(s != me for _, s in live_holds(gh.comments(number), runs.refresh(), me)):
         return None
-    mine = gh.comment(epic, HOLD.format(me) + "\nAn AFK run works in this epic; it releases this hold when it ends.")
-    holds = live_holds(gh.comments(epic), runs.refresh(), me)
+    what = "epic" if marker == HOLD else "issue"
+    mine = gh.comment(number, marker.format(me) + f"\nAn AFK run works on this {what}; it releases this hold when it ends.")
+    holds = live_holds(gh.comments(number), runs.refresh(), me)
     if holds and holds[0][1] != me:
-        gh.edit(mine, RELEASED.format(me))
+        gh.edit(mine, (RELEASED if marker == HOLD else ISSUE_RELEASED).format(me))
         return None
     return mine
 
 
-def own_hold(gh: GitHub, epic: int, me: str) -> int | None:
-    return next((c["id"] for c in gh.comments(epic) if HOLD.format(me) in c["body"]), None)
+class Ledger:
+    """This host's holds by run, each {number, comment, epic, paths}; `paths` is None for a whole epic.
+    Kept in `path` under an exclusive lock, so starting runs pick work one at a time; in memory without one."""
+
+    def __init__(self, path: Path | None = None):
+        self.path, self.runs = path, {}
+
+    @contextlib.contextmanager
+    def locked(self):
+        if self.path is None:
+            yield self
+            return
+        with self.path.open("a+") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            f.seek(0)
+            try:
+                self.runs = json.loads(f.read() or "{}")
+            except ValueError:
+                self.runs = {}
+            yield self
+            f.seek(0)
+            f.truncate()
+            f.write(json.dumps(self.runs))
+
+    def of(self, me: str) -> list[dict]:
+        return self.runs.get(me, [])
+
+    def add(self, me: str, hold: dict) -> None:
+        self.runs.setdefault(me, []).append(hold)
+
+    def drop(self, me: str) -> list[dict]:
+        return self.runs.pop(me, [])
+
+    def others(self, runs: Runs, me: str) -> list[dict]:
+        """The holds of other live runs; a run that is no longer live loses its holds."""
+        for gone in [s for s in self.runs if s != me and not runs.live(s)]:
+            del self.runs[gone]
+        return [h for s, holds in self.runs.items() if s != me for h in holds]
+
+
+def host_file(name: str) -> Path:
+    return Path(sh("git", "rev-parse", "--path-format=absolute", "--git-common-dir")) / name
 
 
 def start(args: argparse.Namespace, me: str) -> int:
@@ -376,9 +466,9 @@ def start(args: argparse.Namespace, me: str) -> int:
     hours = cfg.get("explore", {}).get("idleHours")
     explore = None
     if hours is not None:
-        state = Path(sh("git", "rev-parse", "--path-format=absolute", "--git-common-dir")) / "afk-idle-explore.json"
+        state = host_file("afk-idle-explore.json")
         explore = lambda: idle_explore(state, runs, me, float(hours), time.time())
-    return take_epic(GitHub(cfg), runs, me, sync_base, explore)
+    return take_work(GitHub(cfg), runs, me, Ledger(host_file("afk-holds.json")), sync_base, explore)
 
 
 def list_runs(command: str) -> list[str]:
@@ -388,10 +478,23 @@ def list_runs(command: str) -> list[str]:
     return listed.stdout.split()
 
 
-def take_epic(gh: GitHub, runs: Runs, me: str, sync_base=None, explore=None) -> int:
-    """Merge approved PRs, sync while no other run is live, then hold the first free epic with work,
+def show(held: dict, epics: list[Epic], out: list[str]) -> int:
+    epic = next((e for e in epics if e.issue.number == held["epic"]), None)
+    units = epic.units if epic else []
+    if held["paths"] is None:
+        print(f"Hold: epic #{held['epic']} (comment {held['comment']})")
+    else:
+        print(f"Hold: issue #{held['number']} in epic #{held['epic']} (comment {held['comment']})")
+        units = [u for u in units if u.issue == held["number"]]
+    print("\n".join(out + [f"Work: {u.text}" for u in units]))
+    return 0
+
+
+def take_work(gh: GitHub, runs: Runs, me: str, ledger: Ledger | None = None, sync_base=None, explore=None) -> int:
+    """Merge approved PRs, sync while no other run is live, then hold the first free work (see `start`),
     else claim the idle explore when `explore` grants it."""
     reviewer = gh.cfg["reviewer"]
+    ledger = ledger or Ledger()
     out = merge_approved(gh, gh.prs())
     if sync_base and not runs.refresh().others_live(me):
         out += sync_base()
@@ -411,29 +514,60 @@ def take_epic(gh: GitHub, runs: Runs, me: str, sync_base=None, explore=None) -> 
         return awaits_check(thread(issue.number), issue.edited, reviewer)
 
     epics = plan(gh.issues(), [to_pr(n, reviewer) for n in nodes], claimed_elsewhere, awaits)
-    for epic in epics:
-        if not epic.work:
-            continue
-        number = epic.issue.number
-        comment = own_hold(gh, number, me) or hold(gh, runs, me, number)
-        if comment:
-            print(f"Hold: epic #{number} (comment {comment})")
-            print("\n".join(out + [f"Work: {w}" for w in epic.work]))
-            return 0
+    with ledger.locked():
+        if ledger.of(me):
+            return show(ledger.of(me)[0], epics, out)
+        cap, live = gh.cfg.get("maxRuns"), runs.refresh().others_live(me)
+        if cap and len(live) >= cap:
+            print(f"Done: {len(live)} other runs are live, as many as lanes.json maxRuns allows.")
+            print("\n".join(out))
+            return 3
+        theirs = ledger.others(runs, me)
+        taken = {h["number"] for h in theirs}
+        busy = {h["epic"] for h in theirs}
+        whole = {h["epic"] for h in theirs if h["paths"] is None}
+        held_paths = [p for h in theirs for p in h["paths"] or []]
+        for epic in epics:
+            number = epic.issue.number
+            if not epic.units or number in whole or any(s != me for _, s in live_holds(thread(number), runs, me)):
+                continue
+            for unit in epic.units:
+                if unit.paths is None or not cap:
+                    if number in busy:
+                        continue
+                    held = {"number": number, "epic": number, "paths": None}
+                    comment = hold(gh, runs, me, number)
+                elif unit.issue in taken or overlaps(unit.paths, held_paths):
+                    continue
+                else:
+                    held = {"number": unit.issue, "epic": number, "paths": unit.paths}
+                    comment = hold(gh, runs, me, unit.issue, ISSUE_HOLD)
+                if comment:
+                    held["comment"] = comment
+                    ledger.add(me, held)
+                    return show(held, epics, out)
+                if held["paths"] is None:
+                    break
     if explore and explore():
-        print("Explore: no epic has work for this run; play `explore` unattended.")
+        print("Explore: no work is free for this run; play `explore` unattended.")
         print("\n".join(out))
         return 4
-    print("Done: every epic with work has its runner.")
+    print("Done: every free piece of work has its runner.")
     print("\n".join(out))
     return 3
 
 
 def end(me: str) -> int:
-    return release(GitHub(load_config()), me)
+    return release(GitHub(load_config()), me, Ledger(host_file("afk-holds.json")))
 
 
-def release(gh: GitHub, me: str) -> int:
+def release(gh: GitHub, me: str, ledger: Ledger | None = None) -> int:
+    ledger = ledger or Ledger()
+    with ledger.locked():
+        for held in ledger.drop(me):
+            whole = held["paths"] is None
+            gh.edit(held["comment"], (RELEASED if whole else ISSUE_RELEASED).format(me))
+            print(f"Released: {'epic' if whole else 'issue'} #{held['number']}")
     for epic in (i.number for i in gh.issues() if i.is_epic):
         for c in gh.comments(epic):
             if HOLD.format(me) in c["body"]:
