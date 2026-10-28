@@ -163,6 +163,15 @@ class ReviewTest(unittest.TestCase):
         self.assertEqual(lanes.to_pr(node, "rev").issues, [12, 4])
 
 
+class CardColumnTest(unittest.TestCase):
+    def test_a_closed_issue_stays_done(self):
+        self.assertEqual(lanes.card_column("CLOSED", lanes.TODO), lanes.DONE)
+        self.assertEqual(lanes.card_column("CLOSED", lanes.REVIEW), lanes.DONE)
+
+    def test_an_open_issue_takes_the_asked_column(self):
+        self.assertEqual(lanes.card_column("OPEN", lanes.REVIEW), lanes.REVIEW)
+
+
 class FakeGitHub:
     def __init__(self, comments=None, issues=(), prs=()):
         self.threads = comments or {}

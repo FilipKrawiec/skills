@@ -60,7 +60,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Board Status options a run moves its issue between (spec owns the rest of the board)
-IN_PROGRESS, REVIEW, TODO = "In progress", "Review", "Todo"
+IN_PROGRESS, REVIEW, TODO, DONE = "In progress", "Review", "Todo", "Done"
 HOLD = "<!-- afk-epic-hold session={} -->"
 RELEASED = "<!-- afk-epic-released session={} -->"
 ISSUE_HOLD = "<!-- afk-issue-hold session={} -->"
@@ -321,7 +321,13 @@ projectItems(first:10){nodes{project{number} fieldValueByName(name:"Priority"){
 
 
 CARDS = """query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){
-issue(number:$number){projectItems(first:20){nodes{id project{id}}}}}}"""
+issue(number:$number){state projectItems(first:20){nodes{id project{id}}}}}}"""
+
+
+def card_column(state: str, column: str) -> str:
+    """A closed issue's card stays in Done whatever a run asks for: a run released after its PR merged
+    otherwise moves the finished issue back to Todo."""
+    return DONE if state == "CLOSED" else column
 
 
 class GitHub:
@@ -368,15 +374,16 @@ class GitHub:
             return False
         owner, project = board.get("owner") or self.repo.split("/")[0], str(board["number"])
         try:
-            fields = json.loads(sh("gh", "project", "field-list", project, "--owner", owner, "--format", "json"))
-            field = next(f for f in fields["fields"] if f["name"] == "Status")
-            option = next(o["id"] for o in field["options"] if o["name"].lower() == column.lower())
             pid = sh("gh", "project", "view", project, "--owner", owner, "--format", "json", "--jq", ".id")
             name = self.repo.split("/")
             items = json.loads(sh("gh", "api", "graphql", "-f", f"query={CARDS}", "-F", f"owner={name[0]}",
                                   "-F", f"name={name[1]}", "-F", f"number={number}"))
-            item = next(n["id"] for n in items["data"]["repository"]["issue"]["projectItems"]["nodes"]
-                        if n["project"]["id"] == pid)
+            issue = items["data"]["repository"]["issue"]
+            item = next(n["id"] for n in issue["projectItems"]["nodes"] if n["project"]["id"] == pid)
+            column = card_column(issue["state"], column)
+            fields = json.loads(sh("gh", "project", "field-list", project, "--owner", owner, "--format", "json"))
+            field = next(f for f in fields["fields"] if f["name"] == "Status")
+            option = next(o["id"] for o in field["options"] if o["name"].lower() == column.lower())
         except (RuntimeError, StopIteration, KeyError, TypeError, ValueError):
             return False
         return ok("gh", "project", "item-edit", "--project-id", pid, "--id", item, "--field-id", field["id"],
