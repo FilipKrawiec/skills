@@ -21,7 +21,8 @@ start  preflights the identities, merges approved PRs, runs --sync in a checkout
        `Explore:` line: no work is free for this run, lanes.json `explore.idleHours` is set, no
        other live run explores and the last idle explore began at least that many hours ago, so
        this run plays `explore` unattended instead.
-check  for a host's watcher that starts runs on events instead of a schedule, with no model: preflights
+check  for a host's watcher that starts runs on events instead of a schedule, with no model: prints `Quiet:` (exit 3)
+       while fewer than RESERVE GraphQL points are left this hour, so live runs keep them; else preflights
        the identities, marks ready each draft whose checks pass, merges approved PRs, then prints `Start: <n>` (exit 0), the runs to start now so that each has free
        work, counting live runs that hold nothing yet as taking some; else one `Done:` line (exit 3).
        With --quiet it first prints `Quiet:` (exit 3) while the newest repository event, the newest
@@ -71,6 +72,9 @@ CLAIM_RE = re.compile(r"<!-- afk-claim session=(\S+) -->")
 ELIGIBILITY_RE = re.compile(r"<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)")
 PRIORITIES = {"P0": 0, "P1": 1, "P2": 2}
 GRACE = 600
+# GraphQL points the watcher leaves to live runs: below it no new run starts, since every run and the watcher
+# share one account's hourly budget and a run that meets the limit mid-turn ends needing a person
+RESERVE = 1000
 
 
 class Blocked(Exception):
@@ -329,11 +333,24 @@ def card_column(state: str, column: str) -> str:
     otherwise moves the finished issue back to Todo."""
     return DONE if state == "CLOSED" else column
 
+BOARD = """query($owner:String!,$number:Int!){repositoryOwner(login:$owner){
+... on ProjectV2Owner{projectV2(number:$number){id}}}}"""
+
 
 class GitHub:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.repo = cfg["repo"]
+
+    def budget(self) -> tuple[int, str]:
+        """GraphQL points left this hour and when the budget resets (HH:MM local), read over REST, which
+        costs none; plenty when GitHub doesn't say."""
+        out = sh("gh", "api", "rate_limit", "--jq", ".resources.graphql | [.remaining, .reset] | @tsv", check=False)
+        try:
+            left, reset = out.split()
+            return int(left), time.strftime("%H:%M", time.localtime(int(reset)))
+        except ValueError:
+            return RESERVE, ""
 
     def issues(self) -> list[Issue]:
         owner, name = self.repo.split("/")
@@ -435,8 +452,14 @@ def preflight(cfg: dict) -> None:
     perms = sh("gh", "api", f"repos/{repo}", "--jq", "[.permissions.admin, .permissions.maintain]", check=False)
     if perms.replace(" ", "") != "[false,false]":
         raise Blocked(f"{login} has admin or maintain on {repo} ({perms}); drop it to write")
-    if project and not ok("gh", "project", "view", str(project["number"]), "--owner", project["owner"]):
-        raise Blocked(f"{login} cannot read project {project['number']}; gh auth refresh -s project")
+    if project:
+        read = subprocess.run(["gh", "api", "graphql", "-f", f"query={BOARD}", "-F", f"owner={project['owner']}",
+                               "-F", f"number={project['number']}", "--jq", ".data.repositoryOwner.projectV2.id"],
+                              capture_output=True, text=True)
+        if "rate limit" in (read.stdout + read.stderr).lower():
+            raise Blocked(f"GitHub's GraphQL rate limit stops {login} for now; the next check retries")
+        if read.returncode or not read.stdout.strip():
+            raise Blocked(f"{login} cannot read project {project['number']}; gh auth refresh -s project")
 
 
 def merge_approved(gh: GitHub, nodes: list[dict], only: set[int] | None = None) -> list[str]:
@@ -710,6 +733,10 @@ def check(gh: GitHub, runs: Runs, ledger: Ledger | None = None, state: Path | No
     seen = signal(gh, runs) if state else None
     if state and quiet(state, seen, now()):
         print("Quiet: nothing changed since the last check.")
+        return 3
+    left, reset = gh.budget()
+    if left < RESERVE:
+        print(f"Quiet: GitHub's GraphQL budget has {left} points left until {reset}; live runs keep them.")
         return 3
     ready()
     out = merge_approved(gh, gh.prs())
