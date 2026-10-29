@@ -333,6 +333,11 @@ def card_column(state: str, column: str) -> str:
     otherwise moves the finished issue back to Todo."""
     return DONE if state == "CLOSED" else column
 
+FINISHED_PRS = """query($owner:String!,$name:String!){repository(owner:$owner,name:$name){
+pullRequests(states:[MERGED,CLOSED],first:30,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number
+projectItems(first:10){nodes{id project{number} fieldValueByName(name:"Status"){
+... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}}"""
+
 BOARD = """query($owner:String!,$number:Int!){repositoryOwner(login:$owner){
 ... on ProjectV2Owner{projectV2(number:$number){id}}}}"""
 
@@ -397,7 +402,15 @@ class GitHub:
                                   "-F", f"name={name[1]}", "-F", f"number={number}"))
             issue = items["data"]["repository"]["issue"]
             item = next(n["id"] for n in issue["projectItems"]["nodes"] if n["project"]["id"] == pid)
-            column = card_column(issue["state"], column)
+        except (RuntimeError, StopIteration, KeyError, TypeError, ValueError):
+            return False
+        return self.move(pid, item, card_column(issue["state"], column))
+
+    def move(self, pid: str, item: str, column: str) -> bool:
+        """Set the card's Status to the option named `column` (any case); False when there is none."""
+        board = self.cfg["project"]
+        owner, project = board.get("owner") or self.repo.split("/")[0], str(board["number"])
+        try:
             fields = json.loads(sh("gh", "project", "field-list", project, "--owner", owner, "--format", "json"))
             field = next(f for f in fields["fields"] if f["name"] == "Status")
             option = next(o["id"] for o in field["options"] if o["name"].lower() == column.lower())
@@ -405,6 +418,28 @@ class GitHub:
             return False
         return ok("gh", "project", "item-edit", "--project-id", pid, "--id", item, "--field-id", field["id"],
                   "--single-select-option-id", option)
+
+    def finish_pr_cards(self) -> list[int]:
+        """Move to Done the card of each recently merged or closed PR still in another column, since a
+        board's own merge workflow may be off; the PRs moved."""
+        board = self.cfg.get("project") or {}
+        if not board.get("number"):
+            return []
+        owner, name = self.repo.split("/")
+        try:
+            nodes = json.loads(sh("gh", "api", "graphql", "-f", f"query={FINISHED_PRS}", "-F", f"owner={owner}",
+                                  "-F", f"name={name}"))["data"]["repository"]["pullRequests"]["nodes"]
+            pid = sh("gh", "project", "view", str(board["number"]), "--owner", board.get("owner") or owner,
+                     "--format", "json", "--jq", ".id")
+        except (RuntimeError, KeyError, TypeError, ValueError):
+            return []
+        moved = []
+        for pr in nodes:
+            for card in pr["projectItems"]["nodes"]:
+                if card["project"]["number"] == board["number"] and (card.get("fieldValueByName") or {}).get("name") != DONE:
+                    if self.move(pid, card["id"], DONE):
+                        moved.append(pr["number"])
+        return moved
 
     def merge(self, number: int, head: str) -> str:
         base = ["gh", "pr", "merge", str(number), "--repo", self.repo, "--squash", "--match-head-commit", head]
@@ -740,6 +775,7 @@ def check(gh: GitHub, runs: Runs, ledger: Ledger | None = None, state: Path | No
         return 3
     ready()
     out = merge_approved(gh, gh.prs())
+    out += [f"PR #{n}'s card moved to {DONE}: the PR is merged or closed" for n in gh.finish_pr_cards()]
     epics, thread = survey(gh, runs, "")
     with ledger.locked():
         live = sorted(runs.refresh().ids)

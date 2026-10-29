@@ -189,6 +189,9 @@ class FakeGitHub:
     def budget(self):
         return getattr(self, "left", 5000), "23:55"
 
+    def finish_pr_cards(self):
+        return getattr(self, "finished", [])
+
     def merge(self, number, head):
         self.merged.append(number)
         return "merged"
@@ -558,6 +561,26 @@ class EventTest(unittest.TestCase):
             self.assertTrue(lanes.quiet(state, "e1", 1000))
             self.assertFalse(lanes.quiet(state, "e2", 1001))
             self.assertFalse(lanes.quiet(state, "e1", 1800))
+
+    def test_a_check_moves_finished_pr_cards_to_done(self):
+        gh = FakeGitHub(issues=[self.EPIC])
+        gh.finished = [984]
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            lanes.check(gh, LiveSet(), lanes.Ledger())
+        self.assertIn("PR #984's card moved to Done", out.getvalue())
+
+    def test_finished_pr_cards_move_to_done_unless_already_there(self):
+        gh = lanes.GitHub({"repo": "o/r", "project": {"number": 5}})
+        card = lambda column: {"id": f"I{column}", "project": {"number": 5}, "fieldValueByName": column and {"name": column}}
+        nodes = [{"number": 1, "projectItems": {"nodes": [card("Review")]}},
+                 {"number": 2, "projectItems": {"nodes": [card("Done")]}},
+                 {"number": 3, "projectItems": {"nodes": [card(None), {**card("Todo"), "project": {"number": 6}}]}}]
+        answers = {"graphql": json.dumps({"data": {"repository": {"pullRequests": {"nodes": nodes}}}}), "view": "P1"}
+        moves = []
+        with mock.patch.object(lanes, "sh", lambda *a, **k: answers[a[2]]), \
+                mock.patch.object(gh, "move", lambda pid, item, column: moves.append((pid, item, column)) or True):
+            self.assertEqual(gh.finish_pr_cards(), [1, 3])
+        self.assertEqual(moves, [("P1", "IReview", "Done"), ("P1", "INone", "Done")])
 
     def test_a_low_graphql_budget_starts_and_merges_nothing_so_live_runs_keep_it(self):
         gh = FakeGitHub(issues=[self.EPIC], prs=[pr_node(9, verdict="ready")])
