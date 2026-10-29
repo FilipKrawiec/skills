@@ -22,7 +22,7 @@ Record intent, constraints, non-goals and `### Acceptance criteria`, provable by
 
 Take product choices on their recommendation as [decision records](references/decision-records.md). Reserve changed strategy, new paid services/budget increases and authority/credential/release/quality-gate weakening for the owner. Record options and recommendation; continue independent authorized preparation.
 
-For multiple PRs, create vertical sub-issues under `type:epic`; only epics have children and nobody claims one. Include remaining work. Slice by reusable unit tested alone; one story places units on screens. Link only dependencies where code needs code, never shared files or screens (the later PR resolves conflicts): `gh api -X POST repos/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker's REST id>`. Verify the required outcome; closure alone does not prove completion.
+For multiple PRs, create sub-issues under `type:epic`, each a vertical slice: one reusable unit (component, model or service) with its tests, or the slice integrating units; only epics have children and nobody claims one. Include remaining work. Link outcome dependencies only (the slice's code needs another's code), never shared files or integration order (the later PR resolves conflicts): `gh api -X POST repos/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker's REST id>`. Verify the required outcome; closure alone does not prove completion.
 
 **Exit gate:** observable outcomes, scope/dependencies and unresolved reserved questions are explicit.
 
