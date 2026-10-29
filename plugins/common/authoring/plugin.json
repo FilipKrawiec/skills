@@ -1,5 +1,17 @@
 {
   "name": "filipkrawiec-authoring",
   "description": "Skill authoring guidance for writing and validating agent skills.",
-  "version": "11.43.15"
+  "version": "11.43.15",
+  "author": {
+    "name": "Filip Krawiec",
+    "email": "contact@filipkrawiec.com",
+    "url": "https://github.com/FilipKrawiec"
+  },
+  "homepage": "https://github.com/FilipKrawiec/skills",
+  "repository": "https://github.com/FilipKrawiec/skills",
+  "license": "UNLICENSED",
+  "keywords": [
+    "skills",
+    "authoring"
+  ]
 }

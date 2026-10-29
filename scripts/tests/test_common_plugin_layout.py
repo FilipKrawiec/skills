@@ -65,6 +65,12 @@ class CommonPluginLayoutTests(unittest.TestCase):
             {f"./plugins/common/{package}" for package in COMMON_PACKAGES},
         )
 
+    def test_antigravity_workspace_configuration_is_present(self) -> None:
+        agy_cfg = ROOT / ".agents" / "plugins.json"
+        self.assertTrue(agy_cfg.is_file())
+        data = json.loads(agy_cfg.read_text(encoding="utf-8"))
+        paths = {entry["path"] for entry in data.get("entries", [])}
+        self.assertIn("plugins/common", paths)
     def test_all_docs_and_adrs_are_indexed_in_docs_index(self) -> None:
         docs_index = (ROOT / "docs" / "index.md").read_text(encoding="utf-8")
         adr_readme = (ROOT / "docs" / "adr" / "README.md").read_text(encoding="utf-8")

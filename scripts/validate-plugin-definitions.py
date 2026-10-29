@@ -50,6 +50,7 @@ PROVIDER_TERMS_RE = re.compile(
 
 # package-metadata.json fields the Codex manifest carries for its plugin directory.
 CODEX_METADATA_FIELDS = ("author", "homepage", "repository", "license", "keywords", "interface")
+ANTIGRAVITY_METADATA_FIELDS = ("author", "homepage", "repository", "license", "keywords")
 
 
 class ValidationError(Exception):
@@ -256,7 +257,10 @@ def expected_package_manifests(metadata: dict) -> dict[str, dict]:
     identity = {field: metadata[field] for field in ("name", "description", "version")}
     host = {**identity, "skills": "./skills/"}
     return {
-        "plugin.json": identity,
+        "plugin.json": {
+            **identity,
+            **{field: metadata[field] for field in ANTIGRAVITY_METADATA_FIELDS if field in metadata},
+        },
         ".claude-plugin/plugin.json": host,
         ".codex-plugin/plugin.json": {
             **host,
@@ -282,6 +286,8 @@ def validate_package_metadata(path: Path, expected_name: str) -> None:
         fields = set(expected)
         if relative_path == ".codex-plugin/plugin.json":
             fields.update(CODEX_METADATA_FIELDS)
+        elif relative_path == "plugin.json":
+            fields.update(ANTIGRAVITY_METADATA_FIELDS)
         for field in sorted(fields):
             if manifest.get(field) != expected.get(field):
                 fail(f"{rel(manifest_path)} must match package {field}")
@@ -403,7 +409,32 @@ def sync_manifests(root: Path = ROOT) -> None:
             market_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
             synced_files.append(market_path)
 
+    # 3. Sync Antigravity Workspace Plugins Configuration
+    agy_plugins_cfg = root / ".agents" / "plugins.json"
+    if agy_plugins_cfg.parent.is_dir():
+        agy_plugins_data = {
+            "entries": [
+                {
+                    "path": "plugins/common"
+                }
+            ]
+        }
+        agy_plugins_cfg.write_text(json.dumps(agy_plugins_data, indent=2) + "\n", encoding="utf-8")
+        synced_files.append(agy_plugins_cfg)
+
     print(f"Synchronized {len(synced_files)} manifest files to release version {release_version}.")
+
+
+def validate_antigravity_configuration(root: Path = ROOT) -> None:
+    agy_plugins = root / ".agents" / "plugins.json"
+    if not agy_plugins.is_file():
+        fail(f"missing {rel(agy_plugins)}; Antigravity workspace requires .agents/plugins.json")
+    data = load_json(agy_plugins)
+    entries = data.get("entries")
+    if not isinstance(entries, list) or not any(
+        isinstance(e, dict) and e.get("path") in ("plugins/common", "./plugins/common") for e in entries
+    ):
+        fail(f"{rel(agy_plugins)} must declare 'plugins/common' in entries")
 
 
 def main() -> None:
@@ -421,6 +452,7 @@ def main() -> None:
             validate_skill_tree(path.parent / "skills")
 
         validate_retired_sdlc_is_absent(ROOT)
+        validate_antigravity_configuration(ROOT)
         validate_repository_release_version(ROOT)
         validate_repository_markdown_links(ROOT)
 
