@@ -22,7 +22,7 @@ Record intent, constraints, non-goals and `### Acceptance criteria`, provable by
 
 Take product choices on their recommendation as [decision records](references/decision-records.md). Reserve changed strategy, new paid services/budget increases and authority/credential/release/quality-gate weakening for the owner. Record options and recommendation; continue independent authorized preparation.
 
-For multiple PRs, create vertical sub-issues under `type:epic`; only epics have children and nobody claims one. Include remaining work. Represent each outcome dependency with a blocked-by link, never a shared file (the later PR resolves conflicts): `gh api -X POST repos/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker's REST id>`. Verify the required outcome; closure alone does not prove completion.
+For multiple PRs, create vertical sub-issues under `type:epic`; only epics have children and nobody claims one. Include remaining work. Slice by reusable unit tested alone; one story places units on screens. Link only dependencies where code needs code, never shared files or screens (the later PR resolves conflicts): `gh api -X POST repos/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker's REST id>`. Verify the required outcome; closure alone does not prove completion.
 
 **Exit gate:** observable outcomes, scope/dependencies and unresolved reserved questions are explicit.
 
@@ -56,6 +56,6 @@ With a board, keep columns/membership. Orchestrator moves ready AFK issues to To
 
 Preserve template markers. Envelope: summary <=3 sentences; scope, risks and decision one line each; acceptance, estimate and packet as applicable.
 
-Link merged evidence per criterion. Close routine slices within scope after merged criteria are verified and move their cards to Done. Close product-milestone issues only after deployed acceptance. Duplicate/withdrawn scope still needs its applicable decision.
+Link merged evidence per criterion. Close product-milestone issues only after deployed acceptance. Duplicate/withdrawn scope still needs its applicable decision.
 
 **Exit gate/output:** saved issue re-read. <=5 lines: **Summary:** linked criteria/lanes/waits. **Decision:** next action/actor, reserved options/recommendation; no unowned work.
