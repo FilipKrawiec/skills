@@ -1,5 +1,22 @@
 {
   "name": "filipkrawiec-workflow",
   "description": "Milestone-led delivery, independent review, owner-approved releases and engineering health.",
-  "version": "11.43.15"
+  "version": "11.43.15",
+  "author": {
+    "name": "Filip Krawiec",
+    "email": "contact@filipkrawiec.com",
+    "url": "https://github.com/FilipKrawiec"
+  },
+  "homepage": "https://github.com/FilipKrawiec/skills",
+  "repository": "https://github.com/FilipKrawiec/skills",
+  "license": "UNLICENSED",
+  "keywords": [
+    "skills",
+    "workflow",
+    "tdd",
+    "vcs",
+    "review",
+    "issues",
+    "afk"
+  ]
 }

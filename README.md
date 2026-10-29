@@ -33,10 +33,14 @@ claude \
   --plugin-dir plugins/common/authoring
 ```
 
-For Antigravity local development, explicitly link only this repository's packages:
+Antigravity automatically discovers workspace packages via `.agents/plugins.json`. To link or validate packages with the Antigravity CLI:
 
 ```bash
+# Link live symlinks into ~/.gemini/config/plugins (dev mode)
 just link-agy
+
+# Validate plugins with Antigravity CLI
+just validate-agy
 ```
 
 Override `AGY_IDE_PLUGIN_DIR` to choose a destination. This command replaces symlinks and refuses existing real paths; migrate any old copied plugin directories explicitly. It does not discover/install sibling repositories or refresh other hosts. There are no automatic installation hooks. For an earlier setup pointing at this repository's removed hook directory, unset that local `core.hooksPath` after confirming it is the old setup.

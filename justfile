@@ -14,6 +14,17 @@ verify: unit
 sync-manifests:
     python3 scripts/validate-plugin-definitions.py --sync
 
+# Validate plugins with Antigravity CLI if available
+validate-agy:
+    #!/usr/bin/env bash
+    if command -v agy >/dev/null 2>&1; then
+      for dir in plugins/common/*; do
+        [ -d "$dir" ] || continue
+        agy plugin validate "$dir"
+      done
+    else
+      echo "Antigravity CLI (agy) not found in PATH; skipping native validation."
+    fi
 # Display verifier status and detected lifecycle tasks
 status:
     python3 scripts/project-verify.py status
