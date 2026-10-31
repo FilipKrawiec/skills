@@ -10,7 +10,7 @@ Read base and branchPrefix from `.github/lanes.json` (defaults `main`, `agent/af
 
 ## 1. Start
 
-Fetch `origin/<base>` and reconcile existing branch/PR/assignment before creating anything. Reuse this issue's unmerged branch/worktree; never overwrite another assignment. Branch from `origin/<base>` otherwise. Wait for a dependent parent to merge; never stack PRs. Open PRs never block work, even on shared files; the later one resolves conflicts.
+Fetch `origin/<base>` and reconcile branch/PR/assignment. Reuse this issue's unmerged branch/worktree; otherwise branch from `origin/<base>`. Never overwrite another assignment or stack PRs; wait for a dependent parent to merge. Open PRs never block shared files; the later one resolves conflicts.
 
 Use unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue. Re-read state labels; stop on another assignment. Add `state:claimed` unattended or `state:started` attended, recording actor, branch, scope and authority. Card to In progress. Labels are records, not atomic locks; serialize if coordination is unproven.
 
@@ -20,6 +20,8 @@ Use unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or 
 
 Stage only assigned paths. Use Conventional Commits per verified slice. Pass the project's verify gate once for changed code before push; retain commands/exits for that revision. Push HTTPS as the existing authorized implementer identity; never silently use the owner's SSH identity or provision credentials.
 
+Before each push, resolve the push URL's effective HTTPS Git credential and authenticate the host's read-only identity endpoint without exposing the secret. Require the authorized implementer, never Reviewer. Serialize shared credential changes through check and push or bind the checked credential to that push; otherwise stop. If Reviewer ever pushed the PR branch, later pushes, even empty commits, cannot restore that Reviewer's approval eligibility; report for owner action.
+
 Before PR creation, rebase on fetched base if needed. After opening, merge base instead: rewriting history detaches review threads. Before any push to an open PR, disable auto-merge, invalidate prior review evidence and return the changed head for fresh review. Never force-push protected/default branches without explicit owner authority.
 
 **Exit gate/output:** commit SHA and push exit 0, or exact capability wait; report commands/exits.
@@ -28,7 +30,7 @@ Before PR creation, rebase on fetched base if needed. After opening, merge base 
 
 Require both fresh `review` axes, blocking findings verified, for the exact base/head before opening; the orchestrator supplies Reviewer results. Fix blockers; suggestions are optional. Local verdicts never replace `agent-review`. Right after opening, the orchestrator assigns `agent-review`; workers never dispatch.
 
-Open as the host asks; ready a draft once its checks pass, then tell the owner. Reuse an existing PR. Use the issue title and its `## Plan` link. Use `Closes #<N>` only when the bounded outcome completes on merge; for a product milestone awaiting test delivery, demo or production acceptance, use `Part of #<N>` and keep the issue open. After acceptance, the orchestrator closes it through `spec`. For partial epic work use `Part of #<N>`. A revert uses `Reverts #<M>`, never `Closes` on the reverted issue.
+Open as the host asks; ready a draft once checks pass, then tell the owner. Reuse existing PRs; use the issue title and `## Plan` link. Use `Closes #<N>` only when merge completes the outcome. Use `Part of #<N>` for partial epic work or a milestone awaiting test delivery, demo or production acceptance; after acceptance the orchestrator closes it through `spec`. A revert uses `Reverts #<M>`, never `Closes`.
 
 Use this envelope, with before/after captures for visible behavior and blockers/owner choices visible. Omit inapplicable sections; add **Revert** only when a squash revert falls short (migration, data, flag, published release).
 
@@ -53,13 +55,13 @@ Checks: `just verify` exit 0. GitHub approval still pending.
 </details>
 ```
 
-Require effective branch protection for the configured Reviewer and required checks before enabling auto-merge. Resolve any additional owner hold first. Request `gh pr merge <pr> --squash --auto --match-head-commit <head>` when the base and head are final; native protection still blocks merge until Reviewer approval and checks pass. Never use exact-head approvals as a substitute for missing enforcement. The flag checks the head at invocation; it does not freeze later pushes. Remove execution labels and report desired board status to the orchestrator (sole board writer). Return PR/head to the orchestrator for `agent-review`.
+Require effective Reviewer protection and required checks before auto-merge; resolve owner holds. When base and head are final, request `gh pr merge <pr> --squash --auto --match-head-commit <head>`. The flag checks head only at invocation; exact-head approval never substitutes for enforcement. Remove execution labels, report board status to the orchestrator (sole board writer), and return PR/head for `agent-review`.
 
 **Exit gate:** PR, auto-merge awaiting required review/checks, or explicit protection gap.
 
 ## 4. Reconcile merge readiness
 
-Run after every push, base change or returned review. Read actual head/checks, conflicts, threads and review state. Return repairs to Craftsman and review/verified corrections to Reviewer through the orchestrator. Never dismiss blocking reviews or resolve human threads.
+After every push, base change or review, read head/checks, conflicts, threads and review state. Return repairs and corrections through the orchestrator. Never dismiss blocking reviews or resolve human threads.
 
 Enable or keep auto-merge only under effective Reviewer protection with owner holds resolved; pending approval and checks may remain. A changed head or review-relevant base invalidates evidence: disable auto-merge, obtain fresh exact-head review, then re-enable with the head guard. Pending checks/reviews retain next actor and retry condition. An auto-merge request is not a merge; confirm it.
 
