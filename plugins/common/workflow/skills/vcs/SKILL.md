@@ -20,7 +20,7 @@ Use unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or 
 
 Stage only assigned paths. Use Conventional Commits per verified slice. Pass the project's verify gate once for changed code before push; retain commands/exits for that revision. Push HTTPS as the existing authorized implementer identity; never silently use the owner's SSH identity or provision credentials.
 
-Before each push, resolve the push URL's effective HTTPS Git credential and authenticate the host's read-only identity endpoint without exposing the secret. Require the authorized implementer, never Reviewer. Serialize shared credential changes through check and push or bind the checked credential to that push; otherwise stop. If Reviewer ever pushed the PR branch, later pushes, even empty commits, cannot restore that Reviewer's approval eligibility; report for owner action.
+Before each push, resolve the push URL's effective HTTPS Git credential and authenticate the host's read-only identity endpoint without exposing the secret. Require the authorized implementer, never Reviewer. Serialize shared credential changes through check and push or bind the checked credential to that push; otherwise stop. If Reviewer pushed the PR branch, do not assume a later or empty push restores eligibility: check effective branch rules and the merge decision; escalate if blocked.
 
 Before PR creation, rebase on fetched base if needed. After opening, merge base instead: rewriting history detaches review threads. Before any push to an open PR, disable auto-merge, invalidate prior review evidence and return the changed head for fresh review. Never force-push protected/default branches without explicit owner authority.
 
