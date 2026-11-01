@@ -1,8 +1,8 @@
 # Idle Explore
 
-An AFK run plays `explore` unattended when `workflow.mjs afk start` exits 4: no work was free for it, `.agents/config.json` sets `explore.idleHours`, no other live run is working and the last idle explore began at least `idleHours` ago. The record is `afk-idle-explore.json` in the repository's git common directory.
+An AFK run plays `explore` unattended when `workflow.mjs afk start` exits 4: no work was free for it, no other live run is working and the last idle explore began at least the CLI default `idleHours` ago. The record is `afk-idle-explore.json` in the repository's git common directory.
 
-- Play only browser targets unless the brief names others: a simulator boot can stall a host other runs share.
+- Use only browser runs unless the brief names others: a simulator boot can stall a host other runs share.
 - Pick the persona and journey as phase 1 says, with no caller's choice: the journey never run, else the one run longest ago.
 - Every new issue needs `lane:proposed` and a parent epic, so the next run of that epic sees it; without one, report it as an owner wait.
 

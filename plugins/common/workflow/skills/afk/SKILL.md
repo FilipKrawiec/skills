@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Write Bash(git:*,gh:*,node:*,just:*,lsof:*)
 
 # AFK
 
-Deliver the requested authorized slice, or one unattended slice per run. Read `.agents/config.json` from the fetched `origin/HEAD` for the implementer and product-specific settings. Never change the main checkout. When the owner explicitly invokes AFK interactively, work on their requested items; do not pick unrelated queue work.
+Deliver the requested authorized slice, or one unattended slice per run. Read `.agents/config.json` from the fetched `origin/HEAD` for the implementer and the Process, Assemble and Test script mappings. Never change the main checkout. When the owner explicitly invokes AFK interactively, work on their requested items; do not pick unrelated queue work.
 
 Read [setup.md](references/setup.md) only when enabling or scheduling runs, and [github-safety.md](references/github-safety.md) only when checking GitHub protection. Use `safety check` for read-only inspection. Run `safety apply` only after an explicit owner instruction; it changes repository permissions and branch protection. The implementer comes from `.agents/config.json`; repository, base and roles come from Git and base CODEOWNERS; required checks use CLI defaults.
 
@@ -28,7 +28,9 @@ Use the workflow CLI for assignments and issue writes; it validates the actor an
 
 ## 3. Deliver
 
-Invoke the skills for implementation, review, VCS and binding GitHub approval. When assigning agents, use `afk.agentModels` for the matching `product`, `implementer`, `delivery`, `reviewer` or `reviewFix` role; apply `reviewFix.fromRound` to escalation. Pass model and reasoning effort when the host supports them. Respect the repository's pre-push gate and required hosted checks; do not duplicate a full suite locally unless required or needed to diagnose a failure. Every changed or untracked path must be in the scope packet or `alwaysInScope`. The author cannot approve their own work. Verify criteria, scope, owner decisions and prior findings against authoritative records; generated review context may omit information. Keep GitHub approval bound to the actual head, while reusing unchanged evidence or reviewing only the delta as `review` permits. Pending CI does not prevent a clean review; it remains a merge gate.
+Invoke the skills for implementation, review, VCS and binding GitHub approval. When assigning agents, use `afk.agentModels` for the matching `product`, `implementer`, `delivery`, `reviewer` or `reviewFix` role; apply `reviewFix.fromRound` to escalation. Pass model and reasoning effort when the host supports them. Respect the repository's pre-push gate and required hosted checks; do not duplicate a full suite locally unless required or needed to diagnose a failure. Every changed or untracked path must be in the scope packet. The author cannot approve their own work. Verify criteria, scope, owner decisions and prior findings against authoritative records; generated review context may omit information. Keep GitHub approval bound to the actual head, while reusing unchanged evidence or reviewing only the delta as `review` permits. Pending CI does not prevent a clean review; it remains a merge gate.
+
+Follow **Process → Assemble → Test**. Process the issue and plan with the invoked skills; if `steps.process` is an argv array, run it with the assigned issue context. Assemble the authorized change, then run `steps.assemble` with `{platform}` when previewing the app. Test with `steps.test`, replacing `{scope}` with the assigned scope. Run argv arrays directly, preserving each argument; `null` means the workflow skill handles that phase without a project script. Stop and report if a required script is absent.
 
 Delegate only when needed for independence or parallel work. Use fresh minimal context where supported, with all relevant criteria and evidence; never omit applicable decisions. Give each worker this complete brief:
 

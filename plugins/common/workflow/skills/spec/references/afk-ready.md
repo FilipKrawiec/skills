@@ -30,7 +30,7 @@ Unattended, or for issues from `gh issue list --search "-label:lane:afk -label:l
 - Ground a bug report (`type:bug`, or `<!-- explore-finding` in the body) before the checks; under a review-only request, report these edits instead of saving them:
   1. Trace the observed behaviour to the base's code and confirm its cause at `file:line`.
   2. Add only criteria restoring the report's expected behaviour, including that a test reproducing the report passes (a described render for a visual bug); propose others in the comment.
-  3. Narrow the packet to the files the fix and its tests change (`alwaysInScope` paths need no entry); name the estimate's main unknown.
+  3. Narrow the packet to every file the fix and its tests may change; name the estimate's main unknown.
   4. Append `<!-- refined base=<short sha> -->` to the body whatever the outcome, closure proposals included.
 - Nature determines lane: owner-held decisions, credentials, devices or reserved effects → `lane:owner`; otherwise ready under approved milestone or direct owner authority → `lane:afk`; otherwise → `lane:proposed`. Automated Reviewer eligibility applies to every proposal. Size never determines lane. Temporary blockers preserve lane; record readiness separately. No approval is not approval.
 - Comment once: each failing check and what would fix it.
