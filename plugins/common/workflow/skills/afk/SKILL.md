@@ -20,7 +20,7 @@ Routine engineering within approved scope is delegated. New interaction directio
 
 ## 2. Select or resume
 
-For AFK, use the CLI's `Hold:`/`Work:` output as the full assignment; take no second item. A foreground one-shot watcher owns holds; don't call `afk start`/`end`. Background hosts manage holds. The CLI selects eligible AFK/proposed issues and PRs needing review or repair, respecting blockers, claims and live holds. It prioritizes by board priority, then milestone and number; missing Project scope skips board metadata only. `afk.maxRuns` splits epics by issue; otherwise hold one epic. Owner-requested issues use `afk start --me ID --issue NUMBER`.
+For AFK, use the CLI's `Hold:`/`Work:` output as the full assignment; take no second item. A foreground one-shot watcher owns holds; don't call `afk start`/`end`. Background hosts manage holds. The CLI selects eligible AFK/proposed issues and PRs needing review or repair, respecting blockers, claims and live holds. It prioritizes by board priority, then milestone and number; missing Project scope skips board metadata only. The default concurrency is four; it splits epics by issue and holds an epic only when no sub-issue is eligible. Owner-requested issues use `afk start --me ID --issue NUMBER`.
 
 Use the workflow CLI for assignments and issue writes; it validates the actor and serializes claims. Post reports with `issue comment --number N --body-file PATH` using a single-link file inside the worktree; outside paths, escaping symlinks and hard links are rejected. Close passing issues with `issue close --number N`. Invoke `spec` for transitions.
 

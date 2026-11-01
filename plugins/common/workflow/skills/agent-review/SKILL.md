@@ -12,7 +12,7 @@ Read base `.agents/config.json` for identities and queue; read base CODEOWNERS f
 
 For a technical fork, reuse an applicable recorded decision; otherwise decide routine engineering inside approved intent and record choice, reason and packet correction. Never reverse owner decisions or change product strategy, budget, authority or quality gates. Return reserved questions with options; `spec` defines lane transitions; the named actor applies them.
 
-For AFK eligibility when `afk.reviewerApprovesAfk` is enabled, evaluate using `spec`, record `APPROVED AFK` or `REQUEST_CHANGES`, and return the result for the designated actor to transition. For a queue, select at most four ready PRs, oldest first, skipping drafts; use [queue.md](references/queue.md) for queue operations.
+Automated AFK eligibility review always runs for `lane:proposed` items. Evaluate using `spec`, record `APPROVED AFK` or `REQUEST_CHANGES`, and return the result for the designated actor to transition. For a queue, select at most four ready PRs, oldest first, skipping drafts; use [queue.md](references/queue.md) for queue operations.
 
 **Exit gate:** recorded decision, reserved question, or PR selected.
 

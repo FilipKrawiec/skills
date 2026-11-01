@@ -4,7 +4,7 @@ import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, assertDistinctPushRoles, githubScopeFailure, missingProjectScope, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workspaceFilePath, afkAgentEnvironment, afkWorkflowCliPath, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, assertDistinctPushRoles, githubScopeFailure, missingProjectScope, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workspaceFilePath, afkAgentEnvironment, afkWorkflowCliPath, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 const epic = { number: 1, labels: ['type:epic'], ancestors: [], priority: 1 };
@@ -22,8 +22,27 @@ test('AFK plan skips live claims but lets a new run take a stale claim', () => {
   assert.deepEqual(plan.epics[0].units.map(unit => unit.issue), [2, 4]);
 });
 
-test('one-shot AFK hosts have no background process inventory', () => {
+test('one-shot AFK runs are counted from live watcher PIDs', () => {
   assert.deepEqual(afkLive({}), []);
+  const ledger = {
+    live: [{ oneShot: true, watcherPid: 12 }],
+    dead: [{ oneShot: true, watcherPid: 13 }],
+    background: [{ oneShot: false, watcherPid: 12 }],
+  };
+  assert.deepEqual(afkOneShotLive(ledger, pid => pid === 12), ['live']);
+});
+
+test('workflow label catalog is centralized in the CLI', () => {
+  assert.deepEqual(Object.keys(workflowLabels), [
+    'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed', 'state:started',
+    'review:owner', 'type:epic', 'type:story', 'type:bug', 'type:chore', 'type:task',
+  ]);
+});
+
+test('AFK and explore use conventional defaults with four concurrent runs', () => {
+  assert.equal(workflowDefaults.afk.maxRuns, 4);
+  assert.match(workflowDefaults.afk.startCommand[0], /^pi$/);
+  assert.equal(workflowDefaults.explore.personas, '.agents/personas.md');
 });
 
 test('macOS inherited-lock check survives truncated lockf command paths', () => {

@@ -6,19 +6,19 @@ allowed-tools: Read Edit Bash
 
 # Ship
 
-Read the base and branch prefix from `.agents/config.json` (defaults `main`, `agent/afk-`). This phase grants no production promotion or fix-forward authority. Report board transitions to the orchestrator; `spec` owns transition semantics.
+Read repository-specific settings from `.agents/config.json`; AFK branch names use the provider-neutral `afk/<issue>-<slug>` form. This phase grants no production promotion or fix-forward authority. Report board transitions to the orchestrator; `spec` owns transition semantics.
 
 ## 1. Check actual base
 
 Fetch the base and identify actual `origin/<base>` HEAD. Check each required workflow's latest applicable run for that exact head. Success is green; failure is red; missing, incomplete or cancelled is pending. A failed run with no executable job steps is infrastructure evidence, not success. Never substitute an older green commit. Investigate the affected merge and issue by default; scan the queue or recent issues only for a scheduled sweep.
 
-For a red workflow, find newest green G and oldest red R after it. Attribute R only when `git log --first-parent <G>..<R>` lists exactly R; otherwise report the ambiguous range or unknown cause. A failure is AFK only when its PR head uses the configured branch prefix.
+For a red workflow, find newest green G and oldest red R after it. Attribute R only when `git log --first-parent <G>..<R>` lists exactly R; otherwise report the ambiguous range or unknown cause. A failure is AFK only when its PR head uses the `afk/` branch prefix.
 
 **Exit gate:** actual HEAD and required-check state, with culprit evidence or pending reason.
 
 ## 2. Recover within authority
 
-For an attributable AFK failure without an open `<branchPrefix>revert-<short-sha>` PR, prepare a revert from actual base HEAD, verify it and return it for authorized VCS delivery. Never merge without applicable authority. Reopen the issue, retain its lane, remove stale execution labels and record failing checks, revert, wait and retry recommendation.
+For an attributable AFK failure without an open `afk/revert-<short-sha>` PR, prepare a revert from actual base HEAD, verify it and return it for authorized VCS delivery. Never merge without applicable authority. Reopen the issue, retain its lane, remove stale execution labels and record failing checks, revert, wait and retry recommendation.
 
 For ambiguous or non-AFK failures, report evidence and the responsible actor; do not invent fix-forward authority. Report production failure to `release` immediately. Source reverts and deployment rollbacks are separate decisions.
 

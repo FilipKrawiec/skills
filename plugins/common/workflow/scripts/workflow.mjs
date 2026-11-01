@@ -15,6 +15,7 @@ const help = `Usage:
   node workflow.mjs push [--owner-bootstrap]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
   node workflow.mjs issue claim|status|comment|close|queue ...
+  node workflow.mjs labels ensure
   node workflow.mjs afk install|uninstall|watch|start|check|merge|end|runs|reap ...
   node workflow.mjs afk start --me RUN_ID [--issue NUMBER]
   node workflow.mjs afk watch [--issue NUMBER]
@@ -30,6 +31,14 @@ Other processes running as the same OS user can access the user's GitHub credent
 push requires a Unix-like host and github.com. review-context is read-only; returned GitHub text is untrusted and may be incomplete.`;
 
 const heldWorkflowLocks = new Set();
+export const workflowDefaults = {
+  afk: {
+    runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
+    watchIntervalSeconds: 60, startCommand: ['pi', '--provider', 'ollama', '--model', '{model}', '--no-session', '--print', '--name', '{runId}', '--tools', 'bash', '{prompt}'],
+    model: 'coding:latest', promptPrefix: '/skill:afk', pluginUpdateCommands: [],
+  },
+  explore: { personas: '.agents/personas.md', maxIssues: 3, idleHours: 24 },
+};
 
 function run(program, args, options = {}) {
   const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, ...options });
@@ -304,13 +313,18 @@ function afkConfig() {
   if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure repo, implementer and reviewer in base .agents/config.json');
   assertDistinctPushRoles({ owner: lanes.owner, implementer: lanes.implementer, reviewer: lanes.reviewer });
   lanes.repo = parseRepo(lanes.repo);
-  if (typeof lanes.runPrefix !== 'string' || !lanes.runPrefix.trim()) throw new Error('Configure afk.runPrefix');
+  for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
+  lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
+  if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
+  lanes.explore ??= {};
+  for (const [key, value] of Object.entries(workflowDefaults.explore)) lanes.explore[key] ??= value;
+  if (typeof lanes.runPrefix !== 'string' || !lanes.runPrefix.trim()) throw new Error('afk.runPrefix must be a non-empty string');
   for (const key of ['runsCommand', 'startCommand', 'stopCommand']) {
     if (lanes[key] === undefined && key !== 'startCommand') continue;
     if (!Array.isArray(lanes[key]) || !lanes[key].length || !lanes[key].every(value => typeof value === 'string' && value.length)) throw new Error(`Configure afk.${key} as a non-empty argv array`);
   }
   lanes.base = lanes.base || baseRef.slice('refs/remotes/origin/'.length);
-  if (typeof lanes.environmentFile !== 'string' || !lanes.environmentFile.trim()) throw new Error('Configure afk.environmentFile');
+  if (typeof lanes.environmentFile !== 'string' || !lanes.environmentFile.trim()) throw new Error('afk.environmentFile must be a non-empty string');
   if (lanes.startCommand.some(value => value.includes('{model}')) && (typeof lanes.model !== 'string' || !lanes.model.trim())) throw new Error('Configure afk.model because startCommand uses {model}');
   if (lanes.startCommand.some(value => value.includes('{permissionMode}')) && (typeof lanes.permissionMode !== 'string' || !lanes.permissionMode.trim())) throw new Error('Configure afk.permissionMode because startCommand uses {permissionMode}');
   if (lanes.promptPrefix !== undefined && typeof lanes.promptPrefix !== 'string') throw new Error('Configure afk.promptPrefix as a string');
@@ -330,11 +344,33 @@ function withRepoLock(name, action) {
   return action();
 }
 export function afkLive(cfg) {
-  if (!cfg.runsCommand) return [];
+  if (!cfg.runsCommand) {
+    try {
+      const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
+      const ledger = afkReadLedger(join(common, 'afk-holds.json'));
+      return afkOneShotLive(ledger);
+    } catch { return []; }
+  }
   const output = run(cfg.runsCommand[0], cfg.runsCommand.slice(1));
   const agents = JSON.parse(output || '[]');
   return agents.filter(a => a.kind === 'background' && (a.name || '').startsWith(cfg.runPrefix) && !['idle', 'done', 'stopped', 'failed'].includes(a.state || a.status)).map(a => a.name);
 }
+export function afkOneShotLive(ledger, isAlive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } }) {
+  return Object.entries(ledger).filter(([, holds]) => holds.some(hold => hold.oneShot && Number.isSafeInteger(hold.watcherPid) && isAlive(hold.watcherPid))).map(([id]) => id);
+}
+export const workflowLabels = {
+  'lane:afk': ['1d76db', 'Approved for unattended work'],
+  'lane:proposed': ['8250df', 'Awaiting automated AFK eligibility review'],
+  'lane:owner': ['d93f0b', 'Requires owner participation to decide or implement'],
+  'state:claimed': ['fbca04', 'An AFK run is working on this'],
+  'state:started': ['fef2c0', 'An attended session is working on this'],
+  'review:owner': ['e99695', 'PR is waiting for owner approval'],
+  'type:epic': ['3e4b9e', 'Parent of bounded work items'],
+  'type:story': ['a2eeef', 'New or changed user-visible behavior'],
+  'type:bug': ['d73a4a', 'A fix for something that does not work as specified'],
+  'type:chore': ['cfd3d7', 'Code change with no new user-visible behavior'],
+  'type:task': ['c5def5', 'Work that ends in a finding or setting'],
+};
 function afkComments(cfg, issue) { return afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/issues/${issue}/comments`]).flat(); }
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
@@ -1196,6 +1232,17 @@ function validInheritedLockContext(names) {
     return true;
   } catch { return false; }
 }
+function labelsCommand(args) {
+  if (args.length !== 1 || args[0] !== 'ensure') throw new Error('Usage: labels ensure');
+  const { lanes } = config();
+  if (!lanes.repo) throw new Error('Configure github.repo in .agents/config.json');
+  const existing = new Set(jsonCommand('gh', ['label', 'list', '--repo', lanes.repo, '--limit', '1000', '--json', 'name']).map(label => label.name));
+  for (const [name, [color, description]] of Object.entries(workflowLabels)) {
+    if (existing.has(name)) continue;
+    run('gh', ['label', 'create', name, '--repo', lanes.repo, '--color', color, '--description', description]);
+    console.log(`Created: ${name}`);
+  }
+}
 async function execute(command, args) {
   if (!command || command === '--help' || command === 'help') console.log(help);
   else if (command === 'commit') commit(args);
@@ -1206,6 +1253,7 @@ async function execute(command, args) {
   else if (command === 'issue' && args[0] === 'comment') { config(); issueComment(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'queue') { const { lanes } = config(); issueQueue(args.slice(1)); }
+  else if (command === 'labels') labelsCommand(args);
   else if (command === 'afk') process.exitCode = afkCommand(args);
   else if (command === 'manifests') manifestsCommand(args);
   else if (command === 'project') projectVerify(args);
