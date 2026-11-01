@@ -185,6 +185,10 @@ export function validateWorkflowSteps(steps) {
   }
   return steps;
 }
+export function requireTestStep(steps) {
+  if (!Array.isArray(steps?.test) || steps.test.length === 0) throw new Error('Configure steps.test as a non-empty argv array before running AFK');
+  return steps.test;
+}
 function parseRepo(repo) {
   if (typeof repo !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) throw new Error('lanes.repo must be owner/repository on github.com');
   return repo;
@@ -436,7 +440,7 @@ function afkConfig(refreshMetadata = false) {
   if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
   lanes.explore = { ...workflowDefaults.explore };
   if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
-  if (!Array.isArray(lanes.steps.test) || lanes.steps.test.length === 0) throw new Error('Configure steps.test as a non-empty argv array before running AFK');
+  requireTestStep(lanes.steps);
   lanes.refreshMetadata = refreshMetadata;
   if (typeof lanes.runPrefix !== 'string' || !lanes.runPrefix.trim()) throw new Error('afk.runPrefix must be a non-empty string');
   for (const key of ['runsCommand', 'startCommand', 'stopCommand']) {
