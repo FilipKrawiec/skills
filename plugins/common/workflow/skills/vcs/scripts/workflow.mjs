@@ -304,9 +304,9 @@ function afkAvailable(cfg, live) {
       return !live.includes(latest) && !live.includes(claim);
     });
 }
-function afkExploreDue(cfg, live) {
+function afkExploreDue(cfg, live, currentRun = null) {
   const hours = Number(cfg.explore?.idleHours);
-  if (!Number.isFinite(hours) || hours <= 0 || live.length) return false;
+  if (!Number.isFinite(hours) || hours <= 0 || live.some(id => id !== currentRun)) return false;
   const path = join(git('rev-parse', '--path-format=absolute', '--git-common-dir'), 'afk-idle-explore.json');
   try { return Date.now() - Number(JSON.parse(readFileSync(path, 'utf8')).started || 0) >= hours * 3_600_000; }
   catch { return true; }
@@ -457,7 +457,7 @@ function afkCommand(args) {
         if (Number(cfg.maxRuns) > 0 && live.filter(name => name !== id).length >= Number(cfg.maxRuns)) { console.log('Done: afk.maxRuns reached'); return 3; }
         const free = afkAvailable(cfg, live)[0];
         if (!free) {
-          if (afkExploreDue(cfg, live)) {
+          if (afkExploreDue(cfg, live, id)) {
             const explore = join(common, 'afk-idle-explore.json'); const tmp = `${explore}.${process.pid}.tmp`;
             writeFileSync(tmp, JSON.stringify({ session: id, started: Date.now() })); renameSync(tmp, explore);
             console.log('Explore: no issue is free; run the exploratory usability pass.'); return 4;
