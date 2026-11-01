@@ -11,18 +11,12 @@ Use version 1; read it from base. AFK uses automated review; the native code own
   "github": {"repo": "acme/app", "base": "main", "project": {"owner": "acme", "number": 3}, "requiredChecks": ["Verify / verify"]},
   "afk": {
     "runPrefix": "acme-afk-",
-    "runsCommand": ["agent-cli", "agents", "--json"],
-    "startCommand": ["agent-cli", "--background", "--name", "{runId}", "--permission-mode", "{permissionMode}", "--model", "{model}", "{prompt}"],
-    "stopCommand": ["agent-cli", "stop", "{id}"],
+    "startCommand": ["pi", "--provider", "ollama", "--model", "{model}", "--no-session", "--print", "--name", "{runId}", "{prompt}"],
+    "promptPrefix": "/skill:afk",
     "environmentFile": "~/.agent/settings.json",
-    "stateFile": "~/.agent/jobs/{id}/state.json",
     "serviceLabel": "acme.afk-watch",
-    "model": "coding-model",
-    "permissionMode": "auto",
+    "model": "coding:latest",
     "watchIntervalSeconds": 60,
-    "waitTimeoutMinutes": 10,
-    "pluginUpdateCommands": [],
-    "pluginUpdateIntervalMinutes": 30,
     "reviewerApprovesAfk": true,
     "maxRuns": 4,
     "alwaysInScope": ["docs/"]
@@ -30,7 +24,7 @@ Use version 1; read it from base. AFK uses automated review; the native code own
 }
 ```
 
-This is the only repository-level workflow configuration. `github` accepts `repo`, `base`, `project`, `reviewQueue`, `requiredChecks` and optional `releaseAppId`; `afk` accepts `branchPrefix`, `runPrefix`, `runsCommand`, `startCommand`, `stopCommand`, `environmentFile`, `stateFile`, `serviceLabel`, `model`, `permissionMode`, `agentModels`, `watchIntervalSeconds`, `waitTimeoutMinutes`, `pluginUpdateCommands`, `pluginUpdateIntervalMinutes`, `staleClaimHours`, `reviewRounds`, `reviewerApprovesAfk`, `maxRuns`, `alwaysInScope` and `ownerLines`. `agentModels` maps role names to `model` and optional `reasoningEffort`; `reviewFix.fromRound` starts escalation. Commands are argv arrays; `startCommand` supports `{runId}`, `{prompt}`, `{model}`, `{permissionMode}`, `{cliPath}` and `{repository}`. `explore` holds target and scheduling settings. Identity, project and AFK settings go here; path ownership stays in CODEOWNERS.
+This is the repository workflow config. `github` holds repo, base, project and checks; `afk` holds the host command and lane settings; `explore` holds targets. Commands are argv arrays. `startCommand` supports `{runId}`, `{prompt}`, `{model}`, `{permissionMode}`, `{cliPath}` and `{repository}`. `promptPrefix` can invoke a host skill explicitly, as Pi does with `/skill:afk`. Background hosts may add `runsCommand`, `stopCommand`, `stateFile` and `waitTimeoutMinutes`; one-shot hosts omit them. The watcher holds its workflow lock until `startCommand` exits, so Pi runs in the foreground without host-specific process inventory. `agentModels` maps delegated roles to a model and optional reasoning effort; `reviewFix.fromRound` sets escalation. Keep path ownership in CODEOWNERS.
 
 ## One-time setup
 
@@ -41,7 +35,7 @@ This is the only repository-level workflow configuration. `github` accepts `repo
 
 - Status columns Backlog, Todo, In progress, Review, Done; single-select Priority (P0, P1, P2). Existing board: add options, move every card, delete old options.
 - Milestones group production outcomes or their linked health work; agents prioritize approved outcomes and health prerequisites.
-- `gh auth refresh -s project`.
+- AFK runs without `project` scope.
 - Workflow: auto-add → Backlog. Do not automate PR-linked, reopened or closed status changes; the orchestrator applies readiness-aware transitions under `spec`.
 - Default view:
 

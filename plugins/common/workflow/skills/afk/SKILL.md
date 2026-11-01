@@ -20,9 +20,9 @@ Routine engineering within approved scope is delegated. New interaction directio
 
 ## 2. Select or resume
 
-For an unattended run, use the Node CLI's `Hold:` and `Work:` output as its complete assignment; do not choose a second issue or PR. It ranks epics by board priority and milestone, assigns eligible `lane:afk` issues, proposed issues awaiting eligibility review, and open PRs awaiting review or repair, and respects blockers, claims and live holds. With `afk.maxRuns`, runs split an epic by issue; without it, a run holds one whole epic. A PR hold is work on that PR. For an owner-requested interactive task, follow the owner's named scope instead of selecting queue work.
+For AFK, use the CLI's `Hold:`/`Work:` output as the full assignment; take no second item. A foreground one-shot watcher owns holds; don't call `afk start`/`end`. Background hosts manage holds. The CLI selects eligible AFK/proposed issues and PRs needing review or repair, respecting blockers, claims and live holds. It prioritizes by board priority, then milestone and number; missing Project scope skips board metadata only. `afk.maxRuns` splits epics by issue; otherwise hold one epic. Owner-requested issues use `afk start --me ID --issue NUMBER`.
 
-Use the plugin workflow CLI (`../../scripts/workflow.mjs issue|afk`) for assignment, board, queue and unattended-run operations. It validates the configured actor and serializes claims; never compose these GitHub writes by hand. `spec` owns transition semantics.
+Use the workflow CLI for assignments and issue writes; it validates the actor and serializes claims. Post reports with `issue comment --number N --body-file PATH` using a single-link file inside the worktree; outside paths, escaping symlinks and hard links are rejected. Close passing issues with `issue close --number N`. Invoke `spec` for transitions.
 
 **Exit gate:** resumed PR, exclusive assignment, or queue empty/wait reason.
 

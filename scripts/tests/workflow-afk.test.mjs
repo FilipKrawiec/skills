@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afkCandidates, afkEpicOrder, afkLiveHolds, afkLoadEnvironment, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, assertDistinctPushRoles, selectInstalledPlugin, resolveInstalledPluginCli, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { fileURLToPath } from 'node:url';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, assertDistinctPushRoles, githubScopeFailure, missingProjectScope, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workspaceFilePath, afkAgentEnvironment, afkWorkflowCliPath, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 const epic = { number: 1, labels: ['type:epic'], ancestors: [], priority: 1 };
@@ -19,6 +20,33 @@ test('AFK plan skips live claims but lets a new run take a stale claim', () => {
   ]);
   const plan = afkPlan(cfg, ['live-run'], number => comments.get(number) || [], 'new-run', { issues, prs: [] });
   assert.deepEqual(plan.epics[0].units.map(unit => unit.issue), [2, 4]);
+});
+
+test('one-shot AFK hosts have no background process inventory', () => {
+  assert.deepEqual(afkLive({}), []);
+});
+
+test('macOS inherited-lock check survives truncated lockf command paths', () => {
+  assert.equal(hasLockfAncestor(['lockf -t 300 /Users/filip/Developer/github.com/FilipKrawiec/stagely-pro/.git/workflow-locks/afk-start.lock /opt/homebrew/bin/node']), true);
+  assert.equal(hasLockfAncestor(['/bin/bash -lc node workflow.mjs afk start']), false);
+});
+
+test('one-shot agent detects its watcher without requiring a lockf between them', () => {
+  const processes = new Map([[10, { parent: 11 }], [11, { parent: 12 }]]);
+  assert.equal(hasProcessAncestor(processes, 10, 12), true);
+  assert.equal(hasProcessAncestor(processes, 10, 13), false);
+});
+
+test('one-shot end identifies its run even if the agent adds an irrelevant issue flag', () => {
+  assert.equal(oneShotRunId('end', ['--me', 'run-1', '--issue', '2']), 'run-1');
+  assert.equal(oneShotRunId('end', ['--me', 'run-1', '--me', 'run-2']), null);
+  assert.equal(oneShotRunId('start', ['--me', 'run-1', '--issue', '2']), 'run-1');
+});
+
+test('quiet assignment output includes Hold so the one-shot watcher owns release', () => {
+  const output = afkShow({ number: 2, epic: 1, paths: ['docs/a.md'], comment: 3 }, [{ issue: { number: 1 }, units: [{ issue: 2, text: '#2 is ready' }] }], [], true);
+  assert.match(output, /^Hold: issue #2 in epic #1 \(comment 3\)/);
+  assert.match(output, /Work: #2 is ready/);
 });
 
 test('AFK plan keeps unreviewed proposals in the eligibility queue', () => {
@@ -104,16 +132,53 @@ test('push roles require owner, implementer and reviewer to be distinct', () => 
   assert.throws(() => assertDistinctPushRoles({ owner: 'reviewer', implementer: 'builder', reviewer: 'Reviewer' }), /distinct/);
 });
 
-test('watcher plugin resolution prefers its project scope over a newer user scope', () => {
-  const entries = [
-    { scope: 'user', installPath: '/plugins/user', lastUpdated: '2026-11-01T12:00:00Z' },
-    { scope: 'project', projectPath: '/repo/.worktrees/afk-watch', installPath: '/plugins/project', lastUpdated: '2026-10-01T12:00:00Z' },
-  ];
-  assert.equal(selectInstalledPlugin(entries, '/repo/.worktrees/afk-watch').installPath, '/plugins/project');
-  assert.equal(selectInstalledPlugin(entries, '/other/repo').installPath, '/plugins/user');
-  assert.equal(selectInstalledPlugin([entries[1]], '/other/repo'), null);
-  assert.throws(() => resolveInstalledPluginCli(entries, '/repo/.worktrees/afk-watch', path => path !== '/plugins/project/scripts/workflow.mjs'), /--scope project/);
-  assert.equal(resolveInstalledPluginCli(entries, '/other/repo', () => true), '/plugins/user/scripts/workflow.mjs');
+test('AFK reports missing GitHub scopes without exposing API diagnostics', () => {
+  const error = "gh: Your token has not been granted the required scopes to execute this query. The 'id' field requires one of the following scopes: ['read:project'], but your token has only been granted the: ['gist', 'read:org', 'repo', 'workflow']. Authorization: secret";
+  assert.equal(githubScopeFailure(error), 'GitHub token is missing required scope(s): read:project; current token has: gist, read:org, repo, workflow.');
+  const writeError = "gh: The 'updateProjectV2ItemFieldValue' field requires one of the following scopes: ['project'], but your token has only been granted the: ['read:project', 'repo']. Authorization: secret";
+  assert.equal(githubScopeFailure(writeError), 'GitHub token is missing required scope(s): project; current token has: read:project, repo.');
+  assert.equal(githubScopeFailure('error: your authentication token is missing required scopes [read:project]'), 'GitHub token is missing required scope(s): read:project.');
+  assert.equal(githubScopeFailure('gh: API rate limit exceeded'), null);
+  assert.equal(missingProjectScope(new Error(githubScopeFailure(error))), true);
+  assert.equal(missingProjectScope(new Error(githubScopeFailure(writeError))), true);
+  assert.equal(missingProjectScope(new Error('GitHub token is missing required scope(s): repo; current token has: gist.')), false);
+});
+
+test('issue comment bodies are bounded, non-empty text', () => {
+  assert.equal(validateIssueCommentBody('Final report'), 'Final report');
+  assert.throws(() => validateIssueCommentBody(' \n '), /1–60000 characters/);
+  assert.throws(() => validateIssueCommentBody('x'.repeat(60_001)), /1–60000 characters/);
+});
+
+test('issue comment body files stay inside the worktree, including canonical symlink targets', t => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-comment-root-'));
+  const outside = mkdtempSync(join(tmpdir(), 'workflow-comment-outside-'));
+  t.after(() => { rmSync(root, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); });
+  const insideFile = join(root, 'comment.md');
+  const outsideFile = join(outside, 'secret.txt');
+  writeFileSync(insideFile, 'Public report');
+  writeFileSync(outsideFile, 'private secret');
+  mkdirSync(join(root, 'folder'));
+  symlinkSync(outsideFile, join(root, 'escape.md'));
+  linkSync(outsideFile, join(root, 'hardlink.md'));
+  assert.equal(workspaceFilePath(root, insideFile), realpathSync(insideFile));
+  assert.throws(() => workspaceFilePath(root, outsideFile), /inside the current worktree/);
+  assert.throws(() => workspaceFilePath(root, join(root, 'escape.md')), /inside the current worktree/);
+  assert.throws(() => workspaceFilePath(root, join(root, 'hardlink.md')), /multiple hard links/);
+  assert.throws(() => workspaceFilePath(root, join(root, 'folder')), /regular file/);
+});
+
+test('AFK runner does not inherit GitHub credentials or account selection', () => {
+  const env = afkAgentEnvironment({ GH_TOKEN: 'secret', GITHUB_TOKEN: 'also-secret', GH_CONFIG_DIR: '/private/gh-agents', OLLAMA_HOST: 'http://localhost:11434', PATH: '/bin' });
+  assert.equal(env.GH_TOKEN, undefined);
+  assert.equal(env.GITHUB_TOKEN, undefined);
+  assert.equal(env.GH_CONFIG_DIR, undefined);
+  assert.equal(env.OLLAMA_HOST, 'http://localhost:11434');
+  assert.equal(env.PATH, '/bin');
+});
+
+test('watcher resolves the CLI that installed it without host plugin metadata', () => {
+  assert.equal(afkWorkflowCliPath(), fileURLToPath(new URL('../../plugins/common/workflow/scripts/workflow.mjs', import.meta.url)));
 });
 
 test('launchd ownership check accepts only this watcher or the same-repo legacy recipe', () => {

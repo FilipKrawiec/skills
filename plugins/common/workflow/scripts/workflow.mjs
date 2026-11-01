@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
 import { realpathSync, readFileSync, mkdirSync, rmSync, writeFileSync, renameSync, statSync, existsSync } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { manifestsCommand } from './manifests.mjs';
@@ -14,8 +14,10 @@ const help = `Usage:
   node workflow.mjs commit --message MESSAGE -- PATH...
   node workflow.mjs push [--owner-bootstrap]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
-  node workflow.mjs issue claim|status|queue ...
+  node workflow.mjs issue claim|status|comment|close|queue ...
   node workflow.mjs afk install|uninstall|watch|start|check|merge|end|runs|reap ...
+  node workflow.mjs afk start --me RUN_ID [--issue NUMBER]
+  node workflow.mjs afk watch [--issue NUMBER]
   node workflow.mjs manifests verify|sync
   node workflow.mjs project [--root DIR] [--strict-git] [TASK]
   node workflow.mjs release [auto|patch|minor|major] [--message TEXT] [--dry-run] [--root DIR]
@@ -31,20 +33,59 @@ const heldWorkflowLocks = new Set();
 
 function run(program, args, options = {}) {
   const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, ...options });
-  if (result.error || result.status !== 0) throw new Error(`${program} ${args[0]} failed`);
+  if (result.error || result.status !== 0) {
+    const scopeFailure = program === 'gh' ? githubScopeFailure(result.stderr || '') : null;
+    throw new Error(scopeFailure || `${program} ${args[0]} failed`);
+  }
   return result.stdout.trim();
+}
+export function githubScopeFailure(stderr) {
+  const direct = /missing required scopes?\s*\[([^\]]*)\]/i.exec(stderr);
+  if (direct) {
+    const missing = [...direct[1].matchAll(/['"]?([A-Za-z0-9:_-]+)['"]?/g)].map(match => match[1]);
+    return missing.length ? `GitHub token is missing required scope(s): ${missing.join(', ')}.` : null;
+  }
+  const required = /requires one of the following scopes:\s*\[([^\]]*)\]/i.exec(stderr);
+  const granted = /only been granted the:\s*\[([^\]]*)\]/i.exec(stderr);
+  if (!required || !granted) return null;
+  const scopes = value => [...value.matchAll(/['"]([A-Za-z0-9:_-]+)['"]/g)].map(match => match[1]);
+  const missing = scopes(required[1]); const current = scopes(granted[1]);
+  if (!missing.length || !current.length) return null;
+  return `GitHub token is missing required scope(s): ${missing.join(', ')}; current token has: ${current.join(', ')}.`;
+}
+export function missingProjectScope(error) {
+  const missing = /^GitHub token is missing required scope\(s\): ([^;]+)/.exec(error?.message || '')?.[1];
+  return Boolean(missing?.split(',').some(scope => ['read:project', 'project'].includes(scope.trim().replace(/\.$/, ''))));
+}
+export function hasLockfAncestor(commands) {
+  return commands.some(command => basename(command.trim().split(/\s+/, 1)[0]) === 'lockf');
+}
+export function validateIssueCommentBody(body) {
+  if (typeof body !== 'string' || !body.trim() || body.length > 60_000) throw new Error('Issue comment body must contain 1–60000 characters');
+  return body;
+}
+export function workspaceFilePath(root, path) {
+  const canonicalRoot = realpathSync(root);
+  const canonicalFile = realpathSync(resolve(path));
+  const fromRoot = relative(canonicalRoot, canonicalFile);
+  if (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new Error('Issue comment body file must be inside the current worktree');
+  const file = statSync(canonicalFile);
+  if (!file.isFile()) throw new Error('Issue comment body path must be a regular file');
+  if (file.nlink > 1) throw new Error('Issue comment body file must not have multiple hard links');
+  return canonicalFile;
 }
 function git(...args) { return run('git', args, { env: cleanEnvironment() }); }
 function jsonCommand(program, args, options) { return JSON.parse(run(program, args, options)); }
-function cleanEnvironment() {
-  const env = { ...process.env };
+function cleanEnvironment(source = process.env) {
+  const env = { ...source };
   for (const key of Object.keys(env)) {
-    if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|NODE_OPTIONS|NODE_PATH|WORKFLOW_PUSH_TOKEN|WORKFLOW_CREDENTIAL_SOCKET|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete env[key];
+    if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_CONFIG_DIR|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|NODE_OPTIONS|NODE_PATH|WORKFLOW_PUSH_TOKEN|WORKFLOW_CREDENTIAL_SOCKET|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete env[key];
   }
   // Replacement refs are local overrides and must not change trusted commits or trees.
   env.GIT_NO_REPLACE_OBJECTS = '1';
   return env;
 }
+export function afkAgentEnvironment(source = process.env) { return cleanEnvironment(source); }
 export function assertDistinctPushRoles({ owner, implementer, reviewer }) {
   const values = [owner, implementer, reviewer];
   if (values.some(value => typeof value !== 'string' || !/^[A-Za-z0-9-]+$/.test(value)) || new Set(values.map(value => value.toLowerCase())).size !== values.length) {
@@ -265,19 +306,22 @@ function afkConfig() {
   lanes.repo = parseRepo(lanes.repo);
   if (typeof lanes.runPrefix !== 'string' || !lanes.runPrefix.trim()) throw new Error('Configure afk.runPrefix');
   for (const key of ['runsCommand', 'startCommand', 'stopCommand']) {
+    if (lanes[key] === undefined && key !== 'startCommand') continue;
     if (!Array.isArray(lanes[key]) || !lanes[key].length || !lanes[key].every(value => typeof value === 'string' && value.length)) throw new Error(`Configure afk.${key} as a non-empty argv array`);
   }
   lanes.base = lanes.base || baseRef.slice('refs/remotes/origin/'.length);
   if (typeof lanes.environmentFile !== 'string' || !lanes.environmentFile.trim()) throw new Error('Configure afk.environmentFile');
-  if (typeof lanes.model !== 'string' || !lanes.model.trim()) throw new Error('Configure afk.model');
-  if (typeof lanes.permissionMode !== 'string' || !lanes.permissionMode.trim()) throw new Error('Configure afk.permissionMode as the host agent CLI expects it');
+  if (lanes.startCommand.some(value => value.includes('{model}')) && (typeof lanes.model !== 'string' || !lanes.model.trim())) throw new Error('Configure afk.model because startCommand uses {model}');
+  if (lanes.startCommand.some(value => value.includes('{permissionMode}')) && (typeof lanes.permissionMode !== 'string' || !lanes.permissionMode.trim())) throw new Error('Configure afk.permissionMode because startCommand uses {permissionMode}');
+  if (lanes.promptPrefix !== undefined && typeof lanes.promptPrefix !== 'string') throw new Error('Configure afk.promptPrefix as a string');
   if (!Number.isSafeInteger(lanes.watchIntervalSeconds) || lanes.watchIntervalSeconds < 15) throw new Error('Configure afk.watchIntervalSeconds as an integer of at least 15');
-  if (!Number.isSafeInteger(lanes.waitTimeoutMinutes) || lanes.waitTimeoutMinutes < 1) throw new Error('Configure afk.waitTimeoutMinutes as a positive integer');
-  if (typeof lanes.stateFile !== 'string' || !lanes.stateFile.includes('{id}')) throw new Error('Configure afk.stateFile with an {id} placeholder');
+  if (lanes.runsCommand && (!Number.isSafeInteger(lanes.waitTimeoutMinutes) || lanes.waitTimeoutMinutes < 1)) throw new Error('Configure afk.waitTimeoutMinutes as a positive integer when afk.runsCommand is set');
+  if (lanes.runsCommand && (!lanes.stopCommand || typeof lanes.stateFile !== 'string' || !lanes.stateFile.includes('{id}'))) throw new Error('Configure afk.stopCommand and afk.stateFile with {id} when afk.runsCommand is set');
   if (!lanes.startCommand.some(value => value.includes('{runId}')) || !lanes.startCommand.some(value => value.includes('{prompt}'))) throw new Error('afk.startCommand must include {runId} and {prompt}');
   if (typeof lanes.serviceLabel !== 'string' || !/^[A-Za-z0-9.-]+$/.test(lanes.serviceLabel)) throw new Error('Configure afk.serviceLabel');
+  lanes.pluginUpdateCommands ??= [];
   if (!Array.isArray(lanes.pluginUpdateCommands) || !lanes.pluginUpdateCommands.every(argv => Array.isArray(argv) && argv.length && argv.every(value => typeof value === 'string' && value))) throw new Error('Configure afk.pluginUpdateCommands as an array of argv arrays');
-  if (!Number.isSafeInteger(lanes.pluginUpdateIntervalMinutes) || lanes.pluginUpdateIntervalMinutes < 1) throw new Error('Configure afk.pluginUpdateIntervalMinutes');
+  if (lanes.pluginUpdateCommands.length && (!Number.isSafeInteger(lanes.pluginUpdateIntervalMinutes) || lanes.pluginUpdateIntervalMinutes < 1)) throw new Error('Configure afk.pluginUpdateIntervalMinutes');
   run('git', ['check-ref-format', '--branch', lanes.base]);
   return lanes;
 }
@@ -285,7 +329,8 @@ function withRepoLock(name, action) {
   if (!heldWorkflowLocks.has(name)) throw new Error(`Workflow lock ${name} must be acquired by the CLI entry point`);
   return action();
 }
-function afkLive(cfg) {
+export function afkLive(cfg) {
+  if (!cfg.runsCommand) return [];
   const output = run(cfg.runsCommand[0], cfg.runsCommand.slice(1));
   const agents = JSON.parse(output || '[]');
   return agents.filter(a => a.kind === 'background' && (a.name || '').startsWith(cfg.runPrefix) && !['idle', 'done', 'stopped', 'failed'].includes(a.state || a.status)).map(a => a.name);
@@ -293,15 +338,21 @@ function afkLive(cfg) {
 function afkComments(cfg, issue) { return afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/issues/${issue}/comments`]).flat(); }
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
-  const query = 'query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{number title body lastEditedAt labels(first:30){nodes{name}} blockedBy(first:30){nodes{state}} milestone{number dueOn} parent{number parent{number parent{number parent{number}}}} projectItems(first:10){nodes{project{number} fieldValueByName(name:"Priority"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}}';
+  const fields = 'number title body lastEditedAt labels(first:30){nodes{name}} blockedBy(first:30){nodes{state}} milestone{number dueOn} parent{number parent{number parent{number parent{number}}}}';
+  const query = withPriority => `query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{${fields}${withPriority ? ' projectItems(first:10){nodes{project{number} fieldValueByName(name:"Priority"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}' : ''}}}}}`;
   const found = []; let after;
   do {
-    const args = ['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`];
+    const args = ['api', 'graphql', '-f', `query=${query(Boolean(cfg.project?.number))}`, '-F', `owner=${owner}`, '-F', `name=${name}`];
     if (after) args.push('-F', `after=${after}`);
-    const page = afkGh(args).data.repository.issues;
+    let page;
+    try { page = afkGh(args).data.repository.issues; }
+    catch (error) {
+      if (!cfg.project?.number || !missingProjectScope(error)) throw error;
+      page = afkGh(['api', 'graphql', '-f', `query=${query(false)}`, '-F', `owner=${owner}`, '-F', `name=${name}`, ...(after ? ['-F', `after=${after}`] : [])]).data.repository.issues;
+    }
     found.push(...page.nodes.map(issue => {
       const labels = issue.labels.nodes.map(label => label.name);
-      const priority = issue.projectItems.nodes.find(card => card.project.number === cfg.project?.number)?.fieldValueByName?.name || 'P9';
+      const priority = issue.projectItems?.nodes.find(card => card.project.number === cfg.project?.number)?.fieldValueByName?.name || 'P9';
       const ancestors = []; let parent = issue.parent;
       while (parent) { ancestors.push(parent.number); parent = parent.parent; }
       const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(issue.body || '');
@@ -448,14 +499,16 @@ function afkThreadReader(cfg) {
     return cache.get(number);
   };
 }
-function afkShow(held, epics, out) {
+export function afkShow(held, epics, out, quiet = false) {
   const epic = epics.find(item => item.issue.number === held.epic);
   let units = epic?.units || [];
+  const heading = `Hold: ${held.paths !== null ? `issue #${held.number} in epic #${held.epic}` : `epic #${held.number}`} (comment ${held.comment})`;
   if (held.paths !== null) {
-    console.log(`Hold: issue #${held.number} in epic #${held.epic} (comment ${held.comment})`);
     units = units.filter(unit => unit.issue === held.number);
-  } else console.log(`Hold: epic #${held.epic} (comment ${held.comment})`);
-  for (const line of [...out, ...units.map(unit => `Work: ${unit.text}`)]) console.log(line);
+  }
+  const lines = [heading, ...out, ...units.map(unit => `Work: ${unit.text}`)];
+  if (quiet) return lines.join('\n');
+  for (const line of lines) console.log(line);
   return 0;
 }
 function afkPreflight(cfg) {
@@ -469,12 +522,6 @@ function afkPreflight(cfg) {
   if (reviewerToken.status !== 0) throw new Error(`No gh login for ${cfg.reviewer}; authenticate that reviewer account`);
   const permissions = afkGh(['api', `repos/${cfg.repo}`]).permissions || {};
   if (permissions.admin || permissions.maintain) throw new Error(`${actor} has admin or maintain permission on ${cfg.repo}; the AFK implementer must not have merge authority`);
-  if (cfg.project?.number) {
-    const query = 'query($owner:String!,$number:Int!){repositoryOwner(login:$owner){... on ProjectV2Owner{projectV2(number:$number){id}}}}';
-    const owner = cfg.project.owner || cfg.repo.split('/')[0];
-    const project = afkGh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `number=${cfg.project.number}`]).data.repositoryOwner.projectV2;
-    if (!project?.id) throw new Error(`Cannot read project ${cfg.project.number}; grant or refresh the project scope`);
-  }
 }
 function afkBudget() {
   const result = spawnSync('gh', ['api', 'rate_limit', '--jq', '.resources.graphql | [.remaining, .reset] | @tsv'], { encoding: 'utf8' });
@@ -495,16 +542,32 @@ function afkMoveCard(cfg, cardId, column) {
   const field = fields.find(item => item.name === 'Status');
   const option = field?.options.find(item => item.name.toLowerCase() === column.toLowerCase());
   if (!field || !option) return false;
-  return spawnSync('gh', ['project', 'item-edit', '--project-id', run('gh', ['project', 'view', String(project.number), '--owner', owner, '--format', 'json', '--jq', '.id']), '--id', cardId, '--field-id', field.id, '--single-select-option-id', option.id], { stdio: 'ignore' }).status === 0;
+  const result = spawnSync('gh', ['project', 'item-edit', '--project-id', run('gh', ['project', 'view', String(project.number), '--owner', owner, '--format', 'json', '--jq', '.id']), '--id', cardId, '--field-id', field.id, '--single-select-option-id', option.id], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    const scopeFailure = githubScopeFailure(result.stderr || '');
+    if (scopeFailure) throw new Error(scopeFailure);
+  }
+  return result.status === 0;
 }
 function afkFinishPrCards(cfg) {
   if (!cfg.project?.number) return [];
   const [owner, name] = cfg.repo.split('/');
   const query = 'query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pullRequests(states:[MERGED,CLOSED],first:30,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number projectItems(first:10){nodes{id project{number} fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}}';
-  const nodes = afkGh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`]).data.repository.pullRequests.nodes;
+  let nodes;
+  try { nodes = afkGh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`]).data.repository.pullRequests.nodes; }
+  catch (error) {
+    if (!missingProjectScope(error)) throw error;
+    console.error('Closed PR board statuses skipped: token lacks project scope; continuing AFK work.');
+    return [];
+  }
   const moved = [];
-  for (const pr of nodes) for (const item of pr.projectItems.nodes) {
-    if (item.project.number === cfg.project.number && item.fieldValueByName?.name !== 'Done' && afkMoveCard(cfg, item.id, 'Done')) moved.push(pr.number);
+  try {
+    for (const pr of nodes) for (const item of pr.projectItems.nodes) {
+      if (item.project.number === cfg.project.number && item.fieldValueByName?.name !== 'Done' && afkMoveCard(cfg, item.id, 'Done')) moved.push(pr.number);
+    }
+  } catch (error) {
+    if (!missingProjectScope(error)) throw error;
+    console.error('Closed PR board statuses skipped: token lacks project scope; continuing AFK work.');
   }
   return moved;
 }
@@ -527,6 +590,7 @@ function afkStatus(cfg, issue, value, silent = false) {
     if (silent) return false;
     throw new Error('Configure github.project and a valid status value');
   }
+  try {
   const owner = project.owner || cfg.repo.split('/')[0];
   const id = run('gh', ['project', 'view', String(project.number), '--owner', owner, '--format', 'json', '--jq', '.id']);
   const [org, name] = cfg.repo.split('/');
@@ -547,6 +611,11 @@ function afkStatus(cfg, issue, value, silent = false) {
   }
   run('gh', ['project', 'item-edit', '--project-id', id, '--id', card.id, '--field-id', field.id, '--single-select-option-id', option.id]);
   if (!silent) console.log(`#${issue} → ${final}`);
+  } catch (error) {
+    if (!silent || !missingProjectScope(error)) throw error;
+    console.error(`Board status for #${issue} not updated: token lacks project scope; continuing AFK work.`);
+    return false;
+  }
 }
 function afkQueue(args) {
   const o = afkFlags(args, ['--kind', '--number', '--text']);
@@ -593,6 +662,30 @@ function issueStatus(args, lanes) {
   if (!Number.isInteger(n) || n < 1) throw new Error('Usage: issue status --number N --value STATUS');
   const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg); afkStatus(cfg, n, (o['--value'] || '').toUpperCase());
 }
+function issueComment(args) {
+  const o = afkFlags(args, ['--number', '--body-file']);
+  const n = Number(o['--number']);
+  if (!Number.isInteger(n) || n < 1 || !o['--body-file']) throw new Error('Usage: issue comment --number N --body-file PATH');
+  const root = git('rev-parse', '--show-toplevel');
+  const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
+  const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg);
+  return withRepoLock(`issue-comment-${n}`, () => {
+    const result = afkGh(['api', `repos/${cfg.repo}/issues/${n}/comments`, '-f', `body=${body}`]);
+    if (!Number.isSafeInteger(result.id)) throw new Error(`GitHub did not confirm the comment on #${n}`);
+    console.log(`Commented on #${n} (${result.id})`);
+  });
+}
+function issueClose(args) {
+  const o = afkFlags(args, ['--number']);
+  const n = Number(o['--number']);
+  if (!Number.isInteger(n) || n < 1) throw new Error('Usage: issue close --number N');
+  const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg);
+  return withRepoLock(`issue-close-${n}`, () => {
+    const result = afkGh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, '-f', 'state=closed']);
+    if (result.state !== 'closed') throw new Error(`GitHub did not confirm #${n} closed`);
+    console.log(`Closed #${n}`);
+  });
+}
 function issueQueue(args, lanes) { afkQueue(args); }
 function afkPrs(cfg) {
   return afkPrData(cfg);
@@ -624,14 +717,18 @@ function afkMerge(cfg, prs, wanted = null) {
   }
   return messages;
 }
-function afkStartRun(cfg, id, common) {
-  afkPreflight(cfg);
-  const output = afkMerge(cfg, afkPrs(cfg));
+function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prepared = false) {
+  const ledgerPath = join(common, 'afk-holds.json');
+  const existing = afkReadLedger(ledgerPath)[id]?.[0];
+  const resumingOneShot = !prepared && !cfg.runsCommand && Boolean(existing?.oneShot);
+  if (!prepared) afkPreflight(cfg);
+  const output = prepared || resumingOneShot ? [] : afkMerge(cfg, afkPrs(cfg));
   return withRepoLock('afk-start', () => {
-    const ledgerPath = join(common, 'afk-holds.json'); const ledger = afkReadLedger(ledgerPath);
+    const ledger = afkReadLedger(ledgerPath);
     if (ledger[id]?.length) {
+      if (requestedIssue && ledger[id][0].number !== requestedIssue) throw new Error(`Run ${id} already holds #${ledger[id][0].number}, not #${requestedIssue}`);
       const live = afkLive(cfg); const threads = afkThreadReader(cfg); const plan = afkPlan(cfg, live, threads, id);
-      return afkShow(ledger[id][0], plan.epics, output);
+      return afkShow(ledger[id][0], plan.epics, output, quiet);
     }
     const live = afkLive(cfg);
     const others = live.filter(runId => runId !== id);
@@ -645,10 +742,11 @@ function afkStartRun(cfg, id, common) {
     afkWriteLedger(ledgerPath, ledger);
     const cap = Number(cfg.maxRuns) || 0;
     for (const candidate of afkCandidates(epics, othersHolds, Boolean(cap), heldOnEpic)) {
+      if (requestedIssue && candidate.number !== requestedIssue) continue;
       const type = candidate.paths === null ? 'epic' : 'issue';
       const comment = afkHold(cfg, live, id, candidate.number, type);
       if (!comment) continue;
-      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, comment };
+      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
       ledger[id] = [...(ledger[id] || []), held];
       try {
         if (type === 'issue') afkStatus(cfg, held.number, 'PROGRESS', true);
@@ -657,8 +755,9 @@ function afkStartRun(cfg, id, common) {
         spawnSync('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${comment}`, '-f', `body=${afkMarker(`${type}-released`, id)}\nStart failed; hold released.`], { stdio: 'ignore' });
         throw error;
       }
-      return afkShow(held, epics, output);
+      return afkShow(held, epics, output, quiet);
     }
+    if (requestedIssue) throw new Error(`#${requestedIssue} is not an eligible AFK candidate`);
     if (afkExploreDue(cfg, live, id)) {
       const explorePath = join(common, 'afk-idle-explore.json');
       const previous = (() => { try { return JSON.parse(readFileSync(explorePath, 'utf8')); } catch { return {}; } })();
@@ -673,7 +772,7 @@ function afkStartRun(cfg, id, common) {
     output.forEach(line => console.log(line)); return 3;
   });
 }
-function afkCheckRun(cfg, common, quiet, result = {}) {
+function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const live = afkLive(cfg); const statePath = quiet ? join(common, 'afk-check.json') : null;
   const signal = statePath ? afkSignal(cfg, live) : null;
   if (statePath) {
@@ -698,16 +797,18 @@ function afkCheckRun(cfg, common, quiet, result = {}) {
     const slots = cap ? cap - live.length : epics.length;
     const chosen = [];
     for (const candidate of afkCandidates(epics, [...others, ...chosen], Boolean(cap), heldOnEpic)) {
+      if (requestedIssue && candidate.number !== requestedIssue) continue;
       if (chosen.length >= Math.max(0, slots) + booting.length) break;
       chosen.push(candidate);
     }
+    if (requestedIssue && !chosen.length) return 0;
     afkWriteLedger(ledgerPath, ledger);
     return Math.max(0, Math.min(slots, chosen.length - booting.length));
   });
-  if (!start && !live.length && afkExploreDue(cfg, live)) start = 1;
+  if (!requestedIssue && !start && !live.length && afkExploreDue(cfg, live)) start = 1;
   result.start = start;
   if (statePath) { mkdirSync(dirname(statePath), { recursive: true }); writeFileSync(statePath, JSON.stringify({ signal, at: Date.now() })); }
-  console.log(start ? `Start: ${start}` : `Done: no new run has work (${live.length} live).`);
+  console.log(start ? `Start: ${start}` : requestedIssue ? `Done: #${requestedIssue} has no free AFK assignment.` : `Done: no new run has work (${live.length} live).`);
   output.forEach(line => console.log(line));
   return start ? 0 : 3;
 }
@@ -737,31 +838,7 @@ function afkEndRun(cfg, common, id) {
   });
 }
 function afkExpandedPath(path) { return path.replace(/^~(?=\/|$)/, homedir()); }
-export function selectInstalledPlugin(entries, currentDirectory) {
-  const projectEntries = entries.filter(entry => entry?.scope === 'project' && entry.projectPath === currentDirectory && typeof entry.installPath === 'string');
-  const userEntries = entries.filter(entry => entry?.scope === 'user' && typeof entry.installPath === 'string');
-  return [...(projectEntries.length ? projectEntries : userEntries)].sort((a, b) => String(b.lastUpdated || '').localeCompare(String(a.lastUpdated || '')))[0] || null;
-}
-export function resolveInstalledPluginCli(entries, currentDirectory, isFile = existsSync) {
-  const projectEntries = entries.filter(entry => entry?.scope === 'project' && entry.projectPath === currentDirectory && typeof entry.installPath === 'string');
-  const selected = selectInstalledPlugin(entries, currentDirectory);
-  const cliPath = selected && join(selected.installPath, 'scripts', 'workflow.mjs');
-  if (!cliPath || !isFile(cliPath)) {
-    if (projectEntries.length) throw new Error(`The project-scoped workflow plugin for ${currentDirectory} has no scripts/workflow.mjs; from that worktree run claude plugin update filipkrawiec-workflow@filipkrawiec --scope project, then retry`);
-    throw new Error('The installed workflow plugin has no scripts/workflow.mjs; update the plugin before installing the AFK watcher');
-  }
-  return cliPath;
-}
-function afkInstalledCliPath(directory = process.cwd()) {
-  const metadataPath = join(homedir(), '.claude', 'plugins', 'installed_plugins.json');
-  const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
-  const entries = metadata.plugins?.['filipkrawiec-workflow@filipkrawiec'];
-  if (!Array.isArray(entries)) throw new Error(`No installed filipkrawiec-workflow plugin in ${metadataPath}`);
-  const currentDirectory = realpathSync(directory);
-  const normalizedEntries = entries.map(entry => entry?.scope === 'project' && typeof entry.projectPath === 'string' && existsSync(entry.projectPath)
-    ? { ...entry, projectPath: realpathSync(entry.projectPath) } : entry);
-  return resolveInstalledPluginCli(normalizedEntries, currentDirectory);
-}
+export function afkWorkflowCliPath() { return realpathSync(fileURLToPath(import.meta.url)); }
 export function afkLoadEnvironment(cfg) {
   for (const key of Object.keys(process.env)) {
     if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete process.env[key];
@@ -780,11 +857,12 @@ function afkConfiguredCommand(argv, replacements = {}, options = {}) {
     return String(replacements[key]);
   }));
   const [program, ...args] = values;
-  const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, env: { ...process.env }, ...options });
+  const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, env: afkAgentEnvironment(), ...options });
   if (result.error || result.status !== 0) throw new Error(`${program} ${args[0] || ''} failed`);
   return (result.stdout || '').trim();
 }
 function afkReap(cfg, common) {
+  if (!cfg.runsCommand) return;
   const file = join(common, 'afk-prompt-waits.json'); let previous = {};
   try { previous = JSON.parse(readFileSync(file, 'utf8')); } catch {}
   const agents = JSON.parse(run(cfg.runsCommand[0], cfg.runsCommand.slice(1)) || '[]')
@@ -819,7 +897,7 @@ function afkWatchTree(cfg) {
   run('git', ['fetch', '--quiet', 'origin', cfg.base], { cwd: root, env: cleanEnvironment() });
   mkdirSync(dirname(watch), { recursive: true });
   if (!existsSync(watch)) {
-    run('git', ['worktree', 'add', '--quiet', '--detach', watch, `origin/${cfg.base}`], { cwd: main, env: cleanEnvironment() });
+    run('git', ['worktree', 'add', '--quiet', '--detach', watch, `origin/${cfg.base}`], { cwd: root, env: cleanEnvironment() });
     writeFileSync(marker, JSON.stringify({ common, watch: realpathSync(watch) }));
   } else {
     let actual;
@@ -874,7 +952,7 @@ function afkInstall(cfg) {
   if (process.platform !== 'darwin') throw new Error('afk install currently requires macOS launchd');
   afkLoadEnvironment(cfg);
   const watch = withRepoLock('afk-watch-tree', () => afkWatchTree(cfg));
-  afkInstalledCliPath(watch);
+  const cliPath = afkWorkflowCliPath();
   const label = cfg.serviceLabel;
   const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
   const launcher = join(common, 'afk-launch.mjs');
@@ -889,17 +967,8 @@ function afkInstall(cfg) {
   }
   const launcherSource = `import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-const metadata = JSON.parse(readFileSync(join(homedir(), '.claude', 'plugins', 'installed_plugins.json'), 'utf8'));
-const entries = metadata.plugins?.['filipkrawiec-workflow@filipkrawiec'];
-const currentDirectory = process.cwd();
-const projectEntries = Array.isArray(entries) ? entries.filter(entry => entry?.scope === 'project' && typeof entry.projectPath === 'string' && typeof entry.installPath === 'string' && entry.projectPath === currentDirectory) : [];
-const userEntries = Array.isArray(entries) ? entries.filter(entry => entry?.scope === 'user' && typeof entry.installPath === 'string') : [];
-const selected = [...(projectEntries.length ? projectEntries : userEntries)].sort((a, b) => String(b.lastUpdated || '').localeCompare(String(a.lastUpdated || '')))[0];
-const cli = selected && join(selected.installPath, 'scripts', 'workflow.mjs');
-if (!cli) { console.error('No installed workflow CLI is available'); process.exit(1); }
-try { readFileSync(cli); } catch { console.error('The selected workflow CLI is missing; update the plugin and retry'); process.exit(1); }
+const cli = ${JSON.stringify(cliPath)};
+try { readFileSync(cli); } catch { console.error('The workflow CLI is missing; reinstall the workflow package and retry'); process.exit(1); }
 const result = spawnSync(process.execPath, [cli, ...process.argv.slice(2)], { stdio: 'inherit' });
 if (result.error) { console.error(result.error.message); process.exit(1); }
 process.exit(result.status ?? 1);
@@ -932,30 +1001,39 @@ function afkUninstall(cfg) {
   rmSync(join(common, 'afk-launch.mjs'), { force: true });
   console.log(`Uninstalled: ${label}. The watcher worktree is preserved.`);
 }
-function afkWatch(cfg, common) {
+function afkWatch(cfg, common, requestedIssue = null) {
   afkLoadEnvironment(cfg);
-  let currentCli = afkInstalledCliPath();
-  withRepoLock('afk-watch-tree', () => afkWatchTree(cfg));
-  const stamp = join(common, 'afk-plugin-sync');
-  let update = true;
-  try { update = Date.now() - statSync(stamp).mtimeMs >= cfg.pluginUpdateIntervalMinutes * 60_000; } catch {}
-  if (update) {
-    writeFileSync(stamp, String(Date.now()));
-    try {
-      for (const command of cfg.pluginUpdateCommands) afkConfiguredCommand(command);
-      rmSync(join(common, 'afk-check.json'), { force: true });
-    } catch (error) { console.error(`plugin update failed; retry after ${cfg.pluginUpdateIntervalMinutes} minutes: ${error.message}`); }
+  const currentCli = afkWorkflowCliPath();
+  const watchRoot = withRepoLock('afk-watch-tree', () => afkWatchTree(cfg));
+  if (cfg.pluginUpdateCommands.length) {
+    const stamp = join(common, 'afk-plugin-sync');
+    let update = true;
+    try { update = Date.now() - statSync(stamp).mtimeMs >= cfg.pluginUpdateIntervalMinutes * 60_000; } catch {}
+    if (update) {
+      writeFileSync(stamp, String(Date.now()));
+      try {
+        for (const command of cfg.pluginUpdateCommands) afkConfiguredCommand(command);
+        rmSync(join(common, 'afk-check.json'), { force: true });
+      } catch (error) { console.error(`plugin update failed; retry after ${cfg.pluginUpdateIntervalMinutes} minutes: ${error.message}`); }
+    }
   }
-  currentCli = afkInstalledCliPath();
   afkReap(cfg, common);
   const result = {};
-  const code = afkCheckRun(cfg, common, true, result);
+  const code = afkCheckRun(cfg, common, true, result, requestedIssue);
   for (let i = 1; i <= (result.start || 0); i++) {
     const runId = `${cfg.runPrefix}${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}-${process.pid}-${i}`;
     const cliPath = currentCli;
-    const prompt = `Use the AFK skill for one unattended work slice. Run id: ${runId}. Begin with: node ${cliPath} afk start --me ${runId}. End through the AFK skill's end step.`;
-    afkConfiguredCommand(cfg.startCommand, { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, repository: cfg.repo });
-    console.log(`Started: ${runId}`);
+    const issueArg = requestedIssue ? ` --issue ${requestedIssue}` : '';
+    const assignment = cfg.runsCommand ? null : afkStartRun(cfg, runId, common, requestedIssue, true, true);
+    const held = typeof assignment === 'string' && assignment.includes('Hold:');
+    const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
+    let output;
+    try {
+      output = afkConfiguredCommand(cfg.startCommand, { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, repository: cfg.repo }, { cwd: watchRoot });
+    } finally {
+      if (held) afkEndRun(cfg, common, runId);
+    }
+    console.log(output ? `Completed: ${runId}\n${output}` : `Started: ${runId}`);
   }
   return code === 2 ? 2 : 0;
 }
@@ -967,11 +1045,16 @@ function afkCommand(args) {
     afkLoadEnvironment(cfg);
     if (action === 'install') { afkInstall(cfg); return 0; }
     if (action === 'uninstall') { afkUninstall(cfg); return 0; }
-    if (action === 'watch') return afkWatch(cfg, common);
+    if (action === 'watch') {
+      const flags = afkFlags(rest, ['--issue']);
+      const issue = flags['--issue'] === undefined ? null : Number(flags['--issue']);
+      if (issue !== null && (!Number.isSafeInteger(issue) || issue < 1)) throw new Error('afk watch --issue must be a positive issue number');
+      return afkWatch(cfg, common, issue);
+    }
     if (action === 'reap') { afkLoadEnvironment(cfg); afkReap(cfg, common); return 0; }
     if (action === 'runs') {
       afkLoadEnvironment(cfg);
-      const agents = JSON.parse(run(cfg.runsCommand[0], cfg.runsCommand.slice(1)) || '[]');
+      const agents = cfg.runsCommand ? JSON.parse(run(cfg.runsCommand[0], cfg.runsCommand.slice(1)) || '[]') : [];
       console.log(agents.filter(a => a.kind === 'background' && (a.name || '').startsWith(cfg.runPrefix) && !['idle', 'done', 'stopped', 'failed'].includes(a.state || a.status)).map(a => a.name).join('\n')); return 0;
     }
     if (action === 'merge') {
@@ -980,9 +1063,11 @@ function afkCommand(args) {
       console.log(afkMerge(cfg, afkPrs(cfg), wanted.length ? new Set(wanted) : null).join('\n') || 'Merged nothing.'); return 0;
     }
     if (action === 'start') {
-      const id = afkFlags(rest, ['--me'])['--me'];
+      const flags = afkFlags(rest, ['--me', '--issue']); const id = flags['--me'];
       if (!/^[\w.-]+$/.test(id || '')) throw new Error('Usage: afk start --me RUN_ID');
-      return afkStartRun(cfg, id, common);
+      const issue = flags['--issue'] === undefined ? null : Number(flags['--issue']);
+      if (issue !== null && (!Number.isSafeInteger(issue) || issue < 1)) throw new Error('afk start --issue must be a positive issue number');
+      return afkStartRun(cfg, id, common, issue);
     }
     if (action === 'check') {
       if (rest.some(value => value !== '--quiet')) throw new Error('Usage: afk check [--quiet]');
@@ -1004,6 +1089,10 @@ function requiredLocks(command, args) {
       const index = args.indexOf('--number');
       return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`claim-${args[index + 1]}`] : [];
     }
+    if (['comment', 'close'].includes(args[0])) {
+      const index = args.indexOf('--number');
+      return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`issue-${args[0]}-${args[index + 1]}`] : [];
+    }
   }
   if (command === 'afk') {
     if (['start', 'check', 'merge', 'end'].includes(args[0])) return ['afk-start'];
@@ -1012,6 +1101,55 @@ function requiredLocks(command, args) {
     if (args[0] === 'watch') return ['afk-start', 'afk-reap', 'afk-watch-tree'];
   }
   return [];
+}
+function oneShotLedgerRun(command, args) {
+  if (command !== 'afk' || !['start', 'end'].includes(args[0])) return null;
+  try {
+    const id = oneShotRunId(args[0], args.slice(1));
+    if (!/^[\w.-]+$/.test(id || '')) return null;
+    const { root, lanes } = config();
+    if (lanes.runsCommand) return null;
+    const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+    return afkReadLedger(join(common, 'afk-holds.json'))[id]?.some(hold => hold.oneShot) ? id : null;
+  } catch { return null; }
+}
+export function oneShotRunId(action, args) {
+  if (action === 'start') return afkFlags(args, ['--me', '--issue'])['--me'];
+  if (action !== 'end') return null;
+  const indexes = args.flatMap((value, index) => value === '--me' ? [index] : []);
+  return indexes.length === 1 ? args[indexes[0] + 1] : null;
+}
+export function hasProcessAncestor(processes, pid, ownerPid, maxDepth = 16) {
+  for (let depth = 0; pid && depth < maxDepth; depth++) {
+    if (pid === ownerPid) return true;
+    const parent = processes.get(pid);
+    if (!parent) return false;
+    pid = parent.parent;
+  }
+  return false;
+}
+function oneShotWatcherActive(id) {
+  try {
+    const { root } = config();
+    const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+    const hold = afkReadLedger(join(common, 'afk-holds.json'))[id]?.[0];
+    const ownerPid = hold?.watcherPid;
+    if (!hold?.oneShot || !Number.isSafeInteger(ownerPid)) return false;
+    const result = spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' });
+    if (result.error || result.status !== 0) return false;
+    const processes = new Map();
+    for (const line of result.stdout.split('\n')) {
+      const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
+      if (match) processes.set(Number(match[1]), { parent: Number(match[2]), command: match[3] });
+    }
+    if (!processes.get(ownerPid)?.command.includes(fileURLToPath(import.meta.url))) return false;
+    if (!hasProcessAncestor(processes, process.ppid, ownerPid)) return false;
+    const lockPath = join(common, 'workflow-locks', 'afk-start.lock');
+    const probe = process.platform === 'darwin'
+      ? spawnSync('lockf', ['-t', '0', lockPath, 'true'], { stdio: 'ignore' })
+      : spawnSync('flock', ['-n', lockPath, 'true'], { stdio: 'ignore' });
+    return !probe.error && probe.status !== 0;
+  } catch { return false; }
 }
 function validInheritedLockContext(names) {
   const token = process.env.WORKFLOW_LOCK_TOKEN || '';
@@ -1053,7 +1191,7 @@ function validInheritedLockContext(names) {
         ? spawnSync('lockf', ['-t', '0', lockPath, 'true'], { stdio: 'ignore' })
         : spawnSync('flock', ['-n', lockPath, 'true'], { stdio: 'ignore' });
       if (probe.error || probe.status === 0) return false;
-      if (process.platform === 'darwin' && !ancestors.some(command => command.includes('lockf') && command.includes(lockPath))) return false;
+      if (process.platform === 'darwin' && !hasLockfAncestor(ancestors)) return false;
     }
     return true;
   } catch { return false; }
@@ -1065,6 +1203,8 @@ async function execute(command, args) {
   else if (command === 'review-context') reviewContext(args);
   else if (command === 'issue' && args[0] === 'claim') { const { lanes } = config(); issueClaim(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'status') { const { lanes } = config(); issueStatus(args.slice(1), lanes); }
+  else if (command === 'issue' && args[0] === 'comment') { config(); issueComment(args.slice(1)); }
+  else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'queue') { const { lanes } = config(); issueQueue(args.slice(1)); }
   else if (command === 'afk') process.exitCode = afkCommand(args);
   else if (command === 'manifests') manifestsCommand(args);
@@ -1077,7 +1217,15 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const [command, ...args] = process.argv.slice(2);
     const names = requiredLocks(command, args);
-    if (names.length && validInheritedLockContext(names)) {
+    const oneShotRun = oneShotLedgerRun(command, args);
+    const inherited = names.length && validInheritedLockContext(names);
+    if (oneShotRun && !inherited && args[0] === 'end' && oneShotWatcherActive(oneShotRun)) {
+      const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg);
+      console.log(`One-shot watcher will release run ${oneShotRun} when the agent exits.`);
+    } else if (oneShotRun && !inherited && args[0] === 'start') {
+      heldWorkflowLocks.add('afk-start');
+      await execute(command, args);
+    } else if (names.length && inherited) {
       names.forEach(name => heldWorkflowLocks.add(name));
       delete process.env.WORKFLOW_LOCK_NAMES;
       delete process.env.WORKFLOW_LOCK_TOKEN;
