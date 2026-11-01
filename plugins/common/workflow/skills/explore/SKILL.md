@@ -1,111 +1,39 @@
 ---
 name: explore
-description: Use when a scheduled task or the owner asks for an exploratory usability pass, meaning someone drives the running app as one of its users on a simulator or in a browser and files the friction they meet as issues.
+description: Use when a scheduled task or the owner asks for an exploratory usability pass by driving the running app as a user and filing friction.
 allowed-tools: Read Bash
 ---
 
 # Explore
 
-File reproducible user friction. Never edit, commit or push code.
+Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Read `.github/lanes.json` for `repo`, `project` and `explore`: personas and their journeys; simulator or browser targets and launch commands; `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree`, `epic` and `idleHours`. A target may provide `urlFromLog` instead of its browser URL. Read [idle.md](references/idle.md) only for an idle run.
 
-Settings, from `.github/lanes.json`: `repo`, `project`, and `explore`:
+## 1. Prepare and launch
 
-- `personas`: Markdown; each `## <persona>` says who they are and how they sign in, with `### <journey>` goals.
-- `targets`: by name, a simulator `{"launch": "<command>", "device": "<name>"}` (its id goes in variable `deviceEnv`) or a browser `{"launch": "<command>", "url": "<origin>", "viewport": "<w>x<h>"}`; `urlFromLog`, a regex whose first group is the origin in the launch log, replaces `url`.
-- `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree` (default `.worktrees/explore`), `epic` (a fallback parent), `idleHours` (minimum hours between idle AFK explores).
+Fetch the configured base (default `main`) and use an owned clean isolated worktree at its head; never alter the main checkout or another session's worktree. For the requested persona, choose the named journey, otherwise a never-run journey, otherwise the least recently run using `log.jsonl` on `capturesBranch`.
 
-Read [idle.md](references/idle.md) when such a run starts this.
+Launch one target at a time from that worktree. For a simulator, boot a matching available device and pass its ID in the configured `deviceEnv`; never use a physical device. For a browser, wait for the configured origin, open a new tab at its viewport and emulate touch when possible. Record unsupported targets and build failures, including the relevant log tail. Bound startup to 20 minutes.
 
-## 1. Prepare
+**Exit gate:** persona, journey and targets running or explicit launch failures.
 
-- Never touch the main checkout. Fetch configured `base` (default `main`); create an owned worktree with `git worktree add --detach <worktree> origin/<base>`. Reuse only your own clean worktree, else pick another path; never force-clean or force-checkout another.
-- Pick a journey of the caller's persona, if named, by `log.jsonl` on `capturesBranch`, first match wins:
-  1. The caller's named journey.
-  2. A journey never run.
-  3. The journey run longest ago.
+## 2. Play and clean up
 
-**Exit gate:** owned worktree at origin/<base>; persona, journey, targets chosen.
+Pursue the goal from the visible screen as the persona, without reading code or guides. Follow repository preview rules; use at most 60 actions per target. Capture each step and inspect the launch log or console. Wait for the interface to settle and reproduce a suspected no-op before filing; drop unreproducible friction. Browser touch-only gestures are `notJudged`.
 
-## 2. Launch
+Grade each reproducible finding once: **Blocker** for an unreachable goal, data loss/wrong data, crash or freeze; **Confusion** for hesitation, guessing, no-op, error or unlabeled icon; **Mismatch** for inconsistent, clipped, overlapping or undersized UI; **Polish** for needless steps. Record target, steps, expected, observed and screenshots. Continue the journey past friction where possible.
 
-One target at a time, never a physical device. Run `launch` from the worktree in the background, logged to a file. First match wins:
+After each target, including failures, stop only your launch processes, close your tabs and shut down only simulators you booted.
 
-1. `device`: first boot a matching available simulator; pass `deviceEnv=<its id>`.
-2. `url` or `urlFromLog`, and `viewport`: once the origin answers, open it in a new browser tab at `viewport`, emulating touch if possible.
-3. Otherwise: skip it, saying why.
+**Exit gate:** each journey completed or abandoned, evidence collected, owned processes and devices stopped.
 
-Poll the log, then screenshots, every 30 s for up to 20 min. A failed build ends the run; its log tail is the finding.
+## 3. File and report
 
-**Exit gate:** app on screen, or build failure recorded.
+Merge findings across targets and keep at most `maxIssues`. Search existing issues by screen and symptom. Comment new evidence once on an open match; file a regression linked to a match closed within 30 days; otherwise file a new issue. Use `type:bug` for a broken promise or lost data, otherwise `type:story`; set `lane:proposed` for the configured Reviewer when `reviewerLanes` is enabled, otherwise for the owner. Only now read code to identify scope. Each issue names the persona, user outcome, target, steps, expected/observed result, observable acceptance, estimate and a scope packet. Include `<!-- explore-finding persona=<persona> journey=<journey> -->` in each new issue for readiness triage.
 
-## 3. Play
+Save real screenshots under `runs/<date>-<persona>/` on the configured captures branch and link them in the issue. If pushing that branch would trigger CI, describe the screens instead; never trigger CI for captures. Add new issues to the configured project and as sub-issues of the open epic for the area, or the configured fallback epic. Append the date, persona, journey, targets, issues, `notJudged` and outcome to `log.jsonl` on the captures branch only if it will not trigger CI; otherwise report the log write as pending.
 
-- Be the persona: read only the screen, never code or guide; pursue the goal. Screenshot each step, reading the console or launch log; at most 60 actions a target.
-- Input lags: wait 2 s before each screenshot; on a simulator hold taps 0.15 s. Record "did nothing" only if a later screenshot agrees; retype text sent before the caret. Drop unreproducible friction.
-- In a browser, follow the repository's preview rules; list touch-only gestures as `notJudged`, not findings.
-- Push past friction. Record each with step, expected, observed and screenshot, graded first match wins:
-  1. **Blocker:** the goal is unreachable, data is lost or wrong, or the app crashes or freezes.
-  2. **Confusion:** you hesitated, guessed, a control did nothing or logged an error, or an icon had no label.
-  3. **Mismatch:** it differs across screens or targets, or the layout misfits (clipped, overlapping, tiny targets).
-  4. **Polish:** it works but costs a needless step.
+**Exit gate:** findings filed, commented or dropped with reasons; run log recorded or explicitly pending.
 
-**Exit gate:** journey done or abandoned on each target; findings have screenshots.
+## Output
 
-## 4. Clean up
-
-Per target, even after a failure: SIGINT your launch process, wait up to 30 s, then TERM only processes you started; close your tabs and shut down your simulator, never another.
-
-**Exit gate:** none of your processes, tabs or simulators remain.
-
-## 5. File
-
-- Merge findings across targets; keep the top `maxIssues`.
-- Search issues by screen and symptom (`gh issue list --state all --search`), first match wins:
-  1. Open match: comment new evidence once.
-  2. Closed within 30 days: a `type:bug` regression issue linking it.
-  3. No match: a new issue.
-- Captures: commit screenshots to orphan `capturesBranch` at `runs/<date>-<persona>/<n>-<target>.png` (`gh api -X PUT repos/<repo>/contents/<path>`); embed them as below. If a workflow's `push` trigger matches it, describe screens instead: captures never start CI.
-- A new issue: title `<type>(<area>): <outcome for the user>`; `type:bug` when it breaks a product promise or loses data, else `type:story`; `lane:proposed`, for the Reviewer under `reviewerLanes`, else the owner. Only now read code: trace the screen's text to its code for the scope packet.
-
-````markdown
-### Executive summary
-<Persona> can't <goal>: <what blocks them> on <target>.
-
-**Scope:** <screen>; <what changes>.
-
-### Acceptance criteria
-
-- [ ] <Observable outcome on every target>.
-
-### Estimate
-S.
-
-```scope
-{"paths": ["<code that draws the screen>"], "dependencies": []}
-```
-
-**Steps:** <target>, <persona>: <step> → <step>. Expected …; observed …
-
-![step <n>](https://github.com/<repo>/blob/<capturesBranch>/runs/<date>-<persona>/<n>-<target>.png?raw=true)
-
-<!-- explore-finding persona=<persona> journey=<journey> -->
-````
-
-- With a `project`, `gh project item-add` each new issue. Make it a sub-issue (`gh api -X POST repos/<repo>/issues/<epic>/sub_issues -F sub_issue_id=<REST id>`) of the open epic naming its area, else of `epic`.
-
-**Exit gate:** each finding filed, commented or dropped with a reason.
-
-## 6. Report
-
-Append `{"date", "persona", "journey", "targets", "issues", "notJudged", "outcome"}` as one line to `log.jsonl` on `capturesBranch`.
-
-At most 8 lines:
-
-```markdown
-**Summary:** <persona>, <journey>, <targets>: #<n> Blocker (opened), #<m> Confusion (commented). Not judged: <notJudged>.
-**Decision:** #<n> awaits its lane; I recommend `lane:afk`.
-```
-
-Unattended, flag blockers and owner waits, else archive.
-
-**Exit gate:** log line committed, report sent.
+At most 8 lines: **Summary:** persona, journey, targets, issue links, findings and `notJudged`. **Decision:** next action/actor or owner wait. Unattended, flag blockers and owner waits; otherwise archive.

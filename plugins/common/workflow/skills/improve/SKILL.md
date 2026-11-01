@@ -1,55 +1,44 @@
 ---
 name: improve
-description: Use when a change has shipped (07 Improve) or friction, rework or a repeated review finding should become a lasting change to skills, agent rules or docs.
+description: Use when a change has shipped or when friction, rework or a review finding should become a lasting change to skills, agent rules or docs.
 allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,python3:*,just:*)
 ---
 
-# Improve (07)
+# Improve
 
-## 1. Collect
+## 1. Find the lesson
 
-For each issue awaiting lessons (closed as completed in the last 30 days, its newest `## Shipped` comment newer than any `## Lessons`) and for this session, list parks, failed fixes, review findings, reverts and fix-forwards, red base, owner corrections (agent memory too) including challenged decision records, which mark a recommendation that was wrong, missing commands or docs, and rules that cost time without preventing a failure. Find earlier occurrences in past `## Lessons` comments.
+For an owner-requested improvement, inspect the named event and relevant prior evidence; do not sweep unrelated issues. For a scheduled batch, inspect issues closed as completed in the last 30 days whose newest `## Shipped` comment is newer than any `## Lessons`. Find repeated failures, owner corrections, missing signals and rules that cost time without preventing failure.
 
-**Exit gate:** friction points with evidence and earlier occurrences, or none.
+A lesson needs two linked occurrences or the owner's request. A revert or fix-forward needs only one: name the earliest `spec`, `tdd`, `review` or CI signal that should have caught it. A single other occurrence is an observation.
 
-## 2. Place
+**Exit gate:** scoped lessons and evidence, or observations only.
 
-- A lesson needs two linked occurrences or the owner's request; one occurrence is an observation only. A revert or fix-forward is a lesson on its first occurrence: name the earliest layer that should have caught it (`spec` criterion, `tdd` test, `review` axis, CI gate) and add the missing signal there.
-- Prefer an existing deterministic gate, then delete or sharpen a rule. Add a helper only for a demonstrated boundary existing tools cannot enforce; do not build a workflow engine here.
-- One target per lesson: the skill owning the phase (rules holding in any project); project agent rules (project-only); `.github/lanes.json` or `.github/CODEOWNERS` (scope, merge, owner paths); the issue template or `spec` (unbuildable issues); docs. Never agent memory.
-- Scrub secrets, internal hostnames, client names and local paths.
+## 2. Fix the cause
 
-**Exit gate:** each lesson has a target file and wording.
+Prefer an existing deterministic gate; otherwise delete or sharpen the owning rule. Add a helper only for a demonstrated boundary existing tools cannot enforce. Choose one target per lesson: the phase skill for general rules, project rules for local ones, scope configuration for authority, or the issue template for unbuildable issues. Never use agent memory as the target. Scrub secrets, internal hostnames, client names and local paths.
 
-## 3. Record
+Routine engineering within approved constraints is delegated. Product intent, cost, owner paths, credential or merge authority, production approval and configuration/CODEOWNERS changes remain reserved. A documentation label does not change authority. Link duplicate proposals.
 
-Comment `## Lessons` on the shipped issue ("no lessons" when none): lessons with occurrences, target and wording; observations one line each. No shipped issue: use the output.
+**Exit gate:** target and change or a named reserved decision.
 
-**Exit gate:** the comment link, or the output.
+## 3. Deliver and record
 
-## 4. Propose
-
-Classify by effects: routine engineering guidance within approved constraints is delegated; product intent, cost, owner paths, credential/merge authority and production approval remain reserved. A documentation label never makes an authority change routine. Keep configuration/CODEOWNERS changes for explicit owner authority. Link duplicate proposals.
-
-The orchestrator assigns bounded implementation and delivery to workers through the harness's native subagents. Workers load the owning skill, perform one phase and return evidence; they do not dispatch or advance phases. `agent-review` owns GitHub approval. Never hold an issue twice; shared files never block, the later PR resolves conflicts.
+Make an explicitly requested small change in place when repository rules allow; use workers only when needed for independence or parallel work. Follow repository verification and review requirements. A worker receives minimal fresh context where supported, with this complete brief:
 
 ```text
-Intent: <lesson, occurrences, milestone/issue and desired effect>.
-Criteria: <exact wording/outcomes and authoring budgets>.
-Scope: <owned paths including tests; exclusions; dependencies>.
-Checkout: <worktree>; base <ref/SHA>; head <branch/SHA>.
-Decisions: <delegated engineering choices; owner-reserved effects>.
-Evidence: <lessons links, prior decisions, commands/exits, findings>.
-Perform only assigned authoring or VCS work using its owning skill; no
-worker dispatch or orchestration. Preserve other edits. Independent review
-must judge a fresh exact head; Craftsman cannot approve. Return changed paths,
-head, checks/exits, exit gate and remaining decisions in at most 8 lines.
+Intent: <lesson, evidence and assigned phase>.
+Criteria and scope: <outcome, paths, exclusions and decisions>.
+Checkout: <worktree, base/head SHAs and last reviewed SHA>.
+Load <skill>; do only the assigned phase. Preserve edits; do not dispatch,
+approve your own work or expose credentials. Return paths, head, checks/exits,
+findings, exit gate and decisions in at most 8 lines.
 ```
 
-Use one issue/ready PR per target repository; link the Lessons evidence. Verify the target, secure independent exact-head review and enable auto-merge awaiting required approvals/checks. On failure, diagnose and attempt at most two fixes, then record replan/wait with retry condition; retain the lane. Ask the owner only for reserved effects.
+For a shipped issue, comment `## Lessons` with occurrences, target and wording, or `no lessons`; list observations in one line each. With no shipped issue, report these in the output. For unattended delivery, use one issue/ready PR per target repository and link the evidence. Obtain independent review and use VCS for authorized delivery. On failure, attempt at most two evidence-led fixes, then retain the lane with a concrete retry condition. Ask the owner only for reserved effects.
 
-**Exit gate:** each lesson linked to its PR, or a proposal with its reason.
+**Exit gate:** reviewed change or linked PR, observation, or proposal with a named blocker.
 
 ## Output
 
-≤ 8 lines. **Summary:** each lesson PR with targets and change, or "no lessons" and the observation count. **Decision:** proposals left, with target, reason and a recommendation, or the next action and responsible actor. Use "Nothing needed" only with no pending action.
+At most 8 lines: **Summary:** change or observations and evidence. **Decision:** next action/actor or reserved options and recommendation. Use “Nothing needed” only with no pending action.

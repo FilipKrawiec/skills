@@ -1,43 +1,33 @@
 ---
 name: health
-description: Use when completing bounded autonomous maintenance after each product milestone, including stable upgrades, migrations and confidence evidence before the next product.
+description: Use when completing bounded maintenance after a product milestone, including stable upgrades, migrations and confidence evidence before the next product.
 allowed-tools: Read Edit Bash
 ---
 
 # Health
 
-## 1. Bound the iteration
+## 1. Bound the work
 
-After production acceptance in the consuming repository, create or reuse one native GitHub health milestone, titled `v<MAJOR>` with the next unused major, linked to the product milestone. Inspect stale dependencies, toolchains/actions, justified refactoring, test duplication, meaningful testing gaps and test speed within approved maintenance constraints. Record bounded slices, acceptance and confidence gates; defer new discoveries. These instructions do not install a metrics framework in the skills library. Use project resource/retry limits and stop conditions; a time limit does not waive required migrations. Freeze the latest stable versions available at iteration start, including major versions of direct dependencies, toolchains and actions. Record registry/release evidence and resolve transitive compatibility. Do not chase versions arriving later; queue them for the next iteration unless urgent security requires immediate reassessment.
+After production acceptance, create or reuse a linked native health milestone using the project's naming convention. Inventory dependencies, toolchains, actions, justified refactoring, testing gaps and speed within approved maintenance constraints. Record bounded slices, acceptance, gates and stop conditions. Freeze the latest stable direct targets at the start, including majors, with release and compatibility evidence; queue later versions unless urgent security requires reassessment.
 
-**Exit gate:** dated target inventory, compatibility evidence and bounded slices recorded.
+**Exit gate:** dated targets, compatibility evidence and bounded slices recorded.
 
-## 2. Complete upgrades and migrations
+## 2. Migrate
 
-Implement each target and its migration in bounded slices; preserve user behavior and verify real compatibility, including transitive dependencies. Finish required migrations before the next product milestone. Do not leave an indefinite partially migrated state.
+Implement and verify each target and migration, including transitive compatibility, while preserving user behavior. Finish required migrations before the next dependent product milestone; a time or size limit does not waive them. When upstream does not support the target combination, record authoritative evidence, the newest compatible stable combination and revisit condition. An external outage permits deferral only when an independent product's delivery and safety do not depend on it; record evidence and the resumption trigger. Difficulty alone is not an exception.
 
-When upstream does not support the target combination, record authoritative compatibility evidence and choose the newest compatible stable combination as an explicit exception with a revisit condition. Difficulty alone is not an exception. An external outage may defer blocked health work and allow an independent product milestone only when its delivery and safety do not depend on that work; record the outage evidence, dependency reasoning and resumption trigger. Split large migrations into further bounded slices; size alone requires no owner decision. Escalate only a reserved decision; do not silently waive the prerequisite.
+Use independent review and configured delivery controls. Production promotion needs separate owner approval.
 
-Return needed implementation/review assignments to the orchestrator with exact targets, files/tests, acceptance, commands and stop conditions. Workers do not redispatch or advance phases. Keep review independent and production credentials behind native controls.
-
-**Exit gate:** targets and migrations complete with passing evidence, or explicit supported exception/outage deferral or owner blocker.
+**Exit gate:** required targets complete, or supported exception, outage deferral or reserved decision recorded.
 
 ## 3. Preserve confidence
 
-Run configured reproducible project mutation, coverage and complexity/risk gates (or `tdd` mutation sampling when no mutation tool is configured), stricter for changed and critical behavior. Ratchet measured confidence: weakening thresholds, narrowing scope, adding exclusions or resetting a baseline requires explicit owner approval with evidence of the impact. Missing configured measurements block completion. Record command, revision, toolchain, scope, seed, results and environment; compare timing using equivalent environments, scope and warm/cold conditions. Treat an incomplete measurement as missing evidence, not a pass.
+Run configured reproducible coverage, mutation and complexity/risk gates, stricter for changed and critical behavior; use `tdd` mutation sampling when no mutation tool is configured. Missing measurements are not passes. Lower thresholds, narrower scope, new exclusions or reset baselines need explicit owner approval with impact evidence. Record revision, commands, toolchain, scope, seed, results and environment; compare timing only across equivalent runs.
 
-Return to the orchestrator a `review` area audit of the areas the product milestone changed, with a fresh verifier for its Blocker and Major rows; file each confirmed row as an issue in this health milestone. Diff reviews skip old defects, so this is where they surface.
+Request a `review` area audit of areas changed by the product milestone and file confirmed Blocker and Major findings in the health milestone. Improve tests or structure for demonstrated risk or measured maintenance cost, not counts alone; preserve meaningful behavior when removing redundant tests.
 
-Improve tests or structure for demonstrated risk, maintenance cost or measured regression. Do not force churn merely to increase test counts, scores or upgrade activity. Verify preserved meaningful behavior when deleting redundant tests. The host arranges the applicable delivery controls for the resulting exact artifact; health does not authorize production promotion.
-
-**Exit gate:** reproducible confidence and comparable timing evidence pass project gates; no unapproved weakening.
+**Exit gate:** project confidence gates pass without unapproved weakening, or missing evidence and next action named.
 
 ## Output
 
-Session replies ≤5 lines; run reports ≤8. **Summary:** frozen targets, completed migrations, exceptions, confidence/timing evidence, commands and exits. **Decision:** next action/actor, next-product prerequisite or reserved owner choice/recommendation.
-
-```text
-Summary: frozen stable targets installed; migration complete; verify exit 0.
-Confidence: configured gates pass; timing 42s vs 43s, same runner/scope.
-Decision: Nothing needed; next product prerequisite cleared.
-```
+At most 8 lines: **Summary:** targets, migrations, exceptions and confidence/timing evidence with commands/exits. **Decision:** next action/actor, prerequisite or reserved options and recommendation.
