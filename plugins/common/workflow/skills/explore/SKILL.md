@@ -18,7 +18,7 @@ Read the repository's agent instructions and developer README to learn its suppo
 
 ## 2. Assemble
 
-Read the `steps.assemble` argv array from `cache show`. If it is missing, stop and report that project setup gap. Substitute `{platform}` with the chosen platform and run it from the isolated worktree, logging its output. For a browser, open the URL printed by the app's run command at a usable viewport. For a simulator, boot an available matching device; never use a physical device. Start one platform at a time and bound startup to 20 minutes. Record unsupported platforms and build failures with the relevant log tail.
+Read `steps.assemble` from `cache show`. If it is missing or `null`, stop and report that no app assemble script is configured. Otherwise substitute `{platform}` in its argv and run it from the isolated worktree, logging output. For a browser, open the URL printed by the app's run command at a usable viewport. For a simulator, boot an available matching device; never use a physical device. Start one platform at a time and bound startup to 20 minutes. Record unsupported platforms and build failures with the relevant log tail.
 
 **Exit gate:** app running on screen or the documented assemble command failed.
 
