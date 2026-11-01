@@ -1,6 +1,6 @@
 # Review queue
 
-With configured reviewQueue, pin that issue once and update its body with the current decision queue. Include approved milestone progress and next slice, prototype direction awaiting owner input, exact candidate/head and check evidence, production destination/approval, reserved authority decisions, and technical replan/waits with retry conditions. Preserve links to criteria and recorded decisions. An issue-body update is a record, not a guaranteed notification mechanism.
+Use the locally cached GitHub issue titled `Review queue`; `workflow.mjs cache show` displays its number. Pin that issue once and update its body with the current decision queue. Include approved milestone progress and next slice, prototype direction awaiting owner input, exact candidate/head and check evidence, production destination/approval, reserved authority decisions, and technical replan/waits with retry conditions. Preserve links to criteria and recorded decisions. An issue-body update is a record, not a guaranteed notification mechanism.
 
 Order entries by first difference:
 

@@ -6,6 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, existsS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { codeownersRolesFrom } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const cli = join(root, 'plugins/common/workflow/scripts/workflow.mjs');
@@ -13,8 +14,12 @@ const configPath = '.agents/config.json';
 const json = value => JSON.stringify(value);
 const config = values => ({
   version: 1,
-  identities: Object.fromEntries(['owner', 'implementer', 'reviewer'].filter(key => values[key] !== undefined).map(key => [key, values[key]])),
-  github: Object.fromEntries(['repo', 'base'].filter(key => values[key] !== undefined).map(key => [key, values[key]])),
+  identities: Object.fromEntries(['implementer'].filter(key => values[key] !== undefined).map(key => [key, values[key]])),
+});
+
+test('CODEOWNERS roles reject an organization slug when several path owners exist', () => {
+  assert.throws(() => codeownersRolesFrom('* @reviewer\n/*.rules @alice\n/*.json @bob\n', 'acme/app'), /identify one Owner account/);
+  assert.deepEqual(codeownersRolesFrom('* @reviewer\n/*.rules @alice\n', 'acme/app'), { owner: 'alice', reviewer: 'reviewer' });
 });
 
 const fakeGh = `#!/usr/bin/env node
@@ -92,15 +97,16 @@ function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'workflow-cli-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const bin = join(directory, 'bin'); mkdirSync(bin);
-  const main = join(directory, 'repo'); mkdirSync(join(main, '.agents'), { recursive: true });
+  const main = join(directory, 'repo'); mkdirSync(join(main, '.agents'), { recursive: true }); mkdirSync(join(main, '.github'), { recursive: true });
   const linked = join(directory, 'linked');
   const realGit = run('which', ['git']).stdout.trim();
   const initialConfig = config({ repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer', owner: 'owner' });
   writeFileSync(join(main, configPath), json(initialConfig));
+  writeFileSync(join(main, '.github', 'CODEOWNERS'), '* @reviewer\n/*.rules @owner\n');
   const git = (...args) => run(realGit, args, { cwd: main });
   assert.equal(run(realGit, ['init', '-q', '-b', 'main', main]).status, 0);
   assert.equal(git('remote', 'add', 'origin', 'https://github.com/acme/app.git').status, 0);
-  assert.equal(git('add', configPath).status, 0);
+  assert.equal(git('add', configPath, '.github/CODEOWNERS').status, 0);
   assert.equal(git('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'initial').status, 0);
   assert.equal(git('update-ref', 'refs/remotes/origin/main', 'HEAD').status, 0);
   assert.equal(git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main').status, 0);
@@ -219,7 +225,7 @@ test('wrong actor never pushes', t => {
   assert.notEqual(result.status, 0); assertNoPush(f); assert.ok(!`${result.stdout}${result.stderr}`.includes('SECRET_TOKEN'));
 });
 
-test('owner bootstrap selects the configured owner without switching active account', t => {
+test('owner bootstrap selects the CODEOWNERS owner without switching active account', t => {
   const f = fixture(t);
   assert.equal(run(f.env.REAL_GIT, ['rm', '-q', configPath], { cwd: f.main }).status, 0);
   commitFixture(f, f.main);
@@ -277,14 +283,10 @@ test('push refuses owner as implementer', t => {
   assert.notEqual(f.cliRun('push').status, 0); assertNoPush(f);
 });
 
-test('missing explicit owner fails closed', t => {
-  const f = fixture(t); changeConfig(f, { repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer' });
-  assert.notEqual(f.cliRun('push').status, 0); assertNoPush(f);
-});
-
-test('configured base differing from verified default fails closed', t => {
-  const f = fixture(t); changeConfig(f, { repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer', owner: 'owner', base: 'release' });
-  assert.notEqual(f.cliRun('push').status, 0); assertNoPush(f);
+test('repo, base, owner and reviewer are derived from origin and CODEOWNERS', t => {
+  const f = fixture(t);
+  const result = f.cliRun('push');
+  assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).repository, 'acme/app');
 });
 
 test('push refuses when auto-merge is enabled', t => {
@@ -418,12 +420,11 @@ test('push without base roles fails closed', t => {
   f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'no config');
   f.linkedGit('update-ref', 'refs/remotes/origin/main', 'HEAD');
   const result = f.cliRun('push');
-  assert.notEqual(result.status, 0); assert.ok(result.stderr.includes(configPath)); assertNoPush(f);
+  assert.notEqual(result.status, 0); assert.match(result.stderr, /identities\.implementer/); assertNoPush(f);
 });
 
-test('missing owner defaults to a verified personal owner', t => {
-  const f = fixture(t); changeConfig(f, { repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer' });
-  f.env.REMOTE_BASE_SHA = f.linkedGit('rev-parse', 'HEAD').stdout.trim(); f.env.FAKE_OWNER_KIND = 'User';
+test('reviewer and owner role fields in config are unnecessary when CODEOWNERS defines them', t => {
+  const f = fixture(t);
   assert.equal(f.cliRun('push').status, 0);
 });
 

@@ -6,11 +6,11 @@ allowed-tools: Read Bash
 
 # Explore
 
-Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Read `.agents/config.json` for `repo`, `project` and `explore`: personas and their journeys; simulator or browser targets and launch commands; `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree`, `epic` and `idleHours`. A target may provide `urlFromLog` instead of its browser URL. Read [idle.md](references/idle.md) only for an idle run.
+Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Read product-specific targets from `.agents/config.json`; run `workflow.mjs cache show` for the resolved project, persona path, capture branch, issue limit, idle interval and base. Place the dedicated worktree at `.worktrees/explore` beside the Git common directory, so all linked worktrees share it without agent-specific paths. A target may provide `urlFromLog` instead of its browser URL. Read [idle.md](references/idle.md) only for an idle run.
 
 ## 1. Prepare and launch
 
-Fetch the configured base (default `main`) and use an owned clean isolated worktree at its head; never alter the main checkout or another session's worktree. For the requested persona, choose the named journey, otherwise a never-run journey, otherwise the least recently run using `log.jsonl` on `capturesBranch`.
+Fetch the resolved base and use the clean isolated exploration worktree at its head; never alter the main checkout or another session's worktree. For the requested persona, choose the named journey, otherwise a never-run journey, otherwise the least recently run using `log.jsonl` on the resolved capture branch.
 
 Launch one target at a time from that worktree. For a simulator, boot a matching available device and pass its ID in the configured `deviceEnv`; never use a physical device. For a browser, wait for the configured origin, open a new tab at its viewport and emulate touch when possible. Record unsupported targets and build failures, including the relevant log tail. Bound startup to 20 minutes.
 
@@ -30,7 +30,7 @@ After each target, including failures, stop only your launch processes, close yo
 
 Merge findings across targets and keep at most `maxIssues`. Search existing issues by screen and symptom. Comment new evidence once on an open match; file a regression linked to a match closed within 30 days; otherwise file a new issue. Use `type:bug` for a broken promise or lost data, otherwise `type:story`; set `lane:proposed` for automated AFK eligibility review. Only now read code to identify scope. Each issue names the persona, user outcome, target, steps, expected/observed result, observable acceptance, estimate and a scope packet. Include `<!-- explore-finding persona=<persona> journey=<journey> -->` in each new issue for readiness triage.
 
-Save real screenshots under `runs/<date>-<persona>/` on the configured captures branch and link them in the issue. If pushing that branch would trigger CI, describe the screens instead; never trigger CI for captures. Add new issues to the configured project and as sub-issues of the open epic for the area, or the configured fallback epic. Append the date, persona, journey, targets, issues, `notJudged` and outcome to `log.jsonl` on the captures branch only if it will not trigger CI; otherwise report the log write as pending.
+Save real screenshots under `runs/<date>-<persona>/` on the resolved capture branch and link them in the issue. If pushing that branch would trigger CI, describe the screens instead; never trigger CI for captures. Add issues to the discovered GitHub Project. Link each under an open epic for its area when one exists; otherwise leave it standalone. Append the date, persona, journey, targets, issues, `notJudged` and outcome to `log.jsonl` on the capture branch only if it will not trigger CI; otherwise report the log write as pending.
 
 **Exit gate:** findings filed, commented or dropped with reasons; run log recorded or explicitly pending.
 

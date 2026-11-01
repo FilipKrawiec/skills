@@ -4,7 +4,7 @@ import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, assertDistinctPushRoles, githubScopeFailure, missingProjectScope, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workspaceFilePath, afkAgentEnvironment, afkWorkflowCliPath, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkWorkflowCliPath, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 const epic = { number: 1, labels: ['type:epic'], ancestors: [], priority: 1 };
@@ -43,6 +43,35 @@ test('AFK and explore use conventional defaults with four concurrent runs', () =
   assert.equal(workflowDefaults.afk.maxRuns, 4);
   assert.match(workflowDefaults.afk.startCommand[0], /^pi$/);
   assert.equal(workflowDefaults.explore.personas, '.agents/personas.md');
+});
+
+test('repository and base metadata come from the Git remote and origin HEAD', () => {
+  assert.equal(githubRepoFromRemote('https://github.com/acme/stage.git'), 'acme/stage');
+  assert.equal(githubRepoFromRemote('git@github.com:acme/stage.git'), 'acme/stage');
+  assert.throws(() => githubRepoFromRemote('https://example.com/acme/stage.git'), /GitHub/);
+});
+
+test('GitHub metadata cache is shared by a caller-supplied common git directory', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'workflow-cache-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = workflowMetadataCachePath(directory);
+  let calls = 0;
+  const loader = () => { calls++; return { project: { number: 5, owner: 'acme-projects' }, reviewQueue: 479 }; };
+  const options = { expectedFields: ['project', 'reviewQueue'] };
+  assert.deepEqual(readThroughLocalCache(path, 'acme/stage', loader, { ...options, now: 1_000 }), { project: { number: 5, owner: 'acme-projects' }, reviewQueue: 479 });
+  assert.deepEqual(readThroughLocalCache(path, 'acme/stage', loader, { ...options, now: 2_000 }), { project: { number: 5, owner: 'acme-projects' }, reviewQueue: 479 });
+  assert.equal(calls, 1);
+  assert.deepEqual(readThroughLocalCache(path, 'acme/stage', loader, { ...options, now: 2_000, refresh: true }), { project: { number: 5, owner: 'acme-projects' }, reviewQueue: 479 });
+  assert.equal(calls, 2);
+  assert.deepEqual(readThroughLocalCache(path, 'acme/stage', () => ({ reviewQueue: 480 }), { ...options, now: 3_000, refresh: true }), { project: { number: 5, owner: 'acme-projects' }, reviewQueue: 480 });
+  assert.deepEqual(readThroughLocalCache(path, 'acme/stage', () => ({ reviewQueue: 481 }), { ...options, now: 100_000, ttlMs: 10 }), { reviewQueue: 481 });
+  assert.deepEqual(readThroughLocalCache(path, 'acme/stage', () => ({ project: null }), { ...options, now: 100_001, ttlMs: 10 }), { project: null, reviewQueue: 481 });
+  assert.deepEqual(readThroughLocalCache(path, 'acme/stage', () => ({ reviewQueue: 482 }), { ...options, now: 200_000, ttlMs: 10 }), { reviewQueue: 482 });
+});
+
+test('cached GitHub facts fill optional workflow settings without overriding explicit policy', () => {
+  const cfg = { project: null, reviewQueue: 123 };
+  assert.deepEqual(applyGithubMetadata(cfg, { project: { number: 5 }, reviewQueue: 479 }), { project: { number: 5 }, reviewQueue: 123 });
 });
 
 test('macOS inherited-lock check survives truncated lockf command paths', () => {

@@ -7,13 +7,13 @@ Use version 1; read it from base. AFK uses automated review; CODEOWNERS names th
 ```json
 {
   "version": 1,
-  "identities": {"owner": "alice", "implementer": "acme-builder", "reviewer": "acme-reviewer"},
-  "github": {"repo": "acme/app", "base": "main", "project": {"owner": "acme", "number": 3}},
-  "afk": {"alwaysInScope": ["docs/"]}
+  "identities": {"implementer": "acme-builder"},
+  "afk": {"alwaysInScope": ["docs/"]},
+  "explore": {"targets": {"browser": {"launch": "npm run dev", "viewport": "1280x800"}}}
 }
 ```
 
-Keep only repository-specific facts in this file: GitHub repo and board, actor identities, path-specific AFK restrictions and exploration targets. The CLI supplies conventional AFK defaults, including Pi with Ollama, four concurrent runs, labels, and `.agents/personas.md`. Commands that genuinely vary by host can be overridden here as argv arrays. The foreground watcher holds the workflow lock until its command exits. Keep path ownership in CODEOWNERS.
+Keep only shared behavior the CLI cannot infer: the implementer allowed to push, path-specific AFK scope exceptions and product exploration launch targets. Repo and base come from `origin` and `origin/HEAD`; owner and Reviewer come from `.github/CODEOWNERS`; `verify` is the default required check. The CLI discovers the linked Project, including its owner, and open issue titled `Review queue`, then caches each GitHub fact for 24 hours in the repository's common `.git` directory, shared by its worktrees. A field whose discovery failed is retried and expired values are omitted. `cache show` displays resolved values; `cache refresh` explicitly refreshes them using the active GitHub profile. The CLI supplies AFK limits, labels, branches and personas. The foreground watcher holds its workflow lock until its command exits.
 
 ## One-time setup
 

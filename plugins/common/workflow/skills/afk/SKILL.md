@@ -6,9 +6,9 @@ allowed-tools: Skill Read Edit Write Bash(git:*,gh:*,node:*,just:*,lsof:*)
 
 # AFK
 
-Deliver the requested authorized slice, or one unattended slice per run. Read `.agents/config.json` from the configured base (default `main`). Never change the main checkout. When the owner explicitly invokes AFK interactively, work on their requested items; do not pick unrelated queue work.
+Deliver the requested authorized slice, or one unattended slice per run. Read `.agents/config.json` from the fetched `origin/HEAD` for the implementer and product-specific settings. Never change the main checkout. When the owner explicitly invokes AFK interactively, work on their requested items; do not pick unrelated queue work.
 
-Read [setup.md](references/setup.md) only when enabling or scheduling runs, and [github-safety.md](references/github-safety.md) only when checking GitHub protection. Use `safety check` for read-only inspection. Run `safety apply` only after an explicit owner instruction; it changes repository permissions and branch protection. Identities, repository and required checks come from `.agents/config.json`.
+Read [setup.md](references/setup.md) only when enabling or scheduling runs, and [github-safety.md](references/github-safety.md) only when checking GitHub protection. Use `safety check` for read-only inspection. Run `safety apply` only after an explicit owner instruction; it changes repository permissions and branch protection. The implementer comes from `.agents/config.json`; repository, base and roles come from Git and base CODEOWNERS; required checks use CLI defaults.
 
 ## 1. Establish work
 

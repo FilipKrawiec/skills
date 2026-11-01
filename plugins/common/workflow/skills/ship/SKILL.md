@@ -6,7 +6,7 @@ allowed-tools: Read Edit Bash
 
 # Ship
 
-Read repository-specific settings from `.agents/config.json`; AFK branch names use the provider-neutral `afk/<issue>-<slug>` form. This phase grants no production promotion or fix-forward authority. Report board transitions to the orchestrator; `spec` owns transition semantics.
+AFK branch names use the provider-neutral `afk/<issue>-<slug>` form. This phase grants no production promotion or fix-forward authority. Report board transitions to the orchestrator; `spec` owns transition semantics.
 
 ## 1. Check actual base
 

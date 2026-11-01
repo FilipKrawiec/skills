@@ -6,7 +6,7 @@ GitHub and the host enforce authority; skill text is not a security boundary. Fr
 node <this-skill-directory>/../../scripts/workflow.mjs safety check
 ```
 
-Exit 1 reports drift. `safety apply` changes repository permissions and branch protection; run it only after an explicit owner instruction. Repository, identities, required checks and optional release app id come from `.agents/config.json`.
+Exit 1 reports drift. `safety apply` changes repository permissions and branch protection; run it only after an explicit owner instruction. The CLI derives repository/base from Git and owner/Reviewer from CODEOWNERS. `.agents/config.json` names the implementer; `verify` is the default required check, with an optional override only when a repo uses another check. Project metadata is discovered from GitHub and cached locally.
 
 ## Judgment, identity and credentials
 
@@ -16,7 +16,7 @@ Exit 1 reports drift. `safety apply` changes repository permissions and branch p
 | Implementer | Write identity | Existing authorized mechanism; no owner/production fallback |
 | Reviewer | Distinct Write identity | Existing authorized mechanism for Reviewer decisions |
 
-Set all three identities explicitly in `.agents/config.json`. Verify configured collaborator and Project access. Missing identity or access is a setup gap; creating accounts or provisioning credentials needs separate owner authorization. Never give workers the owner's credentials.
+Set only the implementer identity in `.agents/config.json`; configure path ownership in `.github/CODEOWNERS`. Verify the derived owner and Reviewer and the cached Project with `workflow.mjs cache show`. Missing identity or access is a setup gap; creating accounts or provisioning credentials needs separate owner authorization. Never give workers the owner's credentials.
 
 Use fresh native contexts for judgment and existing authorized credentials for posting. Shared hosts do not prove secret isolation or require separate OS accounts. Keep Craftsman from reviewer authority by assignment. Verify `gh api user --jq .login` matches the Reviewer without printing tokens. Push HTTPS; production credentials stay behind native controls.
 
