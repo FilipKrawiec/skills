@@ -1,12 +1,12 @@
 ---
 name: afk
-description: Use when asked to run an unattended AFK issue or explicitly requested to use AFK in a repository with .github/agent-workflow.json (or legacy `.github/lanes.json`).
+description: Use when asked to run an unattended AFK issue or explicitly requested to use AFK in a repository with .github/agent-workflow.json.
 allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
 ---
 
 # AFK
 
-Deliver the requested authorized slice, or one unattended slice per run. Read `.github/agent-workflow.json` (or legacy `.github/lanes.json`) from the configured base (default `main`). Never change the main checkout. When the owner explicitly invokes AFK interactively, work on their requested items; do not pick unrelated queue work.
+Deliver the requested authorized slice, or one unattended slice per run. Read `.github/agent-workflow.json` from the configured base (default `main`). Never change the main checkout. When the owner explicitly invokes AFK interactively, work on their requested items; do not pick unrelated queue work.
 
 Read [setup.md](references/setup.md) only when enabling or scheduling runs, and [github-safety.md](references/github-safety.md) only when checking GitHub protection.
 

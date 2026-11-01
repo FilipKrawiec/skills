@@ -1,2 +1,5 @@
-# Branch protection requires an approval from this reviewer identity on every PR.
+# The reviewer owns ordinary paths; the owner owns security and workflow policy.
 * @filipkrawiec-reviewer
+/.github/CODEOWNERS @FilipKrawiec
+/.github/workflows/ @FilipKrawiec
+/.github/agent-workflow.json @FilipKrawiec

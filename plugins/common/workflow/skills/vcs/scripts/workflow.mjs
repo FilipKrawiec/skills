@@ -45,14 +45,11 @@ function config(requireLanes = true) {
     return { root, lanes: {}, baseRef: undefined };
   }
   // Never replace malformed or inaccessible committed authority with local values.
-  const modern = '.github/agent-workflow.json';
-  const legacy = '.github/lanes.json';
-  const path = git('ls-tree', '--name-only', baseRef, '--', modern) ? modern : legacy;
+  const path = '.github/agent-workflow.json';
   const present = git('ls-tree', '--name-only', baseRef, '--', path);
-  const raw = present ? JSON.parse(git('show', `${baseRef}:${path}`)) : {};
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid base roles');
-  if (path === modern && (raw.version !== 1 || ![raw.identities, raw.github, raw.afk ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration');
-  const lanes = path === modern ? { ...raw.github, ...raw.identities, ...raw.afk } : raw;
+  const raw = present ? JSON.parse(git('show', `${baseRef}:${path}`)) : null;
+  if (present && (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 || ![raw.identities, raw.github, raw.afk ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration');
+  const lanes = raw ? { ...raw.github, ...raw.identities, ...raw.afk } : {};
   return { root, lanes, baseRef };
 }
 function parseRepo(repo) {
@@ -111,7 +108,7 @@ async function push(args) {
   const { root, lanes: baseLanes, baseRef } = config();
   requireLinkedWorktree();
   const lanes = args.length ? mergeRoles(baseLanes, externalRoles(args[1], root)) : baseLanes;
-  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure roles in base .github/agent-workflow.json or legacy .github/lanes.json, or an owner-controlled external --roles-file');
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure roles in base .github/agent-workflow.json or an owner-controlled external --roles-file');
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
   const reviewer = lanes.reviewer;

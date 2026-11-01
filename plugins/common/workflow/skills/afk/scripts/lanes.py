@@ -5,7 +5,7 @@ Usage: lanes.py start --me <run id> --runs <command> [--sync <command>]
        lanes.py check --runs <command> [--quiet]
        lanes.py merge [<pr>...]
        lanes.py end --me <run id>
-Run in a checkout of the repository; reads .github/lanes.json from origin/<base>.
+Run in a checkout of the repository; reads .github/agent-workflow.json from origin/<base>.
 
 start  preflights the identities, merges approved PRs, runs --sync in a checkout of origin/<base>
        while no other run is live, then holds the first free piece of work, in Epics view order:
@@ -15,10 +15,10 @@ start  preflights the identities, merges approved PRs, runs --sync in a checkout
        check of its head fails, it conflicts, it has no Reviewer review of its head (any run takes
        that review at once, even when all its issues wait on the owner; otherwise those PRs are
        parked) or it is neither approved nor held for the owner. Nothing is held once
-       lanes.json `maxRuns` other runs are live; without `maxRuns` every hold is a whole epic.
+       agent-workflow.json `afk.maxRuns` other runs are live; without `maxRuns` every hold is a whole epic.
        --runs is the host's command that prints the ids of the live runs, one per line. Exit 0 prints the hold and its work;
        2 prints one `Blocked:` line; 3 prints one `Done:` line: nothing for this run; 4 prints one
-       `Explore:` line: no work is free for this run, lanes.json `explore.idleHours` is set, no
+       `Explore:` line: no work is free for this run, agent-workflow.json `explore.idleHours` is set, no
        other live run explores and the last idle explore began at least that many hours ago, so
        this run plays `explore` unattended instead.
 check  for a host's watcher that starts runs on events instead of a schedule, with no model: prints `Quiet:` (exit 3)
@@ -389,7 +389,7 @@ class GitHub:
         sh("gh", "pr", "ready", str(number), "--repo", self.repo)
 
     def status(self, number: int, column: str) -> bool:
-        """Move the issue's card on lanes.json `project` to the Status option named `column` (any case);
+        """Move the issue's card on agent-workflow.json `github.project` to the Status option named `column` (any case);
         False when there is no board, card or such option, or GitHub refuses."""
         board = self.cfg.get("project") or {}
         if not board.get("number"):
@@ -465,19 +465,16 @@ def load_config() -> dict:
     sh("git", "fetch", "--quiet", "origin")
     base = "main"
     def read(ref: str) -> dict:
-        modern = ".github/agent-workflow.json"
-        path = modern if sh("git", "ls-tree", "--name-only", f"origin/{ref}", "--", modern) else ".github/lanes.json"
+        path = ".github/agent-workflow.json"
         try:
             raw = json.loads(sh("git", "show", f"origin/{ref}:{path}"))
         except (RuntimeError, ValueError) as err:
             raise Blocked(f"Cannot read {path} on origin/{ref}") from err
         if not isinstance(raw, dict):
             raise Blocked(f"Invalid configuration in {path}")
-        if path == modern:
-            if raw.get("version") != 1 or not all(isinstance(raw.get(k), dict) for k in ("identities", "github")) or not isinstance(raw.get("afk", {}), dict):
-                raise Blocked(f"Invalid workflow configuration in {path}")
-            return {**raw["github"], **raw["identities"], **raw.get("afk", {}), "explore": raw.get("explore", {})}
-        return raw
+        if raw.get("version") != 1 or not all(isinstance(raw.get(k), dict) for k in ("identities", "github")) or not isinstance(raw.get("afk", {}), dict):
+            raise Blocked(f"Invalid workflow configuration in {path}")
+        return {**raw["github"], **raw["identities"], **raw.get("afk", {}), "explore": raw.get("explore", {})}
     cfg = read(base)
     if cfg.get("base", base) != base:
         cfg = read(cfg["base"])
@@ -727,7 +724,7 @@ def take_work(gh: GitHub, runs: Runs, me: str, ledger: Ledger | None = None, syn
             return show(ledger.of(me)[0], epics, out)
         cap, live = gh.cfg.get("maxRuns"), runs.refresh().others_live(me)
         if cap and len(live) >= cap:
-            print(f"Done: {len(live)} other runs are live, as many as lanes.json maxRuns allows.")
+            print(f"Done: {len(live)} other runs are live, as many as agent-workflow.json afk.maxRuns allows.")
             print("\n".join(out))
             return 3
         elsewhere = lambda n: any(s != me for _, s in live_holds(thread(n), runs, me))

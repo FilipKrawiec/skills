@@ -13,6 +13,12 @@ ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / 'plugins/common/workflow/skills/vcs/scripts/workflow.mjs'
 
 
+def workflow_config(values):
+    return {'version': 1,
+            'identities': {k: values[k] for k in ('owner', 'implementer', 'reviewer') if k in values},
+            'github': {k: values[k] for k in ('repo', 'base') if k in values}}
+
+
 class WorkflowCLITest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -25,8 +31,8 @@ class WorkflowCLITest(unittest.TestCase):
         subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.repo)], check=True)
         subprocess.run(['git', '-C', str(self.repo), 'remote', 'add', 'origin', 'https://github.com/acme/app.git'], check=True)
         (self.repo / '.github').mkdir()
-        (self.repo / '.github/lanes.json').write_text(json.dumps({'repo': 'acme/app', 'implementer': 'builder', 'reviewer': 'reviewer', 'owner': 'owner'}))
-        subprocess.run(['git', '-C', str(self.repo), 'add', '.github/lanes.json'], check=True)
+        (self.repo / '.github/agent-workflow.json').write_text(json.dumps(workflow_config({'repo': 'acme/app', 'implementer': 'builder', 'reviewer': 'reviewer', 'owner': 'owner'})))
+        subprocess.run(['git', '-C', str(self.repo), 'add', '.github/agent-workflow.json'], check=True)
         subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'initial'], check=True)
         subprocess.run(['git', '-C', str(self.repo), 'update-ref', 'refs/remotes/origin/main', 'HEAD'], check=True)
         subprocess.run(['git', '-C', str(self.repo), 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], check=True)
@@ -111,7 +117,8 @@ else:
         git = self.env['REAL_GIT']
         config = {'version': 1, 'identities': {'owner': 'owner', 'implementer': 'builder', 'reviewer': 'reviewer'}, 'github': {'repo': 'acme/app'}}
         (self.repo / '.github/agent-workflow.json').write_text(json.dumps(config))
-        subprocess.run([git, 'rm', '-q', '.github/lanes.json'], cwd=self.repo, check=True)
+        config['afk'] = {'maxRuns': 2}
+        (self.repo / '.github/agent-workflow.json').write_text(json.dumps(config))
         subprocess.run([git, 'add', '.github/agent-workflow.json'], cwd=self.repo, check=True)
         subprocess.run([git, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'config'], cwd=self.repo, check=True)
         subprocess.run([git, 'update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd=self.repo, check=True)
@@ -211,8 +218,8 @@ else:
         self.assertFalse((self.root / 'push.json').exists())
 
     def test_reviewer_as_implementer_is_rejected_before_credentials(self):
-        (self.repo / '.github/lanes.json').write_text(json.dumps({'repo': 'acme/app', 'implementer': 'reviewer', 'reviewer': 'reviewer', 'owner': 'owner'}))
-        subprocess.run([self.env['REAL_GIT'], 'add', '.github/lanes.json'], cwd=self.repo, check=True)
+        (self.repo / '.github/agent-workflow.json').write_text(json.dumps(workflow_config({'repo': 'acme/app', 'implementer': 'reviewer', 'reviewer': 'reviewer', 'owner': 'owner'})))
+        subprocess.run([self.env['REAL_GIT'], 'add', '.github/agent-workflow.json'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'unsafe base'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], 'update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd=self.repo, check=True)
         result = self.run_cli('push')
@@ -220,7 +227,7 @@ else:
         self.assertFalse((self.root / 'push.json').exists())
 
     def test_push_ignores_uncommitted_identity_configuration(self):
-        (self.repo / '.github/lanes.json').write_text(json.dumps({'repo': 'acme/app', 'implementer': 'reviewer', 'reviewer': 'builder', 'owner': 'owner'}))
+        (self.repo / '.github/agent-workflow.json').write_text(json.dumps(workflow_config({'repo': 'acme/app', 'implementer': 'reviewer', 'reviewer': 'builder', 'owner': 'owner'})))
         result = self.run_cli('push')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)['actor'], 'builder')
@@ -229,8 +236,8 @@ else:
         git = self.env['REAL_GIT']
         original = subprocess.check_output([git, 'rev-parse', 'HEAD'], cwd=self.repo, text=True).strip()
         lanes = {'repo': 'acme/app', 'implementer': 'reviewer', 'reviewer': 'builder', 'owner': 'owner'}
-        (self.repo / '.github/lanes.json').write_text(json.dumps(lanes))
-        subprocess.run([git, 'add', '.github/lanes.json'], cwd=self.repo, check=True)
+        (self.repo / '.github/agent-workflow.json').write_text(json.dumps(workflow_config(lanes)))
+        subprocess.run([git, 'add', '.github/agent-workflow.json'], cwd=self.repo, check=True)
         subprocess.run([git, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'replacement'], cwd=self.repo, check=True)
         replacement = subprocess.check_output([git, 'rev-parse', 'HEAD'], cwd=self.repo, text=True).strip()
         subprocess.run([git, 'reset', '--hard', '-q', original], cwd=self.repo, check=True)
@@ -240,8 +247,8 @@ else:
         self.assertEqual(json.loads(result.stdout)['actor'], 'builder')
 
     def test_push_refuses_owner_as_implementer(self):
-        (self.repo / '.github/lanes.json').write_text(json.dumps({'repo': 'acme/app', 'implementer': 'owner', 'reviewer': 'reviewer', 'owner': 'owner'}))
-        subprocess.run([self.env['REAL_GIT'], 'add', '.github/lanes.json'], cwd=self.repo, check=True)
+        (self.repo / '.github/agent-workflow.json').write_text(json.dumps(workflow_config({'repo': 'acme/app', 'implementer': 'owner', 'reviewer': 'reviewer', 'owner': 'owner'})))
+        subprocess.run([self.env['REAL_GIT'], 'add', '.github/agent-workflow.json'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'unsafe base'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], 'update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd=self.repo, check=True)
         result = self.run_cli('push')
@@ -250,8 +257,8 @@ else:
 
     def test_missing_explicit_owner_fails_closed(self):
         lanes = {'repo': 'acme/app', 'implementer': 'builder', 'reviewer': 'reviewer'}
-        (self.repo / '.github/lanes.json').write_text(json.dumps(lanes))
-        subprocess.run([self.env['REAL_GIT'], 'add', '.github/lanes.json'], cwd=self.repo, check=True)
+        (self.repo / '.github/agent-workflow.json').write_text(json.dumps(workflow_config(lanes)))
+        subprocess.run([self.env['REAL_GIT'], 'add', '.github/agent-workflow.json'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'unsafe base'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], 'update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd=self.repo, check=True)
         result = self.run_cli('push')
@@ -260,8 +267,8 @@ else:
 
     def test_configured_base_other_than_verified_default_fails_closed(self):
         lanes = {'repo': 'acme/app', 'implementer': 'builder', 'reviewer': 'reviewer', 'owner': 'owner', 'base': 'release'}
-        (self.repo / '.github/lanes.json').write_text(json.dumps(lanes))
-        subprocess.run([self.env['REAL_GIT'], 'add', '.github/lanes.json'], cwd=self.repo, check=True)
+        (self.repo / '.github/agent-workflow.json').write_text(json.dumps(workflow_config(lanes)))
+        subprocess.run([self.env['REAL_GIT'], 'add', '.github/agent-workflow.json'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'different base'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], 'update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd=self.repo, check=True)
         result = self.run_cli('push')
@@ -421,7 +428,7 @@ else:
         self.assertFalse(data['treesUnchanged'])
 
     def test_review_context_works_without_lanes(self):
-        subprocess.run([self.env['REAL_GIT'], 'rm', '-q', '.github/lanes.json'], cwd=self.repo, check=True)
+        subprocess.run([self.env['REAL_GIT'], 'rm', '-q', '.github/agent-workflow.json'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'no config'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], 'update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd=self.repo, check=True)
         head = subprocess.check_output([self.env['REAL_GIT'], 'rev-parse', 'HEAD'], cwd=self.repo, text=True).strip()
@@ -433,12 +440,12 @@ else:
         self.assertFalse(data['baseConfigurationAvailable'])
 
     def test_push_without_base_roles_fails_closed(self):
-        subprocess.run([self.env['REAL_GIT'], 'rm', '-q', '.github/lanes.json'], cwd=self.repo, check=True)
+        subprocess.run([self.env['REAL_GIT'], 'rm', '-q', '.github/agent-workflow.json'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'no config'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], 'update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd=self.repo, check=True)
         result = self.run_cli('push')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('.github/lanes.json', result.stderr)
+        self.assertIn('.github/agent-workflow.json', result.stderr)
         self.assertFalse((self.root / 'push.json').exists())
 
     def roles_file(self, roles):
@@ -449,7 +456,7 @@ else:
 
     def test_push_without_lanes_uses_external_owned_roles(self):
         git = self.env['REAL_GIT']
-        subprocess.run([git, 'rm', '-q', '.github/lanes.json'], cwd=self.repo, check=True)
+        subprocess.run([git, 'rm', '-q', '.github/agent-workflow.json'], cwd=self.repo, check=True)
         subprocess.run([git, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'no config'], cwd=self.repo, check=True)
         head = subprocess.check_output([git, 'rev-parse', 'HEAD'], cwd=self.repo, text=True).strip()
         subprocess.run([git, 'update-ref', 'refs/remotes/origin/main', head], cwd=self.repo, check=True)
@@ -477,8 +484,8 @@ else:
 
     def test_missing_owner_defaults_to_verified_personal_owner(self):
         lanes = {'repo': 'acme/app', 'implementer': 'builder', 'reviewer': 'reviewer'}
-        (self.repo / '.github/lanes.json').write_text(json.dumps(lanes))
-        subprocess.run([self.env['REAL_GIT'], 'add', '.github/lanes.json'], cwd=self.repo, check=True)
+        (self.repo / '.github/agent-workflow.json').write_text(json.dumps(workflow_config(lanes)))
+        subprocess.run([self.env['REAL_GIT'], 'add', '.github/agent-workflow.json'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'personal base'], cwd=self.repo, check=True)
         subprocess.run([self.env['REAL_GIT'], 'update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd=self.repo, check=True)
         self.env['REMOTE_BASE_SHA'] = subprocess.check_output([self.env['REAL_GIT'], 'rev-parse', 'HEAD'], cwd=self.repo, text=True).strip()

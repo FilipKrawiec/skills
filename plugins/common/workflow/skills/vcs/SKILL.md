@@ -6,7 +6,7 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*,lsof:*)
 
 # Version Control
 
-Follow the repository's branch, scope, verification and review rules. Preserve the main checkout and unrelated work. Use an isolated worktree; reuse the assignment's branch when suitable. Read `.github/agent-workflow.json` (or legacy `.github/lanes.json`) for base, branch prefix, identities and authorization; defaults are `main` and `agent/afk-`. `spec` defines transitions; only the designated actor applies each one.
+Follow the repository's branch, scope, verification and review rules. Preserve the main checkout and unrelated work. Use an isolated worktree; reuse the assignment's branch when suitable. Read `.github/agent-workflow.json` for base, branch prefix, identities and authorization; defaults are `main` and `agent/afk-`. `spec` defines transitions; only the designated actor applies each one.
 
 ## 1. Start
 

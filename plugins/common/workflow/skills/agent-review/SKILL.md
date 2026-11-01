@@ -6,7 +6,7 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 
 # Agent Review
 
-Read base `.github/agent-workflow.json` (or legacy `.github/lanes.json`) for identities and queue; read base CODEOWNERS for path ownership. Be independent of the implementer: never implement, commit, push, use the owner's credential as fallback or claim secret isolation from a shared store. Post only authorized review and queue actions. Missing posting or protection capability blocks merge, not analysis.
+Read base `.github/agent-workflow.json` for identities and queue; read base CODEOWNERS for path ownership. Be independent of the implementer: never implement, commit, push, use the owner's credential as fallback or claim secret isolation from a shared store. Post only authorized review and queue actions. Missing posting or protection capability blocks merge, not analysis.
 
 ## 1. Decide the assignment
 
@@ -28,7 +28,7 @@ An exact-head verdict can carry prior findings only when base, Git tree, criteri
 
 Post `REQUEST_CHANGES` for confirmed blockers and `APPROVE` for clean eligible work, using the configured reviewer credential and exact commit SHA. Confirm the authenticated reviewer is distinct from PR author and latest pusher; never fabricate attribution or approve your own PR. A pending CI check alone does not delay a clean code verdict: CI remains a separate merge gate. Resolve your own threads that the head answers; never dismiss blocking reviews or resolve human threads.
 
-Read CODEOWNERS from the PR base and inspect the changed paths, including both sides of renames. GitHub applies the last matching rule; where it names the owner, obtain the owner’s approval. Never treat multiple listed owners as requiring each one: GitHub accepts any one. For legacy lanes.json, also retain its ownerPaths and ownerLabels holds until migration. Other owner-reserved decisions still require owner approval. Automated AFK review runs on every PR; it does not replace the required code-owner approval. Record `review:owner` and the exact decision when needed; remove only your own obsolete hold.
+Read CODEOWNERS from the PR base and inspect the changed paths, including both sides of renames. GitHub applies the last matching rule; where it names the owner, obtain the owner’s approval. Never treat multiple listed owners as requiring each one: GitHub accepts any one. Other owner-reserved decisions still require owner approval. Automated AFK review runs on every PR; it does not replace the required code-owner approval. Record `review:owner` and the exact decision when needed; remove only your own obsolete hold.
 
 Before approval, verify effective branch protection requires code-owner review and each changed path has one recognized code owner on base. Otherwise keep merge disabled and report the gap. Recheck head and checks after posting; a changed head needs an exact-head verdict. Production approval is separate.
 

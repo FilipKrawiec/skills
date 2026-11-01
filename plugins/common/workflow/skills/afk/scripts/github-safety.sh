@@ -123,6 +123,13 @@ done < <(gh api "repos/$repo/environments" --jq ".environments[] | [.name,
   (.deployment_branch_policy | if . == null then \"any branch\" elif .custom_branch_policies then \"custom\" else \"protected branches\" end),
   ([.protection_rules[]? | select(.type == \"required_reviewers\") | .reviewers[] | select(.type == \"User\") | .reviewer.login | ascii_downcase] | index(\"$owner\" | ascii_downcase) != null)] | @tsv")
 
+# GitHub skips invalid rules; fail closed when its syntax check is unavailable.
+if errors=$(gh api "repos/$repo/codeowners/errors?ref=$base" --jq '.errors | if type == "array" then length else error("invalid response") end' 2>/dev/null); then
+  report "CODEOWNERS syntax" "$errors" 0
+else
+  report "CODEOWNERS syntax" unavailable 0
+fi
+
 # Every path must have one recognized code owner: the reviewer or the human owner.
 codeowners=""
 for path in .github/CODEOWNERS CODEOWNERS docs/CODEOWNERS; do

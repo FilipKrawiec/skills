@@ -13,7 +13,7 @@ Configure identities, GitHub project, AFK and optional exploration in version 1.
 }
 ```
 
-`github` also accepts `base` and `reviewQueue`. `afk` accepts `branchPrefix`, `staleClaimHours`, `reviewRounds`, `reviewerApprovesAfk`, `maxRuns`, `alwaysInScope` and `ownerLines`. `explore` holds the exploration targets and scheduling. Legacy `.github/lanes.json` remains readable until migration. Migrate any owner-held paths to CODEOWNERS before removing `ownerPaths`.
+`github` also accepts `base` and `reviewQueue`. `afk` accepts `branchPrefix`, `staleClaimHours`, `reviewRounds`, `reviewerApprovesAfk`, `maxRuns`, `alwaysInScope` and `ownerLines`. `explore` holds the exploration targets and scheduling.
 
 ## One-time setup
 

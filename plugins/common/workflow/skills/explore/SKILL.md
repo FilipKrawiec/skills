@@ -6,7 +6,7 @@ allowed-tools: Read Bash
 
 # Explore
 
-Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Read `.github/agent-workflow.json` (or legacy `.github/lanes.json`) for `repo`, `project` and `explore`: personas and their journeys; simulator or browser targets and launch commands; `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree`, `epic` and `idleHours`. A target may provide `urlFromLog` instead of its browser URL. Read [idle.md](references/idle.md) only for an idle run.
+Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Read `.github/agent-workflow.json` for `repo`, `project` and `explore`: personas and their journeys; simulator or browser targets and launch commands; `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree`, `epic` and `idleHours`. A target may provide `urlFromLog` instead of its browser URL. Read [idle.md](references/idle.md) only for an idle run.
 
 ## 1. Prepare and launch
 

@@ -8,6 +8,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -64,6 +65,9 @@ elif endpoint.endswith("/environments"):
     value = jq(os.environ["ENVIRONMENTS"], query)
 elif endpoint.endswith("/deployment-branch-policies"):
     value = jq(os.environ["POLICIES"], query)
+elif "/codeowners/errors" in endpoint:
+    if os.environ.get("CODEOWNERS_UNAVAILABLE"): raise SystemExit(1)
+    value = os.environ.get("CODEOWNERS_ERRORS", "0")
 elif "/contents/" in endpoint:
     value = base64.b64encode(os.environ["CODEOWNERS"].encode()).decode()
 else:
@@ -114,6 +118,18 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
                 text=True,
                 env=env,
             )
+
+    def test_rejects_syntax_errors_reported_by_github(self) -> None:
+        with mock.patch.dict(os.environ, {"CODEOWNERS_ERRORS": "1"}):
+            result = self.check('* @reviewer\n!/.github/workflows/ @alice\n')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('DRIFT  CODEOWNERS syntax', result.stdout)
+
+    def test_rejects_unavailable_github_syntax_check(self) -> None:
+        with mock.patch.dict(os.environ, {"CODEOWNERS_UNAVAILABLE": "1"}):
+            result = self.check('* @reviewer\n')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('DRIFT  CODEOWNERS syntax', result.stdout)
 
     def test_accepts_owner_as_sole_owner_for_sensitive_paths(self) -> None:
         result = self.check('* @reviewer\n/.github/workflows/ @alice\n')

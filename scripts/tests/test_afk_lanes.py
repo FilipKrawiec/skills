@@ -36,7 +36,6 @@ class ConfigTest(unittest.TestCase):
         config = {'version': 1, 'identities': {'owner': 'alice', 'implementer': 'bot', 'reviewer': 'reviewer'}, 'github': {'repo': 'acme/app', 'project': {'owner': 'acme', 'number': 5}}, 'afk': {'maxRuns': 2, 'reviewerApprovesAfk': True}, 'explore': {'idleHours': 24}}
         def command(*args):
             if args[:2] == ('git', 'fetch'): return ''
-            if args[:2] == ('git', 'ls-tree'): return '.github/agent-workflow.json'
             if args[:2] == ('git', 'show'): return json.dumps(config)
             raise AssertionError(args)
         with mock.patch.object(lanes, 'sh', side_effect=command):
@@ -452,7 +451,7 @@ class ShareEpicTest(unittest.TestCase):
     def test_no_work_is_held_once_max_runs_other_runs_are_live(self):
         work = [issue(6, "lane:afk", parents=[1], paths=["lib/b.dart"])]
         code, out, _ = self.take(work, lanes.Ledger(), runs=("local_a", "local_b"), cfg={"maxRuns": 2})
-        self.assertEqual((code, out[0]), (3, "Done: 2 other runs are live, as many as lanes.json maxRuns allows."))
+        self.assertEqual((code, out[0]), (3, "Done: 2 other runs are live, as many as agent-workflow.json afk.maxRuns allows."))
         code, _, _ = self.take(work, lanes.Ledger(), runs=("local_a",), cfg={"maxRuns": 2})
         self.assertEqual(code, 0)
 
