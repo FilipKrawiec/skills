@@ -14,13 +14,14 @@ const configPath = '.agents/config.json';
 const json = value => JSON.stringify(value);
 const config = values => ({
   version: 1,
-  identities: Object.fromEntries(['implementer'].filter(key => values[key] !== undefined).map(key => [key, values[key]])),
+  identities: Object.fromEntries(['implementer', 'reviewer'].filter(key => values[key] !== undefined).map(key => [key, values[key]])),
 });
 
 test('CODEOWNERS roles reject an organization slug when several path owners exist', () => {
   assert.throws(() => codeownersRolesFrom('* @reviewer\n/*.rules @alice\n/*.json @bob\n', 'acme/app'), /identify one Owner account/);
-  assert.deepEqual(codeownersRolesFrom('* @reviewer\n/*.rules @alice\n', 'acme/app'), { owner: 'alice', reviewer: 'reviewer' });
-  assert.deepEqual(codeownersRolesFrom('* @reviewer\n', 'acme/app', 'maintainer'), { owner: 'maintainer', reviewer: 'reviewer' });
+  assert.deepEqual(codeownersRolesFrom('* @reviewer\n/*.rules @alice\n', 'acme/app'), { owner: 'alice', defaultReviewer: 'reviewer' });
+  assert.throws(() => codeownersRolesFrom('* @reviewer\n', 'acme/app'), /identify one Owner account/);
+  assert.throws(() => codeownersRolesFrom('* @reviewer @other\n/*.rules @alice\n', 'acme/app'), /exactly one user/);
 });
 
 const fakeGh = `#!/usr/bin/env node
@@ -156,7 +157,8 @@ test('push reads workflow config from the base branch', t => {
   assert.equal(run(f.env.REAL_GIT, ['add', configPath], { cwd: f.repo }).status, 0);
   commitFixture(f);
   f.env.REMOTE_BASE_SHA = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
-  assert.equal(f.cliRun('push').status, 0);
+  const result = f.cliRun('push');
+  assert.equal(result.status, 0, result.stderr);
 });
 
 test('commit and push refuse the main checkout', t => {
@@ -226,7 +228,7 @@ test('wrong actor never pushes', t => {
   assert.notEqual(result.status, 0); assertNoPush(f); assert.ok(!`${result.stdout}${result.stderr}`.includes('SECRET_TOKEN'));
 });
 
-test('owner bootstrap uses branch CODEOWNERS while keeping Reviewer from base', t => {
+test('owner bootstrap uses configured Reviewer while Owner comes from branch CODEOWNERS', t => {
   const f = fixture(t);
   assert.equal(run(f.env.REAL_GIT, ['rm', '-q', configPath], { cwd: f.main }).status, 0);
   writeFileSync(join(f.main, '.github', 'CODEOWNERS'), '* @reviewer\n');
@@ -428,9 +430,28 @@ test('push without base roles fails closed', t => {
   assert.notEqual(result.status, 0); assert.match(result.stderr, /identities\.implementer/); assertNoPush(f);
 });
 
-test('reviewer and owner role fields in config are unnecessary when CODEOWNERS defines them', t => {
+test('push requires configured Reviewer even when CODEOWNERS names one', t => {
   const f = fixture(t);
-  assert.equal(f.cliRun('push').status, 0);
+  writeFileSync(join(f.main, configPath), json({ version: 1, identities: { implementer: 'builder' } }));
+  assert.equal(f.git('add', configPath).status, 0);
+  commitFixture(f, f.main);
+  f.env.REMOTE_BASE_SHA = f.git('rev-parse', 'HEAD').stdout.trim();
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /identities\.implementer and identities\.reviewer/);
+  assertNoPush(f);
+});
+
+test('push rejects a malformed configured Reviewer clearly', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.main, configPath), json({ version: 1, identities: { implementer: 'builder', reviewer: 42 } }));
+  assert.equal(f.git('add', configPath).status, 0);
+  commitFixture(f, f.main);
+  f.env.REMOTE_BASE_SHA = f.git('rev-parse', 'HEAD').stdout.trim();
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /identities\.reviewer must be a GitHub login/);
+  assertNoPush(f);
 });
 
 test('push failure reports a safe class and exit', t => {

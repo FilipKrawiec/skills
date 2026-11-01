@@ -1,6 +1,7 @@
 {
   "version": 1,
   "identities": {
-    "implementer": "filipkrawiec-bot"
+    "implementer": "filipkrawiec-bot",
+    "reviewer": "filipkrawiec-reviewer"
   }
 }

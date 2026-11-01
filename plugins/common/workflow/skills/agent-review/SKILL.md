@@ -6,7 +6,7 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 
 # Agent Review
 
-Read base `.agents/config.json` for the implementer identity; use `workflow.mjs cache show` for the discovered Review queue, and read base CODEOWNERS for reviewer and path ownership. Be independent of the implementer: never implement, commit, push, use the owner's credential as fallback or claim secret isolation from a shared store. Post only authorized review and queue actions. Missing posting or protection capability blocks merge, not analysis.
+Read base `.agents/config.json` for implementer and Reviewer identities; use `workflow.mjs cache show` for the discovered Review queue, and read base CODEOWNERS for path ownership. Be independent of the implementer: never implement, commit, push, use the owner's credential as fallback or claim secret isolation from a shared store. Post only authorized review and queue actions. Missing posting or protection capability blocks merge, not analysis.
 
 ## 1. Decide the assignment
 

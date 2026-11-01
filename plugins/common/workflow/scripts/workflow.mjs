@@ -26,7 +26,7 @@ const help = `Usage:
   node workflow.mjs release [auto|patch|minor|major] [--message TEXT] [--dry-run] [--root DIR]
   node workflow.mjs safety check|apply
 
-push reads the implementer from the fetched default branch's .agents/config.json and derives owner/reviewer from origin and base .github/CODEOWNERS. For first-config bootstrap only, if base CODEOWNERS has no owner yet, it reads the owner from committed branch CODEOWNERS while keeping Reviewer from base.
+push reads implementer and Reviewer from the fetched default branch's .agents/config.json and derives Owner from origin and base .github/CODEOWNERS. For first-config bootstrap only, if base CODEOWNERS has no owner yet, it reads Owner from committed branch CODEOWNERS.
 A verified personal repo owner may be inferred; CODEOWNERS must identify one owner account unambiguously.
 Auto-merge and Git configuration checks are not atomic with push; do not change them concurrently. Git runs installed hooks normally; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
@@ -125,7 +125,7 @@ function config(requireLanes = true, allowBootstrap = false, allowBootstrapBranc
   }
   const raw = configPath ? JSON.parse(git('show', configPath)) : null;
   if (configPath && (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 || ![raw.identities ?? {}, raw.github ?? {}, raw.afk ?? {}, raw.explore ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration');
-  if (raw && source === 'branch bootstrap' && (['owner', 'reviewer'].some(key => Object.hasOwn(raw.identities || {}, key))
+  if (raw && source === 'branch bootstrap' && (['owner'].some(key => Object.hasOwn(raw.identities || {}, key))
     || ['repo', 'base'].some(key => Object.hasOwn(raw.github || {}, key))
     || ['personas', 'capturesBranch', 'epic', 'worktree', 'maxIssues', 'idleHours'].some(key => Object.hasOwn(raw.explore || {}, key))
     || Object.hasOwn(raw, 'labels'))) {
@@ -136,10 +136,12 @@ function config(requireLanes = true, allowBootstrap = false, allowBootstrapBranc
   lanes.repo = githubRepoFromRemote(remote);
   lanes.base = baseRef.slice('refs/remotes/origin/'.length);
   lanes.requiredChecks ??= workflowDefaults.github.requiredChecks;
-  const roles = codeownersRoles(baseRef, lanes.repo, source === 'base' ? raw?.identities?.owner : undefined, allowBootstrapBranchOwner && source === 'branch bootstrap');
-  const { owner, reviewer } = roles;
+  const roles = codeownersRoles(baseRef, lanes.repo, allowBootstrapBranchOwner && source === 'branch bootstrap');
+  const { owner, defaultReviewer } = roles;
   lanes.owner = owner;
-  lanes.reviewer = reviewer;
+  if (lanes.reviewer != null && (typeof lanes.reviewer !== 'string' || !/^[A-Za-z0-9-]+$/.test(lanes.reviewer))) throw new Error('identities.reviewer must be a GitHub login');
+  if (!defaultReviewer) throw new Error('The trusted .github/CODEOWNERS must name exactly one user for the default Reviewer');
+  if (lanes.reviewer && lanes.reviewer.toLowerCase() !== defaultReviewer.toLowerCase()) throw new Error('identities.reviewer must match the default .github/CODEOWNERS reviewer');
   return { root, lanes, baseRef, configSource: source, configAvailable: Boolean(configPath) };
 }
 export function githubRepoFromRemote(remote) {
@@ -147,32 +149,31 @@ export function githubRepoFromRemote(remote) {
   if (!match) throw new Error('origin must identify a GitHub owner/repository');
   return match[1];
 }
-function codeownersRoles(baseRef, repo, migrationOwner, allowBranchOwner = false) {
+function codeownersRoles(baseRef, repo, allowBranchOwner = false) {
   let contents;
   try { contents = git('show', `${baseRef}:.github/CODEOWNERS`); }
   catch { throw new Error('The trusted base must contain .github/CODEOWNERS to identify review roles'); }
-  const roles = codeownersRolesFrom(contents, repo, migrationOwner, !allowBranchOwner);
+  const roles = codeownersRolesFrom(contents, repo, !allowBranchOwner);
   if (roles.owner || !allowBranchOwner) return roles;
   let branchContents;
   try { branchContents = git('show', 'HEAD:.github/CODEOWNERS'); }
   catch { throw new Error('The committed bootstrap branch must contain .github/CODEOWNERS to identify the Owner'); }
-  const branchOwner = codeownersRolesFrom(branchContents, repo, undefined, false).owner;
+  const branchOwner = codeownersRolesFrom(branchContents, repo, false).owner;
   if (!branchOwner) throw new Error('The committed bootstrap branch CODEOWNERS must identify one Owner account');
   return { ...roles, owner: branchOwner };
 }
-export function codeownersRolesFrom(contents, repo, migrationOwner, requireOwner = true) {
+export function codeownersRolesFrom(contents, repo, requireOwner = true) {
   const rules = contents.split(/\r?\n/).map(line => line.replace(/#.*/, '').trim().split(/\s+/).filter(Boolean)).filter(parts => parts.length);
   const wildcard = [...rules].reverse().find(parts => parts[0] === '*');
-  const reviewers = wildcard?.slice(1).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)) || [];
-  if (reviewers.length !== 1) throw new Error('The trusted .github/CODEOWNERS must name exactly one user for the default Reviewer');
-  const reviewer = reviewers[0];
+  const defaultOwners = wildcard?.slice(1).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)) || [];
+  if (defaultOwners.length !== 1) throw new Error('The trusted .github/CODEOWNERS must name exactly one user for the default Reviewer');
+  const defaultReviewer = defaultOwners[0];
   const repoOwner = repo.split('/')[0];
   const owners = [...new Set(rules.flatMap((parts, index) => index === rules.indexOf(wildcard) ? [] : parts.slice(1)).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)))];
   const owner = owners.find(value => value.toLowerCase() === repoOwner.toLowerCase())
-    || (owners.length === 1 ? owners[0] : null)
-    || (typeof migrationOwner === 'string' && /^[A-Za-z0-9-]+$/.test(migrationOwner) ? migrationOwner : null);
+    || (owners.length === 1 ? owners[0] : null);
   if (!owner && requireOwner) throw new Error('The trusted .github/CODEOWNERS must identify one Owner account; organization repositories cannot use the organization slug as a user login');
-  return { owner, reviewer };
+  return { owner, defaultReviewer };
 }
 function parseRepo(repo) {
   if (typeof repo !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) throw new Error('lanes.repo must be owner/repository on github.com');
@@ -208,7 +209,7 @@ async function push(args) {
   const { root, lanes, baseRef, configSource } = config(true, true, ownerBootstrap);
   if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
   requireLinkedWorktree();
-  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer; repo comes from origin and review roles from CODEOWNERS');
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from origin and Owner from CODEOWNERS');
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
   const reviewer = lanes.reviewer;
@@ -418,7 +419,7 @@ function afkActor(cfg) {
 function afkConfig(refreshMetadata = false) {
   git('fetch', '--quiet', 'origin');
   const { lanes, baseRef } = config();
-  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer; repo and review roles come from Git and CODEOWNERS');
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from Git and Owner from CODEOWNERS');
   assertDistinctPushRoles({ owner: lanes.owner, implementer: lanes.implementer, reviewer: lanes.reviewer });
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
