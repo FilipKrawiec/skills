@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "identities": {
+    "owner": "FilipKrawiec",
+    "implementer": "filipkrawiec-bot",
+    "reviewer": "filipkrawiec-reviewer"
+  },
+  "github": {
+    "repo": "FilipKrawiec/skills",
+    "base": "main",
+    "requiredChecks": ["verify"]
+  }
+}

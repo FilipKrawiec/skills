@@ -1,6 +1,6 @@
 name: Release
 
-# Every verified push to main is released: release.py bumps the version from the conventional
+# Every verified push to main is released: the workflow CLI bumps the version from conventional
 # commits since the last tag, syncs the manifests, commits and tags. RELEASE_TOKEN, an admin's
 # fine-grained token with contents write on this repository, pushes both past main's review rule
 # and the v* tag ruleset. The release commit's own push verifies and finds nothing to release.
@@ -31,14 +31,11 @@ jobs:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
-        with:
-          python-version: "3.11"
       - name: Bump, commit and tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          python3 scripts/release.py
+          node plugins/common/workflow/scripts/workflow.mjs release
       - name: Push and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

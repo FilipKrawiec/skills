@@ -4,58 +4,42 @@ description: Use when defining GitHub issues, acceptance criteria, authorization
 allowed-tools: Read Bash(gh:*,git:*)
 ---
 
-# Spec (01 Define, 02 Spec)
+# Spec
 
-Own issue semantics and transitions. Act as Product partner under a trusted direct owner request or matching approved milestone revision; record its source. Silence, labels and bot summaries grant no authority. Return missing milestone direction to the orchestrator. Routine refinement needs no per-story approval.
+Own issue semantics under a trusted direct owner request or matching approved milestone; record its source. Silence, labels and bot summaries grant no authority. Routine refinement needs no per-story approval.
 
-## 1. Define and ground
+## 1. Define
 
-Reuse an issue or create from a template. Read code, tests, rules, ADRs and decisions; cite facts and choices. Test-only work needs behavior criteria.
+Reuse an issue or template; read relevant code, tests, rules, ADRs and decisions. Record intent, constraints, non-goals and observable `### Acceptance criteria`; test-only work needs behavior criteria. Bound investigations by question, time and evidence. New interactions need owner prototype direction or an accepted pattern. Record product choices as [decision records](references/decision-records.md). Reserve changed strategy, new paid services or budget increases, and weakened authority, credential, release or quality gates for the owner; continue independent work during a wait.
 
-Each open issue has a native milestone, one type and one lane unless epic. Milestones are `v<MAJOR>` production chunks or health iterations; defer by milestone. Types: story, bug, chore, task or epic. Titles use `feat`, `fix`, `chore/docs/test/ci/refactor/perf`, `task` or `epic`, plus area and outcome. Bound tasks by question and evidence.
+Each open issue has a native milestone, one type and one lane except epics. Types are story, bug, chore, task or epic. Titles use `feat`, `fix`, `chore/docs/test/ci/refactor/perf`, `task` or `epic`, plus area and outcome. For multiple PRs, create vertical sub-issues under an epic; only epics have children and they cannot be claimed. Record outcome dependencies as blocked-by links, not shared-file or integration ordering; verify the required outcome, not closure alone.
 
-**Exit gate:** issue URL, verified grounding and authority source.
+**Exit gate:** grounded issue, authority, acceptance, dependencies and reserved decisions recorded.
 
-## 2. Refine acceptance
+## 2. Transition
 
-Record intent, constraints, non-goals and `### Acceptance criteria`, provable by tests or described render. Resolve routine choices with a recommendation. Bound investigations by question, time and evidence exit. New interactions need owner prototype direction or an accepted pattern. Return technical disagreements for adjudication.
+Read [afk-ready.md](references/afk-ready.md) for AFK readiness. Before AFK assignment add `### Estimate` (S/M and main unknown) and a fenced `scope` JSON packet of paths and dependencies; attended work needs neither. Re-read before writing. Replace conflicting family labels; preserve other labels and explicit owner holds.
 
-Take product choices on their recommendation as [decision records](references/decision-records.md). Reserve changed strategy, new paid services/budget increases and authority/credential/release/quality-gate weakening for the owner. Record options and recommendation; continue independent authorized preparation.
-
-For multiple PRs, create sub-issues under `type:epic`, each a vertical slice: one reusable unit with its tests, or one integrating units; only epics have children and nobody claims one. Include remaining work. Link outcome dependencies only (the slice's code needs another's code), never shared files or integration order (the later PR resolves conflicts): `gh api -X POST repos/<repo>/issues/<N>/dependencies/blocked_by -F issue_id=<blocker's REST id>`. Verify the required outcome; closure alone does not prove completion.
-
-**Exit gate:** observable outcomes, scope/dependencies and unresolved reserved questions are explicit.
-
-## 3. Apply transitions
-
-Read [afk-ready.md](references/afk-ready.md) when assessing AFK readiness. Add `### Estimate` (S/M and main unknown) and a fenced `scope` JSON packet with paths/dependencies before AFK assignment. Attended issues need neither.
-
-Re-read before writing. Replace conflicting family labels; preserve others. Product partner changes `type:*`; orchestrator changes milestone, lane, wait and board state; VCS owns execution labels, Reviewer PR holds, and Ship clears stale execution labels.
-
-| Transition / actor | Condition | Trigger |
+| Actor | Transition | Condition and consequence |
 | --- | --- | --- |
-| Orchestrator → `lane:proposed` | Product partner recommends AFK; authorization absent | Request bounded authorization, no execution |
-| Orchestrator → `lane:afk` | Direct/milestone authority or issue-level Reviewer `APPROVED AFK` when configured | If ready with dependencies clear, select and move to Todo |
-| Orchestrator → `lane:owner` | Implementation requires owner participation; record authorized preparation | Owner decision queue; agents prepare independent work |
-| Orchestrator clears owner participation → `lane:afk` | Participation resolved; recorded authority covers remaining work | Recheck readiness, then select |
-| Product partner → one `type:*` | Actual outcome changes type | Recheck criteria; epics lose lanes and cannot be claimed |
-| VCS → `state:claimed` / `state:started` | Exclusive unattended / attended assignment | In progress |
-| VCS removes execution label | Ready linked PR | Review; open PR still excludes duplicate assignment |
-| Reviewer adds/removes own `review:owner` | Extra owner gate appears/clears | Queue exact choice / resume review; never erase explicit owner hold |
-| Orchestrator closes routine slice and moves to Done | Merged evidence proves authorized criteria met | Slice complete; product release remains separate |
-| Orchestrator closes product-milestone issue and moves to Done | Release evidence records deployed product acceptance | Complete product milestone; merge or CI alone is insufficient |
-| Ship removes execution labels | Completion or returned/reverted assignment | Record evidence or replan before reselection |
+| Orchestrator | `lane:proposed` | AFK recommended but authorization absent; request it. |
+| Orchestrator | `lane:afk` | Direct/milestone authority or configured issue-level Reviewer approval; when ready and unblocked, select for Todo. |
+| Orchestrator | `lane:owner` | Owner participation required; record preparation agents can continue. |
+| Orchestrator | owner lane to `lane:afk` | Participation resolved and recorded authority covers remaining work; recheck readiness. |
+| Product partner | one `type:*` | Actual outcome changes type; epics lose lanes and cannot be claimed. |
+| VCS | `state:claimed` / `state:started` | Exclusive unattended / attended assignment; In Progress. |
+| VCS | remove execution label | Ready linked PR; Review, while an open PR still excludes reassignment. |
+| Reviewer | add/remove own `review:owner` | Extra owner gate appears/clears; never erase an explicit owner hold. |
+| Orchestrator | close routine slice | Merged evidence proves authorized criteria; Done. |
+| Orchestrator | close product milestone | Exact release evidence proves deployed acceptance; Done. |
+| Ship | remove execution label | Completion or returned/reverted assignment; record evidence or replan. |
 
-Temporary dependency, CI, capability or owner waits retain lane, milestone and assignment. Record `Waiting: <cause>; actor: <responsible>; resume condition; evidence: <link>` in the issue; clear with evidence. Replan/release idle assignments; never overwrite active claims. A lane records authorization, not readiness. Scope/authority changes need their own decision.
+Temporary dependency, CI, capability or owner waits retain lane, milestone and assignment. Record cause, actor, resume condition and evidence; never overwrite active claims. Scope or authority changes require their own decision. With a board, use Todo for ready AFK, In Progress for active work and PR fixes, Review for a closing PR awaiting review (`Part of` stays In Progress), and Done for verified routine slices or accepted product milestones. Epics with children are In Progress. Without a board use priority labels; status never grants authority.
 
-With a board, keep columns/membership. Orchestrator moves ready AFK issues to Todo, active work (PR fixes too) to In Progress, issues whose closing PR awaits review to Review (`Part of` stays In Progress), merged routine slices to Done after verifying criteria, and product milestones after deployed acceptance; status grants no authority. Epics with children go to In Progress. Without a board, use priority labels.
+**Exit gate:** one type, milestone and non-epic lane, with waits and actors explicit.
 
-**Exit gate:** one type, native milestone, one non-epic lane; waits and transition actors explicit.
+## 3. Record
 
-## 4. Record and return
+Preserve template markers; write a concise summary, scope, risks, decision and acceptance with estimate/packet when applicable. Link merged evidence per criterion. Duplicate or withdrawn scope needs its applicable decision. Re-read the saved issue.
 
-Preserve template markers. Envelope: summary <=3 sentences; scope, risks and decision one line each; acceptance, estimate and packet as applicable.
-
-Link merged evidence per criterion. Close product-milestone issues only after deployed acceptance. Duplicate/withdrawn scope still needs its applicable decision.
-
-**Exit gate/output:** saved issue re-read. <=5 lines: **Summary:** linked criteria/lanes/waits. **Decision:** next action/actor, reserved options/recommendation; no unowned work.
+**Exit gate/output:** at most 5 lines: **Summary:** issue, criteria, lanes and waits. **Decision:** next action/actor or reserved options and recommendation.

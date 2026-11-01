@@ -26,7 +26,7 @@ just verify
 just sync-manifests
 ```
 
-Run `just verify` once on completed changes. CI runs the same unit fixtures and plugin validation once, checks tracked/untracked hygiene, then scans secrets. The legacy `scripts/project-verify.py` command remains compatible while its consumers migrate; it is not required for normal library development.
+Run `just verify` once on completed changes. CI runs the same unit fixtures and plugin validation once, checks tracked/untracked hygiene, then scans secrets. Use `node plugins/common/workflow/scripts/workflow.mjs project status` to inspect the nearest `AGENTS.md` when needed.
 
 Every package's `package-metadata.json` owns its identity/version. `just sync-manifests` generates common host manifests and marketplace catalogs. Keep versions unified; do not hand-edit generated manifests.
 
@@ -40,4 +40,4 @@ If an earlier installation configured this repository's removed hooks, first ins
 
 ## Releases
 
-Every verified push to `main` is released: `.github/workflows/release.yml` runs `scripts/release.py`, which picks the bump from the conventional commits since the last `v*` tag (`type!:` or `BREAKING CHANGE:` major, `feat:` minor, else patch), syncs every manifest, commits and tags, then pushes both atomically with `RELEASE_TOKEN` and publishes the GitHub Release. Commit types decide the version, so title PRs accordingly. Preview with `python3 scripts/release.py --dry-run`.
+Every verified push to `main` is released: `.github/workflows/release.yml` runs `node plugins/common/workflow/scripts/workflow.mjs release`, which picks the bump from the conventional commits since the last `v*` tag (`type!:` or `BREAKING CHANGE:` major, `feat:` minor, else patch), syncs every manifest, commits and tags, then pushes both atomically with `RELEASE_TOKEN` and publishes the GitHub Release. Commit types decide the version, so title PRs accordingly. Preview with `node plugins/common/workflow/scripts/workflow.mjs release --dry-run`.

@@ -1,78 +1,39 @@
 ---
 name: vcs
 description: Use when starting work on an issue, committing, branching, rebasing, pushing, opening a PR or getting a PR ready to merge.
-allowed-tools: Bash(git:*,gh:*,lsof:*) Read
+allowed-tools: Skill Read Bash(git:*,gh:*,node:*,lsof:*)
 ---
 
 # Version Control
 
-Read base and branchPrefix from `.github/lanes.json` (defaults `main`, `agent/afk-`). Preserve the main checkout (first `git worktree list` entry): never edit, switch or stash it. Use an isolated worktree; wait if another holds the branch. The orchestrator owns phase advancement; return this assignment's result before another phase. `spec` owns issue transition semantics; apply execution labels below.
+Follow the repository's branch, scope, verification and review rules. Preserve the main checkout and unrelated work. Use an isolated worktree; reuse the assignment's branch when suitable. Read `.agents/config.json` for base, branch prefix, identities and authorization; defaults are `main` and `agent/afk-`. `spec` defines transitions; only the designated actor applies each one.
 
 ## 1. Start
 
-Fetch `origin/<base>` and reconcile existing branch/PR/assignment before creating anything. Reuse this issue's unmerged branch/worktree; never overwrite another assignment. Branch from `origin/<base>` otherwise. Wait for a dependent parent to merge; never stack PRs. Open PRs never block work, even on shared files; the later one resolves conflicts.
+Fetch the base and reconcile existing work, claims and dependencies. Never overwrite another assignment or stack on an unmerged dependency. Record the assigned scope and execution state. Use the configured unattended prefix or an appropriate attended branch name.
 
-Use unattended `<branchPrefix><N>-<slug>`, attended `<category>/<N>-<slug>`, or `<category>/<description>` without an issue. Re-read state labels; stop on another assignment. Add `state:claimed` unattended or `state:started` attended, recording actor, branch, scope and authority. Card to In progress. Labels are records, not atomic locks; serialize if coordination is unproven.
-
-**Exit gate:** isolated assigned branch and execution record, or explicit dependency/assignment wait.
+**Exit gate:** isolated assignment, or a specific dependency or claim wait.
 
 ## 2. Commit and push
 
-Stage only assigned paths. Use Conventional Commits per verified slice. Pass the project's verify gate once for changed code before push; retain commands/exits for that revision. Push HTTPS as the existing authorized implementer identity; never silently use the owner's SSH identity or provision credentials.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs commit --message "<conventional message>" -- <assigned paths>`; the command checks for a linked worktree and refuses existing staged changes to protect them. Run the repository's required pre-push checks for this revision; hosted CI remains a separate merge gate. Before pushing an open PR, disable auto-merge. After opening, merge base instead of rebasing, to preserve review threads. Never force-push a protected/default branch without explicit owner authority.
 
-Before PR creation, rebase on fetched base if needed. After opening, merge base instead: rewriting history detaches review threads. Before any push to an open PR, disable auto-merge, invalidate prior review evidence and return the changed head for fresh review. Never force-push protected/default branches without explicit owner authority.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs push`. Repo identity and workflow roles live in `.agents/config.json`; path owners stay in CODEOWNERS. A first-config PR may use `push --owner-bootstrap` only from an explicit owner-directed action; the CLI selects the configured owner's stored credential and verifies repository admin permission without changing `gh`'s active account. Every later push reads roles from the base branch and validates the implementer credential. It never trusts uncommitted config. The command checks for a linked worktree and validates the HTTPS push; Git runs installed hooks normally, and those hooks share the user's credential access. Do not change Git configuration concurrently with a push; do not bypass a failure, change credentials globally or use the owner's token as fallback for an implementer. If the command cannot support the host or establish authorization, stop and report the capability gap. If Reviewer previously pushed the branch, inspect effective rules and the merge decision; do not assume an empty commit restores eligibility.
 
-**Exit gate/output:** commit SHA and push exit 0, or exact capability wait; report commands/exits.
+**Exit gate:** pushed head and check evidence, or a specific wait.
 
-## 3. Open the PR
+## 3. PR and readiness
 
-Require both fresh `review` axes, blocking findings verified, for the exact base/head before opening; the orchestrator supplies Reviewer results. Fix blockers; suggestions are optional. Local verdicts never replace `agent-review`. Right after opening, the orchestrator assigns `agent-review`; workers never dispatch.
+Use `review` for both axes under repository and owner rules; only `agent-review` posts the binding decision. Fix confirmed blockers. Reuse existing evidence for unchanged trees or review the affected delta, and keep GitHub approval bound to the current head. Pending CI does not delay code approval; required CI remains a merge gate.
 
-Open as the host asks; ready a draft once its checks pass, then tell the owner. Reuse an existing PR. Use the issue title and its `## Plan` link. Use `Closes #<N>` only when the bounded outcome completes on merge; for a product milestone awaiting test delivery, demo or production acceptance, use `Part of #<N>` and keep the issue open. After acceptance, the orchestrator closes it through `spec`. For partial epic work use `Part of #<N>`. A revert uses `Reverts #<M>`, never `Closes` on the reverted issue.
+Reuse an existing PR or open one as requested. State the problem and change, scope, risks, evidence and material owner decisions; include real captures for visible changes. Link the issue and plan when applicable. Use `Closes #N` only when merge completes the issue; use `Part of #N` for partial work or an outcome awaiting acceptance. Mark a draft ready when its required checks pass.
 
-Use this envelope, with before/after captures for visible behavior and blockers/owner choices visible. Omit inapplicable sections; add **Revert** only when a squash revert falls short (migration, data, flag, published release).
+Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr <number>` for review facts; check missing information independently. Never dismiss blockers or resolve human threads. Require effective code-owner protection, required checks and resolved owner holds before enabling auto-merge. If merge triggers production publication, apply `release` and its owner-approval and native-control gates before enabling it. Bind an authorized squash auto-merge request to the reviewed head; a changed head requires renewed evidence. Confirm the merge rather than assuming the request succeeded. Production approval remains separate under `release`.
 
-```markdown
-## Executive summary
-A duplicate reservation now fails before saving.
+**Exit gate:** merged exact reviewed change, or PR/head and the next actor and gate.
 
-**Scope:** service and tests; API unchanged.
-**Risks:** concurrency remains separate.
-**Revert:** squash revert, then drop the `reservations_unique` index.
-**Decision:** Reviewer records GitHub approval; agents reconcile merge.
+## 4. Tidy and report
 
-Closes #42
-Plan: https://github.com/example/project/issues/42#issuecomment-123
+Remove only this assignment's clean, unused worktrees and branches; preserve unrelated sessions. Return at most 5 lines: PR/head, checks, review and merge state; next actor or reserved decision. Do not change settings, secrets or releases.
 
-<details>
-<summary>Review and verification</summary>
-
-A/B: APPROVED at <base/head>; evidence <links>.
-Checks: `just verify` exit 0. GitHub approval still pending.
-
-</details>
-```
-
-Require effective branch protection for the configured Reviewer and required checks before enabling auto-merge. Resolve any additional owner hold first. Request `gh pr merge <pr> --squash --auto --match-head-commit <head>` when the base and head are final; native protection still blocks merge until Reviewer approval and checks pass. Never use exact-head approvals as a substitute for missing enforcement. The flag checks the head at invocation; it does not freeze later pushes. Remove execution labels and report desired board status to the orchestrator (sole board writer). Return PR/head to the orchestrator for `agent-review`.
-
-**Exit gate:** PR, auto-merge awaiting required review/checks, or explicit protection gap.
-
-## 4. Reconcile merge readiness
-
-Run after every push, base change or returned review. Read actual head/checks, conflicts, threads and review state. Return repairs to Craftsman and review/verified corrections to Reviewer through the orchestrator. Never dismiss blocking reviews or resolve human threads.
-
-Enable or keep auto-merge only under effective Reviewer protection with owner holds resolved; pending approval and checks may remain. A changed head or review-relevant base invalidates evidence: disable auto-merge, obtain fresh exact-head review, then re-enable with the head guard. Pending checks/reviews retain next actor and retry condition. An auto-merge request is not a merge; confirm it.
-
-**Exit gate:** merged exact reviewed change, or named remaining action/actor.
-
-## 5. Tidy
-
-Remove only this assignment's completed clean worktrees/branches when `lsof -a -d cwd +D <worktree>` exits 1. Preserve unrelated sessions.
-
-**Exit gate:** safe owned cleanup complete or deferred with reason.
-
-## Authority and output
-
-Reviewer approval authorizes eligible routine merges. Owner rules add reserved approval; production requires separate exact-candidate approval under `release`. Never change settings, secrets, variables or releases from VCS.
-
-<=5 lines: **Summary:** PR/head, checks and evidence. **Decision:** next action and actor, reserved options/recommendation. Use “Nothing needed” only when the assignment has no pending action.
+**Exit gate:** safe cleanup or a reason to defer it.

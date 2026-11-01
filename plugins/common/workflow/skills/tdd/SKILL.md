@@ -1,54 +1,33 @@
 ---
 name: tdd
-description: Use when implementing, refactoring or fixing code through Red-Green-Refactor, including reproducing a bug as a failing test first.
+description: Use when implementing, refactoring or fixing behavior through focused regression tests and Red-Green-Refactor.
 allowed-tools: Skill Read Edit Bash
 ---
 
-# Test-Driven Development (Chicago School)
+# Test-Driven Development
 
-Run Red-Green-Refactor per behaviour slice; return implementation evidence to the orchestrator for review and delivery. Project rules override commands, layout and coverage here. First name the targeted test command and the verify gate (the project's `verify` task).
+Follow the project's test commands, pre-push checks and required CI gates. Name the focused test before changing code. Implement the approved behavior and routine technical choices within scope; return a material contradiction as `replan: <step, evidence, recommendation>`. Do not weaken configured coverage, mutation, risk, security or other gates; changing their thresholds, scope, exemptions or baselines requires owner approval.
 
-Executing an approved plan, choose routine implementation details autonomously within its acceptance and constraints. On a material contradiction, stop dependent work and return `replan: <step>: <evidence and recommended change>`. Independent technical review settles engineering/ADR changes; only revised product/strategy direction, new paid services, budget increases or protected authority needs owner approval. Do not redispatch workers or invoke workflow orchestration.
+## 1. Prove the behavior
 
-## Phases
+For a new behavior or defect, write a focused test through the public interface with real domain objects. Derive expected outcomes from requirements, not the production algorithm. Run it first and confirm it fails for the intended reason; then implement and rerun it. Invoke `ddd` for domain models and `hexagonal-architecture` for ports.
 
-### 1. RED
-Write one behaviour test through the public interface with real domain objects; expected values come from criteria or literals, never the production algorithm. Invoke `ddd` for domain models, `hexagonal-architecture` for ports. Run it alone.
+When an existing test already demonstrates the failure, use it as the red evidence. For a test-only, documentation or golden update, run the relevant checks; do not invent a failing test for unchanged behavior. Test risk-bearing outcomes and failure paths, including documented boundaries and data-corrupting mistakes. Run configured reproducible mutation, coverage and risk gates, stricter for changed and critical behavior. When no mutation tool is configured, record mutation-sampling evidence and propose concrete gates. Record revision, commands, toolchain, scope, seed and results; a timeout is incomplete evidence, never a pass.
 
-*Exit gate*: it fails on the missing behaviour, deterministically.
+**Exit gate:** relevant regression failed for the intended reason then passed, or evidence explains why no new behavior test was needed.
 
-### 2. GREEN
-Write the minimal passing code; re-run.
+## 2. Refactor and verify
 
-*Exit gate*: targeted tests pass. *Output*: `🔴→🟢 <test> · <command> · <failure ≤80 chars> → pass`; if stuck: root cause, failing assertion (≤5 lines), next step.
+Improve structure while preserving behavior. Keep tests observable: avoid private-state access, test-only production APIs, backdoor setters, mere existence assertions or tests of a fake alone. Use injected dependencies and fake clocks where needed. For an adapter, check each implementation against its contract; for a gate, cover allowed and rejected cases and exemption boundaries.
 
-### 3. REFACTOR
-Improve structure; use glossary names; delete production API only tests call, with those tests. Delete, split or consolidate tests when meaningful behavior and confidence remain protected; retain distinct requirements and failure cases, not test count or incidental assertions.
+Run the project's specified pre-push checks once on the final changed revision. When the project assigns its full verification or coverage gate to hosted CI, consume that result as the full gate; run it locally only when required or needed to diagnose a failure. A pending hosted check is pending evidence, not a pass. Preserve all configured reproducible confidence evidence; timeouts and skipped checks are not passes. Reuse a valid result for unchanged code instead of rerunning it.
 
-*Exit gate*: tests pass; meaningful behavior and configured confidence gates remain protected.
+**Exit gate:** focused and required local checks pass; required hosted checks pass for completion, or their pending/failure state and next actor are recorded.
 
-### 4. VERIFY
-Run the verify gate once, at the end; re-running it on unchanged code proves nothing.
+## 3. Report
 
-*Exit gate*: exit 0 plus required reproducible confidence evidence. Missing evidence blocks completion. *Output*: command, exit code, evidence link and remedy when blocked (≤8 lines).
+Return at most 8 lines: changed behavior and paths, focused red/green evidence or why it does not apply, checks and exits, configured confidence evidence, pending checks or failures, and the next action. Do not redispatch workers or perform orchestration.
 
-## Test Design Rules
+**Exit gate:** evidence for the final revision or a named blocker and next action.
 
-- **Hard to test is a design defect.** Redesign the production code: extract a type a test drives publicly, inject the dependency through a port, or delete the unreachable line. Do not weaken gates to hide untestable code. Never widen a member for tests, add a backdoor setter or drive private state.
-- Use configured reproducible project coverage, mutation and risk gates (or mutation sampling when unconfigured), stricter for changed and critical behavior; no universal percentage. Record revision, commands, scope, toolchain, seed and results. Ratchet confidence; weakening thresholds, scope, exclusions or resetting baselines needs explicit owner approval. Missing evidence for a configured gate blocks completion; when unconfigured, record verification and mutation-sampling evidence and propose concrete gates. A whole measurement timeout is incomplete evidence, never a mutant kill or gate pass. Compare timing only with equivalent environment, scope and warm/cold conditions. No tests merely of a test double or trivial generated behavior.
-- Assert behaviour, never private details, pixels or tuning constants. End on an outcome assertion; let missed interactions fail.
-- Test each documented range at both edges and its wrap-around. Use the fake clock.
-- A gate gets a pass and a fail fixture per rule and a just-outside case per exemption; match parsed syntax.
-- File tests by what they boot. Run one adapter contract against every implementation plus a broken one.
-- Where a mistake corrupts data, flip a condition or constant: some test must fail.
-
-## Output
-
-Session replies ≤5 lines; run reports ≤8. **Summary:** behavior, changed paths, commands/exits and confidence evidence. **Decision:** recommended replan/owner action or the next action and responsible actor. Use “Nothing needed” only with no pending action.
-
-## Context Pointers
-
-- Read [test-levels.md](references/test-levels.md) when choosing a test level.
-- Read [mutation-testing.md](references/mutation-testing.md) when auditing a suite or area.
-- Read [bug-fixes.md](references/bug-fixes.md) when the task is a bug, broken test or regression.
-- Read `references/languages/<language>.md` (`java`, `kotlin`, `javascript` for JS/TS, `rust`, `dart` for Flutter) when testing in it.
+Read [test-levels.md](references/test-levels.md) when choosing a test level, [mutation-testing.md](references/mutation-testing.md) when auditing a suite, [bug-fixes.md](references/bug-fixes.md) for a regression, and `references/languages/<language>.md` for the relevant supported language.

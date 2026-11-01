@@ -6,56 +6,36 @@ allowed-tools: Skill Read Edit Bash(gh:*,git:*)
 
 # Backlog Refinement
 
-Refine the queue across items. Invoke `spec` for individual intent, criteria, estimate, scope and lane. Use a trusted direct owner request or matching approved milestone brief as authority; record its source on GitHub for durable work. Refine authorized slices without per-story approval. Silence and bot summaries grant nothing; missing milestone direction goes to the host.
+Refine only the requested queue. Invoke `spec` for issue criteria, scope and transition semantics; the named actor applies each transition and the orchestrator moves board status. A direct owner request or matching approved milestone is authority; silence, labels and bot summaries are not. A review-only request produces recommendations; refinement authorizes scoped issue and board edits, not implementation, merges or releases.
 
 ## 1. Inventory
 
-- Resolve the source from the request; never substitute another repository's backlog.
-- Read project rules, workflow settings, CODEOWNERS and the board's actual fields. Fetch in-scope items, decisions, relationships and active work; paginate fully. Report inaccessible sources; an empty search never proves an empty backlog.
-- Read base code/tests; distinguish evidence from reports.
-- Include unclaimed, unrefined bug reports in `lane:proposed` or no lane.
+Read the requested source, project rules, workflow settings, board fields, decisions, dependencies, active work and relevant base code/tests. Paginate the in-scope queue completely; report inaccessible or missing coverage. Include unclaimed unrefined proposed or unlabelled bugs. Never substitute another repository's backlog.
 
-**Exit gate:** every in-scope item is inventoried, or missing coverage is named.
+**Exit gate:** in-scope items and evidence inventoried, or gaps named.
 
 ## 2. Reconcile
 
-For each item, take the first matching case:
+For each item, apply the first matching case:
 
-1. A linked PR or active claim is still in progress: preserve its execution state and flag acceptance changes to its implementer.
-2. Implementation evidence meets every criterion: link evidence per criterion; invoke `spec` to close completed routine work within authority. Keep deployment acceptance separate.
-3. Another item owns the same outcome: name the canonical owner and narrow overlapping criteria; preserve unique remaining work. Never close duplicates without the owner's word.
-4. A recorded owner decision supersedes the body: put the binding decision and its source in the body; update dependent slices and epic summaries together.
-5. Remaining work is unclear or too large (code over lanes.json `ownerLines`, default 800; docs, tests, manifests and lockfiles don't count): invoke `spec` to ground and refine it into vertical slices within it.
+1. Active claim or linked PR: preserve execution state and tell its implementer about acceptance changes.
+2. Criteria already met: link evidence and use `spec` to close routine work within authority; deployment acceptance remains separate.
+3. Overlapping outcome: identify its canonical issue and preserve unique work; never close duplicates without owner authority.
+4. Owner decision supersedes the body: record the binding decision and update dependent slices and epic summaries.
+5. Unclear or oversized work: use `spec` to ground and split vertical slices within `ownerLines` (default 800 production-code lines; tests, docs, manifests and lockfiles excluded).
 
-- Historical bot recommendations are not owner approval; out-of-intent proposals never halt approved work.
-- Lanes say whether owner participation is required; milestones group deliverables: give each open issue a milestone (a slice its epic's) and drop epics' lanes; defer only work outside the current acceptance; required work stays in its milestone with a visible wait, keeping its lane.
-- Independently adjudicate technical choices and ADRs; reserve product/strategy reversal, new paid services or budget increases, and authority/credential/release/quality-gate weakening for the owner. New interactions require owner prototype direction. Bounded investigations may proceed with a question, time limit and evidence exit.
-- Trace dependencies through open and closed items. Detect cycles and missing prerequisites. Record outcome dependencies (the slice's code needs the prerequisite's code) as blocked-by links, never only in comments; drop links ordering only shared files or integration; keep deferred prerequisites blocking until fulfilled or genuinely removed from scope. Unattended, add links mirroring a packet or `### Dependencies` section; report removals instead.
-- Check the scope packet covers every criterion, including tests, locales and required documentation; account for project-wide allowances. Record protected paths and owner actions visibly. If the base deleted a packet path, confirm the outcome still holds before asking.
+Give open issues a milestone, slices their epic's milestone, and epics no lane. Preserve required work and its lane when waiting. Trace outcome dependencies across open and closed items; record them as blocked-by links, detect cycles and missing prerequisites, and remove ordering links based solely on shared files or integration. Unattended, add links supported by the packet or dependency section; report removals instead. Check scope covers criteria, tests, locales and required docs, including project-wide allowances; record protected paths and owner actions.
 
-**Exit gate:** each item has a disposition and each cross-item conflict has a correction or a visible blocker.
+Delegate routine technical decisions; reserve product strategy, new costs, authority and quality-gate weakening for the owner. New interactions need owner prototype direction. Continue independent work while a reserved decision waits.
 
-## 3. Apply
+**Exit gate:** each item has a disposition and unresolved conflicts have an owner and wait.
 
-- A review-only request produces recommendations; a refinement request authorizes issue and board edits in scope, never implementation, new milestone authority, merges, releases or deployments.
-- For GitHub issues, invoke `spec` for specification and readiness changes. Refine and slice within recorded authority; otherwise report proposals. Edit other sources directly, using their own readiness convention. Preserve owner approvals; a board column never grants unattended authority.
-- Take and record routine recommendations. For independent adjudication, send the orchestrator a bounded request: repository/issue; question/options and recommendation/evidence; applicable rules, criteria, code and constraints; bound, dependencies and reserved owner question. Do not dispatch or brief another worker. The orchestrator decides and fills `milestone`'s complete brief. Keep refining independent work. Preserve lane authorization through temporary blockers; `lane:owner` only when owner participation is required.
-- Re-read each item before writing. Patch minimally; no comment per formatting change.
-- Derive board status from readiness, dependencies and active work. Preserve priorities unless a recorded decision or parent policy changes them.
+## 3. Apply and verify
 
-**Exit gate:** authorized corrections are saved; pending choices remain visible and blocked work cannot appear ready.
+Re-read before editing; patch minimally and preserve existing approvals, priorities and active claims. Use `spec` for issue readiness and transition semantics; the named actor applies transitions; update other sources by their conventions. Derive board status from readiness, dependencies and work, never from authorization alone. Re-fetch changes and verify criteria, scope, lanes, dependencies, board status and absence of dependency cycles; report uncovered items and the parallel Todo set. Recurring runs preserve unchanged items; schedule only when asked.
 
-## 4. Verify and Report
+**Exit gate:** authorized corrections verified and blocked work cannot appear ready.
 
-Re-fetch changed items and cards. Confirm saved criteria, scope, dependencies, lanes and status; check the blocked-by graph for cycles and for links the bodies don't name. List the parallel set: Todo issues with no open blocker. Account for every item; label old evidence.
+## Output
 
-Recurring runs preserve unchanged items; flag waits. Schedule only when asked.
-
-**Exit gate:** saved changes match the refinement; coverage gaps and choices are reported.
-
-**Output:** ≤ 8 lines, with **Summary** (counts, changed-item/project links, corrections, verification and coverage limits) and **Decision** (next action/actor, or reserved owner choices with options and recommendation).
-
-```text
-Summary: Refined #14 and #18; both parallel; #20 waits on #14.
-Decision: Orchestrator selects #18; Product partner rechecks #20 after #14 delivers.
-```
+At most 8 lines: **Summary:** counts, changed links, corrections, checks and coverage gaps. **Decision:** next action/actor or reserved options and recommendation.

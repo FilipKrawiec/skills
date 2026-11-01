@@ -12,7 +12,7 @@ GitHub preserves intent, approvals, claims and evidence across sessions. The orc
 
 Use isolated worktrees and short-lived branches from the fetched base. GitHub protections keep protected paths and owner-reserved actions under required approval. Autonomous engineering merge approval is not production approval. The five board columns and existing membership remain unchanged; any change needs coordinated devcontainer support.
 
-Verification uses project-native commands. Here `just verify` runs unit fixtures and the plugin validator once. Retain `scripts/project-verify.py` as a compatibility entrypoint until consumers migrate, not as a required orchestration layer. Keep policy in its owning skill and use existing platform/build controls before adding a helper.
+Verification uses project-native commands. Here `just verify` runs unit fixtures and the plugin validator once. Use `workflow.mjs project` only to inspect or run a task explicitly configured in the nearest `AGENTS.md`; direct project commands remain the default. Keep policy in its owning skill and use existing platform/build controls before adding a helper.
 
 ## Policy correction — 2026-10-19
 

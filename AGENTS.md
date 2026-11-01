@@ -21,7 +21,7 @@ build_tools:
   just:
     build_script: justfile
     lifecycle_tasks:
-      unit: python3 -m unittest discover -s scripts/tests
+      unit: node --test scripts/tests/*.test.mjs
       verify: just verify
 
 ---
