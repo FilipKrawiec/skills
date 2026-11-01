@@ -8,6 +8,8 @@ allowed-tools: Read Bash
 
 Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Run `workflow.mjs cache show` for the resolved project, targets, persona path, capture branch, issue limit, idle interval and base. Host-specific targets come from `workflow-local-config.json` in the common Git directory, shared by linked worktrees; the generic CLI supplies the other defaults. Place the dedicated worktree at `.worktrees/explore` beside the Git common directory, so all linked worktrees share it without agent-specific paths. A target may provide `urlFromLog` instead of its browser URL. Read [idle.md](references/idle.md) only for an idle run.
 
+If `explore.targets` is empty, stop and report the `localConfig` path; never run an Explore with no target. The owner must configure at least one target there, for example `{"explore":{"targets":{"browser":{"launch":"<command>","url":"<origin>","viewport":"<w>x<h>"}}}}`; simulator targets use `launch` and `device` instead.
+
 ## 1. Prepare and launch
 
 Fetch the resolved base and use the clean isolated exploration worktree at its head; never alter the main checkout or another session's worktree. For the requested persona, choose the named journey, otherwise a never-run journey, otherwise the least recently run using `log.jsonl` on the resolved capture branch.
