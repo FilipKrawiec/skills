@@ -178,6 +178,7 @@ export function validateWorkflowSteps(steps) {
   if (!steps || typeof steps !== 'object' || Array.isArray(steps)) throw new Error('steps must be an object');
   for (const [step, command] of Object.entries(steps)) {
     if (!['process', 'assemble', 'test'].includes(step)) throw new Error(`Unknown workflow step: ${step}`);
+    if (step === 'process' && command !== null) throw new Error('steps.process is handled by workflow skills and must be null');
     if (command !== null && (!Array.isArray(command) || !command.length || !command.every(value => typeof value === 'string' && value.length))) {
       throw new Error(`steps.${step} must be null or a non-empty command argument array`);
     }
