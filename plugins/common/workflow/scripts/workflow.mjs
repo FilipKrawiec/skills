@@ -136,7 +136,7 @@ function config(requireLanes = true, allowBootstrap = false) {
   lanes.repo = githubRepoFromRemote(remote);
   lanes.base = baseRef.slice('refs/remotes/origin/'.length);
   lanes.requiredChecks ??= workflowDefaults.github.requiredChecks;
-  const { owner, reviewer } = codeownersRoles(baseRef, lanes.repo);
+  const { owner, reviewer } = codeownersRoles(baseRef, lanes.repo, source === 'base' ? raw?.identities?.owner : undefined);
   lanes.owner = owner;
   lanes.reviewer = reviewer;
   return { root, lanes, baseRef, configSource: source, configAvailable: Boolean(configPath) };
@@ -146,13 +146,13 @@ export function githubRepoFromRemote(remote) {
   if (!match) throw new Error('origin must identify a GitHub owner/repository');
   return match[1];
 }
-function codeownersRoles(baseRef, repo) {
+function codeownersRoles(baseRef, repo, migrationOwner) {
   let contents;
   try { contents = git('show', `${baseRef}:.github/CODEOWNERS`); }
   catch { throw new Error('The trusted base must contain .github/CODEOWNERS to identify review roles'); }
-  return codeownersRolesFrom(contents, repo);
+  return codeownersRolesFrom(contents, repo, migrationOwner);
 }
-export function codeownersRolesFrom(contents, repo) {
+export function codeownersRolesFrom(contents, repo, migrationOwner) {
   const rules = contents.split(/\r?\n/).map(line => line.replace(/#.*/, '').trim().split(/\s+/).filter(Boolean)).filter(parts => parts.length);
   const wildcard = [...rules].reverse().find(parts => parts[0] === '*');
   const reviewers = wildcard?.slice(1).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)) || [];
@@ -161,7 +161,8 @@ export function codeownersRolesFrom(contents, repo) {
   const repoOwner = repo.split('/')[0];
   const owners = [...new Set(rules.flatMap((parts, index) => index === rules.indexOf(wildcard) ? [] : parts.slice(1)).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)))];
   const owner = owners.find(value => value.toLowerCase() === repoOwner.toLowerCase())
-    || (owners.length === 1 ? owners[0] : null);
+    || (owners.length === 1 ? owners[0] : null)
+    || (typeof migrationOwner === 'string' && /^[A-Za-z0-9-]+$/.test(migrationOwner) ? migrationOwner : null);
   if (!owner) throw new Error('The trusted .github/CODEOWNERS must identify one Owner account; organization repositories cannot use the organization slug as a user login');
   return { owner, reviewer };
 }

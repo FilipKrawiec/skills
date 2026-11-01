@@ -20,6 +20,7 @@ const config = values => ({
 test('CODEOWNERS roles reject an organization slug when several path owners exist', () => {
   assert.throws(() => codeownersRolesFrom('* @reviewer\n/*.rules @alice\n/*.json @bob\n', 'acme/app'), /identify one Owner account/);
   assert.deepEqual(codeownersRolesFrom('* @reviewer\n/*.rules @alice\n', 'acme/app'), { owner: 'alice', reviewer: 'reviewer' });
+  assert.deepEqual(codeownersRolesFrom('* @reviewer\n', 'acme/app', 'maintainer'), { owner: 'maintainer', reviewer: 'reviewer' });
 });
 
 const fakeGh = `#!/usr/bin/env node
