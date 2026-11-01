@@ -124,14 +124,13 @@ function config(requireLanes = true, allowBootstrap = false, allowBootstrapBranc
     source = 'branch bootstrap';
   }
   const raw = configPath ? JSON.parse(git('show', configPath)) : null;
-  if (configPath && (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 || ![raw.identities ?? {}, raw.github ?? {}, raw.afk ?? {}, raw.explore ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration');
+  if (configPath && (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 || Object.hasOwn(raw, 'explore') || ![raw.identities ?? {}, raw.github ?? {}, raw.afk ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration; host-specific exploration targets belong in the local workflow config');
   if (raw && source === 'branch bootstrap' && (['owner'].some(key => Object.hasOwn(raw.identities || {}, key))
     || ['repo', 'base'].some(key => Object.hasOwn(raw.github || {}, key))
-    || ['personas', 'capturesBranch', 'epic', 'worktree', 'maxIssues', 'idleHours'].some(key => Object.hasOwn(raw.explore || {}, key))
     || Object.hasOwn(raw, 'labels'))) {
-    throw new Error('Workflow roles and GitHub metadata come from CODEOWNERS/Git and the local cache; use CLI defaults for labels and exploration settings');
+    throw new Error('Workflow roles and GitHub metadata come from CODEOWNERS/Git and the local cache; use CLI defaults for labels and local config for host-specific exploration targets');
   }
-  const lanes = raw ? { ...raw.github, ...raw.identities, ...raw.afk, explore: raw.explore || {} } : {};
+  const lanes = raw ? { ...raw.github, ...raw.identities, ...raw.afk } : {};
   const remote = git('remote', 'get-url', 'origin');
   lanes.repo = githubRepoFromRemote(remote);
   lanes.base = baseRef.slice('refs/remotes/origin/'.length);
@@ -364,6 +363,23 @@ export function readThroughLocalCache(path, key, load, { ttlMs = 86_400_000, now
   return value;
 }
 export function workflowMetadataCachePath(commonDir) { return join(commonDir, 'workflow-metadata-cache.json'); }
+export function workflowLocalConfigPath(commonDir) { return join(commonDir, 'workflow-local-config.json'); }
+export function parseLocalExploreConfig(text) {
+  const value = JSON.parse(text);
+  if (!value || typeof value !== 'object' || Array.isArray(value) || (value.explore !== undefined && (!value.explore || typeof value.explore !== 'object' || Array.isArray(value.explore)))) {
+    throw new Error('Local workflow config must be an object with an optional explore object');
+  }
+  const explore = value.explore || {};
+  if (Object.keys(value).some(key => key !== 'explore') || Object.keys(explore).some(key => !['targets', 'deviceEnv'].includes(key))) throw new Error('Local workflow config supports only host-specific explore.targets and explore.deviceEnv');
+  if (explore.targets !== undefined && (!explore.targets || typeof explore.targets !== 'object' || Array.isArray(explore.targets))) throw new Error('Local explore.targets must be an object');
+  if (explore.deviceEnv !== undefined && (typeof explore.deviceEnv !== 'string' || !explore.deviceEnv.trim())) throw new Error('Local explore.deviceEnv must be a non-empty string');
+  return explore;
+}
+function gitCommonDir() { return git('rev-parse', '--path-format=absolute', '--git-common-dir'); }
+function readLocalExploreConfig(commonDir) {
+  const path = workflowLocalConfigPath(commonDir);
+  return existsSync(path) ? parseLocalExploreConfig(readFileSync(path, 'utf8')) : {};
+}
 function githubMetadataPath() { return workflowMetadataCachePath(git('rev-parse', '--path-format=absolute', '--git-common-dir')); }
 export function discoverGithubMetadata(repo) {
   const [owner, name] = repo.split('/');
@@ -424,8 +440,7 @@ function afkConfig(refreshMetadata = false) {
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
   if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
-  lanes.explore ??= {};
-  for (const [key, value] of Object.entries(workflowDefaults.explore)) lanes.explore[key] ??= value;
+  lanes.explore = { ...workflowDefaults.explore, ...readLocalExploreConfig(gitCommonDir()) };
   lanes.refreshMetadata = refreshMetadata;
   if (typeof lanes.runPrefix !== 'string' || !lanes.runPrefix.trim()) throw new Error('afk.runPrefix must be a non-empty string');
   for (const key of ['runsCommand', 'startCommand', 'stopCommand']) {
@@ -1364,7 +1379,7 @@ function cacheCommand(args) {
   if (args.length !== 1 || !['show', 'refresh'].includes(args[0])) throw new Error('Usage: cache show|refresh');
   const { lanes } = config();
   const metadata = cachedGithubMetadata(lanes.repo, args[0] === 'refresh');
-  console.log(JSON.stringify({ repository: lanes.repo, base: lanes.base, owner: lanes.owner, reviewer: lanes.reviewer, project: metadata.project, reviewQueue: metadata.reviewQueue, requiredChecks: lanes.requiredChecks, explore: { ...workflowDefaults.explore, ...lanes.explore }, cache: githubMetadataPath() }));
+  console.log(JSON.stringify({ repository: lanes.repo, base: lanes.base, owner: lanes.owner, reviewer: lanes.reviewer, project: metadata.project, reviewQueue: metadata.reviewQueue, requiredChecks: lanes.requiredChecks, explore: { ...workflowDefaults.explore, ...readLocalExploreConfig(gitCommonDir()) }, localConfig: workflowLocalConfigPath(gitCommonDir()), cache: githubMetadataPath() }));
 }
 async function execute(command, args) {
   if (!command || command === '--help' || command === 'help') console.log(help);

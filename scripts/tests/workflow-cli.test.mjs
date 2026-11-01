@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, existsS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codeownersRolesFrom } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { codeownersRolesFrom, parseLocalExploreConfig, workflowLocalConfigPath } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const cli = join(root, 'plugins/common/workflow/scripts/workflow.mjs');
@@ -15,6 +15,15 @@ const json = value => JSON.stringify(value);
 const config = values => ({
   version: 1,
   identities: Object.fromEntries(['implementer', 'reviewer'].filter(key => values[key] !== undefined).map(key => [key, values[key]])),
+});
+
+test('local exploration config is isolated in the shared Git directory', () => {
+  assert.equal(workflowLocalConfigPath('/repo/.git'), '/repo/.git/workflow-local-config.json');
+  assert.deepEqual(parseLocalExploreConfig('{"explore":{"targets":{"browser":{"launch":"just dev browser","viewport":"1194x834"}}}}'), {
+    targets: { browser: { launch: 'just dev browser', viewport: '1194x834' } },
+  });
+  assert.throws(() => parseLocalExploreConfig('{"explore":[]}'), /optional explore object/);
+  assert.throws(() => parseLocalExploreConfig('{"explore":{"targets":[]}}'), /targets must be an object/);
 });
 
 test('CODEOWNERS roles reject an organization slug when several path owners exist', () => {

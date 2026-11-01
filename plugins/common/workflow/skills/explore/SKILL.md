@@ -6,7 +6,7 @@ allowed-tools: Read Bash
 
 # Explore
 
-Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Read product-specific targets from `.agents/config.json`; run `workflow.mjs cache show` for the resolved project, persona path, capture branch, issue limit, idle interval and base. Place the dedicated worktree at `.worktrees/explore` beside the Git common directory, so all linked worktrees share it without agent-specific paths. A target may provide `urlFromLog` instead of its browser URL. Read [idle.md](references/idle.md) only for an idle run.
+Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Run `workflow.mjs cache show` for the resolved project, targets, persona path, capture branch, issue limit, idle interval and base. Host-specific targets come from `workflow-local-config.json` in the common Git directory, shared by linked worktrees; the generic CLI supplies the other defaults. Place the dedicated worktree at `.worktrees/explore` beside the Git common directory, so all linked worktrees share it without agent-specific paths. A target may provide `urlFromLog` instead of its browser URL. Read [idle.md](references/idle.md) only for an idle run.
 
 ## 1. Prepare and launch
 
