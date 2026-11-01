@@ -5,14 +5,15 @@ default: verify
 # Run unit tests across script tools
 unit:
     python3 -m unittest discover -s scripts/tests
+    node --test scripts/tests/*.test.mjs
 
 # Validate plugin definitions and package manifests
 verify: unit
-    python3 scripts/validate-plugin-definitions.py
+    node plugins/common/workflow/scripts/workflow.mjs manifests verify
 
 # Synchronize all host plugin manifests and marketplace catalogs from canonical package metadata
 sync-manifests:
-    python3 scripts/validate-plugin-definitions.py --sync
+    node plugins/common/workflow/scripts/workflow.mjs manifests sync
 
 # Validate plugins with Antigravity CLI if available
 validate-agy:
@@ -27,7 +28,7 @@ validate-agy:
     fi
 # Display verifier status and detected lifecycle tasks
 status:
-    python3 scripts/project-verify.py status
+    node plugins/common/workflow/scripts/workflow.mjs project status
 
 # Explicitly link common packages into the selected Antigravity IDE plugin directory
 link-agy:

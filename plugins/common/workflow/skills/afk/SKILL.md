@@ -8,7 +8,7 @@ allowed-tools: Skill Read Edit Write Bash(git:*,gh:*,node:*,just:*,lsof:*)
 
 Deliver the requested authorized slice, or one unattended slice per run. Read `.github/agent-workflow.json` from the configured base (default `main`). Never change the main checkout. When the owner explicitly invokes AFK interactively, work on their requested items; do not pick unrelated queue work.
 
-Read [setup.md](references/setup.md) only when enabling or scheduling runs, and [github-safety.md](references/github-safety.md) only when checking GitHub protection.
+Read [setup.md](references/setup.md) only when enabling or scheduling runs, and [github-safety.md](references/github-safety.md) only when checking GitHub protection. Use `safety check` for read-only inspection. Run `safety apply` only after an explicit owner instruction; it changes repository permissions and branch protection. Identities, repository and required checks come from `.github/agent-workflow.json`.
 
 ## 1. Establish work
 
@@ -20,15 +20,15 @@ Routine engineering within approved scope is delegated. New interaction directio
 
 ## 2. Select or resume
 
-Reconcile owned open PRs and their issues before selecting new work; repair confirmed blockers within scope. Keep a visible wait with a retry condition when needed. For unattended selection, choose an open `lane:afk` issue with criteria and scope, excluding epics, active claims, unmet dependencies and issues mentioned in any open PR body. Run `gh pr list --state open --limit 1000 --json number,body`; wait if incomplete. Verify each dependency's required outcome; a closed issue alone is not proof. Rank earliest milestone, board priority or priority label, then issue number. Never stack a PR on an unmerged parent.
+For an unattended run, use the Node CLI's `Hold:` and `Work:` output as its complete assignment; do not choose a second issue or PR. It ranks epics by board priority and milestone, assigns eligible `lane:afk` issues, proposed issues awaiting eligibility review, and open PRs awaiting review or repair, and respects blockers, claims and live holds. With `afk.maxRuns`, runs split an epic by issue; without it, a run holds one whole epic. A PR hold is work on that PR. For an owner-requested interactive task, follow the owner's named scope instead of selecting queue work.
 
-Use `workflow.mjs issue claim|status|queue` for GitHub assignment, board and queue writes. Use `workflow.mjs afk start|check|merge|end|runs|reap` for deterministic unattended-run operations. The CLI checks the configured implementer and an exclusive live claim; never reproduce those GitHub writes in skill instructions or Bash. `spec` defines transition semantics; the named actor applies each transition. Shared files do not block independent work; the later PR resolves conflicts.
+Use the plugin workflow CLI (`../../scripts/workflow.mjs issue|afk`) for assignment, board, queue and unattended-run operations. It validates the configured actor and serializes claims; never compose these GitHub writes by hand. `spec` owns transition semantics.
 
 **Exit gate:** resumed PR, exclusive assignment, or queue empty/wait reason.
 
 ## 3. Deliver
 
-Invoke the skills for implementation, review, VCS and binding GitHub approval. Respect the repository's pre-push gate and required hosted checks; do not duplicate a full suite locally unless required or needed to diagnose a failure. Every changed or untracked path must be in the scope packet or `alwaysInScope`. The author cannot approve their own work. Verify criteria, scope, owner decisions and prior findings against authoritative records; generated review context may omit information. Keep GitHub approval bound to the actual head, while reusing unchanged evidence or reviewing only the delta as `review` permits. Pending CI does not prevent a clean review; it remains a merge gate.
+Invoke the skills for implementation, review, VCS and binding GitHub approval. When assigning agents, use `afk.agentModels` for the matching `product`, `implementer`, `delivery`, `reviewer` or `reviewFix` role; apply `reviewFix.fromRound` to escalation. Pass model and reasoning effort when the host supports them. Respect the repository's pre-push gate and required hosted checks; do not duplicate a full suite locally unless required or needed to diagnose a failure. Every changed or untracked path must be in the scope packet or `alwaysInScope`. The author cannot approve their own work. Verify criteria, scope, owner decisions and prior findings against authoritative records; generated review context may omit information. Keep GitHub approval bound to the actual head, while reusing unchanged evidence or reviewing only the delta as `review` permits. Pending CI does not prevent a clean review; it remains a merge gate.
 
 Delegate only when needed for independence or parallel work. Use fresh minimal context where supported, with all relevant criteria and evidence; never omit applicable decisions. Give each worker this complete brief:
 

@@ -53,7 +53,7 @@ just verify           # unit tests, then one plugin validation
 just sync-manifests   # regenerate host manifests from metadata
 ```
 
-Use focused tests while editing and run the final gate once. `scripts/project-verify.py` remains a compatibility entrypoint; direct project build commands are the default. Model choice, scheduling, credentials, claim enforcement and native quality/deployment tools belong to the host or consuming project.
+Use focused checks while editing and run the final gate once. `node plugins/common/workflow/scripts/workflow.mjs project status` reads the nearest `AGENTS.md`; the workflow CLI also validates manifests and creates releases without a build step. Model choice, scheduling, credentials, claims and native quality/deployment tools belong to the host or consuming project.
 
 Lanes record implementation authorization, milestones group deliverable outcomes, and types classify work. Temporary waiting reasons do not erase authorization. Parallel implementation requires enforced claims, one run per issue; shared files never block, the later PR resolves conflicts.
 

@@ -2,23 +2,40 @@
 
 ## Configuration: `.github/agent-workflow.json`
 
-Configure identities, GitHub project, AFK and optional exploration in version 1. Read from the trusted base. AFK always uses automated review; the native code owner separately approves. CODEOWNERS names the reviewer for ordinary paths and the owner alone for owner-held paths.
+Use version 1; read it from base. AFK uses automated review; the native code owner approves. CODEOWNERS names the reviewer on ordinary paths and owner on held paths.
 
 ```json
 {
   "version": 1,
   "identities": {"owner": "alice", "implementer": "acme-builder", "reviewer": "acme-reviewer"},
-  "github": {"repo": "acme/app", "project": {"owner": "acme", "number": 3}},
-  "afk": {"reviewerApprovesAfk": true, "maxRuns": 4, "alwaysInScope": ["docs/"]}
+  "github": {"repo": "acme/app", "base": "main", "project": {"owner": "acme", "number": 3}, "requiredChecks": ["Verify / verify"]},
+  "afk": {
+    "runPrefix": "acme-afk-",
+    "runsCommand": ["agent-cli", "agents", "--json"],
+    "startCommand": ["agent-cli", "--background", "--name", "{runId}", "--permission-mode", "{permissionMode}", "--model", "{model}", "{prompt}"],
+    "stopCommand": ["agent-cli", "stop", "{id}"],
+    "environmentFile": "~/.agent/settings.json",
+    "stateFile": "~/.agent/jobs/{id}/state.json",
+    "serviceLabel": "acme.afk-watch",
+    "model": "coding-model",
+    "permissionMode": "auto",
+    "watchIntervalSeconds": 60,
+    "waitTimeoutMinutes": 10,
+    "pluginUpdateCommands": [],
+    "pluginUpdateIntervalMinutes": 30,
+    "reviewerApprovesAfk": true,
+    "maxRuns": 4,
+    "alwaysInScope": ["docs/"]
+  }
 }
 ```
 
-`github` also accepts `base` and `reviewQueue`. `afk` accepts `branchPrefix`, `runPrefix`, `runsCommand` (the command that returns host run data as JSON), `staleClaimHours`, `reviewRounds`, `reviewerApprovesAfk`, `maxRuns`, `alwaysInScope` and `ownerLines`. `explore` holds the exploration targets and scheduling.
+This is the only repository-level workflow configuration. `github` accepts `repo`, `base`, `project`, `reviewQueue`, `requiredChecks` and optional `releaseAppId`; `afk` accepts `branchPrefix`, `runPrefix`, `runsCommand`, `startCommand`, `stopCommand`, `environmentFile`, `stateFile`, `serviceLabel`, `model`, `permissionMode`, `agentModels`, `watchIntervalSeconds`, `waitTimeoutMinutes`, `pluginUpdateCommands`, `pluginUpdateIntervalMinutes`, `staleClaimHours`, `reviewRounds`, `reviewerApprovesAfk`, `maxRuns`, `alwaysInScope` and `ownerLines`. `agentModels` maps role names to `model` and optional `reasoningEffort`; `reviewFix.fromRound` starts escalation. Commands are argv arrays; `startCommand` supports `{runId}`, `{prompt}`, `{model}`, `{permissionMode}`, `{cliPath}` and `{repository}`. `explore` holds target and scheduling settings. Identity, project and AFK settings go here; path ownership stays in CODEOWNERS.
 
 ## One-time setup
 
 - Create each missing label below with `gh label create <name> --color <hex> --description "<text>"`.
-- GitHub: apply [github-safety.md](github-safety.md) and run `bash scripts/github-safety.sh check <owner/repo> <owner> <implementer> <reviewer> <check>...` from the installed skill. Exit 0 verifies CODEOWNERS; inspect effective protection, bypasses and production approval separately.
+- GitHub: apply [github-safety.md](github-safety.md) and run `node <this-skill-directory>/../../scripts/workflow.mjs safety check`. Exit 0 verifies CODEOWNERS; inspect effective protection, bypasses and production approval separately.
 
 ## Board
 
@@ -46,9 +63,9 @@ Configure identities, GitHub project, AFK and optional exploration in version 1.
 
 ## Unattended runs
 
-Schedule runs in one host's checkout:
+Install the host watcher with `node <this-skill-directory>/../../scripts/workflow.mjs afk install`. The CLI installs launchd from config and maintains a dedicated worktree. Remove the job with `afk uninstall`; the worktree is preserved.
 
-Run `node <vcs-skill>/scripts/workflow.mjs afk start --me <run id>`: exit 3 ends, 2 reports `Blocked:`, 4 starts an `explore` pass. Exit 0 holds one eligible issue; invoke `afk` on it in an isolated worktree and never change the main checkout. End with `node <vcs-skill>/scripts/workflow.mjs afk end --me <run id>`.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs afk start --me <run id>`: exit 3 ends, 2 reports `Blocked:`, 4 starts an `explore` pass. Exit 0 holds one eligible issue; invoke `afk` on it in an isolated worktree and never change the main checkout. End with `node <this-skill-directory>/../../scripts/workflow.mjs afk end --me <run id>`.
 
 
 - For every AFK PR, assign a fresh native Reviewer task naming repository, configured GitHub identity and authorized runner wake mechanism.

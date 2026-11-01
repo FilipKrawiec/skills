@@ -10,7 +10,7 @@ import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / 'plugins/common/workflow/skills/vcs/scripts/workflow.mjs'
+CLI = ROOT / 'plugins/common/workflow/scripts/workflow.mjs'
 
 
 def workflow_config(values):
@@ -446,40 +446,6 @@ else:
         result = self.run_cli('push')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('.github/agent-workflow.json', result.stderr)
-        self.assertFalse((self.root / 'push.json').exists())
-
-    def roles_file(self, roles):
-        path = self.root / 'trusted-roles.json'
-        path.write_text(json.dumps(roles))
-        path.chmod(0o600)
-        return path
-
-    def test_push_without_lanes_uses_external_owned_roles(self):
-        git = self.env['REAL_GIT']
-        subprocess.run([git, 'rm', '-q', '.github/agent-workflow.json'], cwd=self.repo, check=True)
-        subprocess.run([git, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'no config'], cwd=self.repo, check=True)
-        head = subprocess.check_output([git, 'rev-parse', 'HEAD'], cwd=self.repo, text=True).strip()
-        subprocess.run([git, 'update-ref', 'refs/remotes/origin/main', head], cwd=self.repo, check=True)
-        self.env['REMOTE_BASE_SHA'] = head
-        roles = self.roles_file({'repo': 'acme/app', 'implementer': 'builder', 'reviewer': 'reviewer', 'owner': 'owner'})
-        result = self.run_cli('push', '--roles-file', str(roles))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)['actor'], 'builder')
-
-    def test_external_roles_cannot_override_base(self):
-        roles = self.roles_file({'repo': 'acme/app', 'implementer': 'reviewer', 'reviewer': 'builder', 'owner': 'owner'})
-        result = self.run_cli('push', '--roles-file', str(roles))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('cannot override', result.stderr)
-        self.assertFalse((self.root / 'push.json').exists())
-
-    def test_external_roles_reject_repo_file_and_insecure_permissions(self):
-        path = self.repo / 'roles.json'
-        path.write_text('{}')
-        self.assertNotEqual(self.run_cli('push', '--roles-file', str(path)).returncode, 0)
-        path = self.roles_file({})
-        path.chmod(0o666)
-        self.assertNotEqual(self.run_cli('push', '--roles-file', str(path)).returncode, 0)
         self.assertFalse((self.root / 'push.json').exists())
 
     def test_missing_owner_defaults_to_verified_personal_owner(self):

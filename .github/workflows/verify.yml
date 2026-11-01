@@ -19,8 +19,8 @@ jobs:
         with:
           just-version: '1.59.0'
       - run: python3 -m pip install pyyaml
-      - run: python3 -m unittest discover -s scripts/tests
-      - run: python3 scripts/validate-plugin-definitions.py
+      - run: just unit
+      - run: node plugins/common/workflow/scripts/workflow.mjs manifests verify
       - name: Require a clean worktree
         shell: bash
         run: |

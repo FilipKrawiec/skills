@@ -3,10 +3,10 @@
 GitHub and the host enforce authority; skill text is not a security boundary. From the installed `afk` skill directory run:
 
 ```text
-bash scripts/github-safety.sh check <owner/repo> <owner> <implementer> <reviewer> <check>...
+node <this-skill-directory>/../../scripts/workflow.mjs safety check
 ```
 
-In this repository the path is `plugins/common/workflow/skills/afk/scripts/github-safety.sh`. Exit 1 reports drift. Use `apply` with those arguments only under owner authorization, with owner credentials outside worker access.
+Exit 1 reports drift. `safety apply` changes repository permissions and branch protection; run it only after an explicit owner instruction. Repository, identities, required checks and optional release app id come from `.github/agent-workflow.json`.
 
 ## Judgment, identity and credentials
 
