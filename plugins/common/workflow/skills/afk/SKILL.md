@@ -1,7 +1,7 @@
 ---
 name: afk
 description: Use when asked to run an unattended AFK issue or explicitly requested to use AFK in a repository with .github/agent-workflow.json.
-allowed-tools: Skill Read Edit Write Bash(python3:*,git:*,gh:*,just:*,lsof:*)
+allowed-tools: Skill Read Edit Write Bash(git:*,gh:*,node:*,just:*,lsof:*)
 ---
 
 # AFK
@@ -22,7 +22,7 @@ Routine engineering within approved scope is delegated. New interaction directio
 
 Reconcile owned open PRs and their issues before selecting new work; repair confirmed blockers within scope. Keep a visible wait with a retry condition when needed. For unattended selection, choose an open `lane:afk` issue with criteria and scope, excluding epics, active claims, unmet dependencies and issues mentioned in any open PR body. Run `gh pr list --state open --limit 1000 --json number,body`; wait if incomplete. Verify each dependency's required outcome; a closed issue alone is not proof. Rank earliest milestone, board priority or priority label, then issue number. Never stack a PR on an unmerged parent.
 
-Use enforced claims when available; otherwise serialize. Re-read claims before and after recording `state:claimed`; stop on conflict, including an uninvestigated stale claim. `spec` defines transition semantics; the named actor applies each transition and the orchestrator moves board status. Shared files do not block independent work; the later PR resolves conflicts.
+Use `workflow.mjs issue claim|status|queue` for GitHub assignment, board and queue writes. Use `workflow.mjs afk start|check|merge|end|runs|reap` for deterministic unattended-run operations. The CLI checks the configured implementer and an exclusive live claim; never reproduce those GitHub writes in skill instructions or Bash. `spec` defines transition semantics; the named actor applies each transition. Shared files do not block independent work; the later PR resolves conflicts.
 
 **Exit gate:** resumed PR, exclusive assignment, or queue empty/wait reason.
 

@@ -13,7 +13,7 @@ Configure identities, GitHub project, AFK and optional exploration in version 1.
 }
 ```
 
-`github` also accepts `base` and `reviewQueue`. `afk` accepts `branchPrefix`, `staleClaimHours`, `reviewRounds`, `reviewerApprovesAfk`, `maxRuns`, `alwaysInScope` and `ownerLines`. `explore` holds the exploration targets and scheduling.
+`github` also accepts `base` and `reviewQueue`. `afk` accepts `branchPrefix`, `runPrefix`, `runsCommand` (the command that returns host run data as JSON), `staleClaimHours`, `reviewRounds`, `reviewerApprovesAfk`, `maxRuns`, `alwaysInScope` and `ownerLines`. `explore` holds the exploration targets and scheduling.
 
 ## One-time setup
 
@@ -48,7 +48,7 @@ Configure identities, GitHub project, AFK and optional exploration in version 1.
 
 Schedule runs in one host's checkout:
 
-Run the plugin's `skills/afk/scripts/lanes.py start --me <run id> --runs <command>`: exit 3 ends, 2 reports `Blocked:`, 4: `explore`. Exit 0 holds an issue no live run holds, else an epic; invoke `afk` on it; never change the main checkout. End with `lanes.py end`.
+Run `node <vcs-skill>/scripts/workflow.mjs afk start --me <run id>`: exit 3 ends, 2 reports `Blocked:`, 4 starts an `explore` pass. Exit 0 holds one eligible issue; invoke `afk` on it in an isolated worktree and never change the main checkout. End with `node <vcs-skill>/scripts/workflow.mjs afk end --me <run id>`.
 
 
 - For every AFK PR, assign a fresh native Reviewer task naming repository, configured GitHub identity and authorized runner wake mechanism.
