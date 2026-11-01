@@ -2,9 +2,8 @@
 
 default: verify
 
-# Run unit tests across script tools
+# Run Node.js tests across workflow tooling
 unit:
-    python3 -m unittest discover -s scripts/tests
     node --test scripts/tests/*.test.mjs
 
 # Validate plugin definitions and package manifests

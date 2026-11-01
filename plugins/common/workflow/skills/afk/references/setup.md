@@ -1,6 +1,6 @@
 # Setting Up Issue Lanes in a Repository
 
-## Configuration: `.github/agent-workflow.json`
+## Configuration: `.agents/config.json`
 
 Use version 1; read it from base. AFK uses automated review; the native code owner approves. CODEOWNERS names the reviewer on ordinary paths and owner on held paths.
 

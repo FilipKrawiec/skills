@@ -2,4 +2,4 @@
 * @filipkrawiec-reviewer
 /.github/CODEOWNERS @FilipKrawiec
 /.github/workflows/ @FilipKrawiec
-/.github/agent-workflow.json @FilipKrawiec
+/.agents/config.json @FilipKrawiec

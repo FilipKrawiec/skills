@@ -6,7 +6,7 @@ GitHub and the host enforce authority; skill text is not a security boundary. Fr
 node <this-skill-directory>/../../scripts/workflow.mjs safety check
 ```
 
-Exit 1 reports drift. `safety apply` changes repository permissions and branch protection; run it only after an explicit owner instruction. Repository, identities, required checks and optional release app id come from `.github/agent-workflow.json`.
+Exit 1 reports drift. `safety apply` changes repository permissions and branch protection; run it only after an explicit owner instruction. Repository, identities, required checks and optional release app id come from `.agents/config.json`.
 
 ## Judgment, identity and credentials
 
@@ -16,7 +16,7 @@ Exit 1 reports drift. `safety apply` changes repository permissions and branch p
 | Implementer | Write identity | Existing authorized mechanism; no owner/production fallback |
 | Reviewer | Distinct Write identity | Existing authorized mechanism for Reviewer decisions |
 
-Set all three identities explicitly in `.github/agent-workflow.json`. Verify configured collaborator and Project access. Missing identity or access is a setup gap; creating accounts or provisioning credentials needs separate owner authorization. Never give workers the owner's credentials.
+Set all three identities explicitly in `.agents/config.json`. Verify configured collaborator and Project access. Missing identity or access is a setup gap; creating accounts or provisioning credentials needs separate owner authorization. Never give workers the owner's credentials.
 
 Use fresh native contexts for judgment and existing authorized credentials for posting. Shared hosts do not prove secret isolation or require separate OS accounts. Keep Craftsman from reviewer authority by assignment. Verify `gh api user --jq .login` matches the Reviewer without printing tokens. Push HTTPS; production credentials stay behind native controls.
 

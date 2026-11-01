@@ -12,13 +12,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
-        with:
-          python-version: "3.11"
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
         with:
           just-version: '1.59.0'
-      - run: python3 -m pip install pyyaml
       - run: just unit
       - run: node plugins/common/workflow/scripts/workflow.mjs manifests verify
       - name: Require a clean worktree

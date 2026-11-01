@@ -21,7 +21,7 @@ const help = `Usage:
   node workflow.mjs release [auto|patch|minor|major] [--message TEXT] [--dry-run] [--root DIR]
   node workflow.mjs safety check|apply
 
-push reads workflow roles from the fetched default branch's .github/agent-workflow.json. For its first addition, it accepts the same file from the committed branch and selects the configured owner's stored credential without switching gh's active account.
+push reads workflow roles from the fetched default branch's .agents/config.json. For its first addition, it accepts the same file from the committed branch and selects the configured owner's stored credential without switching gh's active account.
 A verified personal repo owner may be inferred; organization repositories require an explicit owner.
 Auto-merge and Git configuration checks are not atomic with push; do not change them concurrently. Git runs installed hooks normally; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
@@ -62,7 +62,7 @@ function config(requireLanes = true, allowBootstrap = false) {
     return { root, lanes: {}, baseRef: undefined };
   }
   // Never replace malformed or inaccessible committed authority with local values.
-  const path = '.github/agent-workflow.json';
+  const path = '.agents/config.json';
   const present = git('ls-tree', '--name-only', baseRef, '--', path);
   let source = 'base';
   let configPath = present ? `${baseRef}:${path}` : null;
@@ -109,7 +109,7 @@ async function push(args) {
   const { root, lanes, baseRef, configSource } = config(true, true);
   if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
   requireLinkedWorktree();
-  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure repo, implementer and reviewer in base .github/agent-workflow.json');
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure repo, implementer and reviewer in base .agents/config.json');
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
   const reviewer = lanes.reviewer;
@@ -260,7 +260,7 @@ function afkActor(cfg) {
 function afkConfig() {
   git('fetch', '--quiet', 'origin');
   const { lanes, baseRef } = config();
-  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure repo, implementer and reviewer in base .github/agent-workflow.json');
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure repo, implementer and reviewer in base .agents/config.json');
   assertDistinctPushRoles({ owner: lanes.owner, implementer: lanes.implementer, reviewer: lanes.reviewer });
   lanes.repo = parseRepo(lanes.repo);
   if (typeof lanes.runPrefix !== 'string' || !lanes.runPrefix.trim()) throw new Error('Configure afk.runPrefix');
