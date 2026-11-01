@@ -11,12 +11,12 @@ Use version 1; read it from base. AFK uses automated review; CODEOWNERS names th
   "steps": {
     "process": null,
     "assemble": ["just", "dev", "{platform}"],
-    "test": ["just", "quick", "{scope}"]
+    "test": ["just", "quick"]
   }
 }
 ```
 
-Keep only identities and project step commands in config. Every changed path must appear in the issue scope packet. The generic workflow handles Process; `steps.assemble` and `steps.test` name repository scripts as argument arrays, with `{platform}` and `{scope}` placeholders supplied by the run. Git derives repo/base; CODEOWNERS defines path owners and must name exactly one default Reviewer matching `identities.reviewer`; `verify` is the default check. First-config `push --owner-bootstrap` may read a missing Owner from committed branch CODEOWNERS; updates to that branch use this mode until merge. Afterwards, Owner comes from base CODEOWNERS. The CLI discovers the linked Project (including owner) and open `Review queue` issue, then caches each field for 24 hours in common `.git`, shared across worktrees. Missing or expired fields retry or disappear. `cache show` displays resolved values; `cache refresh` refreshes with the active GitHub profile. CLI defaults supply limits, labels, branches and personas. The watcher holds its workflow lock until exit.
+Keep only identities and project step commands in config. Every changed path must appear in the issue scope packet. The generic workflow handles Process; `steps.assemble` and `steps.test` name repository scripts as argument arrays and may include placeholders such as `{platform}`. Git derives repo/base; CODEOWNERS defines path owners and must name exactly one default Reviewer matching `identities.reviewer`; `verify` is the default check. First-config `push --owner-bootstrap` may read a missing Owner from committed branch CODEOWNERS; updates to that branch use this mode until merge. Afterwards, Owner comes from base CODEOWNERS. The CLI discovers the linked Project (including owner) and open `Review queue` issue, then caches each field for 24 hours in common `.git`, shared across worktrees. Missing or expired fields retry or disappear. `cache show` displays resolved values; `cache refresh` refreshes with the active GitHub profile. CLI defaults supply limits, labels, branches and personas. The watcher holds its workflow lock until exit.
 
 ## One-time setup
 
