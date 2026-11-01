@@ -26,7 +26,7 @@ const help = `Usage:
   node workflow.mjs release [auto|patch|minor|major] [--message TEXT] [--dry-run] [--root DIR]
   node workflow.mjs safety check|apply
 
-push reads the implementer from the fetched default branch's .agents/config.json and derives owner/reviewer from origin and base .github/CODEOWNERS. For the first config addition, it reads the implementer from the committed branch and selects the inferred owner's stored credential without switching gh's active account.
+push reads the implementer from the fetched default branch's .agents/config.json and derives owner/reviewer from origin and base .github/CODEOWNERS. For first-config bootstrap only, if base CODEOWNERS has no owner yet, it reads the owner from committed branch CODEOWNERS while keeping Reviewer from base.
 A verified personal repo owner may be inferred; CODEOWNERS must identify one owner account unambiguously.
 Auto-merge and Git configuration checks are not atomic with push; do not change them concurrently. Git runs installed hooks normally; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
@@ -104,7 +104,7 @@ export function assertDistinctPushRoles({ owner, implementer, reviewer }) {
     throw new Error('Configure distinct implementer, reviewer and owner accounts in trusted roles');
   }
 }
-function config(requireLanes = true, allowBootstrap = false) {
+function config(requireLanes = true, allowBootstrap = false, allowBootstrapBranchOwner = false) {
   const root = git('rev-parse', '--show-toplevel');
   let baseRef;
   try {
@@ -136,7 +136,8 @@ function config(requireLanes = true, allowBootstrap = false) {
   lanes.repo = githubRepoFromRemote(remote);
   lanes.base = baseRef.slice('refs/remotes/origin/'.length);
   lanes.requiredChecks ??= workflowDefaults.github.requiredChecks;
-  const { owner, reviewer } = codeownersRoles(baseRef, lanes.repo, source === 'base' ? raw?.identities?.owner : undefined);
+  const roles = codeownersRoles(baseRef, lanes.repo, source === 'base' ? raw?.identities?.owner : undefined, allowBootstrapBranchOwner && source === 'branch bootstrap');
+  const { owner, reviewer } = roles;
   lanes.owner = owner;
   lanes.reviewer = reviewer;
   return { root, lanes, baseRef, configSource: source, configAvailable: Boolean(configPath) };
@@ -146,13 +147,20 @@ export function githubRepoFromRemote(remote) {
   if (!match) throw new Error('origin must identify a GitHub owner/repository');
   return match[1];
 }
-function codeownersRoles(baseRef, repo, migrationOwner) {
+function codeownersRoles(baseRef, repo, migrationOwner, allowBranchOwner = false) {
   let contents;
   try { contents = git('show', `${baseRef}:.github/CODEOWNERS`); }
   catch { throw new Error('The trusted base must contain .github/CODEOWNERS to identify review roles'); }
-  return codeownersRolesFrom(contents, repo, migrationOwner);
+  const roles = codeownersRolesFrom(contents, repo, migrationOwner, !allowBranchOwner);
+  if (roles.owner || !allowBranchOwner) return roles;
+  let branchContents;
+  try { branchContents = git('show', 'HEAD:.github/CODEOWNERS'); }
+  catch { throw new Error('The committed bootstrap branch must contain .github/CODEOWNERS to identify the Owner'); }
+  const branchOwner = codeownersRolesFrom(branchContents, repo, undefined, false).owner;
+  if (!branchOwner) throw new Error('The committed bootstrap branch CODEOWNERS must identify one Owner account');
+  return { ...roles, owner: branchOwner };
 }
-export function codeownersRolesFrom(contents, repo, migrationOwner) {
+export function codeownersRolesFrom(contents, repo, migrationOwner, requireOwner = true) {
   const rules = contents.split(/\r?\n/).map(line => line.replace(/#.*/, '').trim().split(/\s+/).filter(Boolean)).filter(parts => parts.length);
   const wildcard = [...rules].reverse().find(parts => parts[0] === '*');
   const reviewers = wildcard?.slice(1).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)) || [];
@@ -163,7 +171,7 @@ export function codeownersRolesFrom(contents, repo, migrationOwner) {
   const owner = owners.find(value => value.toLowerCase() === repoOwner.toLowerCase())
     || (owners.length === 1 ? owners[0] : null)
     || (typeof migrationOwner === 'string' && /^[A-Za-z0-9-]+$/.test(migrationOwner) ? migrationOwner : null);
-  if (!owner) throw new Error('The trusted .github/CODEOWNERS must identify one Owner account; organization repositories cannot use the organization slug as a user login');
+  if (!owner && requireOwner) throw new Error('The trusted .github/CODEOWNERS must identify one Owner account; organization repositories cannot use the organization slug as a user login');
   return { owner, reviewer };
 }
 function parseRepo(repo) {
@@ -197,7 +205,7 @@ function commit(args) {
 async function push(args) {
   const ownerBootstrap = args.length === 1 && args[0] === '--owner-bootstrap';
   if (args.length && !ownerBootstrap) throw new Error('Usage: push [--owner-bootstrap]');
-  const { root, lanes, baseRef, configSource } = config(true, true);
+  const { root, lanes, baseRef, configSource } = config(true, true, ownerBootstrap);
   if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
   requireLinkedWorktree();
   if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer; repo comes from origin and review roles from CODEOWNERS');

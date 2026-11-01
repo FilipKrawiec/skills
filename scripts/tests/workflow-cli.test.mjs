@@ -226,11 +226,15 @@ test('wrong actor never pushes', t => {
   assert.notEqual(result.status, 0); assertNoPush(f); assert.ok(!`${result.stdout}${result.stderr}`.includes('SECRET_TOKEN'));
 });
 
-test('owner bootstrap selects the CODEOWNERS owner without switching active account', t => {
+test('owner bootstrap uses branch CODEOWNERS while keeping Reviewer from base', t => {
   const f = fixture(t);
   assert.equal(run(f.env.REAL_GIT, ['rm', '-q', configPath], { cwd: f.main }).status, 0);
+  writeFileSync(join(f.main, '.github', 'CODEOWNERS'), '* @reviewer\n');
   commitFixture(f, f.main);
   f.env.REMOTE_BASE_SHA = run(f.env.REAL_GIT, ['rev-parse', 'HEAD'], { cwd: f.main }).stdout.trim();
+  writeFileSync(join(f.repo, '.github', 'CODEOWNERS'), '* @owner\n/*.rules @owner\n');
+  assert.equal(f.linkedGit('add', '.github/CODEOWNERS').status, 0);
+  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'branch owner rules').status, 0);
   f.env.FAKE_ACTOR = 'owner'; f.env.AUTH_USERS_FILE = join(f.root, 'auth-users.txt');
   const result = f.cliRun('push', '--owner-bootstrap');
   assert.equal(result.status, 0, result.stderr);
