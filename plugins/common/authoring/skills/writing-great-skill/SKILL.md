@@ -1,7 +1,7 @@
 ---
 name: writing-great-skill
 description: Use when creating, editing, shortening or reviewing skills, agent rules (AGENTS.md) or plugin manifests in this repository.
-allowed-tools: Skill Read Edit Bash(python3:*,just:*)
+allowed-tools: Skill Read Edit Bash(just:*)
 ---
 
 # Writing Great Skill

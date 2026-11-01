@@ -1,7 +1,7 @@
 ---
 name: improve
 description: Use when a change has shipped or when friction, rework or a review finding should become a lasting change to skills, agent rules or docs.
-allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,python3:*,just:*)
+allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,just:*)
 ---
 
 # Improve
