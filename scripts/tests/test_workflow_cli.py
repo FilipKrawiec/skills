@@ -45,6 +45,8 @@ args = sys.argv[1:]
 if args[:2] == ['auth', 'token']:
     if os.environ.get('GH_TOKEN') or os.environ.get('GH_HOST'):
         sys.exit(1)
+    if os.environ.get('AUTH_USERS_FILE'):
+        with open(os.environ['AUTH_USERS_FILE'], 'a') as stream: stream.write((args[args.index('--user') + 1] if '--user' in args else 'ACTIVE') + '\n')
     print('SECRET_TOKEN')
 elif args[:2] == ['api', 'graphql']:
     if any('ref(qualifiedName:' in arg for arg in args):
@@ -58,7 +60,9 @@ elif args[:2] == ['api', 'graphql']:
 elif args[:1] == ['api']:
     if os.environ.get('GH_TOKEN') != 'SECRET_TOKEN':
         sys.exit(1)
-    if 'repos/acme/app' in args:
+    if any('collaborators/' in arg and '/permission' in arg for arg in args):
+        print(json.dumps({'role_name': 'admin'}))
+    elif 'repos/acme/app' in args:
         print(json.dumps({'default_branch': 'main', 'owner': {'type': os.environ.get('FAKE_OWNER_KIND', 'Organization'), 'login': 'acme'}}))
     elif 'repos/acme/app/branches/main' in args:
         print(json.dumps({'commit': {'sha': os.environ['REMOTE_BASE_SHA']}}))
@@ -196,6 +200,19 @@ else:
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.root / 'push.json').exists())
         self.assertNotIn('SECRET_TOKEN', result.stdout + result.stderr)
+
+    def test_owner_bootstrap_selects_configured_owner_without_switching_active_account(self):
+        git = self.env['REAL_GIT']
+        subprocess.run([git, 'rm', '-q', '.github/agent-workflow.json'], cwd=self.main_repo, check=True)
+        subprocess.run([git, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'remove workflow config'], cwd=self.main_repo, check=True)
+        subprocess.run([git, 'update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd=self.main_repo, check=True)
+        self.env['REMOTE_BASE_SHA'] = subprocess.check_output([git, 'rev-parse', 'HEAD'], cwd=self.main_repo, text=True).strip()
+        self.env.update(FAKE_ACTOR='owner', AUTH_USERS_FILE=str(self.root / 'auth-users.txt'))
+        result = self.run_cli('push', '--owner-bootstrap')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / 'auth-users.txt').read_text().splitlines())
+        self.assertEqual(set((self.root / 'auth-users.txt').read_text().splitlines()), {'owner'})
+        self.assertTrue((self.root / 'push.json').exists())
 
     def test_git_push_failure_never_reports_success_or_exposes_token(self):
         self.env['TEST_PUSH_FAILURE'] = '1'

@@ -21,7 +21,7 @@ const help = `Usage:
   node workflow.mjs release [auto|patch|minor|major] [--message TEXT] [--dry-run] [--root DIR]
   node workflow.mjs safety check|apply
 
-push reads workflow roles from the fetched default branch's .github/agent-workflow.json. For its first addition, it accepts the same file from the committed branch; it never reads uncommitted config or switches gh's active account.
+push reads workflow roles from the fetched default branch's .github/agent-workflow.json. For its first addition, it accepts the same file from the committed branch and selects the configured owner's stored credential without switching gh's active account.
 A verified personal repo owner may be inferred; organization repositories require an explicit owner.
 Auto-merge and Git configuration checks are not atomic with push; do not change them concurrently. Git runs installed hooks normally; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
@@ -107,7 +107,7 @@ async function push(args) {
   const ownerBootstrap = args.length === 1 && args[0] === '--owner-bootstrap';
   if (args.length && !ownerBootstrap) throw new Error('Usage: push [--owner-bootstrap]');
   const { root, lanes, baseRef, configSource } = config(true, true);
-  if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode uses the active owner account and verifies repository admin permission');
+  if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
   requireLinkedWorktree();
   if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure repo, implementer and reviewer in base .github/agent-workflow.json');
   const repo = parseRepo(lanes.repo);
@@ -142,8 +142,8 @@ async function push(args) {
   }
   const env = cleanEnvironment();
   if (ownerBootstrap && !owner) throw new Error('The committed bootstrap config must name its owner');
-  const token = run('gh', ownerBootstrap ? ['auth', 'token', '--hostname', 'github.com'] : ['auth', 'token', '--hostname', 'github.com', '--user', user], { cwd: root, env });
-  if (!token || /\s/.test(token)) throw new Error(`No usable ${ownerBootstrap ? 'active owner' : 'implementer'} credential`);
+  const token = run('gh', ['auth', 'token', '--hostname', 'github.com', '--user', ownerBootstrap ? owner : user], { cwd: root, env });
+  if (!token || /\s/.test(token)) throw new Error(`No usable ${ownerBootstrap ? 'configured owner' : 'implementer'} credential`);
   const actor = jsonCommand('gh', ['api', '--hostname', 'github.com', 'user'], { cwd: root, env: { ...env, GH_TOKEN: token } }).login;
   const expectedActor = ownerBootstrap ? owner : user;
   if (typeof actor !== 'string' || actor.toLowerCase() !== expectedActor.toLowerCase() || (!ownerBootstrap && actor.toLowerCase() === reviewer.toLowerCase())) throw new Error(`Authenticated actor does not match the authorized ${ownerBootstrap ? 'owner' : 'implementer'}`);
