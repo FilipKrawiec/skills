@@ -6,11 +6,11 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*,lsof:*)
 
 # Version Control
 
-Follow the repository's branch, scope, verification and review rules. Preserve the main checkout and unrelated work. Use an isolated worktree; reuse the assignment's branch when suitable. Read `.agents/config.json` for base, branch prefix, identities and authorization; defaults are `main` and `agent/afk-`. `spec` defines transitions; only the designated actor applies each one.
+Follow the repository's branch, scope, verification and review rules. Preserve the main checkout and unrelated work. Use an isolated worktree; reuse the assignment's branch when suitable. Read `.agents/config.json` for implementer and Reviewer identities; derive repository/base from `origin` and Owner from base CODEOWNERS; get board settings from `workflow.mjs cache show`. AFK branches use the provider-neutral form `afk/<issue>-<slug>`; attended branches use `<issue>-<slug>`. `spec` defines transitions; only the designated actor applies each one.
 
 ## 1. Start
 
-Fetch the base and reconcile existing work, claims and dependencies. Never overwrite another assignment or stack on an unmerged dependency. Record the assigned scope and execution state. Use the configured unattended prefix or an appropriate attended branch name.
+Fetch the base and reconcile existing work, claims and dependencies. Never overwrite another assignment or stack on an unmerged dependency. Record the assigned scope and execution state. Use the CLI's `afk/<issue>-<slug>` prefix for unattended work or an appropriate issue-prefixed branch for attended work.
 
 **Exit gate:** isolated assignment, or a specific dependency or claim wait.
 
@@ -18,7 +18,7 @@ Fetch the base and reconcile existing work, claims and dependencies. Never overw
 
 Run `node <this-skill-directory>/../../scripts/workflow.mjs commit --message "<conventional message>" -- <assigned paths>`; the command checks for a linked worktree and refuses existing staged changes to protect them. Run the repository's required pre-push checks for this revision; hosted CI remains a separate merge gate. Before pushing an open PR, disable auto-merge. After opening, merge base instead of rebasing, to preserve review threads. Never force-push a protected/default branch without explicit owner authority.
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs push`. Repo identity and workflow roles live in `.agents/config.json`; path owners stay in CODEOWNERS. A first-config PR may use `push --owner-bootstrap` only from an explicit owner-directed action; the CLI selects the configured owner's stored credential and verifies repository admin permission without changing `gh`'s active account. Every later push reads roles from the base branch and validates the implementer credential. It never trusts uncommitted config. The command checks for a linked worktree and validates the HTTPS push; Git runs installed hooks normally, and those hooks share the user's credential access. Do not change Git configuration concurrently with a push; do not bypass a failure, change credentials globally or use the owner's token as fallback for an implementer. If the command cannot support the host or establish authorization, stop and report the capability gap. If Reviewer previously pushed the branch, inspect effective rules and the merge decision; do not assume an empty commit restores eligibility.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs push`. The CLI derives repo/base from Git and Owner from base CODEOWNERS; `.agents/config.json` names implementer and Reviewer. `push --owner-bootstrap` is only for an owner-directed first-config branch and verifies the selected Owner's admin access. Every later push validates the implementer credential. It never trusts uncommitted config. The command checks for a linked worktree and validates the HTTPS push; Git runs installed hooks normally, and those hooks share the user's credential access. Do not change Git configuration concurrently with a push; do not bypass a failure, change credentials globally or use the owner's token as fallback for an implementer. If the command cannot support the host or establish authorization, stop and report the capability gap. If Reviewer previously pushed the branch, inspect effective rules and the merge decision; do not assume an empty commit restores eligibility.
 
 **Exit gate:** pushed head and check evidence, or a specific wait.
 

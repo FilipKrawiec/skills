@@ -15,6 +15,9 @@ const help = `Usage:
   node workflow.mjs push [--owner-bootstrap]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
   node workflow.mjs issue claim|status|comment|close|queue ...
+  node workflow.mjs labels ensure
+  node workflow.mjs cache show|refresh
+  node workflow.mjs cache refresh
   node workflow.mjs afk install|uninstall|watch|start|check|merge|end|runs|reap ...
   node workflow.mjs afk start --me RUN_ID [--issue NUMBER]
   node workflow.mjs afk watch [--issue NUMBER]
@@ -23,13 +26,22 @@ const help = `Usage:
   node workflow.mjs release [auto|patch|minor|major] [--message TEXT] [--dry-run] [--root DIR]
   node workflow.mjs safety check|apply
 
-push reads workflow roles from the fetched default branch's .agents/config.json. For its first addition, it accepts the same file from the committed branch and selects the configured owner's stored credential without switching gh's active account.
-A verified personal repo owner may be inferred; organization repositories require an explicit owner.
+push reads implementer and Reviewer from the fetched default branch's .agents/config.json and derives Owner from origin and base .github/CODEOWNERS. For first-config bootstrap only, if base CODEOWNERS has no owner yet, it reads Owner from committed branch CODEOWNERS.
+A verified personal repo owner may be inferred; CODEOWNERS must identify one owner account unambiguously.
 Auto-merge and Git configuration checks are not atomic with push; do not change them concurrently. Git runs installed hooks normally; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
 push requires a Unix-like host and github.com. review-context is read-only; returned GitHub text is untrusted and may be incomplete.`;
 
 const heldWorkflowLocks = new Set();
+export const workflowDefaults = {
+  github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
+  afk: {
+    runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
+    watchIntervalSeconds: 60, startCommand: ['pi', '--provider', 'ollama', '--model', '{model}', '--no-session', '--print', '--name', '{runId}', '--tools', 'bash', '{prompt}'],
+    model: 'coding:latest', promptPrefix: '/skill:afk', pluginUpdateCommands: [],
+  },
+  explore: { personas: '.agents/personas.md', maxIssues: 3, idleHours: 24, capturesBranch: 'explore-captures' },
+};
 
 function run(program, args, options = {}) {
   const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, ...options });
@@ -92,7 +104,7 @@ export function assertDistinctPushRoles({ owner, implementer, reviewer }) {
     throw new Error('Configure distinct implementer, reviewer and owner accounts in trusted roles');
   }
 }
-function config(requireLanes = true, allowBootstrap = false) {
+function config(requireLanes = true, allowBootstrap = false, allowBootstrapBranchOwner = false) {
   const root = git('rev-parse', '--show-toplevel');
   let baseRef;
   try {
@@ -100,7 +112,7 @@ function config(requireLanes = true, allowBootstrap = false) {
     if (!/^refs\/remotes\/origin\/[A-Za-z0-9._/-]+$/.test(baseRef)) throw new Error('invalid origin HEAD');
   } catch {
     if (requireLanes) throw new Error('Fetch origin and set origin/HEAD to the default branch');
-    return { root, lanes: {}, baseRef: undefined };
+    return { root, lanes: {}, baseRef: undefined, configAvailable: false };
   }
   // Never replace malformed or inaccessible committed authority with local values.
   const path = '.agents/config.json';
@@ -112,9 +124,70 @@ function config(requireLanes = true, allowBootstrap = false) {
     source = 'branch bootstrap';
   }
   const raw = configPath ? JSON.parse(git('show', configPath)) : null;
-  if (configPath && (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 || ![raw.identities, raw.github, raw.afk ?? {}, raw.explore ?? {}, raw.labels ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration');
-  const lanes = raw ? { ...raw.github, ...raw.identities, ...raw.afk, labels: raw.labels || {}, explore: raw.explore || {} } : {};
-  return { root, lanes, baseRef, configSource: source };
+  if (configPath && (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 || Object.hasOwn(raw, 'explore') || ![raw.identities ?? {}, raw.github ?? {}, raw.afk ?? {}, raw.steps ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration; use steps.process/assemble/test instead of an explore block');
+  if (raw && source === 'branch bootstrap' && (['owner'].some(key => Object.hasOwn(raw.identities || {}, key))
+    || ['repo', 'base'].some(key => Object.hasOwn(raw.github || {}, key))
+    || Object.hasOwn(raw, 'labels'))) {
+    throw new Error('Workflow roles and GitHub metadata come from CODEOWNERS/Git and the local cache; use CLI defaults for labels and repository scripts under steps');
+  }
+  const lanes = raw ? { ...raw.github, ...raw.identities, ...raw.afk, steps: validateWorkflowSteps(raw.steps || {}) } : { steps: {} };
+  const remote = git('remote', 'get-url', 'origin');
+  lanes.repo = githubRepoFromRemote(remote);
+  lanes.base = baseRef.slice('refs/remotes/origin/'.length);
+  lanes.requiredChecks ??= workflowDefaults.github.requiredChecks;
+  const roles = codeownersRoles(baseRef, lanes.repo, allowBootstrapBranchOwner && source === 'branch bootstrap');
+  const { owner, defaultReviewer } = roles;
+  lanes.owner = owner;
+  if (lanes.reviewer != null && (typeof lanes.reviewer !== 'string' || !/^[A-Za-z0-9-]+$/.test(lanes.reviewer))) throw new Error('identities.reviewer must be a GitHub login');
+  if (!defaultReviewer) throw new Error('The trusted .github/CODEOWNERS must name exactly one user for the default Reviewer');
+  if (lanes.reviewer && lanes.reviewer.toLowerCase() !== defaultReviewer.toLowerCase()) throw new Error('identities.reviewer must match the default .github/CODEOWNERS reviewer');
+  return { root, lanes, baseRef, configSource: source, configAvailable: Boolean(configPath) };
+}
+export function githubRepoFromRemote(remote) {
+  const match = /^(?:https:\/\/(?:www\.)?github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remote || '');
+  if (!match) throw new Error('origin must identify a GitHub owner/repository');
+  return match[1];
+}
+function codeownersRoles(baseRef, repo, allowBranchOwner = false) {
+  let contents;
+  try { contents = git('show', `${baseRef}:.github/CODEOWNERS`); }
+  catch { throw new Error('The trusted base must contain .github/CODEOWNERS to identify review roles'); }
+  const roles = codeownersRolesFrom(contents, repo, !allowBranchOwner);
+  if (roles.owner || !allowBranchOwner) return roles;
+  let branchContents;
+  try { branchContents = git('show', 'HEAD:.github/CODEOWNERS'); }
+  catch { throw new Error('The committed bootstrap branch must contain .github/CODEOWNERS to identify the Owner'); }
+  const branchOwner = codeownersRolesFrom(branchContents, repo, false).owner;
+  if (!branchOwner) throw new Error('The committed bootstrap branch CODEOWNERS must identify one Owner account');
+  return { ...roles, owner: branchOwner };
+}
+export function codeownersRolesFrom(contents, repo, requireOwner = true) {
+  const rules = contents.split(/\r?\n/).map(line => line.replace(/#.*/, '').trim().split(/\s+/).filter(Boolean)).filter(parts => parts.length);
+  const wildcard = [...rules].reverse().find(parts => parts[0] === '*');
+  const defaultOwners = wildcard?.slice(1).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)) || [];
+  if (defaultOwners.length !== 1) throw new Error('The trusted .github/CODEOWNERS must name exactly one user for the default Reviewer');
+  const defaultReviewer = defaultOwners[0];
+  const repoOwner = repo.split('/')[0];
+  const owners = [...new Set(rules.flatMap((parts, index) => index === rules.indexOf(wildcard) ? [] : parts.slice(1)).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)))];
+  const owner = owners.find(value => value.toLowerCase() === repoOwner.toLowerCase())
+    || (owners.length === 1 ? owners[0] : null);
+  if (!owner && requireOwner) throw new Error('The trusted .github/CODEOWNERS must identify one Owner account; organization repositories cannot use the organization slug as a user login');
+  return { owner, defaultReviewer };
+}
+export function validateWorkflowSteps(steps) {
+  if (!steps || typeof steps !== 'object' || Array.isArray(steps)) throw new Error('steps must be an object');
+  for (const [step, command] of Object.entries(steps)) {
+    if (!['process', 'assemble', 'test'].includes(step)) throw new Error(`Unknown workflow step: ${step}`);
+    if (step === 'process' && command !== null) throw new Error('steps.process is handled by workflow skills and must be null');
+    if (command !== null && (!Array.isArray(command) || !command.length || !command.every(value => typeof value === 'string' && value.length))) {
+      throw new Error(`steps.${step} must be null or a non-empty command argument array`);
+    }
+  }
+  return steps;
+}
+export function requireTestStep(steps) {
+  if (!Array.isArray(steps?.test) || steps.test.length === 0) throw new Error('Configure steps.test as a non-empty argv array before running AFK');
+  return steps.test;
 }
 function parseRepo(repo) {
   if (typeof repo !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) throw new Error('lanes.repo must be owner/repository on github.com');
@@ -147,10 +220,10 @@ function commit(args) {
 async function push(args) {
   const ownerBootstrap = args.length === 1 && args[0] === '--owner-bootstrap';
   if (args.length && !ownerBootstrap) throw new Error('Usage: push [--owner-bootstrap]');
-  const { root, lanes, baseRef, configSource } = config(true, true);
+  const { root, lanes, baseRef, configSource } = config(true, true, ownerBootstrap);
   if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
   requireLinkedWorktree();
-  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure repo, implementer and reviewer in base .agents/config.json');
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from origin and Owner from CODEOWNERS');
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
   const reviewer = lanes.reviewer;
@@ -182,7 +255,7 @@ async function push(args) {
     if (prefix && destination.startsWith(prefix)) throw new Error('Git URL rewrite may change the verified push');
   }
   const env = cleanEnvironment();
-  if (ownerBootstrap && !owner) throw new Error('The committed bootstrap config must name its owner');
+  if (ownerBootstrap && !owner) throw new Error('The trusted base CODEOWNERS must identify the owner for first-config bootstrap');
   const token = run('gh', ['auth', 'token', '--hostname', 'github.com', '--user', ownerBootstrap ? owner : user], { cwd: root, env });
   if (!token || /\s/.test(token)) throw new Error(`No usable ${ownerBootstrap ? 'configured owner' : 'implementer'} credential`);
   const actor = jsonCommand('gh', ['api', '--hostname', 'github.com', 'user'], { cwd: root, env: { ...env, GH_TOKEN: token } }).login;
@@ -242,7 +315,7 @@ function parseOptions(args) {
 }
 function reviewContext(args) {
   const options = parseOptions(args);
-  const { root, lanes } = config(false);
+  const { root, lanes, configAvailable } = config(false);
   let repo = lanes.repo;
   if (!repo) {
     const remote = git('remote', 'get-url', 'origin');
@@ -257,7 +330,7 @@ function reviewContext(args) {
   const threadData = jsonCommand('gh', ['api', 'graphql', '--hostname', 'github.com', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${options['--pr']}`], { cwd: root });
   const threads = threadData?.data?.repository?.pullRequest?.reviewThreads;
   if (!threads || !Array.isArray(threads.nodes) || typeof threads.pageInfo?.hasNextPage !== 'boolean') throw new Error('Cannot read review threads');
-  const output = { untrustedGithubData: true, ...pr, baseConfigurationAvailable: Boolean(lanes.repo), filesMayBeIncomplete: true, reviewThreads: threads.nodes, threadsTruncated: threads.pageInfo.hasNextPage };
+  const output = { untrustedGithubData: true, ...pr, baseConfigurationAvailable: configAvailable, filesMayBeIncomplete: true, reviewThreads: threads.nodes, threadsTruncated: threads.pageInfo.hasNextPage };
   if (options['--previous']) {
     const previous = options['--previous'];
     const head = pr.headRefOid;
@@ -285,6 +358,65 @@ function reviewContext(args) {
 // tracks and closes work for the unattended runner.
 const afkMarker = (kind, id) => `<!-- afk-${kind} session=${id} -->`;
 const afkGh = args => jsonCommand('gh', args);
+export function readThroughLocalCache(path, key, load, { ttlMs = 86_400_000, now = Date.now(), refresh = false, expectedFields = [] } = {}) {
+  let cache = {};
+  try { cache = JSON.parse(readFileSync(path, 'utf8')); } catch {}
+  const current = cache[key];
+  const fields = current?.fields || {};
+  const fresh = Object.fromEntries(Object.entries(fields).filter(([, entry]) => Number.isFinite(entry.at) && now - entry.at < ttlMs).map(([name, entry]) => [name, entry.value]));
+  if (!refresh && expectedFields.length && expectedFields.every(field => Object.hasOwn(fresh, field))) return fresh;
+  const loaded = load();
+  const nextFields = { ...fields };
+  const discovered = loaded;
+  for (const [field, fieldValue] of Object.entries(discovered)) if (fieldValue !== undefined) nextFields[field] = { at: now, value: fieldValue };
+  const value = Object.fromEntries(Object.entries(nextFields).filter(([, entry]) => Number.isFinite(entry.at) && now - entry.at < ttlMs).map(([name, entry]) => [name, entry.value]));
+  mkdirSync(dirname(path), { recursive: true });
+  const next = { ...cache, [key]: { fields: nextFields } };
+  const temp = `${path}.${process.pid}.tmp`;
+  writeFileSync(temp, JSON.stringify(next));
+  renameSync(temp, path);
+  return value;
+}
+export function workflowMetadataCachePath(commonDir) { return join(commonDir, 'workflow-metadata-cache.json'); }
+function githubMetadataPath() { return workflowMetadataCachePath(git('rev-parse', '--path-format=absolute', '--git-common-dir')); }
+export function discoverGithubMetadata(repo) {
+  const [owner, name] = repo.split('/');
+  const counts = new Map(); let after; let project; let reviewQueue;
+  const query = 'query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{projectItems(first:10){nodes{project{number title owner{... on Organization{login} ... on User{login}}}}}}}}}';
+  try {
+    do {
+      const args = ['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`];
+      if (after) args.push('-F', `after=${after}`);
+      const issues = afkGh(args).data.repository.issues;
+      for (const item of issues.nodes.flatMap(issue => issue.projectItems.nodes)) {
+        const current = counts.get(item.project.number) || { number: item.project.number, title: item.project.title, owner: item.project.owner?.login, count: 0 };
+        current.count++;
+        counts.set(current.number, current);
+      }
+      after = issues.pageInfo.hasNextPage ? issues.pageInfo.endCursor : null;
+    } while (after);
+    const projects = [...counts.values()].sort((a, b) => b.count - a.count);
+    project = projects.length && (projects.length === 1 || projects[0].count > projects[1].count)
+      ? { number: projects[0].number, title: projects[0].title, ...(projects[0].owner ? { owner: projects[0].owner } : {}) }
+      : null;
+  } catch { /* Project scope or API access can be unavailable; AFK remains usable without board priority. */ }
+  try {
+    const matches = afkGh(['issue', 'list', '--repo', repo, '--state', 'open', '--search', 'in:title "Review queue"', '--limit', '100', '--json', 'number,title'])
+      .filter(issue => issue.title.trim().toLowerCase() === 'review queue');
+    reviewQueue = matches.length === 1 ? matches[0].number : null;
+  } catch { /* A missing optional queue does not block implementation. */ }
+  return { ...(project !== undefined ? { project } : {}), ...(reviewQueue !== undefined ? { reviewQueue } : {}) };
+}
+function cachedGithubMetadata(repo, refresh = false) {
+  return readThroughLocalCache(githubMetadataPath(), repo, () => discoverGithubMetadata(repo), {
+    ttlMs: workflowDefaults.github.metadataCacheHours * 3_600_000, refresh, expectedFields: ['project', 'reviewQueue'],
+  });
+}
+export function applyGithubMetadata(cfg, metadata) {
+  cfg.project ??= metadata.project;
+  cfg.reviewQueue ??= metadata.reviewQueue;
+  return cfg;
+}
 function afkFlags(args, allowed) {
   const result = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -298,19 +430,25 @@ function afkActor(cfg) {
   const actor = afkGh(['api', 'user']).login;
   if (!cfg.implementer || actor?.toLowerCase() !== cfg.implementer.toLowerCase()) throw new Error(`Authenticated as ${actor || 'unknown'}; AFK writes require ${cfg.implementer || 'a configured implementer'}`);
 }
-function afkConfig() {
+function afkConfig(refreshMetadata = false) {
   git('fetch', '--quiet', 'origin');
   const { lanes, baseRef } = config();
-  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure repo, implementer and reviewer in base .agents/config.json');
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from Git and Owner from CODEOWNERS');
   assertDistinctPushRoles({ owner: lanes.owner, implementer: lanes.implementer, reviewer: lanes.reviewer });
-  lanes.repo = parseRepo(lanes.repo);
-  if (typeof lanes.runPrefix !== 'string' || !lanes.runPrefix.trim()) throw new Error('Configure afk.runPrefix');
+  for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
+  lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
+  if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
+  lanes.explore = { ...workflowDefaults.explore };
+  if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
+  requireTestStep(lanes.steps);
+  lanes.refreshMetadata = refreshMetadata;
+  if (typeof lanes.runPrefix !== 'string' || !lanes.runPrefix.trim()) throw new Error('afk.runPrefix must be a non-empty string');
   for (const key of ['runsCommand', 'startCommand', 'stopCommand']) {
     if (lanes[key] === undefined && key !== 'startCommand') continue;
     if (!Array.isArray(lanes[key]) || !lanes[key].length || !lanes[key].every(value => typeof value === 'string' && value.length)) throw new Error(`Configure afk.${key} as a non-empty argv array`);
   }
   lanes.base = lanes.base || baseRef.slice('refs/remotes/origin/'.length);
-  if (typeof lanes.environmentFile !== 'string' || !lanes.environmentFile.trim()) throw new Error('Configure afk.environmentFile');
+  if (typeof lanes.environmentFile !== 'string' || !lanes.environmentFile.trim()) throw new Error('afk.environmentFile must be a non-empty string');
   if (lanes.startCommand.some(value => value.includes('{model}')) && (typeof lanes.model !== 'string' || !lanes.model.trim())) throw new Error('Configure afk.model because startCommand uses {model}');
   if (lanes.startCommand.some(value => value.includes('{permissionMode}')) && (typeof lanes.permissionMode !== 'string' || !lanes.permissionMode.trim())) throw new Error('Configure afk.permissionMode because startCommand uses {permissionMode}');
   if (lanes.promptPrefix !== undefined && typeof lanes.promptPrefix !== 'string') throw new Error('Configure afk.promptPrefix as a string');
@@ -330,11 +468,33 @@ function withRepoLock(name, action) {
   return action();
 }
 export function afkLive(cfg) {
-  if (!cfg.runsCommand) return [];
+  if (!cfg.runsCommand) {
+    try {
+      const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
+      const ledger = afkReadLedger(join(common, 'afk-holds.json'));
+      return afkOneShotLive(ledger);
+    } catch { return []; }
+  }
   const output = run(cfg.runsCommand[0], cfg.runsCommand.slice(1));
   const agents = JSON.parse(output || '[]');
   return agents.filter(a => a.kind === 'background' && (a.name || '').startsWith(cfg.runPrefix) && !['idle', 'done', 'stopped', 'failed'].includes(a.state || a.status)).map(a => a.name);
 }
+export function afkOneShotLive(ledger, isAlive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } }) {
+  return Object.entries(ledger).filter(([, holds]) => holds.some(hold => hold.oneShot && Number.isSafeInteger(hold.watcherPid) && isAlive(hold.watcherPid))).map(([id]) => id);
+}
+export const workflowLabels = {
+  'lane:afk': ['1d76db', 'Approved for unattended work'],
+  'lane:proposed': ['8250df', 'Awaiting automated AFK eligibility review'],
+  'lane:owner': ['d93f0b', 'Requires owner participation to decide or implement'],
+  'state:claimed': ['fbca04', 'An AFK run is working on this'],
+  'state:started': ['fef2c0', 'An attended session is working on this'],
+  'review:owner': ['e99695', 'PR is waiting for owner approval'],
+  'type:epic': ['3e4b9e', 'Parent of bounded work items'],
+  'type:story': ['a2eeef', 'New or changed user-visible behavior'],
+  'type:bug': ['d73a4a', 'A fix for something that does not work as specified'],
+  'type:chore': ['cfd3d7', 'Code change with no new user-visible behavior'],
+  'type:task': ['c5def5', 'Work that ends in a finding or setting'],
+};
 function afkComments(cfg, issue) { return afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/issues/${issue}/comments`]).flat(); }
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
@@ -537,7 +697,8 @@ function afkSignal(cfg, live) {
 function afkMoveCard(cfg, cardId, column) {
   const project = cfg.project;
   if (!project?.number) return false;
-  const owner = project.owner || cfg.repo.split('/')[0];
+  const owner = project.owner;
+  if (!owner) throw new Error('Cached GitHub Project is missing its owner; run `workflow.mjs cache refresh`');
   const fields = afkGh(['project', 'field-list', String(project.number), '--owner', owner, '--format', 'json']).fields;
   const field = fields.find(item => item.name === 'Status');
   const option = field?.options.find(item => item.name.toLowerCase() === column.toLowerCase());
@@ -588,11 +749,15 @@ function afkStatus(cfg, issue, value, silent = false) {
   const project = cfg.project;
   if (!target || !project?.number) {
     if (silent) return false;
-    throw new Error('Configure github.project and a valid status value');
+    throw new Error('No GitHub Project was discovered; check scopes or run `workflow.mjs cache refresh`');
   }
   try {
-  const owner = project.owner || cfg.repo.split('/')[0];
-  const id = run('gh', ['project', 'view', String(project.number), '--owner', owner, '--format', 'json', '--jq', '.id']);
+  const owner = project.owner;
+  if (!owner) throw new Error('Cached GitHub Project is missing its owner; run `workflow.mjs cache refresh`');
+  const projectInfo = jsonCommand('gh', ['project', 'view', String(project.number), '--owner', owner, '--format', 'json']);
+  if (project.title && projectInfo.title !== project.title) throw new Error('Cached GitHub Project no longer matches; run `workflow.mjs cache refresh`');
+  const id = projectInfo.id;
+  if (typeof id !== 'string' || !id) throw new Error('GitHub Project response is missing its id');
   const [org, name] = cfg.repo.split('/');
   const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){state projectItems(first:30){nodes{id project{id}}}}}}';
   const issueData = afkGh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${org}`, '-F', `name=${name}`, '-F', `number=${issue}`]).data.repository.issue;
@@ -622,9 +787,11 @@ function afkQueue(args) {
   const heading = { waiting: 'Waiting for the owner', decision: 'Decisions you may challenge' }[o['--kind']];
   if (!heading || !/^[1-9]\d*$/.test(o['--number'] || '') || !o['--text']?.trim() || o['--text'].length > 500 || /[\r\n]/.test(o['--text'])) throw new Error('Queue requires waiting|decision, an issue number and one-line text (max 500 chars)');
   const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg);
-  if (!Number.isInteger(cfg.reviewQueue)) throw new Error('Configure github.reviewQueue');
+  if (!Number.isInteger(cfg.reviewQueue)) throw new Error('No open issue titled "Review queue" was discovered; create one, then run `workflow.mjs cache refresh`');
   return withRepoLock('afk-queue', () => {
-    const body = afkGh(['issue', 'view', String(cfg.reviewQueue), '--repo', cfg.repo, '--json', 'body']).body || '';
+    const queue = afkGh(['issue', 'view', String(cfg.reviewQueue), '--repo', cfg.repo, '--json', 'title,state,body']);
+    if (queue.title?.trim().toLowerCase() !== 'review queue' || queue.state !== 'OPEN') throw new Error('Cached Review queue issue is no longer open or its title changed; run `workflow.mjs cache refresh`');
+    const body = queue.body || '';
     const lines = body.split('\n'); const start = lines.findIndex(line => line.replace(/^#+\s*/, '').trim().toLowerCase() === heading.toLowerCase());
     if (start < 0) throw new Error(`Review queue is missing ${heading}`);
     let end = lines.findIndex((line, i) => i > start && /^#{1,6}\s/.test(line)); if (end < 0) end = lines.length;
@@ -850,6 +1017,7 @@ export function afkLoadEnvironment(cfg) {
   for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_HOST', 'GH_CONFIG_DIR', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']) {
     if (typeof env[key] === 'string' && env[key]) process.env[key] = env[key];
   }
+  if (cfg.repo) applyGithubMetadata(cfg, cachedGithubMetadata(cfg.repo, cfg.refreshMetadata === true));
 }
 function afkConfiguredCommand(argv, replacements = {}, options = {}) {
   const values = argv.map(value => value.replace(/\{([A-Za-z]+)\}/g, (match, key) => {
@@ -1196,6 +1364,23 @@ function validInheritedLockContext(names) {
     return true;
   } catch { return false; }
 }
+function labelsCommand(args) {
+  if (args.length !== 1 || args[0] !== 'ensure') throw new Error('Usage: labels ensure');
+  const { lanes } = config();
+  if (!lanes.repo) throw new Error('Cannot infer a GitHub repository from origin');
+  const existing = new Set(jsonCommand('gh', ['label', 'list', '--repo', lanes.repo, '--limit', '1000', '--json', 'name']).map(label => label.name));
+  for (const [name, [color, description]] of Object.entries(workflowLabels)) {
+    if (existing.has(name)) continue;
+    run('gh', ['label', 'create', name, '--repo', lanes.repo, '--color', color, '--description', description]);
+    console.log(`Created: ${name}`);
+  }
+}
+function cacheCommand(args) {
+  if (args.length !== 1 || !['show', 'refresh'].includes(args[0])) throw new Error('Usage: cache show|refresh');
+  const { lanes } = config();
+  const metadata = cachedGithubMetadata(lanes.repo, args[0] === 'refresh');
+  console.log(JSON.stringify({ repository: lanes.repo, base: lanes.base, owner: lanes.owner, reviewer: lanes.reviewer, project: metadata.project, reviewQueue: metadata.reviewQueue, requiredChecks: lanes.requiredChecks, steps: lanes.steps, explore: workflowDefaults.explore, cache: githubMetadataPath() }));
+}
 async function execute(command, args) {
   if (!command || command === '--help' || command === 'help') console.log(help);
   else if (command === 'commit') commit(args);
@@ -1206,6 +1391,8 @@ async function execute(command, args) {
   else if (command === 'issue' && args[0] === 'comment') { config(); issueComment(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'queue') { const { lanes } = config(); issueQueue(args.slice(1)); }
+  else if (command === 'labels') labelsCommand(args);
+  else if (command === 'cache') cacheCommand(args);
   else if (command === 'afk') process.exitCode = afkCommand(args);
   else if (command === 'manifests') manifestsCommand(args);
   else if (command === 'project') projectVerify(args);

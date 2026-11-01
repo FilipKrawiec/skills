@@ -53,8 +53,8 @@ function tagRuleset(repo, releaseAppId) {
 }
 function identities(cfg) {
   const names = [cfg.owner, cfg.implementer, cfg.reviewer];
-  if (names.some(value => typeof value !== 'string' || !/^[A-Za-z0-9-]+$/.test(value)) || new Set(names.map(value => value.toLowerCase())).size !== 3) throw new Error('Configure distinct owner, implementer and reviewer identities');
-  if (!Array.isArray(cfg.requiredChecks) || !cfg.requiredChecks.length || !cfg.requiredChecks.every(value => typeof value === 'string' && value.trim())) throw new Error('Configure github.requiredChecks as non-empty check names');
+  if (names.some(value => typeof value !== 'string' || !/^[A-Za-z0-9-]+$/.test(value)) || new Set(names.map(value => value.toLowerCase())).size !== 3) throw new Error('Configure distinct identities.implementer and identities.reviewer, and identify Owner in .github/CODEOWNERS');
+  if (!Array.isArray(cfg.requiredChecks) || !cfg.requiredChecks.length || !cfg.requiredChecks.every(value => typeof value === 'string' && value.trim())) throw new Error('Configure required checks in GitHub or set github.requiredChecks when the default verify check does not apply');
 }
 function ownerOnly(cfg) {
   const actor = api('', 'user').login;
@@ -141,7 +141,7 @@ function check(cfg, base) {
 export function safetyCommand(args, lanes) {
   const [mode, ...rest] = args;
   if (!['check', 'apply'].includes(mode) || rest.length) throw new Error('Usage: workflow safety <check|apply>');
-  if (!lanes.repo || !lanes.owner || !lanes.implementer || !lanes.reviewer) throw new Error('Configure repo and identities in .agents/config.json');
+  if (!lanes.repo || !lanes.owner || !lanes.implementer || !lanes.reviewer) throw new Error('Set origin, identities.implementer, identities.reviewer and Owner paths in .github/CODEOWNERS');
   if (lanes.releaseAppId != null && (!Number.isSafeInteger(lanes.releaseAppId) || lanes.releaseAppId < 1 || lanes.releaseAppId === 15368)) throw new Error('github.releaseAppId must be a valid non-GitHub-Actions integration id');
   identities(lanes);
   const base = lanes.base || api(lanes.repo, '').default_branch;
