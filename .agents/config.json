@@ -3,5 +3,10 @@
   "identities": {
     "implementer": "filipkrawiec-bot",
     "reviewer": "filipkrawiec-reviewer"
+  },
+  "steps": {
+    "process": null,
+    "assemble": null,
+    "test": ["just", "verify"]
   }
 }

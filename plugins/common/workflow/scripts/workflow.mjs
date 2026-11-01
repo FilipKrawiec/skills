@@ -435,6 +435,8 @@ function afkConfig(refreshMetadata = false) {
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
   if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
   lanes.explore = { ...workflowDefaults.explore };
+  if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
+  if (!Array.isArray(lanes.steps.test) || lanes.steps.test.length === 0) throw new Error('Configure steps.test as a non-empty argv array before running AFK');
   lanes.refreshMetadata = refreshMetadata;
   if (typeof lanes.runPrefix !== 'string' || !lanes.runPrefix.trim()) throw new Error('afk.runPrefix must be a non-empty string');
   for (const key of ['runsCommand', 'startCommand', 'stopCommand']) {
