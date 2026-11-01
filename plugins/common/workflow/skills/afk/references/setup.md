@@ -1,36 +1,19 @@
 # Setting Up Issue Lanes in a Repository
 
-## Configuration: `.github/lanes.json`
+## Configuration: `.github/agent-workflow.json`
 
-`.github/lanes.json` opts in. Require `repo`, owner, implementer, reviewer and host capabilities. The configured Reviewer must be sole CODEOWNER on reviewable paths; `ownerPaths` reserve owner decisions. Missing approval blocks merge, not preparation.
-
-| Key | Meaning |
-| --- | --- |
-| `repo` | `owner/name`. |
-| `owner` | The owner's login; default the repository owner. |
-| `implementer`, `reviewer` | Distinct GitHub identities; set both explicitly, never default to `owner`. |
-| `base` | Default `main`. |
-| `project` | `{"owner": "<login>", "number": <n>}`: the board. |
-| `alwaysInScope` | Path prefixes every AFK change may touch. |
-| `branchPrefix`, `staleClaimHours` | Defaults `agent/afk-`, `3`. |
-| `agentReview`, `reviewRounds` | AFK PR review; cap rounds. Defaults `false`, `3`; required Reviewer gates still apply. |
-| `ownerPaths`, `ownerLabels` | Additional owner holds: paths, ship-on-merge labels. |
-| `ownerLines` | `refine` slice limit (800); not an owner hold. |
-| `reviewQueue` | Issue `agent-review` pins as the owner's queue. |
-| `reviewerLanes` | `true`: `agent-review` approves AFK eligibility; orchestrator applies lane/board changes through `spec`. |
-| `maxRuns` | Live-run cap; unset, one run per epic. |
+Configure identities, GitHub project, AFK and optional exploration in version 1. Read from the trusted base. AFK always uses automated review; the native code owner separately approves. CODEOWNERS names the reviewer for ordinary paths and the owner alone for owner-held paths.
 
 ```json
 {
-  "repo": "acme/app",
-  "project": {"owner": "acme", "number": 3},
-  "owner": "alice",
-  "implementer": "acme-builder",
-  "reviewer": "acme-reviewer",
-  "alwaysInScope": ["docs/"],
-  "agentReview": true
+  "version": 1,
+  "identities": {"owner": "alice", "implementer": "acme-builder", "reviewer": "acme-reviewer"},
+  "github": {"repo": "acme/app", "project": {"owner": "acme", "number": 3}},
+  "afk": {"reviewerApprovesAfk": true, "maxRuns": 4, "alwaysInScope": ["docs/"]}
 }
 ```
+
+`github` also accepts `base` and `reviewQueue`. `afk` accepts `branchPrefix`, `staleClaimHours`, `reviewRounds`, `reviewerApprovesAfk`, `maxRuns`, `alwaysInScope` and `ownerLines`. `explore` holds the exploration targets and scheduling. Legacy `.github/lanes.json` remains readable until migration. Migrate any owner-held paths to CODEOWNERS before removing `ownerPaths`.
 
 ## One-time setup
 
@@ -68,6 +51,6 @@ Schedule runs in one host's checkout:
 Run the plugin's `skills/afk/scripts/lanes.py start --me <run id> --runs <command>`: exit 3 ends, 2 reports `Blocked:`, 4: `explore`. Exit 0 holds an issue no live run holds, else an epic; invoke `afk` on it; never change the main checkout. End with `lanes.py end`.
 
 
-- When `agentReview` automates PR review, assign a fresh native Reviewer task naming repository, configured GitHub identity and authorized runner wake mechanism.
+- For every AFK PR, assign a fresh native Reviewer task naming repository, configured GitHub identity and authorized runner wake mechanism.
 - The orchestrator owns assignments/recovery; the host supplies routing, coordination and credentials. Labels are not atomic locks. Shared-host subagents give context independence, not secret isolation. Craftsman never exercises reviewer authority.
 - Production needs exact owner approval for candidate/destination; branch restrictions alone do not grant it. Notifications use only an authorized configured channel; queue changes produce a daily changed digest, incidents/all-work-blocked an immediate notice.

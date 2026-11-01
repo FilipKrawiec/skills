@@ -115,6 +115,10 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
                 env=env,
             )
 
+    def test_accepts_owner_as_sole_owner_for_sensitive_paths(self) -> None:
+        result = self.check('* @reviewer\n/.github/workflows/ @alice\n')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_requires_reviewer_as_sole_codeowner_for_every_rule(self) -> None:
         result = self.check("* @reviewer\n/.github/workflows/ @reviewer\n")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -122,16 +126,15 @@ class GitHubSafetyCodeownersTests(unittest.TestCase):
     def test_rejects_owner_only_or_alternative_codeowners(self) -> None:
         for codeowners in (
             "/.github/ @reviewer\n",
-            "* @reviewer\n/.github/ @alice\n",
             "* @reviewer\n/docs/ @alice @reviewer\n",
         ):
             with self.subTest(codeowners=codeowners):
                 result = self.check(codeowners)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn("DRIFT  Reviewer is sole CODEOWNER on every path", result.stdout)
+                self.assertIn("DRIFT  Every CODEOWNERS rule has one recognized owner", result.stdout)
 
-    def test_rejects_later_broad_rule_without_reviewer(self) -> None:
-        result = self.check("* @reviewer\n*.yml @alice\n")
+    def test_rejects_later_broad_rule_with_unrecognized_owner(self) -> None:
+        result = self.check("* @reviewer\n*.yml @other\n")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
 
     def test_release_tags_cover_candidates_and_allow_only_admins_and_the_versioning_app(self) -> None:

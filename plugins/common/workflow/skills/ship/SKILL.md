@@ -6,7 +6,7 @@ allowed-tools: Read Edit Bash
 
 # Ship
 
-Read the base and branch prefix from `.github/lanes.json` (defaults `main`, `agent/afk-`). This phase grants no production promotion or fix-forward authority. Report board transitions to the orchestrator; `spec` owns transition semantics.
+Read the base and branch prefix from `.github/agent-workflow.json` (or legacy `.github/lanes.json`) (defaults `main`, `agent/afk-`). This phase grants no production promotion or fix-forward authority. Report board transitions to the orchestrator; `spec` owns transition semantics.
 
 ## 1. Check actual base
 

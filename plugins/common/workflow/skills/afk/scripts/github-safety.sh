@@ -123,18 +123,17 @@ done < <(gh api "repos/$repo/environments" --jq ".environments[] | [.name,
   (.deployment_branch_policy | if . == null then \"any branch\" elif .custom_branch_policies then \"custom\" else \"protected branches\" end),
   ([.protection_rules[]? | select(.type == \"required_reviewers\") | .reviewers[] | select(.type == \"User\") | .reviewer.login | ascii_downcase] | index(\"$owner\" | ascii_downcase) != null)] | @tsv")
 
-# The Reviewer must be the sole owner on every CODEOWNERS rule. A global rule plus this check
-# prevents a narrower or broader later match from replacing that gate.
+# Every path must have one recognized code owner: the reviewer or the human owner.
 codeowners=""
 for path in .github/CODEOWNERS CODEOWNERS docs/CODEOWNERS; do
   codeowners=$(gh api "repos/$repo/contents/$path?ref=$base" --jq .content 2>/dev/null | base64 --decode 2>/dev/null) && break
   codeowners=""
 done
-report "Reviewer is sole CODEOWNER on every path" "$(printf '%s\n' "$codeowners" | awk -v r="@$reviewer" '
+report "Every CODEOWNERS rule has one recognized owner" "$(printf '%s\n' "$codeowners" | awk -v r="@$reviewer" -v o="@$owner" '
   { sub(/#.*/, ""); if (NF == 0) next
     rules++
-    if (NF != 2 || tolower($2) != tolower(r)) bad = 1
-    if ($1 == "*") whole = 1 }
+    if (NF != 2 || (tolower($2) != tolower(r) && tolower($2) != tolower(o))) bad = 1
+    if ($1 == "*" && tolower($2) == tolower(r)) whole = 1 }
   END { print (whole && rules > 0 && !bad) ? "yes" : "no" }')" yes
 
 exit "$drift"

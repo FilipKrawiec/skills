@@ -6,7 +6,7 @@ allowed-tools: Read Bash
 
 # Explore
 
-Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Read `.github/lanes.json` for `repo`, `project` and `explore`: personas and their journeys; simulator or browser targets and launch commands; `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree`, `epic` and `idleHours`. A target may provide `urlFromLog` instead of its browser URL. Read [idle.md](references/idle.md) only for an idle run.
+Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Read `.github/agent-workflow.json` (or legacy `.github/lanes.json`) for `repo`, `project` and `explore`: personas and their journeys; simulator or browser targets and launch commands; `capturesBranch` (default `explore-captures`), `maxIssues` (default 3), `worktree`, `epic` and `idleHours`. A target may provide `urlFromLog` instead of its browser URL. Read [idle.md](references/idle.md) only for an idle run.
 
 ## 1. Prepare and launch
 
@@ -28,7 +28,7 @@ After each target, including failures, stop only your launch processes, close yo
 
 ## 3. File and report
 
-Merge findings across targets and keep at most `maxIssues`. Search existing issues by screen and symptom. Comment new evidence once on an open match; file a regression linked to a match closed within 30 days; otherwise file a new issue. Use `type:bug` for a broken promise or lost data, otherwise `type:story`; set `lane:proposed` for the configured Reviewer when `reviewerLanes` is enabled, otherwise for the owner. Only now read code to identify scope. Each issue names the persona, user outcome, target, steps, expected/observed result, observable acceptance, estimate and a scope packet. Include `<!-- explore-finding persona=<persona> journey=<journey> -->` in each new issue for readiness triage.
+Merge findings across targets and keep at most `maxIssues`. Search existing issues by screen and symptom. Comment new evidence once on an open match; file a regression linked to a match closed within 30 days; otherwise file a new issue. Use `type:bug` for a broken promise or lost data, otherwise `type:story`; set `lane:proposed` for the configured Reviewer when `afk.reviewerApprovesAfk` is enabled, otherwise for the owner. Only now read code to identify scope. Each issue names the persona, user outcome, target, steps, expected/observed result, observable acceptance, estimate and a scope packet. Include `<!-- explore-finding persona=<persona> journey=<journey> -->` in each new issue for readiness triage.
 
 Save real screenshots under `runs/<date>-<persona>/` on the configured captures branch and link them in the issue. If pushing that branch would trigger CI, describe the screens instead; never trigger CI for captures. Add new issues to the configured project and as sub-issues of the open epic for the area, or the configured fallback epic. Append the date, persona, journey, targets, issues, `notJudged` and outcome to `log.jsonl` on the captures branch only if it will not trigger CI; otherwise report the log write as pending.
 

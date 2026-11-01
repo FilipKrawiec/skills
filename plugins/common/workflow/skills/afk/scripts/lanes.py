@@ -464,12 +464,23 @@ def newest_session(comments: list[dict], pattern: re.Pattern) -> str | None:
 def load_config() -> dict:
     sh("git", "fetch", "--quiet", "origin")
     base = "main"
-    try:
-        cfg = json.loads(sh("git", "show", f"origin/{base}:.github/lanes.json"))
-    except RuntimeError as err:
-        raise Blocked(f"no .github/lanes.json on origin/{base}; run in a checkout of a lanes repository") from err
+    def read(ref: str) -> dict:
+        modern = ".github/agent-workflow.json"
+        path = modern if sh("git", "ls-tree", "--name-only", f"origin/{ref}", "--", modern) else ".github/lanes.json"
+        try:
+            raw = json.loads(sh("git", "show", f"origin/{ref}:{path}"))
+        except (RuntimeError, ValueError) as err:
+            raise Blocked(f"Cannot read {path} on origin/{ref}") from err
+        if not isinstance(raw, dict):
+            raise Blocked(f"Invalid configuration in {path}")
+        if path == modern:
+            if raw.get("version") != 1 or not all(isinstance(raw.get(k), dict) for k in ("identities", "github")) or not isinstance(raw.get("afk", {}), dict):
+                raise Blocked(f"Invalid workflow configuration in {path}")
+            return {**raw["github"], **raw["identities"], **raw.get("afk", {}), "explore": raw.get("explore", {})}
+        return raw
+    cfg = read(base)
     if cfg.get("base", base) != base:
-        cfg = json.loads(sh("git", "show", f"origin/{cfg['base']}:.github/lanes.json"))
+        cfg = read(cfg["base"])
     cfg.setdefault("base", base)
     return cfg
 

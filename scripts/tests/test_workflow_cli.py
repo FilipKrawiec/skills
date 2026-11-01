@@ -107,6 +107,18 @@ else:
     def run_cli(self, *args):
         return subprocess.run(['node', str(CLI), *args], cwd=self.repo, env=self.env, text=True, capture_output=True)
 
+    def test_push_reads_versioned_workflow_config_from_base(self):
+        git = self.env['REAL_GIT']
+        config = {'version': 1, 'identities': {'owner': 'owner', 'implementer': 'builder', 'reviewer': 'reviewer'}, 'github': {'repo': 'acme/app'}}
+        (self.repo / '.github/agent-workflow.json').write_text(json.dumps(config))
+        subprocess.run([git, 'rm', '-q', '.github/lanes.json'], cwd=self.repo, check=True)
+        subprocess.run([git, 'add', '.github/agent-workflow.json'], cwd=self.repo, check=True)
+        subprocess.run([git, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'config'], cwd=self.repo, check=True)
+        subprocess.run([git, 'update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd=self.repo, check=True)
+        self.env['REMOTE_BASE_SHA'] = subprocess.check_output([git, 'rev-parse', 'HEAD'], cwd=self.repo, text=True).strip()
+        result = self.run_cli('push')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_commit_and_push_refuse_main_checkout(self):
         (self.main_repo / 'assigned.txt').write_text('assigned')
         for arguments in [('commit', '--message', 'fix: guard checkout', '--', 'assigned.txt'), ('push',)]:

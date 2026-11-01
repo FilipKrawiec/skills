@@ -31,6 +31,19 @@ def nobody_claims(_number):
     return False
 
 
+class ConfigTest(unittest.TestCase):
+    def test_reads_versioned_config_from_base(self):
+        config = {'version': 1, 'identities': {'owner': 'alice', 'implementer': 'bot', 'reviewer': 'reviewer'}, 'github': {'repo': 'acme/app', 'project': {'owner': 'acme', 'number': 5}}, 'afk': {'maxRuns': 2, 'reviewerApprovesAfk': True}, 'explore': {'idleHours': 24}}
+        def command(*args):
+            if args[:2] == ('git', 'fetch'): return ''
+            if args[:2] == ('git', 'ls-tree'): return '.github/agent-workflow.json'
+            if args[:2] == ('git', 'show'): return json.dumps(config)
+            raise AssertionError(args)
+        with mock.patch.object(lanes, 'sh', side_effect=command):
+            result = lanes.load_config()
+        self.assertEqual((result['repo'], result['implementer'], result['maxRuns']), ('acme/app', 'bot', 2))
+        self.assertEqual(result['explore']['idleHours'], 24)
+
 class PlanTest(unittest.TestCase):
     def test_epics_follow_priority_then_milestone_then_number(self):
         order = lanes.epic_order([

@@ -45,9 +45,14 @@ function config(requireLanes = true) {
     return { root, lanes: {}, baseRef: undefined };
   }
   // Never replace malformed or inaccessible committed authority with local values.
-  const hasLanes = git('ls-tree', '--name-only', baseRef, '--', '.github/lanes.json');
-  const lanes = hasLanes ? JSON.parse(git('show', `${baseRef}:.github/lanes.json`)) : {};
-  if (!lanes || typeof lanes !== 'object' || Array.isArray(lanes)) throw new Error('Invalid base roles');
+  const modern = '.github/agent-workflow.json';
+  const legacy = '.github/lanes.json';
+  const path = git('ls-tree', '--name-only', baseRef, '--', modern) ? modern : legacy;
+  const present = git('ls-tree', '--name-only', baseRef, '--', path);
+  const raw = present ? JSON.parse(git('show', `${baseRef}:${path}`)) : {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid base roles');
+  if (path === modern && (raw.version !== 1 || ![raw.identities, raw.github, raw.afk ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration');
+  const lanes = path === modern ? { ...raw.github, ...raw.identities, ...raw.afk } : raw;
   return { root, lanes, baseRef };
 }
 function parseRepo(repo) {
@@ -106,7 +111,7 @@ async function push(args) {
   const { root, lanes: baseLanes, baseRef } = config();
   requireLinkedWorktree();
   const lanes = args.length ? mergeRoles(baseLanes, externalRoles(args[1], root)) : baseLanes;
-  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure roles in base .github/lanes.json or an owner-controlled external --roles-file');
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure roles in base .github/agent-workflow.json or legacy .github/lanes.json, or an owner-controlled external --roles-file');
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
   const reviewer = lanes.reviewer;
