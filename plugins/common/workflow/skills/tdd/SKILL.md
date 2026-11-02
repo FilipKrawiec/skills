@@ -26,8 +26,8 @@ Run the project's specified pre-push checks once on the final changed revision. 
 
 ## 3. Report
 
-Return at most 8 lines: changed behavior and paths, focused red/green evidence or why it does not apply, checks and exits, configured confidence evidence, pending checks or failures, and the next action. Do not redispatch workers or perform orchestration.
+Return at most 8 lines: changed behavior and paths, `done` with each step's failing test run (command and failure line) captured before its fix, or `stuck: <step, evidence>` when a step's test was never seen failing; a fix written with its test leaves no red run. Then name green evidence or why red does not apply, checks and exits, configured confidence evidence, pending checks or failures, and the next action. Do not redispatch workers or perform orchestration.
 
-**Exit gate:** evidence for the final revision or a named blocker and next action.
+**Exit gate:** `done` with a red run per behavior step and evidence for the final revision, or `stuck`/`replan` with the next action.
 
 Read [test-levels.md](references/test-levels.md) when choosing a test level, [mutation-testing.md](references/mutation-testing.md) when auditing a suite, [bug-fixes.md](references/bug-fixes.md) for a regression, and `references/languages/<language>.md` for the relevant supported language.
