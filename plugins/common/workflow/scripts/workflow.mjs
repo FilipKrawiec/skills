@@ -785,7 +785,7 @@ export function* afkCandidates(epics, others, share, heldElsewhere) {
 }
 // Reviews have their own afk.maxReviewRuns slots, so runs busy on tickets never block a review; everything else shares afk.maxRuns.
 // WIP is every open PR, drafts included, plus every ticket run without one yet; a new ticket starts only while WIP stays under afk.maxRuns.
-// A booting run (live, no hold yet) takes no slot: the start lock lets one run hold at a time, and afkCheckRun subtracts booting runs from its start count.
+// A booting run (live, no hold yet) takes no slot: the start lock lets one run hold at a time, and afkStartCount subtracts booting runs from its start count.
 export function afkBooting(ledger, live) { return live.filter(id => !ledger[id]?.length); }
 export function afkSlots(cfg, ledger, live, me = '', prs = []) {
   // Eligibility checks and epic stages are no tickets, so they neither count nor wait for WIP.
