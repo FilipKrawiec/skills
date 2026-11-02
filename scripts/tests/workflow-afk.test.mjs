@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkEndCards, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkReviewKind, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkEndCards, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkMergeThenPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkReviewKind, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -698,6 +698,26 @@ test('a Todo issue waits for its open blockers and an open PR its packet depends
   assert.deepEqual(units([board(6, 'Todo', ['lane:afk'], { blocked: true })]), []);
 });
 
+test('a Todo build waits while an open PR that does not deliver it changes a file its packet covers', () => {
+  const plan = (issues, prs) => afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, ...issues], prs });
+  const area = plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/feature/'] }), board(7, 'Todo')], [reviewPr(20, { files: [{ path: 'src/feature/a.js' }], labels: [{ name: 'review:owner' }], reviews: [{ author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '' }] })]);
+  assert.deepEqual([area.units.map(unit => unit.issue), area.held], [[7], [{ issue: 6, pr: 20 }]], 'a non-overlapping build is still offered');
+  const renamed = plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/old.js'] })], [reviewPr(20, { files: [{ path: 'src/new.js', previousPath: 'src/old.js' }] })]);
+  assert.deepEqual(renamed.held, [{ issue: 6, pr: 20 }], "a renamed file's previous path overlaps");
+  assert.deepEqual(plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/a'] })], [reviewPr(20)]).held, [], 'a path without a trailing / covers only itself');
+  assert.deepEqual(plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/'] })], [reviewPr(20, { filesUnread: true })]).held, [], 'unread files hold nothing');
+  assert.deepEqual(plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/'] })], []).units.map(unit => unit.issue), [6], 'offered again once the PR merges or closes');
+});
+
+test('a ready PR merges before the tick plans, so no build is held behind it', () => {
+  const approved = reviewPr(20, { files: [{ path: 'src/6.js' }], statusCheckRollup: [{ conclusion: 'SUCCESS' }], reviews: [{ author: { login: 'reviewer' }, state: 'APPROVED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc verdict=ready -->' }] });
+  let open = [approved];
+  const gh = args => { if (args[0] === 'pr' && args[1] === 'merge') open = open.filter(pr => String(pr.number) !== args[2]); return { status: 0 }; };
+  const tick = afkMergeThenPlan(cfg, { readPrs: () => open, gh, issues: [epic, board(6, 'Todo')] });
+  const plan = tick.plan([], () => [], 'new-run');
+  assert.deepEqual([tick.merged, plan.units.map(unit => unit.pr ?? unit.issue), plan.held], [['PR #20 merged'], [6], []]);
+});
+
 test('a Todo story without lane:afk or a scope packet gets a refine run, never an implementation', () => {
   const plan = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, board(2, 'Todo', ['lane:afk'], { paths: null }), board(3, 'Todo', ['lane:proposed']), board(4, 'Todo')], prs: [] });
   assert.deepEqual(plan.units.map(unit => [unit.issue, unit.column, Boolean(unit.refine), unit.paths]), [[2, 'Todo', true, []], [4, 'Todo', false, ['src/4.js']], [3, 'Backlog', true, []]]);
@@ -772,4 +792,10 @@ test('a run that splits its held issue builds the first sub-issue while its hold
   assert.deepEqual(afkEndCards(40, [41, 42], new Set([41]), false), [[40, 'PROGRESS'], [41, 'REVIEW']], 'the parent epic stays In progress and the built sub-issue goes to Review');
   assert.deepEqual(afkEndCards(40, [41, 42], new Set(), true), [[40, 'PROGRESS']], 'without a PR the sub-issues stay Todo for the next run');
   assert.deepEqual(afkEndCards(7, [], new Set([7]), false), [[7, 'REVIEW']], 'an issue that was not split ends as before');
+});
+
+test('AFK eligibility records post as the configured Reviewer, not through the credential-stripping CLI', () => {
+  const skill = name => readFileSync(new URL(`../../plugins/common/workflow/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
+  assert.match(skill('agent-review'), /eligibility issue=<N> -->` with `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh issue comment`; `workflow.mjs` strips `GH_TOKEN`/);
+  assert.match(skill('afk'), /Write implementer records through the workflow CLI/);
 });
