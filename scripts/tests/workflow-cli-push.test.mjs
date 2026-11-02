@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
 import { cpSync, mkdtempSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -47,11 +48,26 @@ test('push refuses a PR another live AFK run holds, and lets the holder push', t
   f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
   const refused = f.cliRun('push');
   assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /AFK run afk-holder holds #4/);
+  assert.match(refused.stderr, /A live AFK run holds #4/);
+  assert.doesNotMatch(refused.stderr, /afk-holder/, 'the refusal does not name the run a blocked caller could pose as');
   assertNoPush(f);
   f.env.WORKFLOW_RUN_ID = 'afk-holder';
   const own = f.cliRun('push');
   assert.equal(own.status, 0, own.stderr); assert.equal(existsSync(f.env.PUSH_RECORD), true);
+});
+
+test('push refuses a caller outside the holding run\'s process tree even with its WORKFLOW_RUN_ID', t => {
+  const f = fixture(t);
+  const supervisor = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  t.after(() => supervisor.kill('SIGKILL'));
+  holdLedger(f, 'afk-holder', 4, supervisor.pid);
+  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [] }]);
+  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
+  f.env.WORKFLOW_RUN_ID = 'afk-holder';
+  const posing = f.cliRun('push');
+  assert.notEqual(posing.status, 0);
+  assert.match(posing.stderr, /A live AFK run holds #4/);
+  assertNoPush(f);
 });
 
 test('push refuses a Part of slice PR whose issue another live AFK run holds', t => {
@@ -61,7 +77,7 @@ test('push refuses a Part of slice PR whose issue another live AFK run holds', t
   f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
   const refused = f.cliRun('push');
   assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /AFK run afk-holder holds #7/);
+  assert.match(refused.stderr, /A live AFK run holds #7/);
   assertNoPush(f);
 });
 
