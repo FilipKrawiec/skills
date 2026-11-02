@@ -686,8 +686,9 @@ test('a ready PR merges before the tick plans, so no build is held behind it', (
   const approved = reviewPr(20, { files: [{ path: 'src/6.js' }], statusCheckRollup: [{ conclusion: 'SUCCESS' }], reviews: [{ author: { login: 'reviewer' }, state: 'APPROVED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc verdict=ready -->' }] });
   let open = [approved];
   const gh = args => { if (args[0] === 'pr' && args[1] === 'merge') open = open.filter(pr => String(pr.number) !== args[2]); return { status: 0 }; };
-  const plan = afkMergeThenPlan(cfg, [], () => [], 'new-run', { readPrs: () => open, gh, issues: [epic, board(6, 'Todo')] });
-  assert.deepEqual([plan.merged, plan.units.map(unit => unit.pr ?? unit.issue), plan.held], [['PR #20 merged'], [6], []]);
+  const tick = afkMergeThenPlan(cfg, { readPrs: () => open, gh, issues: [epic, board(6, 'Todo')] });
+  const plan = tick.plan([], () => [], 'new-run');
+  assert.deepEqual([tick.merged, plan.units.map(unit => unit.pr ?? unit.issue), plan.held], [['PR #20 merged'], [6], []]);
 });
 
 test('a Todo story without lane:afk or a scope packet gets a refine run, never an implementation', () => {

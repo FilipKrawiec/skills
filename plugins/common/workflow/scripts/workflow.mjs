@@ -732,9 +732,9 @@ function afkUnitText(column, issue) {
 }
 export function afkPlan(cfg, live, threads, me = '', data = null) {
   const issues = data?.issues || afkIssues(cfg); const prs = (data?.prs || afkPrData(cfg)).map(pr => afkPrRecord(pr, cfg));
-  // A unit a finished run left unchanged gets no new run until something about it changes.
-  const spent = data ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [], orphans = [], units = [], held = [];
-  const base = data ? data.base || '' : (() => { try { return git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { return ''; } })();
+  // A unit a finished run left unchanged gets no new run until something about it changes. Given issues, the ledger and base come from data too.
+  const spent = data?.issues ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [], orphans = [], units = [], held = [];
+  const base = data?.issues ? data.base || '' : (() => { try { return git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { return ''; } })();
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
   const heldElsewhere = number => afkLiveHolds(threads(number), live, me).some(hold => hold.run !== me);
   const inPr = new Set(prs.flatMap(pr => pr.issues)), openPrs = new Set(prs.map(pr => pr.number));
@@ -784,10 +784,11 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
   return { units, prs, byNumber, threads, unchanged, orphans, held };
 }
-// A tick merges ready PRs before it plans, so the plan's fresh PR read neither serves nor holds a build behind a merged PR.
-export function afkMergeThenPlan(cfg, live, threads, me = '', { readPrs = () => afkPrs(cfg), gh, issues } = {}) {
-  const merged = afkMerge(cfg, readPrs(), null, gh);
-  return { merged, ...afkPlan(cfg, live, threads, me, issues && { issues, prs: readPrs() }) };
+// Every tick merges ready PRs before it plans: the plan re-reads the open PRs, so it neither serves nor holds a build behind a PR
+// merged this tick. `merge: false` skips merging for a tick another step already merged for.
+export function afkMergeThenPlan(cfg, { readPrs = () => afkPrs(cfg), gh, issues, merge = true } = {}) {
+  const merged = merge ? afkMerge(cfg, readPrs(), null, gh) : [];
+  return { merged, plan: (live, threads, me = '') => afkPlan(cfg, live, threads, me, { ...(issues ? { issues } : {}), prs: readPrs() }) };
 }
 // The units no other live run holds, in board order.
 export function* afkCandidates(units, others) {
@@ -1208,7 +1209,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
   const existing = afkReadLedger(ledgerPath)[id]?.[0];
   const resumingOneShot = !prepared && !cfg.runsCommand && Boolean(existing?.oneShot);
   if (!prepared) afkPreflight(cfg);
-  const output = prepared || resumingOneShot ? [] : afkMerge(cfg, afkPrs(cfg));
+  const tick = afkMergeThenPlan(cfg, { merge: !prepared && !resumingOneShot }), output = tick.merged;
   return withRepoLock('afk-start', () => {
     const ledger = afkReadLedger(ledgerPath);
     if (ledger[id]?.length) {
@@ -1221,7 +1222,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       output.forEach(line => console.log(line)); return 3;
     }
     const threads = afkThreadReader(cfg);
-    const { units } = afkPlan(cfg, live, threads, id);
+    const { units } = tick.plan(live, threads, id);
     const othersHolds = afkOtherHolds(ledger, live, id);
     afkWriteLedger(ledgerPath, ledger);
     for (const candidate of afkCandidates(units, othersHolds)) {
@@ -1278,9 +1279,10 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const budget = afkBudget();
   if (budget.remaining < 1000) { result.start = 0; console.log(`Quiet: GitHub GraphQL has ${budget.remaining} points until ${budget.reset}; live runs keep them.`); return 3; }
   afkPreflight(cfg);
-  const threads = afkThreadReader(cfg);
-  const { merged: output, units, unchanged, orphans, held } = afkMergeThenPlan(cfg, live, threads);
+  const tick = afkMergeThenPlan(cfg), output = tick.merged;
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
+  const threads = afkThreadReader(cfg);
+  const { units, unchanged, orphans, held } = tick.plan(live, threads);
   for (const number of orphans) { afkStatus(cfg, number, 'TODO', true); output.push(`Orphaned: #${number} was In progress with no live run; back to Todo`); }
   for (const number of unchanged) output.push(`Unchanged: #${number} since its last run; no new run until it changes`);
   for (const hold of held) output.push(`Held: #${hold.issue} overlaps open PR #${hold.pr}; no build until it merges or closes`);
