@@ -25,7 +25,7 @@ Config holds identities, step commands and optional `afk.model`. Set `steps.proc
 
 ## Board
 
-- Status columns Backlog, Todo, In progress, Review, Done; single-select Priority (P0, P1, P2). Existing board: add options, move every card, delete old options.
+- Statuses Backlog, Todo, In progress, Blocked, Review, Done; single-select Priority (P0, P1, P2). Existing board: add options, move every card, delete old options.
 - Milestones group production outcomes or their linked health work; agents prioritize approved outcomes and health prerequisites.
 - AFK runs without `project` scope.
 - Workflow: auto-add → Backlog. Do not automate PR-linked, reopened or closed status changes; the orchestrator applies readiness-aware transitions under `spec`.

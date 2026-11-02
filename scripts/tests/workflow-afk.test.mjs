@@ -213,6 +213,13 @@ test('a proposed issue a run already checked waits for a change, whoever posted 
   assert.equal(plan(comments.map(comment => ({ ...comment, user: { login: 'stranger' } }))).length, 1, 'only the implementer or Reviewer records a verdict');
 });
 
+test('a Blocked card stays out of selection until it moves back to Todo', () => {
+  const ready = status => afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, issue(7, ['lane:afk'], { status })], prs: [] }).epics[0].units;
+  assert.deepEqual(ready('Blocked'), []);
+  assert.equal(ready('Todo').length, 1);
+  assert.equal(ready(null).length, 1);
+});
+
 test('AFK imports the configured gh profile without importing git overrides', t => {
   const directory = mkdtempSync(join(tmpdir(), 'afk-env-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
