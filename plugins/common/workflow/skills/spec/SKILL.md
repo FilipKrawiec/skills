@@ -12,7 +12,7 @@ Own issue semantics under a trusted direct owner request or matching approved mi
 
 Reuse an issue or template; read relevant code, tests, rules, ADRs and decisions. Record intent, constraints, non-goals and observable `### Acceptance criteria`; test-only work needs behavior criteria. Bound investigations by question, time and evidence. New interactions need owner prototype direction or an accepted pattern. Record product choices as [decision records](references/decision-records.md). Reserve changed strategy, new paid services or budget increases, and weakened authority, credential, release or quality gates for the owner; continue independent work during a wait.
 
-Each open issue has a native milestone, one type and one lane except epics. Types are story, bug, chore, task or epic. Titles use `feat`, `fix`, `chore/docs/test/ci/refactor/perf`, `task` or `epic`, plus area and outcome. For multiple PRs, create vertical sub-issues under an epic; only epics have children and they cannot be claimed. Record outcome dependencies as blocked-by links, not shared-file or integration ordering; verify the required outcome, not closure alone.
+Each open issue has a native milestone, one type and one lane; an epic has none except `lane:owner` while a draft. Types are story, bug, chore, task or epic. Titles use `feat`, `fix`, `chore/docs/test/ci/refactor/perf`, `task` or `epic`, plus area and outcome. For multiple PRs, create vertical sub-issues under an epic; only epics have children and they cannot be claimed. Read [epics.md](references/epics.md) when drafting, slicing, updating or closing a `type:epic`. Record outcome dependencies as blocked-by links, not shared-file or integration ordering; verify the required outcome, not closure alone.
 
 **Exit gate:** grounded issue, authority, acceptance, dependencies and reserved decisions recorded.
 
@@ -26,17 +26,18 @@ Read [afk-ready.md](references/afk-ready.md) for AFK readiness. Before AFK assig
 | Orchestrator | `lane:afk` | A bug restoring specified behaviour, work keeping owner-requested behaviour, direct/milestone authority or Reviewer approval; when ready and unblocked, select for Todo. |
 | Orchestrator | `lane:owner` | Owner participation required; record preparation agents can continue. |
 | Orchestrator | owner lane to `lane:afk` | Participation resolved and recorded authority covers remaining work; recheck readiness. |
-| Product partner | one `type:*` | Actual outcome changes type; epics lose lanes and cannot be claimed. |
+| Product partner | one `type:*` | Actual outcome changes type; an epic carries no work lane and cannot be claimed. |
 | VCS | `state:claimed` / `state:started` | Exclusive unattended / attended assignment; In Progress. |
 | VCS | remove execution label | Ready linked PR; Review, while an open PR still excludes reassignment. |
 | Reviewer | add/remove own `review:owner` | Extra owner gate appears/clears; never erase an explicit owner hold. |
 | Orchestrator | close routine slice | Merged evidence proves authorized criteria; Done. |
+| Orchestrator | close epic | Every epic criterion covered by closed slices delivered to test; Done. |
 | Orchestrator | close product milestone | Exact release evidence proves deployed acceptance; Done. |
 | Ship | remove execution label | Completion or returned/reverted assignment; record evidence or replan. |
 
-Temporary dependency, CI, capability or owner waits retain lane, milestone and assignment. Record cause, actor, resume condition and evidence; never overwrite active claims. Scope or authority changes require their own decision. With a board, use Todo for ready AFK, In Progress for active work and PR fixes, Review for a closing PR awaiting review (`Part of` stays In Progress), and Done for verified routine slices or accepted product milestones. Epics with children are In Progress. Without a board use priority labels; status never grants authority.
+Temporary dependency, CI, capability or owner waits retain lane, milestone and assignment. Record cause, actor, resume condition and evidence; never overwrite active claims. Scope or authority changes require their own decision. With a board, use Todo for ready AFK, In Progress for active work and PR fixes, Review for a closing PR awaiting review (`Part of` stays In Progress), and Done for verified routine slices, delivered epics or accepted product milestones. Draft epics stay in Backlog; approved ones are In Progress. Without a board use priority labels; status never grants authority.
 
-**Exit gate:** one type, milestone and non-epic lane, with waits and actors explicit.
+**Exit gate:** one type, milestone and lane (an approved epic none), with waits and actors explicit.
 
 ## 3. Record
 
