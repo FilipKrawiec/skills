@@ -23,7 +23,7 @@ Waiting: #14 on the payment sandbox; next: #15.
 ## Craft
 
 - With the owner: draft the body first. Then settle each open question one at a time, giving two to four options and a recommendation, and record each answer under Decisions while the next question waits. When no question is left, the owner's last answer approves the epic: remove `lane:owner`, slice it, and set Backlog to In progress.
-- Unattended: when an outcome needs several PRs and no open epic's intent covers it, create the epic with `lane:owner`, at least one open question and the recommendation, in Backlog, and queue it with `issue queue --kind waiting --number N --text TEXT`. Never slice a draft. Work that fits an existing epic's intent becomes a slice under that epic instead.
+- Unattended: when an outcome needs several PRs and no held issue or open epic authorizes it, create the epic with `lane:owner`, at least one open question and the recommendation, in Backlog, and queue it with `issue queue --kind waiting --number N --text TEXT`. Never slice a draft. Work that fits an existing epic's intent becomes a slice under that epic instead.
 
 ## Slice
 

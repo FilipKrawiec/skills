@@ -736,8 +736,13 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   const spent = data ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [], orphans = [], units = [];
   const base = data ? data.base || '' : (() => { try { return git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { return ''; } })();
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
-  // A run that split its held issue builds the first sub-issue under that hold, so a hold also covers the issue's sub-issues.
-  const heldElsewhere = number => [number, ...(byNumber.get(number)?.ancestors || [])].some(held => afkLiveHolds(threads(held), live, me).some(hold => hold.run !== me));
+  // A run that split its held issue builds the first sub-issue under that hold, so a hold on a parent In progress (or with
+  // no card) also covers its direct sub-issues; a refine hold on a Blocked or Backlog epic, or one on a grandparent, does not.
+  const holdsOf = number => afkLiveHolds(threads(number), live, me).some(hold => hold.run !== me);
+  const heldElsewhere = number => {
+    const parent = byNumber.get(byNumber.get(number)?.ancestors?.[0]);
+    return holdsOf(number) || Boolean(parent && [null, undefined, 'In progress'].includes(parent.status) && holdsOf(parent.number));
+  };
   const inPr = new Set(prs.flatMap(pr => pr.issues)), openPrs = new Set(prs.map(pr => pr.number));
   const offer = (unit, key, state) => {
     if (spent[key] === state) { unchanged.push(key); return; }
