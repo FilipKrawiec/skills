@@ -14,7 +14,7 @@ A skill is a system-prompt fragment: direct orders to an agent that already know
 2. Place the rule in the skill whose phase acts on it (Placement below).
 3. Write it as plain imperative sentences an agent new to this repository can follow cold: "Run X.", "Never Y; do Z instead." Give the reason in one clause where the agent must judge a case the rule does not name, or where a capable agent would otherwise override the rule ("never rebase: it detaches review threads").
 4. Cut every line the agent would follow untold: general best practice, background paragraphs, history, restatements of a tooling gate.
-5. Run `just verify`; its word budgets are a ceiling, not a target.
+5. After each trim, run `node plugins/common/workflow/scripts/workflow.mjs manifests verify`; run `just verify` once when the change is done. Word budgets are a ceiling, not a target.
 
 ## Placement
 
