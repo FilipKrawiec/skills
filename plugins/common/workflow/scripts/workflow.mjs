@@ -227,6 +227,10 @@ function commit(args) {
   if (result.error || result.status !== 0) throw new Error('Commit failed; selected paths remain staged for inspection');
   console.log(JSON.stringify({ result: 'committed', head: git('rev-parse', 'HEAD') }));
 }
+export function githubPushRemoteMatches(remote, repo) {
+  const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remote);
+  return Boolean(match && match[1].toLowerCase() === String(repo).toLowerCase());
+}
 async function push(args) {
   const ownerBootstrap = args.length === 1 && args[0] === '--owner-bootstrap';
   if (args.length && !ownerBootstrap) throw new Error('Usage: push [--owner-bootstrap]');
@@ -249,8 +253,7 @@ async function push(args) {
   if (lanes.base != null && lanes.base !== defaultBranch) throw new Error('Configured base differs from the verified default branch; role authority is unavailable');
   if (branch === defaultBranch || branch === (lanes.base || 'main') || branch === 'master') throw new Error('Refusing to push a default branch');
   const remote = git('remote', 'get-url', '--push', 'origin');
-  const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remote);
-  if (!match || match[1].toLowerCase() !== repo.toLowerCase()) throw new Error('origin push URL must match lanes.repo on github.com');
+  if (!githubPushRemoteMatches(remote, repo)) throw new Error('origin push URL must match lanes.repo on github.com');
   // Git runs in the actual worktree. Refuse configuration that could redirect
   // the explicit destination or add an unverified authorization header.
   const configArgs = { cwd: root, encoding: 'utf8', env: cleanEnvironment() };
@@ -703,9 +706,7 @@ export function afkShow(held, epics, out, quiet = false) {
 }
 function afkPreflight(cfg) {
   const remote = git('remote', 'get-url', '--push', 'origin');
-  let validRemote = false;
-  try { const url = new URL(remote); validRemote = url.protocol === 'https:' && url.hostname === 'github.com' && url.pathname.replace(/^\//, '').replace(/\.git$/, '').toLowerCase() === cfg.repo.toLowerCase(); } catch {}
-  if (!validRemote) throw new Error(`origin pushes to ${remote}; configure it for https://github.com/${cfg.repo}`);
+  if (!githubPushRemoteMatches(remote, cfg.repo)) throw new Error(`origin pushes to ${remote}; configure it for https://github.com/${cfg.repo} or git@github.com:${cfg.repo}.git`);
   const actor = afkGh(['api', 'user']).login;
   if (actor?.toLowerCase() !== cfg.implementer.toLowerCase()) throw new Error(`gh acts as ${actor || 'nobody'}; AFK requires ${cfg.implementer}`);
   const reviewerToken = spawnSync('gh', ['auth', 'token', '--user', cfg.reviewer], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -1522,7 +1523,12 @@ async function execute(command, args) {
   else if (command === 'safety') { const { lanes } = config(); process.exitCode = safetyCommand(args, lanes); }
   else throw new Error('Invalid command; use --help');
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+export function needsAbsoluteInvocation(argv1, self) { return argv1 !== self; }
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && needsAbsoluteInvocation(process.argv[1], fileURLToPath(import.meta.url))) {
+  // Lock inheritance matches the owner's command line by absolute path.
+  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
+  process.exit(result.error ? 1 : result.status ?? 1);
+} else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, ...args] = process.argv.slice(2);
     const names = requiredLocks(command, args);
