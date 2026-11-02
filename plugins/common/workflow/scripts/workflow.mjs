@@ -734,7 +734,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     return Boolean(claim && claim !== me && live.includes(claim)) || afkLiveHolds(comments, live, me).some(hold => hold.kind === 'issue' && hold.run !== me);
   };
   const awaitsVerdict = (issue, verdict) => afkAwaitsVerdict(cfg, issue.lastEditedAt, threads(issue.number), verdict);
-  const now = data?.now ?? Date.now(), waits = [], blocks = [];
+  const now = data?.now ?? Date.now(), waits = [], blocks = [], refines = [];
   // A packet dependency on an open PR blocks the issue until that PR merges; the open-PR list already holds it.
   const openPrs = new Set(prs.map(pr => pr.number));
   const awaitsPr = issue => {
@@ -747,12 +747,17 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (wait) waits.push({ issue: number, ...wait });
     return Boolean(wait);
   };
+  // `afk` claims only issues with packets: one with no valid packet (null; a read-only one has []) needs refinement first.
+  const packed = issue => {
+    if (issue.paths === null) refines.push(issue.number);
+    return issue.paths !== null;
+  };
   for (const epic of epics) for (const issue of issues) {
     const owner = epicOf(issue.number);
     if (issue.labels.includes('type:epic') || (owner || firstEpic) !== epic.issue.number || inPr.has(issue.number)) continue;
     const suffix = owner ? '' : ' under no epic';
     if (issue.labels.includes('lane:proposed') && awaitsVerdict(issue, /<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)/) && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} awaits its AFK eligibility check${suffix}`, issue: issue.number, paths: [], check: true });
-    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked' && !awaitsPr(issue) && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
+    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked' && !awaitsPr(issue) && !waiting(issue.number) && packed(issue)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
   }
   // An approved epic (no lane; a draft keeps lane:owner) with no slices gets one slicing run, and one whose slices all closed
   // gets one delivery check. An `epic-check` verdict holds the epic only for the same stage and sub-issue count, until it changes.
@@ -790,7 +795,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const parent = epics.find(epic => epic.issue.number === target);
     if (parent) parent.units.push({ ...unit, rank: review ? 1 : pr.broken ? 0 : 2 });
   }
-  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits, blocks, unchanged };
+  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits, blocks, refines, unchanged };
 }
 export function* afkCandidates(epics, others, share, heldElsewhere) {
   const taken = new Set(others.map(hold => hold.number));
@@ -1308,8 +1313,9 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const output = afkMerge(cfg, afkPrs(cfg));
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { epics, heldOnEpic, waits, blocks, prs, unchanged } = afkPlan(cfg, live, threads);
+  const { epics, heldOnEpic, waits, blocks, refines, prs, unchanged } = afkPlan(cfg, live, threads);
   for (const block of blocks) output.push(`Wait: #${block.issue} is blocked until PR #${block.pr} merges`);
+  for (const number of refines) output.push(`Refine: #${number} has lane:afk but no valid scope packet`);
   for (const wait of waits) output.push(`Wait: #${wait.issue} until ${wait.until}: ${wait.cause}`);
   for (const number of unchanged) output.push(`Unchanged: PR #${number} since its last run; no new run until it changes`);
   const ledgerPath = join(common, 'afk-holds.json');
