@@ -22,13 +22,13 @@ Delegate routine work within scope; product direction, paid services, budgets, a
 
 For AFK, the CLI's `Hold:`/`Work:` output is the assignment; take no second item. Owner requests use `afk start --me ID --issue NUMBER`.
 
-Write issues through the workflow CLI: `issue comment` or `issue edit --number N --body-file PATH` (a single-link worktree file) and `issue close --number N`; invoke `spec` for transitions, and to slice or close the epic a `Work: epic #N` line names.
+Write issues through the workflow CLI: `issue comment` or `issue edit --number N --body-file PATH` (a single-link worktree file) and `issue close --number N`; invoke `spec` for transitions, and to slice or close the epic a `Work: epic #N` line names. A `refine` unit changes no files.
 
 **Exit gate:** resumed PR, exclusive assignment, or queue empty/wait reason.
 
 ## 3. Deliver
 
-Invoke the skills for implementation, review and VCS, and `agent-review` for a held review or eligibility unit. Never invoke it in a session that committed or pushed the head: the Reviewer must be independent. Implementers end with a reviewed PR, head-bound auto-merge and a named wait for a fresh Reviewer. When the host supports it, run review, and fixes after a `round=2`-or-later `verdict=fixes`, on its strongest model at high effort, since cheaper fixes reintroduced blockers; run other agents on its standard model. Run `steps.test` once per head, after its last fix; targeted tests between fixes. Every changed or untracked path belongs in the scope packet. Before the first review, compare the diff's changed files with `### Estimate` (S about 5, M about 20); past twice that, or on `verdict=split`, invoke `spec` to split the issue instead of reviewing. File the Reviewer's follow-ups via `spec`. Verify criteria, scope, owner decisions and prior findings against authoritative records, not generated review context. Reuse unchanged evidence or review only the delta as `review` permits.
+Invoke the skills for implementation, review and VCS. After each push, a fresh subagent loading `agent-review` posts the binding verdict, briefed without your reasoning. Fix its findings here; a new one reviews each delta. Load `agent-review` itself only for a held review unit. Stay on the issue until its PR merges, then invoke `ship`. Where supported, run review, and fixes after a `round=2`-or-later `verdict=fixes`, on its strongest model at high effort, since cheaper fixes reintroduced blockers; run other agents on its standard model. Run `steps.test` once per head, after its last fix; targeted tests between fixes. Every changed or untracked path belongs in the scope packet. Before the first review, compare the diff's changed files with `### Estimate` (S about 5, M about 20); past twice that, or on `verdict=split`, invoke `spec` to split the issue instead of reviewing. File the Reviewer's follow-ups via `spec`. Verify criteria, scope, decisions and findings against authoritative records, not generated context.
 
 Follow **Process → Assemble → Test**. Process the issue and plan with the invoked skills (`steps.process` is `null`). Assemble the authorized change; run `steps.assemble` with `{platform}` when previewing the app (`null`: no assembly command). For an explicitly read-only workflow check, test its criteria with CLI evidence, skipping assembly and code tests unless the issue asks. Run argv arrays directly, substituting only placeholders; stop and report if a required script is absent.
 
@@ -44,7 +44,7 @@ approve your own work, promote or expose credentials. Return paths, head,
 commands/exits, findings, exit gate and decisions in at most 8 lines.
 ```
 
-**Exit gate:** reviewed PR with exact-head evidence, or a bounded failure record.
+**Exit gate:** merged PR with `ship` evidence, or a bounded failure record.
 
 ## 4. Recover and close
 

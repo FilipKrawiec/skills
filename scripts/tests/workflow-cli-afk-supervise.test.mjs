@@ -31,7 +31,7 @@ async function supervisedRun(t, state, lane, selectLane = 'lane:afk', pr = false
   assert.match(readFileSync(log, 'utf8'), /Launched: afk-/);
   const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
   const [[runId, [hold]]] = Object.entries(JSON.parse(readFileSync(join(common, 'afk-holds.json'), 'utf8')));
-  assert.equal(hold.check, selectLane === 'lane:proposed' ? true : undefined);
+  assert.equal(hold.refine, selectLane === 'lane:proposed' ? true : undefined);
   assert.equal(hold.review, pr ? true : undefined);
   assert.notEqual(hold.watcherPid, watch.pid);
   assert.match(spawnSync('ps', ['-p', String(hold.watcherPid), '-o', 'command='], { encoding: 'utf8' }).stdout, / afk supervise --me /);
@@ -79,7 +79,7 @@ test('AFK watcher returns while its run works, and the run supervisor releases t
 
 test('a run on an issue no longer lane:afk when it ends does not block it', t => supervisedRun(t, 'open', 'lane:proposed'));
 
-test('an eligibility check that approves its issue into lane:afk does not block it', t => supervisedRun(t, 'open', 'lane:afk', 'lane:proposed'));
+test('a Backlog refine run that approves its issue into lane:afk does not block it', t => supervisedRun(t, 'open', 'lane:afk', 'lane:proposed'));
 
 test('a run whose issue closed does not block it', t => supervisedRun(t, 'closed', 'lane:afk'));
 

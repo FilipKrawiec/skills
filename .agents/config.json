@@ -8,5 +8,8 @@
     "process": null,
     "assemble": null,
     "test": ["just", "verify"]
+  },
+  "afk": {
+    "maxRuns": 8
   }
 }

@@ -37,9 +37,9 @@ const heldWorkflowLocks = new Set();
 export const workflowDefaults = {
   github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
   afk: {
-    runPrefix: 'afk-', maxRuns: 4, maxReviewRuns: 2, environmentFile: '~/.config/gh-agents/workflow-env.json',
+    runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
     watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--output-format', 'json', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--worktree', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
-    permissionMode: 'auto', pluginUpdateCommands: [], maxRunMinutes: 30,
+    permissionMode: 'auto', pluginUpdateCommands: [], maxRunMinutes: 60,
     toolingRepository: 'https://github.com/FilipKrawiec/skills.git', toolingRef: 'main', toolingDirectory: '~/.local/share/workflow-cli/skills',
   },
   explore: { personas: '.agents/personas.md', maxIssues: 3, idleHours: 24, capturesBranch: 'explore-captures' },
@@ -523,7 +523,7 @@ function afkActor(cfg) {
   if (!cfg.implementer || actor?.toLowerCase() !== cfg.implementer.toLowerCase()) throw new Error(`Authenticated as ${actor || 'unknown'}; AFK writes require ${cfg.implementer || 'a configured implementer'}`);
 }
 export function afkCheckRunLimits(lanes) {
-  for (const key of ['maxRuns', 'maxReviewRuns']) if (!Number.isSafeInteger(lanes[key]) || lanes[key] < 1) throw new Error(`afk.${key} must be a positive integer`);
+  for (const key of ['maxRuns']) if (!Number.isSafeInteger(lanes[key]) || lanes[key] < 1) throw new Error(`afk.${key} must be a positive integer`);
 }
 function afkConfig(refreshMetadata = false) {
   git('fetch', '--quiet', 'origin');
@@ -638,11 +638,6 @@ function afkIssues(cfg) {
   return found;
 }
 export function afkPriority(value) { return ({ P0: 0, P1: 1, P2: 2 })[value] ?? 9; }
-export function afkEpicOrder(a, b) {
-  const am = a.milestone ? [0, a.milestone.dueOn || '9999', a.milestone.number] : [1, '', 0];
-  const bm = b.milestone ? [0, b.milestone.dueOn || '9999', b.milestone.number] : [1, '', 0];
-  return afkPriority(a.priority) - afkPriority(b.priority) || am[0] - bm[0] || String(am[1]).localeCompare(String(bm[1])) || Number(am[2]) - Number(bm[2]) || a.number - b.number;
-}
 // The list names only a renamed file's new path, may omit changeType and stops at 100 files, so those PRs re-read their files over REST;
 // a failed read marks only that PR's files unread.
 export function afkPrFiles(pr, readPages) {
@@ -689,117 +684,69 @@ export function afkPrRecord(pr, cfg) {
   const needsWork = broken || awaitingReview || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
   return { ...pr, issues, approved, ownerApproved, awaitingReview, broken, needsWork };
 }
-// The latest afk-wait marker from a workflow identity holds an issue back until its UTC time; a later claim or hold supersedes it.
-export function afkWait(comments, authors, now = Date.now()) {
-  const trusted = new Set(authors.filter(Boolean).map(login => login.toLowerCase()));
-  let wait = null;
-  for (const comment of comments) {
-    const body = comment.body || '';
-    if (/<!-- afk-(?:claim|(?:issue|epic)-hold) session=/.test(body)) wait = null;
-    if (!trusted.has(comment.user?.login?.toLowerCase()) || !/<!-- afk-wait\b/.test(body)) continue;
-    const match = /<!-- afk-wait until=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?Z) cause=(\S(?:[^>]*\S)?) -->/.exec(body);
-    const until = match ? Date.parse(match[1]) : NaN;
-    wait = Number.isFinite(until) && new Date(until).toISOString().startsWith(match[1].slice(0, 16)) ? { until: match[1], cause: match[2], at: until } : null;
-  }
-  return wait && wait.at > now ? { until: wait.until, cause: wait.cause } : null;
-}
 // What a PR unit's run acts on: its head, its reviews, whether it is red, and the last comment from someone outside the workflow.
 // A run's own hold, release and notes never change it, so a run that changed nothing leaves the same state behind.
 export function afkPrState(pr, comments, cfg) {
+  return `${pr.headRefOid}:${(pr.reviews || []).length}:${pr.broken ? 'red' : 'green'}:${afkOutsideInput(comments, cfg)}`;
+}
+// The last comment from someone outside the workflow; the workflow's own markers and notes are never new input.
+function afkOutsideInput(comments, cfg) {
   const workflow = new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase()));
-  const input = comments.filter(comment => !workflow.has(comment.user?.login?.toLowerCase()) && !/^<!-- afk-/.test(comment.body || '')).at(-1);
-  return `${pr.headRefOid}:${(pr.reviews || []).length}:${pr.broken ? 'red' : 'green'}:${input?.id ?? ''}`;
+  return comments.filter(comment => !workflow.has(comment.user?.login?.toLowerCase()) && !/^<!-- afk-/.test(comment.body || '')).at(-1)?.id ?? '';
+}
+// What an issue unit's run acts on: its column, body, labels, open blockers and outside input. A Blocked card also reads the
+// base head, so one a refine run could not clear is tried again after the next merge.
+export function afkIssueState(issue, column, comments, cfg, base = '') {
+  return `${column}:${issue.lastEditedAt || ''}:${[...issue.labels].sort().join(',')}:${issue.blocked ? 'blocked' : ''}:${afkOutsideInput(comments, cfg)}${column === 'Blocked' ? `:${base}` : ''}`;
 }
 function afkSpentPath() { return join(git('rev-parse', '--path-format=absolute', '--git-common-dir'), 'afk-spent.json'); }
-// Runs post the eligibility verdict through `issue comment`, so the implementer's marked verdict counts as the Reviewer's.
-export function afkVerdictBy(cfg) { return new Set([cfg.reviewer, cfg.implementer].filter(Boolean).map(login => login.toLowerCase())); }
-export function afkWaitBy(cfg) { return [cfg.implementer, cfg.reviewer, cfg.owner]; }
-// An approved epic with no slices is in its slicing stage, and one whose slices all closed in its delivery check.
-export function afkEpicStage(slices) { return slices.total === 0 ? 'slice' : slices.completed === slices.total ? 'close' : null; }
-// The one `epic-check` marker prefix for a stage and sub-issue count, and the pattern every reader matches it with.
-export function afkEpicCheck(stage, slices) {
-  const marker = `<!-- epic-check stage=${stage} slices=${slices}`;
-  return { marker, pattern: new RegExp(`${marker}\\b`) };
-}
-// A verdict is wanted until a workflow identity records one; the workflow's own hold and release markers are never new input,
-// while an edit or any other comment after the latest verdict re-queues the check.
-export function afkAwaitsVerdict(cfg, lastEditedAt, comments, verdict) {
-  const verdictBy = afkVerdictBy(cfg);
-  const latest = comments.filter(comment => verdictBy.has(comment.user?.login?.toLowerCase()) && verdict.test(comment.body || '')).map(comment => comment.created_at).at(-1);
-  return !latest || lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=|^<!-- afk-wait /.test(comment.body || ''));
-}
-// Another live run's `afk-epic-hold` marker on an epic's thread.
-export function afkEpicHeldElsewhere(comments, live, me) {
-  return comments.some(comment => {
-    const id = /<!-- afk-epic-hold session=(\S+) -->/.exec(comment.body || '')?.[1];
-    return Boolean(id && id !== me && live.includes(id));
-  });
-}
-// The epics no stage run serves, shared by `afkPlan` and a stage run's end: a `lane:` label, an issue already in a PR,
-// or another live run's hold.
-export function afkEpicSkipped(epic, inPr, held) {
-  return inPr.has(epic.number) || (epic.labels || []).some(label => label.startsWith('lane:')) || held;
+// Every ping serves the first free unit in this board order; Priority, then the oldest number, decides inside a column.
+export const afkColumns = ['Blocked', 'Review', 'Todo', 'Backlog'];
+// An issue's column; without a board card, `lane:afk` is Todo and anything else Backlog.
+export function afkColumn(issue) { return issue.status || (issue.labels.includes('lane:afk') ? 'Todo' : 'Backlog'); }
+// The job each column gives its run.
+function afkUnitText(column, issue) {
+  if (column === 'Blocked') return `#${issue.number} is Blocked: invoke \`refine\` on it alone to clear its blocker and move it to Todo; if it cannot be cleared yet, comment why and leave it Blocked`;
+  if (column === 'Backlog') return `#${issue.number} is in Backlog: invoke \`refine\` on it alone, with \`agent-review\` eligibility for \`lane:proposed\`, to make it ready and move it to Todo`;
+  if (issue.labels.includes('type:epic')) return `epic #${issue.number} is in Todo: slice it if it has no sub-issues, otherwise verify its delivery and close it`;
+  if (issue.paths === null) return `#${issue.number} is in Todo without a valid scope packet: invoke \`refine\` on it alone to add one`;
+  return `#${issue.number} is ready`;
 }
 export function afkPlan(cfg, live, threads, me = '', data = null) {
   const issues = data?.issues || afkIssues(cfg); const prs = (data?.prs || afkPrData(cfg)).map(pr => afkPrRecord(pr, cfg));
-  // A PR a finished run left unchanged gets no new run until something about it changes.
-  const spent = data ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [];
+  // A unit a finished run left unchanged gets no new run until something about it changes.
+  const spent = data ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [], orphans = [], units = [];
+  const base = data ? data.base || '' : (() => { try { return git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { return ''; } })();
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
-  const epics = issues.filter(issue => issue.labels.includes('type:epic')).sort(afkEpicOrder).map(issue => ({ issue, units: [] }));
-  const epicNumbers = new Set(epics.map(epic => epic.issue.number));
-  const epicOf = number => (byNumber.get(number)?.ancestors || []).find(parent => epicNumbers.has(parent));
-  const firstEpic = epics[0]?.issue.number;
-  const inPr = new Set(prs.flatMap(pr => pr.issues));
-  const claimedElsewhere = number => {
-    const comments = threads(number);
-    const claim = (comments.map(comment => /<!-- afk-claim session=(\S+) -->/.exec(comment.body || '')?.[1]).filter(Boolean).at(-1));
-    return Boolean(claim && claim !== me && live.includes(claim)) || afkLiveHolds(comments, live, me).some(hold => hold.kind === 'issue' && hold.run !== me);
+  const heldElsewhere = number => afkLiveHolds(threads(number), live, me).some(hold => hold.run !== me);
+  const inPr = new Set(prs.flatMap(pr => pr.issues)), openPrs = new Set(prs.map(pr => pr.number));
+  const offer = (unit, key, state) => {
+    if (spent[key] === state) { unchanged.push(key); return; }
+    units.push({ ...unit, state });
   };
-  const awaitsVerdict = (issue, verdict) => afkAwaitsVerdict(cfg, issue.lastEditedAt, threads(issue.number), verdict);
-  const now = data?.now ?? Date.now(), waits = [], blocks = [], refines = [];
-  // A packet dependency on an open PR blocks the issue until that PR merges; the open-PR list already holds it.
-  const openPrs = new Set(prs.map(pr => pr.number));
-  const awaitsPr = issue => {
-    const pr = (issue.dependencies || []).find(number => openPrs.has(number));
-    if (pr) blocks.push({ issue: issue.number, pr });
-    return Boolean(pr);
-  };
-  const waiting = number => {
-    const wait = afkWait(threads(number), afkWaitBy(cfg), now);
-    if (wait) waits.push({ issue: number, ...wait });
-    return Boolean(wait);
-  };
-  // `afk` claims only issues with packets: one with no valid packet (null; a read-only one has []) needs refinement first.
-  const packed = issue => {
-    if (issue.paths === null) refines.push(issue.number);
-    return issue.paths !== null;
-  };
-  const heldOnEpic = number => afkEpicHeldElsewhere(threads(number), live, me);
-  for (const epic of epics) for (const issue of issues) {
-    const owner = epicOf(issue.number);
-    if (issue.labels.includes('type:epic') || (owner || firstEpic) !== epic.issue.number || inPr.has(issue.number)) continue;
-    const suffix = owner ? '' : ' under no epic';
-    if (issue.labels.includes('lane:proposed') && awaitsVerdict(issue, /<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)/) && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} awaits its AFK eligibility check${suffix}`, issue: issue.number, paths: [], check: true });
-    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked' && !awaitsPr(issue) && !waiting(issue.number) && packed(issue)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
-  }
-  // An approved epic (no lane; a draft keeps lane:owner) with no slices gets one slicing run, and one whose slices all closed
-  // gets one delivery check. An `epic-check` verdict holds the epic only for the same stage and sub-issue count, until it changes.
-  for (const epic of epics) {
-    const { issue } = epic, slices = issue.subIssuesSummary;
-    if (!slices || afkEpicSkipped(issue, inPr, heldOnEpic(issue.number))) continue;
-    const stage = afkEpicStage(slices);
-    if (!stage || !awaitsVerdict(issue, afkEpicCheck(stage, afkSlices(slices)).pattern) || waiting(issue.number)) continue;
-    epic.units.push({ text: stage === 'slice' ? `epic #${issue.number} is approved and has no sub-issues; slice it` : `epic #${issue.number} has every sub-issue closed; verify its delivery and close it`, issue: issue.number, paths: [], stage });
+  for (const issue of issues) {
+    let column = afkColumn(issue);
+    if (issue.labels.includes('lane:owner') || heldElsewhere(issue.number)) continue;
+    // A card In progress with no live run, or in Review with no open PR, is Todo again. An epic stays In progress while
+    // its slices are open and comes back for its delivery check once they all closed.
+    const epic = issue.labels.includes('type:epic'), slices = issue.subIssuesSummary;
+    if (epic && column === 'In progress' && slices?.total > 0 && slices.completed === slices.total) column = 'Todo';
+    else if (!epic && ['In progress', 'Review'].includes(column) && !inPr.has(issue.number)) { orphans.push(issue.number); column = 'Todo'; }
+    if (!['Blocked', 'Todo', 'Backlog'].includes(column) || (column !== 'Blocked' && inPr.has(issue.number))) continue;
+    // The board grants no authority: a Todo story without `lane:afk` is refined like Backlog.
+    if (column === 'Todo' && !epic && !issue.labels.includes('lane:afk')) column = 'Backlog';
+    if (column === 'Todo') {
+      if (epic && !(slices && (slices.total === 0 || slices.completed === slices.total))) continue;
+      // A ready issue waits for its open blockers and for an open PR its packet depends on.
+      if (issue.blocked || (issue.dependencies || []).some(number => openPrs.has(number))) continue;
+    }
+    const write = column === 'Todo' && !epic && issue.paths !== null;
+    offer({ column, text: afkUnitText(column, issue), issue: issue.number, priority: issue.priority, paths: write ? issue.paths : [], ...(write ? {} : { refine: true }) }, issue.number, afkIssueState(issue, column, threads(issue.number), cfg, base));
   }
   for (const pr of prs) {
-    if (!pr.needsWork) continue;
+    if (!pr.needsWork || pr.issues.some(heldElsewhere) || heldElsewhere(pr.number)) continue;
     const stories = pr.issues.map(number => byNumber.get(number)).filter(issue => issue && !issue.labels.includes('type:epic'));
-    const parked = !pr.awaitingReview && !pr.broken && stories.length > 0 && stories.every(issue => issue.labels.includes('lane:owner'));
-    if (parked) continue;
-    const owners = pr.issues.map(epicOf).filter(Boolean);
-    if (pr.issues.some(claimedElsewhere)) continue;
-    const target = owners[0] || firstEpic;
-    const suffix = owners.length ? '' : ' (under no epic)';
+    if (!pr.awaitingReview && !pr.broken && stories.length > 0 && stories.every(issue => issue.labels.includes('lane:owner'))) continue;
     // Its issues' packets, then the PR's own packet, then the files it already changes.
     const packet = stories.some(issue => Array.isArray(issue.paths)) ? stories.flatMap(issue => issue.paths || []) : afkPathsFromIssueBody(pr.body || '');
     const scopedByFiles = packet === null && !pr.filesUnread;
@@ -807,58 +754,22 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const review = pr.awaitingReview && !pr.broken;
     // A fix scoped by files that could not be read waits for a later plan rather than holding an incomplete scope.
     if (!review && paths === null) continue;
-    const state = afkPrState(pr, threads(pr.number), cfg);
-    if (spent[pr.number] === state) { unchanged.push(pr.number); continue; }
+    const priority = stories.map(issue => issue.priority).sort((a, b) => afkPriority(a) - afkPriority(b))[0];
     const unit = review
-      ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true, pr: pr.number, head: pr.headRefOid, state }
-      : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid, state };
-    const parent = epics.find(epic => epic.issue.number === target);
-    if (parent) parent.units.push({ ...unit, rank: review ? 1 : pr.broken ? 0 : 2 });
+      ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) awaits its review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
+      : { column: 'Review', text: `PR #${pr.number} (${pr.title})${pr.broken ? ' has a red check or a conflict' : ' needs its review fixed'}`, issue: stories[0]?.number || pr.number, priority, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid };
+    offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg));
   }
-  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits, blocks, refines, unchanged };
+  units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
+  return { units, prs, byNumber, threads, unchanged, orphans };
 }
-export function* afkCandidates(epics, others, share, heldElsewhere) {
-  const taken = new Set(others.map(hold => hold.number));
-  const busy = new Set(others.map(hold => hold.epic));
-  const whole = new Set(others.filter(hold => hold.paths === null).map(hold => hold.epic));
-  const open = epics.filter(epic => epic.units.length && !whole.has(epic.issue.number) && !heldElsewhere(epic.issue.number));
-  if (!share) {
-    for (const epic of open) if (!busy.has(epic.issue.number)) yield { number: epic.issue.number, epic: epic.issue.number, paths: null, unit: epic.units[0] };
-    return;
-  }
-  // Across every epic: blockers (a red or conflicting PR), then reviews, then PRs in progress, then new issues.
-  for (const rank of [0, 1, 2, 3]) for (const epic of open) for (const unit of epic.units) {
-    if ((unit.rank ?? 3) === rank && !taken.has(unit.issue)) yield { number: unit.issue, epic: epic.issue.number, paths: unit.paths, unit };
-  }
+// The units no other live run holds, in board order.
+export function* afkCandidates(units, others) {
+  const taken = new Set(others.flatMap(hold => [hold.number, hold.pr].filter(Boolean)));
+  for (const unit of units) if (!taken.has(unit.issue) && !taken.has(unit.pr)) yield { number: unit.issue, paths: unit.paths, unit };
 }
-// Reviews have their own afk.maxReviewRuns slots, so runs busy on tickets never block a review; everything else shares afk.maxRuns.
-// WIP is every open PR, drafts included, plus every ticket run without one yet; a new ticket starts only while WIP stays under afk.maxRuns.
-// A booting run (live, no hold yet) takes no slot: the start lock lets one run hold at a time, and afkStartCount subtracts booting runs from its start count.
-export function afkBooting(ledger, live) { return live.filter(id => !ledger[id]?.length); }
-export function afkSlots(cfg, ledger, live, me = '', prs = []) {
-  // Eligibility checks and epic stages are no tickets, so they neither count nor wait for WIP.
-  const inPr = new Set(prs.flatMap(pr => [pr.number, ...(pr.issues || [])]));
-  const used = { review: 0, work: 0 }; let wip = prs.length, waited = false;
-  for (const id of live) {
-    if (id === me || !ledger[id]?.length) continue;
-    const holds = ledger[id];
-    used[holds.some(hold => hold.review) ? 'review' : 'work']++;
-    if (!holds.some(hold => hold.review || hold.check || hold.stage || inPr.has(hold.number))) wip++;
-  }
-  const cap = { review: Number(cfg.maxReviewRuns ?? 2), work: Number(cfg.maxRuns) || Infinity };
-  return {
-    full: () => used.review >= cap.review && used.work >= cap.work,
-    // Set once a free work slot refused a new ticket only because WIP is at afk.maxRuns.
-    waiting: () => waited ? `Waiting: WIP ${wip}/${cap.work}; no new ticket` : null,
-    take: candidate => {
-      const kind = candidate.unit?.review ? 'review' : 'work', unit = candidate.unit || {}, ticket = kind === 'work' && unit.rank === undefined && !unit.check && !unit.stage;
-      if (used[kind] >= cap[kind]) return false;
-      if (ticket && wip >= cap.work) { waited = true; return false; }
-      used[kind]++; if (ticket) wip++;
-      return true;
-    },
-  };
-}
+// At most afk.maxRuns runs are live, booting ones included, and each ping starts at most one.
+export function afkFree(cfg, live, me = '') { return Math.max(0, (Number(cfg.maxRuns) || 4) - live.filter(id => id !== me).length); }
 export function afkLiveHolds(comments, live, me) {
   const holds = [];
   for (const comment of comments) for (const match of (comment.body || '').matchAll(/<!-- afk-(epic|issue)-hold session=(\S+) -->/g)) {
@@ -901,14 +812,9 @@ function afkThreadReader(cfg) {
     return cache.get(number);
   };
 }
-export function afkShow(held, epics, out, quiet = false) {
-  const epic = epics.find(item => item.issue.number === held.epic);
-  let units = epic?.units || [];
-  const heading = `Hold: ${held.paths !== null ? `issue #${held.number} in epic #${held.epic}` : `epic #${held.number}`} (comment ${held.comment})`;
-  if (held.paths !== null) {
-    units = units.filter(unit => unit.issue === held.number);
-  }
-  const lines = [heading, ...out, ...units.map(unit => `Work: ${unit.text}`)];
+export function afkShow(held, units, out, quiet = false) {
+  const unit = units.find(item => item.issue === held.number && (item.pr ?? null) === (held.pr ?? null));
+  const lines = [`Hold: ${held.pr ? `PR #${held.pr}` : `issue #${held.number}`} in ${held.column || 'Todo'} (comment ${held.comment})`, ...out, ...(held.text || unit?.text ? [`Work: ${held.text || unit.text}`] : [])];
   if (quiet) return lines.join('\n');
   for (const line of lines) console.log(line);
   return 0;
@@ -1223,7 +1129,7 @@ function afkEnvironmentOnce() {
 // The hold copies the scope packet at start; a packet corrected on the issue since then is rechecked before refusing.
 // A fix hold records only its PR's first linked story, so the other stories' corrected packets still refuse.
 function afkHeldScope(hold, paths, environment = afkEnvironmentOnce()) {
-  if (!Array.isArray(hold.paths) || afkPathsWithinScope(paths, hold.paths) || hold.review || hold.check || hold.stage) return hold.paths;
+  if (!Array.isArray(hold.paths) || afkPathsWithinScope(paths, hold.paths) || hold.review || hold.refine) return hold.paths;
   const followed = afkBaseRenamedScope(hold);
   if (afkPathsWithinScope(paths, followed)) return followed;
   try {
@@ -1282,38 +1188,33 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
     if (ledger[id]?.length) {
       if (requestedIssue && ledger[id][0].number !== requestedIssue) throw new Error(`Run ${id} already holds #${ledger[id][0].number}, not #${requestedIssue}`);
       const live = afkLive(cfg); const threads = afkThreadReader(cfg); const plan = afkPlan(cfg, live, threads, id);
-      return afkShow(ledger[id][0], plan.epics, output, quiet);
+      return afkShow(ledger[id][0], [], output, quiet);
     }
     const live = afkLive(cfg);
-    const others = live.filter(runId => runId !== id);
-    const slots = afkSlots(cfg, ledger, live, id);
-    if (slots.full()) {
-      console.log(`Done: ${others.length} other runs are live, as many as afk.maxRuns and afk.maxReviewRuns allow.`);
+    if (!afkFree(cfg, live, id)) {
+      console.log(`Done: ${live.filter(runId => runId !== id).length} other runs are live, as many as afk.maxRuns allows.`);
       output.forEach(line => console.log(line)); return 3;
     }
     const threads = afkThreadReader(cfg);
-    const { epics, heldOnEpic, prs } = afkPlan(cfg, live, threads, id);
-    const wipSlots = afkSlots(cfg, ledger, live, id, prs);
+    const { units } = afkPlan(cfg, live, threads, id);
     const othersHolds = afkOtherHolds(ledger, live, id);
     afkWriteLedger(ledgerPath, ledger);
-    const cap = Number(cfg.maxRuns) || 0;
-    for (const candidate of afkCandidates(epics, othersHolds, Boolean(cap), heldOnEpic)) {
-      if (requestedIssue && candidate.number !== requestedIssue) continue;
-      if (cap && !wipSlots.take(candidate)) continue;
-      const type = candidate.paths === null ? 'epic' : 'issue';
-      const comment = afkHold(cfg, live, id, candidate.number, type);
+    for (const candidate of afkCandidates(units, othersHolds)) {
+      if (requestedIssue && candidate.number !== requestedIssue && candidate.unit.pr !== requestedIssue) continue;
+      const comment = afkHold(cfg, live, id, candidate.number, 'issue');
       if (!comment) continue;
-      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), ...(candidate.unit?.stage ? { stage: candidate.unit.stage } : {}), ...(candidate.unit?.pr ? { pr: candidate.unit.pr, ...(candidate.unit.head ? { head: candidate.unit.head } : {}), ...(candidate.unit.scopedByFiles ? { scopedByFiles: true } : {}), ...(candidate.unit.state ? { state: candidate.unit.state } : {}) } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
+      const { unit } = candidate;
+      const held = { number: candidate.number, column: unit.column, text: unit.text, paths: candidate.paths, ...(unit.refine ? { refine: true } : {}), ...(unit.review ? { review: true } : {}), ...(unit.pr ? { pr: unit.pr, ...(unit.head ? { head: unit.head } : {}), ...(unit.scopedByFiles ? { scopedByFiles: true } : {}) } : {}), ...(unit.state ? { state: unit.state } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
       ledger[id] = [...(ledger[id] || []), held];
       try {
-        // A review hold names a PR, which has no card of its own; its issues stay in Review.
-        if ((type === 'issue' && !held.review) || held.stage) afkStatus(cfg, held.number, 'PROGRESS', true);
+        // Only implementation moves a card to In progress; refine runs and PR work leave the card where it is.
+        if (unit.column === 'Todo' && !unit.refine) afkStatus(cfg, held.number, 'PROGRESS', true);
         afkWriteLedger(ledgerPath, ledger);
       } catch (error) {
-        spawnSync('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${comment}`, '-f', `body=${afkMarker(`${type}-released`, id)}\nStart failed; hold released.`], { stdio: 'ignore' });
+        spawnSync('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${comment}`, '-f', `body=${afkMarker('issue-released', id)}\nStart failed; hold released.`], { stdio: 'ignore' });
         throw error;
       }
-      return afkShow(held, epics, output, quiet);
+      return afkShow(held, units, output, quiet);
     }
     if (requestedIssue) throw new Error(`#${requestedIssue} is not an eligible AFK candidate`);
     // The watcher (prepared) never starts an agent without work; an idle `explore` pass is only for a run that asked.
@@ -1338,13 +1239,8 @@ export function afkToolingVersion() { return loadedToolingVersion; }
 export function afkCheckQuiet(previous, signal, version, now = Date.now()) {
   return Boolean(version) && previous?.version === version && previous.signal === signal && now - previous.at < 1_800_000;
 }
-// A booting run takes the first free work itself, so each one covers a chosen ticket or PR task instead of a new run.
-export function afkStartCount(cfg, ledger, live, candidates, prs) {
-  const cap = Number(cfg.maxRuns) || 0, slots = afkSlots(cfg, ledger, live, '', prs);
-  const chosen = candidates.filter(candidate => !cap || slots.take(candidate));
-  const reviews = chosen.filter(candidate => candidate.unit?.review).length;
-  return { count: reviews + Math.max(0, chosen.length - reviews - afkBooting(ledger, live).length), waiting: slots.waiting() };
-}
+// Each ping starts one run when a slot is free and a unit waits; the run takes the first unit itself.
+export function afkStartCount(cfg, live, candidates) { return candidates.length && afkFree(cfg, live) ? 1 : 0; }
 function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const live = afkLive(cfg); const statePath = quiet ? join(common, 'afk-check.json') : null;
   const signal = statePath ? afkSignal(cfg, live) : null; const version = afkToolingVersion();
@@ -1360,19 +1256,16 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const output = afkMerge(cfg, afkPrs(cfg));
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { epics, heldOnEpic, waits, blocks, refines, prs, unchanged } = afkPlan(cfg, live, threads);
-  for (const block of blocks) output.push(`Wait: #${block.issue} is blocked until PR #${block.pr} merges`);
-  for (const number of refines) output.push(`Refine: #${number} has lane:afk but no valid scope packet`);
-  for (const wait of waits) output.push(`Wait: #${wait.issue} until ${wait.until}: ${wait.cause}`);
-  for (const number of unchanged) output.push(`Unchanged: PR #${number} since its last run; no new run until it changes`);
+  const { units, unchanged, orphans } = afkPlan(cfg, live, threads);
+  for (const number of orphans) { afkStatus(cfg, number, 'TODO', true); output.push(`Orphaned: #${number} was In progress with no live run; back to Todo`); }
+  for (const number of unchanged) output.push(`Unchanged: #${number} since its last run; no new run until it changes`);
+  if (units[0]) output.push(`Next: ${units[0].column}: ${units[0].text}`);
   const ledgerPath = join(common, 'afk-holds.json');
   const start = withRepoLock('afk-start', () => {
     const ledger = afkReadLedger(ledgerPath);
     const others = afkOtherHolds(ledger, live, '');
-    const cap = Number(cfg.maxRuns) || 0;
-    const candidates = [...afkCandidates(epics, others, Boolean(cap), heldOnEpic)].filter(candidate => !requestedIssue || candidate.number === requestedIssue);
-    const { count, waiting } = afkStartCount(cfg, ledger, live, candidates, prs);
-    if (waiting) output.push(waiting);
+    const candidates = [...afkCandidates(units, others)].filter(candidate => !requestedIssue || candidate.number === requestedIssue || candidate.unit.pr === requestedIssue);
+    const count = afkStartCount(cfg, live, candidates);
     if (requestedIssue && !count) return 0;
     afkWriteLedger(ledgerPath, ledger);
     return count;
@@ -1393,74 +1286,35 @@ export function afkRunUsage(output) {
   parts.push(`tokens in ${count('input_tokens')}, out ${count('output_tokens')}, cache read ${count('cache_read_input_tokens')}, cache write ${count('cache_creation_input_tokens')}`);
   return { result: typeof value.result === 'string' ? value.result : '', line: `Usage: ${parts.join(', ')}`, ok: value.is_error !== true };
 }
-// A run that ended without a PR naming its issue stopped on a blocker (`why` is its own summary): the card goes to Blocked
-// with a comment saying why, and the selector skips it until the orchestrator clears the blocker and moves it to Todo.
-// An eligibility check (marked on its hold when taken, since an approving check moves the issue to `lane:afk`) never blocks;
-// otherwise only an issue still open and still `lane:afk` is blocked: a closed issue or a merged PR ends normally.
+// An implementation run that ended without a PR naming its issue stopped on a blocker (`why` is its own summary): the card
+// goes to Blocked with a comment saying why, and the next ping serves it a refine run. Only an issue still open and still
+// `lane:afk` is blocked: a closed issue or a merged PR ends normally. Refine and PR runs leave the card where they put it.
 function afkStillReady(cfg, number) {
   const issue = afkGh(['api', `repos/${cfg.repo}/issues/${number}`]);
   return issue.state === 'open' && (issue.labels || []).some(label => label.name === 'lane:afk');
 }
-// A missing summary is no count: `0/0` would name a slicing stage the epic is not in.
-export function afkSlices(summary) { return summary ? `${summary.completed ?? 0}/${summary.total ?? 0}` : null; }
-export function afkStageMarker(stage, slices, id) {
-  return `${afkEpicCheck(stage, slices).marker} verdict=none session=${id} -->\nRun ${id} ended without a verdict; this epic waits for an edit or a new comment.`;
-}
-// A stage run that left the epic as `afkPlan` would serve it again (no verdict it honours for this stage and count, and no
-// active wait) would be served on every poll.
-export function afkStageUnrecorded(cfg, epic, comments, stage, slices, now = Date.now()) {
-  return afkAwaitsVerdict(cfg, epic.lastEditedAt, comments, afkEpicCheck(stage, slices).pattern) && !afkWait(comments, afkWaitBy(cfg), now);
-}
-// The marker a stage run's end posts, or null: none once the epic left the held stage (slicing created sub-issues)
-// or `afkPlan` would no longer serve it, including the epics it skips (`inPr` holds the issues open PRs name).
-export function afkStageFallback(cfg, held, epic, comments, id, now = Date.now(), inPr = new Set(), live = []) {
-  const slices = afkSlices(epic.subIssuesSummary);
-  if (!slices || afkEpicSkipped({ number: held.number, labels: epic.labels }, inPr, afkEpicHeldElsewhere(comments, live, id))) return null;
-  return afkEpicStage(epic.subIssuesSummary) === held.stage && afkStageUnrecorded(cfg, epic, comments, held.stage, slices, now) ? afkStageMarker(held.stage, slices, id) : null;
-}
-// The epic's state, labels, sub-issue count and last body edit, which `afkPlan` reads through `afkIssues`.
-function afkEpicNow(cfg, number) {
-  const [owner, name] = cfg.repo.split('/');
-  const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){state lastEditedAt labels(first:30){nodes{name}} subIssuesSummary{total completed}}}}';
-  const issue = afkGh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]).data?.repository?.issue || {};
-  return { ...issue, labels: (issue.labels?.nodes || []).map(label => label.name) };
-}
-// A closed issue lands in Done whatever is passed; an epic left open after its slicing or delivery check stays In progress.
-export function afkEndStatus(held, named, blocked) {
-  return held.stage ? 'PROGRESS' : named ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO';
-}
+export function afkEndStatus(named, blocked) { return named ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO'; }
 function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
   afkActor(cfg);
   return withRepoLock('afk-start', () => {
     const path = join(common, 'afk-holds.json'); const ledger = afkReadLedger(path);
     const dropped = ledger[id] || []; delete ledger[id];
-    const prs = dropped.some(hold => hold.paths !== null || hold.stage) ? afkPrData(cfg).map(pr => afkPrRecord(pr, cfg)) : [];
-    const named = new Set(prs.flatMap(pr => pr.issues)), live = dropped.some(hold => hold.stage) ? afkLive(cfg) : [];
+    const implemented = dropped.filter(held => held.paths !== null && !held.refine && !held.review && !held.pr);
+    const named = new Set(implemented.length ? afkPrData(cfg).flatMap(pr => afkPrRecord(pr, cfg).issues) : []);
     for (const held of dropped) {
       const kind = held.paths === null ? 'epic' : 'issue';
       run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${held.comment}`, '-f', `body=${afkMarker(`${kind}-released`, id)}${note ? `\n${note}` : ''}`]);
       console.log(`Released: ${kind} #${held.number}`);
-      const blocked = kind === 'issue' && !held.check && !held.review && !held.stage && why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
+      if (!implemented.includes(held)) continue;
+      const blocked = why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
       if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
-      const epicNow = held.stage ? afkEpicNow(cfg, held.number) : null;
-      const epic = epicNow?.state === 'OPEN' ? epicNow : null;
-      if (epic && !afkSlices(epic.subIssuesSummary)) console.log(`Skipped: epic #${held.number} stage marker, since GitHub returned no sub-issue count`);
-      const marker = epic && afkSlices(epic.subIssuesSummary) ? afkStageFallback(cfg, held, epic, afkComments(cfg, held.number), id, Date.now(), named, live) : null;
-      if (marker) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${marker}`]);
-      if ((kind === 'issue' && !held.review) || held.stage) afkStatus(cfg, held.number, afkEndStatus(held, named.has(held.number), blocked), true);
-    }
-    const openEpics = afkIssues(cfg).filter(issue => issue.labels.includes('type:epic'));
-    for (const epic of openEpics) for (const comment of afkComments(cfg, epic.number)) {
-      if ((comment.body || '').includes(afkMarker('epic-hold', id))) {
-        run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${comment.id}`, '-f', `body=${afkMarker('epic-released', id)}`]);
-        if (!dropped.some(hold => hold.comment === comment.id)) console.log(`Released: epic #${epic.number}`);
-      }
+      afkStatus(cfg, held.number, afkEndStatus(named.has(held.number), blocked), true);
     }
     afkWriteLedger(path, ledger);
-    // Only an agent that exited cleanly spends its PR's state; a crash, a failed start or a manual end leaves the PR offered.
+    // Only an agent that exited cleanly spends its unit's state; a crash, a failed start or a manual end leaves it offered.
     if (spend && dropped.some(held => held.state)) {
       const spentPath = join(common, 'afk-spent.json'); const spent = afkReadLedger(spentPath);
-      for (const held of dropped) if (held.state) spent[held.pr] = held.state;
+      for (const held of dropped) if (held.state) spent[held.pr ?? held.number] = held.state;
       afkWriteLedger(spentPath, spent);
     }
     if (!dropped.length) console.log('Released: no issue hold');

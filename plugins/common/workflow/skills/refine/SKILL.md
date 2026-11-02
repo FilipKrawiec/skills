@@ -28,7 +28,7 @@ Give open issues a milestone, slices their epic's milestone, and approved epics 
 
 Delegate routine technical decisions; reserve product strategy, new costs, authority and quality-gate weakening for the owner. New interactions need owner prototype direction. Continue independent work while a reserved decision waits.
 
-Clear Blocked cards first: an AFK run stopped there and its `afk-issue-blocked` comment says why. Remove the blocker (packet, dependency, decision or owner question), then move the card to Todo.
+Clear Blocked cards first: an AFK run stopped there and its `afk-issue-blocked` comment says why. Remove the blocker (packet, dependency, split or routine decision), then move the card to Todo. If it cannot be cleared yet, comment why and leave it Blocked; the watcher retries it after the next merge. `lane:owner` is only for owner-reserved decisions.
 
 **Exit gate:** each item has a disposition and unresolved conflicts have an owner and wait.
 
