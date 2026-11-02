@@ -1247,6 +1247,20 @@ function afkWatchTree(cfg) {
   return watch;
 }
 function afkWatchPath(common) { return join(dirname(common), '.worktrees', 'afk-watch'); }
+// Each launched run works in its own detached worktree, so work it leaves behind can never block the watcher's checkout.
+function afkRunTree(cfg, common, runId) {
+  const tree = join(dirname(common), '.worktrees', runId);
+  run('git', ['worktree', 'add', '--quiet', '--detach', tree, `origin/${cfg.base}`], { cwd: dirname(common), env: cleanEnvironment() });
+  return tree;
+}
+// Removes a run's worktree only when nothing in it is missing from the remote; returns whether it was removed.
+export function afkReleaseRunTree(tree, root) {
+  const env = cleanEnvironment();
+  const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: tree, encoding: 'utf8', env });
+  const unpushed = spawnSync('git', ['log', '--oneline', 'HEAD', '--not', '--remotes'], { cwd: tree, encoding: 'utf8', env });
+  if (status.error || status.status !== 0 || status.stdout.trim() || unpushed.error || unpushed.status !== 0 || unpushed.stdout.trim()) return false;
+  return spawnSync('git', ['worktree', 'remove', tree], { cwd: root, env }).status === 0;
+}
 function plistText(xml, key) {
   const match = new RegExp(`<key>${key}<\\/key>\\s*<string>([\\s\\S]*?)<\\/string>`).exec(xml);
   return match?.[1].replaceAll('&apos;', "'").replaceAll('&quot;', '"').replaceAll('&gt;', '>').replaceAll('&lt;', '<').replaceAll('&amp;', '&') ?? null;
@@ -1339,12 +1353,14 @@ function afkWatch(cfg, common, requestedIssue = null) {
     if (!cfg.runsCommand && !held && !explore) continue;
     const holds = afkReadLedger(join(common, 'afk-holds.json'))[runId] || [];
     const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : explore ? ' The workflow CLI assigned an unattended `explore` pass: no work is free. Play `explore`; do not call afk start or afk end.' : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
-    let output;
+    let output, runTree = null;
     try {
       if (held && (holds.length !== 1 || !Number.isSafeInteger(holds[0].number) || holds[0].number < 1)) throw new Error('AFK watcher cannot bind the held issue');
-      output = afkLaunchAgent({ argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0].number : null });
+      if (!cfg.runsCommand) runTree = afkRunTree(cfg, common, runId);
+      output = afkLaunchAgent({ argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: runTree || watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0].number : null });
     } finally {
       if (held) afkEndRun(cfg, common, runId);
+      if (runTree && !afkReleaseRunTree(runTree, dirname(common))) console.log(`Kept: ${runTree} holds work that is not on the remote; preserve it.`);
     }
     console.log(output ? `Completed: ${runId}\n${output}` : `Started: ${runId}`);
   }

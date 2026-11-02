@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -329,4 +329,24 @@ test('AFK default runner command takes a configured model', () => {
   assert.deepEqual(afkDefaultStartCommand(undefined), workflowDefaults.afk.startCommand);
   assert.deepEqual(afkDefaultStartCommand('sonnet').slice(0, 4), ['claude', '--print', '--model', '{model}']);
   assert.equal(afkDefaultStartCommand('sonnet').length, workflowDefaults.afk.startCommand.length + 2);
+});
+
+test('AFK keeps a run worktree only while it holds work missing from the remote', t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'afk-run-tree-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const repo = join(root, 'repo');
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd, env, encoding: 'utf8' });
+  assert.equal(git(root, 'init', '-q', '-b', 'main', repo).status, 0);
+  assert.equal(git(repo, 'commit', '-q', '--allow-empty', '-m', 'base').status, 0);
+  assert.equal(git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD').status, 0);
+  const tree = name => { const path = join(root, name); assert.equal(git(repo, 'worktree', 'add', '-q', '--detach', path, 'origin/main').status, 0); return path; };
+  const clean = tree('clean');
+  assert.equal(afkReleaseRunTree(clean, repo), true);
+  const dirty = tree('dirty');
+  writeFileSync(join(dirty, 'work.txt'), 'unsaved');
+  assert.equal(afkReleaseRunTree(dirty, repo), false);
+  const committed = tree('committed');
+  assert.equal(git(committed, 'commit', '-q', '--allow-empty', '-m', 'local only').status, 0);
+  assert.equal(afkReleaseRunTree(committed, repo), false);
 });
