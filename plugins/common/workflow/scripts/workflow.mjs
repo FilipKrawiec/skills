@@ -233,13 +233,13 @@ function commit(args) {
   const runId = process.env.WORKFLOW_RUN_ID;
   let scope = null;
   let hold = null;
+  let environment = null;
   if (runId) {
     hold = afkBoundHold(root, 'commit');
-    if (Array.isArray(hold.paths)) scope = merging ? hold.paths : afkHeldScope(hold, paths);
+    environment = afkEnvironmentOnce();
+    if (Array.isArray(hold.paths)) scope = merging ? hold.paths : afkHeldScope(hold, paths, environment);
     if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error('Commit paths exceed the assigned AFK scope');
-    const cfg = config().lanes;
-    afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
-    afkActor(cfg);
+    afkActor(environment());
   }
   const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
   // A merge commit records the whole merged index; the listed paths are the resolved conflicts.
@@ -264,7 +264,7 @@ function commit(args) {
     };
     const fromBase = new Set(changed('MERGE_HEAD'));
     const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
-    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
+    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside, environment))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
   }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) {
@@ -1170,12 +1170,20 @@ function afkAssertPushScope(root, baseRef) {
     if (!afkPathsWithinScope(changed, afkHeldScope(hold, changed))) throw new Error('Push paths exceed the assigned AFK scope');
   }
 }
+// Reads the lanes config and loads the AFK environment at most once for the callers sharing the returned loader.
+function afkEnvironmentOnce() {
+  let cfg = null;
+  return () => {
+    if (!cfg) { const lanes = { ...workflowDefaults.afk, ...config().lanes }; afkLoadEnvironment(lanes); cfg = lanes; }
+    return cfg;
+  };
+}
 // The hold copies the scope packet at start; a packet corrected on the issue since then is rechecked before refusing.
-function afkHeldScope(hold, paths) {
+// A fix hold records only its PR's first linked story, so the other stories' corrected packets still refuse.
+function afkHeldScope(hold, paths, environment = afkEnvironmentOnce()) {
   if (!Array.isArray(hold.paths) || afkPathsWithinScope(paths, hold.paths) || hold.review || hold.check || hold.stage) return hold.paths;
   try {
-    const cfg = { ...workflowDefaults.afk, ...config().lanes };
-    afkLoadEnvironment(cfg);
+    const cfg = environment();
     const current = afkPathsFromIssueBody(afkGh(['api', `repos/${cfg.repo}/issues/${hold.number}`]).body || '');
     if (Array.isArray(current) && afkPathsWithinScope(paths, current)) return current;
   } catch { /* An unreadable issue keeps the scope recorded in the hold. */ }
