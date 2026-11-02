@@ -49,7 +49,7 @@ Config holds identities, step commands and optional `afk.model`. Set `steps.proc
 
 ## Unattended runs
 
-`node <this-skill-directory>/../../scripts/workflow.mjs afk install` installs the login watcher; each 60-second poll moves `.worktrees/afk-watch` to base and updates the CLI-owned tooling checkout (`afk.toolingDirectory`); never edit it. Runs go side by side, up to `afk.maxRuns`, each in a native worktree removed once clean and pushed. Without a free hold the watcher only logs. A PR whose last run exited cleanly is not offered again until its head, reviews, checks or an outside comment change; it logs `Unchanged: PR #N`, and deleting its entry from `afk-spent.json` in the git common directory re-offers it. `afk uninstall` removes the job.
+`node <this-skill-directory>/../../scripts/workflow.mjs afk install` installs the login watcher; each 60-second poll moves `.worktrees/afk-watch` to base and updates the CLI-owned tooling checkout (`afk.toolingDirectory`); never edit it. Runs go side by side, up to `afk.maxRuns`, each in a native worktree removed once clean and pushed. `afk uninstall` removes the job.
 
 Run `node <this-skill-directory>/../../scripts/workflow.mjs afk start --me <run id>`: exit 3 ends, 2 reports `Blocked:`, 4 starts an `explore` pass. Exit 0 holds one eligible issue; invoke `afk` on it in its own worktree. End with `node <this-skill-directory>/../../scripts/workflow.mjs afk end --me <run id>`.
 
