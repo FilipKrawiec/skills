@@ -1144,6 +1144,11 @@ export function afkRunUsage(output) {
 }
 // A run that ended without a PR naming its issue stopped on a blocker (`why` is its own summary): the card goes to Blocked
 // with a comment saying why, and the selector skips it until the orchestrator clears the blocker and moves it to Todo.
+// Only an issue still open and still `lane:afk` is blocked: an eligibility check, a closed issue or a merged PR ends normally.
+function afkStillReady(cfg, number) {
+  const issue = afkGh(['api', `repos/${cfg.repo}/issues/${number}`]);
+  return issue.state === 'open' && (issue.labels || []).some(label => label.name === 'lane:afk');
+}
 function afkEndRun(cfg, common, id, note = null, why = null) {
   afkActor(cfg);
   return withRepoLock('afk-start', () => {
@@ -1155,7 +1160,7 @@ function afkEndRun(cfg, common, id, note = null, why = null) {
       const kind = held.paths === null ? 'epic' : 'issue';
       run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${held.comment}`, '-f', `body=${afkMarker(`${kind}-released`, id)}${note ? `\n${note}` : ''}`]);
       console.log(`Released: ${kind} #${held.number}`);
-      const blocked = kind === 'issue' && why !== null && !named.has(held.number);
+      const blocked = kind === 'issue' && why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
       if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
       if (kind === 'issue') afkStatus(cfg, held.number, named.has(held.number) ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO', true);
     }
