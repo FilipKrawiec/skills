@@ -151,11 +151,19 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
   // A run that split its held issue builds the first sub-issue under that hold, so a hold on a parent In progress (or with
   // no card) also covers its direct sub-issues; a refine hold on a Blocked or Backlog epic, or one on a grandparent, does not.
-  const holdsOf = number => afkLiveHolds(threads(number), live, me).some(hold => hold.run !== me);
-  const heldElsewhere = number => {
+  const holdsOf = (number, anyone) => afkLiveHolds(threads(number), live, me).some(hold => anyone || hold.run !== me);
+  const heldBy = (number, anyone = false) => {
     const parent = byNumber.get(byNumber.get(number)?.ancestors?.[0]);
-    return holdsOf(number) || Boolean(parent && [null, undefined, 'In progress'].includes(parent.status) && holdsOf(parent.number));
+    return holdsOf(number, anyone) || Boolean(parent && [null, undefined, 'In progress'].includes(parent.status) && holdsOf(parent.number, anyone));
   };
+  const heldElsewhere = number => heldBy(number);
+  // An open PR holds overlapping builds only while someone works on it: a live run holds it or an issue it delivers, or that
+  // issue went Blocked at the current base head. A PR nobody works on holds nothing, so a stalled PR cannot stop the repository.
+  const blockedAtBase = number => Boolean(base) && byNumber.get(number)?.status === 'Blocked' && afkBlockedBase(threads(number)) === base;
+  const worked = pr => [pr.number, ...pr.issues].some(number => heldBy(number, true)) || pr.issues.some(blockedAtBase);
+  // Shared files every change touches (`afk.alwaysInScope`) never overlap.
+  const shared = Array.isArray(cfg.alwaysInScope) ? cfg.alwaysInScope : [];
+  const overlaps = (pr, scope) => (pr.files || []).some(file => [file.path, file.previousPath].some(path => path && !afkPathsWithinScope([path], shared) && afkPathsWithinScope([path], scope)));
   const inPr = new Set(prs.flatMap(pr => pr.issues)), openPrs = new Set(prs.map(pr => pr.number));
   const offer = (unit, key, state) => {
     if (spent[key] === state) { unchanged.push(key); return; }
@@ -178,7 +186,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
       // A ready issue waits for its open blockers and for an open PR its packet depends on; a packet-less story is refined meanwhile.
       if ((epic || issue.paths !== null) && (issue.blocked || (issue.dependencies || []).some(number => openPrs.has(number)))) continue;
       // It also waits while an open PR changes a file its packet covers: two builds in one area conflict on each merge.
-      const overlap = Array.isArray(issue.paths) && prs.find(pr => !pr.filesUnread && (pr.files || []).some(file => [file.path, file.previousPath].some(path => path && afkPathsWithinScope([path], issue.paths))));
+      const overlap = Array.isArray(issue.paths) && prs.find(pr => !pr.filesUnread && overlaps(pr, issue.paths) && worked(pr));
       if (overlap) { held.push({ issue: issue.number, pr: overlap.number }); continue; }
     }
     const write = column === 'Todo' && !epic && issue.paths !== null;
@@ -231,8 +239,13 @@ export function afkSpentEntries(dropped, spend, readUnits) {
   if (dropped.some(held => held.state && !held.pr)) try { units = readUnits(); } catch (error) { console.error(`End states unreadable (${error.message}); spending start states.`); }
   return Object.fromEntries(dropped.filter(held => held.state).map(held => [held.pr ?? held.number, afkSpentState(held, units)]));
 }
+// The base head the newest Blocked note on an issue records, or '' without one.
+export function afkBlockedBase(comments) {
+  const note = comments.filter(comment => /^<!-- afk-issue-blocked\b/.test(comment.body || '')).at(-1);
+  return /base head `([0-9a-f]{7,40})`/.exec(note?.body || '')?.[1] || '';
+}
 // One line per Todo build a plan holds behind an overlapping open PR; afk check and afk start both print them.
-export function afkHeldLines(held) { return held.map(hold => `Held: #${hold.issue} overlaps open PR #${hold.pr}; no build until it merges or closes`); }
+export function afkHeldLines(held) { return held.map(hold => `Held: #${hold.issue} overlaps open PR #${hold.pr}; no build while a run works on it or it is Blocked at this base`); }
 // The units no other live run holds, in board order.
 export function* afkCandidates(units, others) {
   const taken = new Set(others.flatMap(hold => [hold.number, hold.pr].filter(Boolean)));

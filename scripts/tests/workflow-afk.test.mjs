@@ -834,7 +834,8 @@ test('afk start --issue names a missing scope packet when it cannot serve the is
 });
 
 test('a Todo build waits while an open PR that does not deliver it changes a file its packet covers', () => {
-  const plan = (issues, prs) => afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, ...issues], prs });
+  const worked = number => number === 20 ? [{ id: 1, body: '<!-- afk-issue-hold session=live-run -->' }] : [];
+  const plan = (issues, prs) => afkPlan(cfg, ['live-run'], worked, 'new-run', { issues: [epic, ...issues], prs });
   const area = plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/feature/'] }), board(7, 'Todo')], [reviewPr(20, { files: [{ path: 'src/feature/a.js' }], labels: [{ name: 'review:owner' }], reviews: [{ author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '' }] })]);
   assert.deepEqual([area.units.map(unit => unit.issue), area.held], [[7], [{ issue: 6, pr: 20 }]], 'a non-overlapping build is still offered');
   const renamed = plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/old.js'] })], [reviewPr(20, { files: [{ path: 'src/new.js', previousPath: 'src/old.js' }] })]);
@@ -842,6 +843,25 @@ test('a Todo build waits while an open PR that does not deliver it changes a fil
   assert.deepEqual(plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/a'] })], [reviewPr(20)]).held, [], 'a path without a trailing / covers only itself');
   assert.deepEqual(plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/'] })], [reviewPr(20, { filesUnread: true })]).held, [], 'unread files hold nothing');
   assert.deepEqual(plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/'] })], []).units.map(unit => unit.issue), [6], 'offered again once the PR merges or closes');
+});
+
+test('shared alwaysInScope paths never overlap, and a PR nobody works on holds nothing', () => {
+  const shared = { ...cfg, alwaysInScope: ['components/app/test/', 'docs'] };
+  const open = reviewPr(20, { body: 'Closes #9', closingIssuesReferences: [{ number: 9, repository: { name: 'app', owner: { login: 'acme' } } }], files: [{ path: 'components/app/test/a.test.js' }, { path: 'docs/guide.md' }] });
+  const todo = [board(6, 'Todo', ['lane:afk'], { paths: ['components/app/test/', 'docs/', 'src/6.js'] }), board(7, 'Todo', ['lane:afk'], { paths: ['docs/', 'src/7.js'] })];
+  const hold = [{ id: 1, body: '<!-- afk-issue-hold session=live-run -->' }];
+  const plan = (config, files) => afkPlan(config, ['live-run'], number => (number === 20 ? hold : []), 'new-run', { issues: [epic, ...todo], prs: [{ ...open, files }], base: 'ba5e111' });
+  assert.deepEqual(plan(cfg, open.files).held, [{ issue: 6, pr: 20 }, { issue: 7, pr: 20 }], 'without alwaysInScope a worked PR holds both');
+  const sharedOnly = plan(shared, open.files);
+  assert.deepEqual([sharedOnly.held, sharedOnly.units.filter(unit => !unit.pr).map(unit => unit.issue)], [[], [6, 7]], 'two issues sharing only alwaysInScope paths are not held');
+  assert.deepEqual(plan(shared, [...open.files, { path: 'src/7.js' }]).held, [{ issue: 7, pr: 20 }], 'a file outside the shared paths still overlaps');
+  const at = (threads, column, base) => afkPlan(cfg, ['live-run'], number => threads[number] || [], 'new-run', { issues: [epic, todo[0], board(9, column)], prs: [{ ...open, files: [{ path: 'src/6.js' }] }], base }).held;
+  assert.deepEqual(at({}, 'Review', 'ba5e111'), [], 'a PR nobody works on holds nothing');
+  assert.deepEqual(at({ 9: hold }, 'In progress', 'ba5e111'), [{ issue: 6, pr: 20 }], "a live hold on the PR's issue holds");
+  const blocked = [{ id: 2, body: '<!-- afk-issue-blocked session=old-run -->\n**Blocked:** run old-run ended with PR #20 open (head `abc`); base head `ba5e111`.' }];
+  assert.deepEqual(at({ 9: blocked }, 'Blocked', 'ba5e111'), [{ issue: 6, pr: 20 }], 'Blocked at the current base head holds');
+  assert.deepEqual(at({ 9: blocked }, 'Blocked', 'ba5e222'), [], 'one base change later it holds nothing');
+  assert.deepEqual(at({ 9: blocked }, 'Todo', 'ba5e111'), [], 'a card no longer Blocked holds nothing');
 });
 
 test('a ready PR merges before the tick plans, so no build is held behind it', () => {
@@ -964,8 +984,8 @@ test('AFK eligibility records post as the configured Reviewer, not through the c
 
 test('afk check and afk start name each build held behind an overlapping open PR', () => {
   assert.deepEqual(afkHeldLines([{ issue: 345, pr: 354 }, { issue: 351, pr: 354 }]), [
-    'Held: #345 overlaps open PR #354; no build until it merges or closes',
-    'Held: #351 overlaps open PR #354; no build until it merges or closes',
+    'Held: #345 overlaps open PR #354; no build while a run works on it or it is Blocked at this base',
+    'Held: #351 overlaps open PR #354; no build while a run works on it or it is Blocked at this base',
   ]);
 });
 
@@ -1019,7 +1039,7 @@ test('retro filing pauses while open work remains, then takes bugs only', () => 
 
 test('afk start names builds held behind an overlapping PR at both its Done and its Explore exit', () => {
   const held = [{ issue: 345, pr: 354 }], merged = ['PR #1 merged'];
-  const line = 'Held: #345 overlaps open PR #354; no build until it merges or closes';
+  const line = 'Held: #345 overlaps open PR #354; no build while a run works on it or it is Blocked at this base';
   assert.deepEqual(afkStartIdleLines(false, merged, held), ['Done: every free piece of work has its runner.', 'PR #1 merged', line]);
   assert.deepEqual(afkStartIdleLines(true, merged, held), ['Explore: no work is free for this run; play `explore` unattended.', 'PR #1 merged', line]);
   assert.deepEqual(afkStartIdleLines(false, [], []), ['Done: every free piece of work has its runner.']);

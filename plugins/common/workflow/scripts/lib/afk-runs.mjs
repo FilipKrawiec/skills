@@ -85,6 +85,7 @@ export function afkConfig(refreshMetadata = false) {
   if (lanes.startCommand.some(value => value.includes('{model}')) && (typeof lanes.model !== 'string' || !lanes.model.trim())) throw new Error('Configure afk.model because startCommand uses {model}');
   if (lanes.startCommand.some(value => value.includes('{permissionMode}')) && (typeof lanes.permissionMode !== 'string' || !lanes.permissionMode.trim())) throw new Error('Configure afk.permissionMode because startCommand uses {permissionMode}');
   if (lanes.promptPrefix !== undefined && typeof lanes.promptPrefix !== 'string') throw new Error('Configure afk.promptPrefix as a string');
+  if (lanes.alwaysInScope !== undefined && !(Array.isArray(lanes.alwaysInScope) && lanes.alwaysInScope.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.'))) throw new Error('Configure afk.alwaysInScope as an array of repository paths');
   if (!Number.isSafeInteger(lanes.maxRunMinutes) || lanes.maxRunMinutes < 1) throw new Error('Configure afk.maxRunMinutes as a positive integer');
   if (!Number.isSafeInteger(lanes.watchIntervalSeconds) || lanes.watchIntervalSeconds < 15) throw new Error('Configure afk.watchIntervalSeconds as an integer of at least 15');
   if (lanes.runsCommand && (!Number.isSafeInteger(lanes.waitTimeoutMinutes) || lanes.waitTimeoutMinutes < 1)) throw new Error('Configure afk.waitTimeoutMinutes as a positive integer when afk.runsCommand is set');
