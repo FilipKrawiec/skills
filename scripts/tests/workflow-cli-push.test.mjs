@@ -54,7 +54,7 @@ test('push refuses a PR another live AFK run holds, and lets the holder push', t
   assert.equal(own.status, 0, own.stderr); assert.equal(existsSync(f.env.PUSH_RECORD), true);
 });
 
-test('push refuses a Part of slice PR whose issue another live AFK run holds, but not one whose epic a stage run holds', t => {
+test('push refuses a Part of slice PR whose issue another live AFK run holds', t => {
   const f = fixture(t); holdLedger(f, 'afk-holder', 7);
   f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'Part of #7' }]);
   f.env.HOLD_COMMENTS_ISSUE = '7';
@@ -63,9 +63,6 @@ test('push refuses a Part of slice PR whose issue another live AFK run holds, bu
   assert.notEqual(refused.status, 0);
   assert.match(refused.stderr, /AFK run afk-holder holds #7/);
   assertNoPush(f);
-  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-epic-hold session=afk-holder -->' }]);
-  const slice = f.cliRun('push');
-  assert.equal(slice.status, 0, slice.stderr); assert.equal(existsSync(f.env.PUSH_RECORD), true);
 });
 
 test('push goes through a hold whose run has ended', t => {

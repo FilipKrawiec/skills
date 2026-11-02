@@ -346,11 +346,10 @@ async function push(args) {
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   // Pushing over a PR that another live run works on strands that run's own push, so its hold never ends; only the holder pushes.
-  // An epic stage run never pushes its slices' PRs, so its epic hold does not block a slice that is `Part of` the epic.
   const live = afkLive({ ...workflowDefaults.afk, ...lanes });
   for (const pr of pulls) for (const number of new Set([pr.number, ...prLinkedIssues(pr, repo)])) {
     const comments = jsonCommand('gh', ['api', '--paginate', '--slurp', `repos/${repo}/issues/${number}/comments`], { cwd: root, env: metadataEnv }).flat();
-    const holder = afkLiveHolds(comments, live, process.env.WORKFLOW_RUN_ID || '').find(hold => hold.kind === 'issue' && hold.run !== process.env.WORKFLOW_RUN_ID);
+    const holder = afkLiveHolds(comments, live, process.env.WORKFLOW_RUN_ID || '').find(hold => hold.run !== process.env.WORKFLOW_RUN_ID);
     if (holder) throw new Error(`AFK run ${holder.run} holds #${number}; let it finish instead of pushing to PR #${pr.number}`);
   }
   const head = git('rev-parse', 'HEAD');
