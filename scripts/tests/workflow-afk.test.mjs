@@ -889,8 +889,10 @@ test('a card In progress with no live run, or in Review with no open PR, is serv
 });
 
 test('an attended state:started card is never orphaned or offered, while an abandoned state:claimed card is recovered', () => {
-  const plan = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, board(2, 'In progress', ['lane:afk', 'state:started']), board(3, 'Todo', ['lane:afk', 'state:started']), board(4, 'In progress', ['lane:afk', 'state:claimed'])], prs: [] });
+  const plan = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, board(2, 'In progress', ['lane:afk', 'state:started']), board(3, 'Todo', ['lane:afk', 'state:started']), board(4, 'In progress', ['lane:afk', 'state:claimed']), board(5, 'Blocked', ['lane:afk', 'state:started']), board(6, 'Backlog', ['lane:proposed', 'state:started'])], prs: [] });
   assert.deepEqual([plan.orphans, plan.units.map(unit => [unit.issue, unit.column])], [[4], [[4, 'Todo']]]);
+  const withPr = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, board(7, 'Review', ['lane:afk', 'state:started'])], prs: [reviewPr(20, { body: 'Part of #7' })] });
+  assert.deepEqual(withPr.units, [], 'an attended issue\'s open PR is not offered either');
 });
 
 test('an epic is served only to slice it or to close it once every slice closed', () => {
