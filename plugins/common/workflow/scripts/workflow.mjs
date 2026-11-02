@@ -14,7 +14,7 @@ const help = `Usage:
   node workflow.mjs commit --message MESSAGE -- PATH...
   node workflow.mjs push [--owner-bootstrap]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
-  node workflow.mjs issue claim|status|comment|close|queue ...
+  node workflow.mjs issue claim|status|comment|close|reopen|queue ...
   node workflow.mjs labels ensure
   node workflow.mjs cache show|refresh
   node workflow.mjs cache refresh
@@ -37,8 +37,8 @@ export const workflowDefaults = {
   github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
   afk: {
     runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
-    watchIntervalSeconds: 60, startCommand: ['pi', '--provider', 'ollama', '--model', '{model}', '--no-session', '--print', '--name', '{runId}', '--tools', 'bash', '{prompt}'],
-    model: 'coding:latest', promptPrefix: '/skill:afk', pluginUpdateCommands: [],
+    watchIntervalSeconds: 60, startCommand: ['pi', '--provider', 'ollama', '--model', '{model}', '--thinking', 'off', '--no-session', '--print', '--name', '{runId}', '--tools', 'bash,workflow', '--skill', '{skillPath}', '--extension', '{extensionPath}', '{prompt}'],
+    model: 'coding:latest', pluginUpdateCommands: [],
   },
   explore: { personas: '.agents/personas.md', maxIssues: 3, idleHours: 24, capturesBranch: 'explore-captures' },
 };
@@ -91,13 +91,26 @@ function jsonCommand(program, args, options) { return JSON.parse(run(program, ar
 function cleanEnvironment(source = process.env) {
   const env = { ...source };
   for (const key of Object.keys(env)) {
-    if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_CONFIG_DIR|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|NODE_OPTIONS|NODE_PATH|WORKFLOW_PUSH_TOKEN|WORKFLOW_CREDENTIAL_SOCKET|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete env[key];
+    if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_CONFIG_DIR|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|SSH_AUTH_SOCK|SSH_AGENT_PID|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|NODE_OPTIONS|NODE_PATH|WORKFLOW_PUSH_TOKEN|WORKFLOW_CREDENTIAL_SOCKET|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete env[key];
   }
   // Replacement refs are local overrides and must not change trusted commits or trees.
   env.GIT_NO_REPLACE_OBJECTS = '1';
   return env;
 }
 export function afkAgentEnvironment(source = process.env) { return cleanEnvironment(source); }
+export function afkPiEnvironment(source, ghConfigDir) {
+  const env = afkAgentEnvironment(source);
+  env.GH_CONFIG_DIR = ghConfigDir;
+  env.GIT_CONFIG_GLOBAL = '/dev/null';
+  env.GIT_CONFIG_NOSYSTEM = '1';
+  env.GIT_SSH_COMMAND = 'ssh -F /dev/null -o BatchMode=yes -o IdentityAgent=none -o IdentitiesOnly=yes -o IdentityFile=/dev/null';
+  env.GIT_CONFIG_COUNT = '1';
+  env.GIT_CONFIG_KEY_0 = 'credential.helper';
+  env.GIT_CONFIG_VALUE_0 = '';
+  delete env.SSH_AUTH_SOCK;
+  delete env.SSH_AGENT_PID;
+  return env;
+}
 export function assertDistinctPushRoles({ owner, implementer, reviewer }) {
   const values = [owner, implementer, reviewer];
   if (values.some(value => typeof value !== 'string' || !/^[A-Za-z0-9-]+$/.test(value)) || new Set(values.map(value => value.toLowerCase())).size !== values.length) {
@@ -208,6 +221,14 @@ function commit(args) {
   if (paths.some(path => !path || path === '.' || path.startsWith('/') || path.startsWith(':') || path.split('/').includes('..'))) throw new Error('Provide explicit repository-relative paths');
   const root = requireLinkedWorktree();
   if (realpathSync(process.cwd()) !== realpathSync(root)) throw new Error('Run commit from the repository root');
+  const runId = process.env.WORKFLOW_RUN_ID;
+  if (runId) {
+    const issue = Number(process.env.WORKFLOW_ISSUE_NUMBER);
+    const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+    const hold = afkReadLedger(join(common, 'afk-holds.json'))[runId]?.find(item => item.number === issue);
+    if (!Number.isSafeInteger(issue) || !hold) throw new Error('AFK commit requires the current run to hold its bound issue');
+    if (Array.isArray(hold.paths) && !afkPathsWithinScope(paths, hold.paths)) throw new Error('Commit paths exceed the assigned AFK scope');
+  }
   const env = cleanEnvironment();
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
   if (staged.error || staged.status !== 0) throw new Error('Existing staged changes or an unreadable index; preserve them and commit separately');
@@ -223,6 +244,7 @@ async function push(args) {
   const { root, lanes, baseRef, configSource } = config(true, true, ownerBootstrap);
   if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
   requireLinkedWorktree();
+  afkAssertPushScope(root, baseRef);
   if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from origin and Owner from CODEOWNERS');
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
@@ -254,6 +276,7 @@ async function push(args) {
     const prefix = entry.slice(separator + 1);
     if (prefix && destination.startsWith(prefix)) throw new Error('Git URL rewrite may change the verified push');
   }
+  if (process.env.WORKFLOW_RUN_ID) afkLoadEnvironment({ ...workflowDefaults.afk, ...lanes, repo });
   const env = cleanEnvironment();
   if (ownerBootstrap && !owner) throw new Error('The trusted base CODEOWNERS must identify the owner for first-config bootstrap');
   const token = run('gh', ['auth', 'token', '--hostname', 'github.com', '--user', ownerBootstrap ? owner : user], { cwd: root, env });
@@ -496,6 +519,15 @@ export const workflowLabels = {
   'type:task': ['c5def5', 'Work that ends in a finding or setting'],
 };
 function afkComments(cfg, issue) { return afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/issues/${issue}/comments`]).flat(); }
+export function afkPathsFromIssueBody(body = '') {
+  if (/\b(?:make\s+no|do\s+not\s+make(?:\s+any)?)\s+(?:repository|repo)\s+(?:changes|files|commits)\b/i.test(body)) return [];
+  const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
+  try {
+    const parsed = scope ? JSON.parse(scope[1]).paths : null;
+    if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) return parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
+  } catch { /* An invalid scope packet is treated as unscoped. */ }
+  return null;
+}
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
   const fields = 'number title body lastEditedAt labels(first:30){nodes{name}} blockedBy(first:30){nodes{state}} milestone{number dueOn} parent{number parent{number parent{number parent{number}}}}';
@@ -515,12 +547,7 @@ function afkIssues(cfg) {
       const priority = issue.projectItems?.nodes.find(card => card.project.number === cfg.project?.number)?.fieldValueByName?.name || 'P9';
       const ancestors = []; let parent = issue.parent;
       while (parent) { ancestors.push(parent.number); parent = parent.parent; }
-      const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(issue.body || '');
-      let paths = null;
-      try {
-        const parsed = scope ? JSON.parse(scope[1]).paths : null;
-        if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) paths = parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
-      } catch { /* An invalid scope packet is treated as a whole-epic unit. */ }
+      const paths = afkPathsFromIssueBody(issue.body || '');
       return { ...issue, labels, priority, ancestors, paths, blocked: issue.blockedBy.nodes.some(dep => dep.state === 'OPEN') };
     }));
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
@@ -853,6 +880,48 @@ function issueClose(args) {
     console.log(`Closed #${n}`);
   });
 }
+function issueReopen(args) {
+  const o = afkFlags(args, ['--number']);
+  const n = Number(o['--number']);
+  if (!Number.isInteger(n) || n < 1) throw new Error('Usage: issue reopen --number N');
+  const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg);
+  return withRepoLock(`issue-reopen-${n}`, () => {
+    const result = afkGh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, '-f', 'state=open']);
+    if (result.state !== 'open') throw new Error(`GitHub did not confirm #${n} open`);
+    console.log(`Reopened #${n}`);
+  });
+}
+export function afkCanCloseIssue({ request, runId, issue, held, report, comments, baselineCommentIds }) {
+  const baseline = new Set(baselineCommentIds || []);
+  const added = (comments || []).filter(comment => !baseline.has(comment.id));
+  return Boolean(held && added.length === 1 && added[0].body === report && request?.runId === runId && String(request.issue) === String(issue) && report?.includes(`Run ID: \`${runId}\``) && report.includes('Pi process: **completed**') && report.includes('Pi workflow extension called the Node workflow CLI'));
+}
+export function afkPathsWithinScope(paths, scope) {
+  if (!Array.isArray(paths)) return false;
+  if (scope === null) return true;
+  if (!Array.isArray(scope)) return false;
+  return paths.every(path => scope.some(value => {
+    const root = value.replace(/^\.\//, '').replace(/\/+$/, '');
+    return root && (path === root || path.startsWith(`${root}/`));
+  }));
+}
+function afkChangedPaths(root, beforeHead) {
+  const committed = run('git', ['diff', '--name-only', `${beforeHead}..HEAD`], { cwd: root }).split('\n').filter(Boolean);
+  const working = run('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { cwd: root }).split('\0').filter(Boolean).map(row => row.slice(3).split(' -> ').at(-1));
+  return [...new Set([...committed, ...working])];
+}
+function afkAssertPushScope(root, baseRef) {
+  const runId = process.env.WORKFLOW_RUN_ID;
+  if (!runId) return;
+  const issue = Number(process.env.WORKFLOW_ISSUE_NUMBER);
+  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+  const hold = afkReadLedger(join(common, 'afk-holds.json'))[runId]?.find(item => item.number === issue);
+  if (!Number.isSafeInteger(issue) || !hold) throw new Error('AFK push requires the current run to hold its bound issue');
+  if (Array.isArray(hold.paths)) {
+    const base = git('rev-parse', baseRef);
+    if (!afkPathsWithinScope(afkChangedPaths(root, base), hold.paths)) throw new Error('Push paths exceed the assigned AFK scope');
+  }
+}
 function issueQueue(args, lanes) { afkQueue(args); }
 function afkPrs(cfg) {
   return afkPrData(cfg);
@@ -1006,6 +1075,8 @@ function afkEndRun(cfg, common, id) {
 }
 function afkExpandedPath(path) { return path.replace(/^~(?=\/|$)/, homedir()); }
 export function afkWorkflowCliPath() { return realpathSync(fileURLToPath(import.meta.url)); }
+export function afkWorkflowSkillPath() { return realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'afk', 'SKILL.md')); }
+export function afkWorkflowExtensionPath() { return realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'pi', 'afk.mjs')); }
 export function afkLoadEnvironment(cfg) {
   for (const key of Object.keys(process.env)) {
     if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete process.env[key];
@@ -1194,13 +1265,42 @@ function afkWatch(cfg, common, requestedIssue = null) {
     const issueArg = requestedIssue ? ` --issue ${requestedIssue}` : '';
     const assignment = cfg.runsCommand ? null : afkStartRun(cfg, runId, common, requestedIssue, true, true);
     const held = typeof assignment === 'string' && assignment.includes('Hold:');
-    const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
-    let output;
+    const heldIssue = requestedIssue || Number(/Hold: issue #(\d+)|Hold: epic #(\d+)/.exec(assignment || '')?.slice(1).find(Boolean)) || '';
+    const heldRecord = afkReadLedger(join(common, 'afk-holds.json'))[runId]?.find(value => value.number === heldIssue);
+    const baselineCommentIds = heldIssue ? afkComments(cfg, heldIssue).map(comment => comment.id) : [];
+    const beforeHead = run('git', ['rev-parse', 'HEAD'], { cwd: watchRoot });
+    let changedPaths = [];
+    const closeRequestPath = join(common, 'afk-close-requests', `${runId}.json`);
+    mkdirSync(dirname(closeRequestPath), { recursive: true });
+    rmSync(closeRequestPath, { force: true });
+    const prompt = `Follow the loaded AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
+    let output, runError;
     try {
-      output = afkConfiguredCommand(cfg.startCommand, { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, repository: cfg.repo }, { cwd: watchRoot });
+      try {
+        const agentGhConfig = join(common, 'afk-agent-gh-config', runId);
+        mkdirSync(agentGhConfig, { recursive: true });
+        const env = afkPiEnvironment({ ...process.env, WORKFLOW_CLI_PATH: cliPath, WORKFLOW_RUN_ID: runId, WORKFLOW_ISSUE_NUMBER: String(heldIssue), WORKFLOW_MODEL: cfg.model, WORKFLOW_READ_ONLY: String(Array.isArray(heldRecord?.paths) && heldRecord.paths.length === 0), WORKFLOW_CLOSE_REQUEST_PATH: closeRequestPath }, agentGhConfig);
+        output = afkConfiguredCommand(cfg.startCommand, { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, skillPath: afkWorkflowSkillPath(), extensionPath: afkWorkflowExtensionPath(), repository: cfg.repo }, { cwd: watchRoot, env });
+      } catch (error) { runError = error; }
+      finally {
+        changedPaths = afkChangedPaths(watchRoot, beforeHead);
+        if (held) afkEndRun(cfg, common, runId);
+      }
+      if (!runError && existsSync(closeRequestPath)) {
+        const request = JSON.parse(readFileSync(closeRequestPath, 'utf8'));
+        const ledger = afkReadLedger(join(common, 'afk-holds.json'));
+        const comments = afkComments(cfg, heldIssue);
+        const report = comments.map(comment => comment.body || '').find(body => afkCanCloseIssue({ request, runId, issue: heldIssue, held: held && !ledger[runId], report: body, comments, baselineCommentIds }));
+        if (!report) throw new Error(`Close request for #${heldIssue} was not authorized: completed report or released hold is missing`);
+        if (!afkPathsWithinScope(changedPaths, heldRecord?.paths)) throw new Error(`Close request for #${heldIssue} was denied: run changed files outside its assigned scope`);
+        const close = runWithLocks(join(common, 'workflow-locks'), [`issue-close-${heldIssue}`], process.execPath, [cliPath, 'issue', 'close', '--number', String(heldIssue)], { cwd: watchRoot, env: process.env });
+        if (close.status !== 0) throw new Error(`Workflow CLI could not close verified issue #${heldIssue}`);
+      }
     } finally {
-      if (held) afkEndRun(cfg, common, runId);
+      rmSync(closeRequestPath, { force: true });
+    rmSync(join(common, 'afk-agent-gh-config', runId), { recursive: true, force: true });
     }
+    if (runError) throw runError;
     console.log(output ? `Completed: ${runId}\n${output}` : `Started: ${runId}`);
   }
   return code === 2 ? 2 : 0;
@@ -1257,7 +1357,7 @@ function requiredLocks(command, args) {
       const index = args.indexOf('--number');
       return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`claim-${args[index + 1]}`] : [];
     }
-    if (['comment', 'close'].includes(args[0])) {
+    if (['comment', 'close', 'reopen'].includes(args[0])) {
       const index = args.indexOf('--number');
       return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`issue-${args[0]}-${args[index + 1]}`] : [];
     }
@@ -1390,6 +1490,7 @@ async function execute(command, args) {
   else if (command === 'issue' && args[0] === 'status') { const { lanes } = config(); issueStatus(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'comment') { config(); issueComment(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
+  else if (command === 'issue' && args[0] === 'reopen') { config(); issueReopen(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'queue') { const { lanes } = config(); issueQueue(args.slice(1)); }
   else if (command === 'labels') labelsCommand(args);
   else if (command === 'cache') cacheCommand(args);

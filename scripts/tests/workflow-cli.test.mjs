@@ -44,6 +44,7 @@ if (args[0] === 'auth' && args[1] === 'token') {
   if (args.some(arg => arg.includes('collaborators/') && arg.includes('/permission'))) out({ role_name: 'admin' });
   else if (args.includes('repos/acme/app')) out({ default_branch: 'main', owner: { type: process.env.FAKE_OWNER_KIND || 'Organization', login: 'acme' } });
   else if (args.includes('repos/acme/app/branches/main')) out({ commit: { sha: process.env.REMOTE_BASE_SHA } });
+  else if (args.some(arg => arg.startsWith('repos/acme/app/issues/') && /^\\d+$/.test(arg.split('/').at(-1))) && args.includes('state=open')) { fs.writeFileSync(process.env.ISSUE_STATE_RECORD, JSON.stringify(args)); out({ state: 'open' }); }
   else {
     const actor = process.env.FAKE_ACTOR || 'builder';
     process.stdout.write(args.includes('--jq') ? actor + '\\n' : JSON.stringify({ login: actor }) + '\\n');
@@ -60,6 +61,7 @@ const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 const real = process.env.REAL_GIT;
+if (args[0] === 'fetch') process.exit(0);
 if (args.includes('commit') && process.env.TEST_CONCURRENT_STAGE) spawnSync(real, ['add', 'unrelated.txt'], { stdio: 'inherit' });
 if (!args.includes('push')) {
   const result = spawnSync(real, args, { stdio: 'inherit' });
@@ -99,6 +101,9 @@ function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'workflow-cli-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const bin = join(directory, 'bin'); mkdirSync(bin);
+  const home = join(directory, 'home');
+  mkdirSync(join(home, '.config', 'gh-agents'), { recursive: true });
+  writeFileSync(join(home, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: {} }));
   const main = join(directory, 'repo'); mkdirSync(join(main, '.agents'), { recursive: true }); mkdirSync(join(main, '.github'), { recursive: true });
   const linked = join(directory, 'linked');
   const realGit = run('which', ['git']).stdout.trim();
@@ -118,6 +123,7 @@ function fixture(t) {
   const env = {
     ...process.env,
     PATH: `${bin}:${process.env.PATH}`,
+    HOME: home,
     REAL_GIT: realGit,
     PUSH_RECORD: join(directory, 'push.json'),
     GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
@@ -183,6 +189,52 @@ test('commit includes only assigned paths', t => {
   assert.deepEqual(f.linkedGit('show', '--format=', '--name-only', 'HEAD').stdout.trim().split('\\n'), ['assigned.txt']);
   assert.equal(existsSync(join(f.repo, 'unrelated.txt')), true);
   assert.equal(JSON.parse(result.stdout).result, 'committed');
+});
+
+test('AFK commit enforces the issue scope recorded in the hold', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/'] }] }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  f.env.GIT_AUTHOR_NAME = 'Test';
+  f.env.GIT_AUTHOR_EMAIL = 'test@example.test';
+  f.env.GIT_COMMITTER_NAME = 'Test';
+  f.env.GIT_COMMITTER_EMAIL = 'test@example.test';
+  mkdirSync(join(f.repo, '.captures-886'));
+  writeFileSync(join(f.repo, '.captures-886', 'after.jpeg'), 'capture');
+  const denied = f.cliRun('commit', '--message', 'chore: out of scope', '--', '.captures-886/after.jpeg');
+  assert.notEqual(denied.status, 0);
+  assert.match(denied.stderr, /assigned AFK scope/);
+  assert.equal(f.linkedGit('diff', '--cached', '--name-only').stdout.trim(), '');
+  mkdirSync(join(f.repo, 'docs'));
+  writeFileSync(join(f.repo, 'docs', 'report.md'), 'in scope');
+  const allowed = f.cliRun('commit', '--message', 'docs: in scope', '--', 'docs/report.md');
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.deepEqual(f.linkedGit('show', '--format=', '--name-only', 'HEAD').stdout.trim().split('\n'), ['docs/report.md']);
+  const committed = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: [] }] }));
+  writeFileSync(join(f.repo, 'docs', 'read-only.md'), 'must stay uncommitted');
+  const readOnly = f.cliRun('commit', '--message', 'docs: violate read-only task', '--', 'docs/read-only.md');
+  assert.notEqual(readOnly.status, 0);
+  assert.match(readOnly.stderr, /assigned AFK scope/);
+  assert.equal(f.linkedGit('rev-parse', 'HEAD').stdout.trim(), committed);
+});
+
+test('AFK push rejects raw commits outside the issue scope before authenticating', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/'] }] }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  mkdirSync(join(f.repo, '.captures-886'));
+  writeFileSync(join(f.repo, '.captures-886', 'after.jpeg'), 'capture');
+  assert.equal(run(f.env.REAL_GIT, ['add', '.captures-886/after.jpeg'], { cwd: f.repo }).status, 0);
+  assert.equal(run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-m', 'chore: bypass cli commit'], { cwd: f.repo }).status, 0);
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Push paths exceed the assigned AFK scope/);
+  assertNoPush(f);
 });
 
 test('commit excludes a path staged concurrently', t => {

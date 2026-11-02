@@ -1,12 +1,114 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
+import { linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkWorkflowCliPath, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPiEnvironment, afkCanCloseIssue, afkPathsWithinScope, afkWorkflowCliPath, afkWorkflowSkillPath, afkWorkflowExtensionPath, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import installPiAfkExtension, { blockedWorkflowCommand, buildAfkReport } from '../../plugins/common/workflow/pi/afk.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
+
+test('Pi AFK default loads the workflow skill as a skill, not as prompt text', () => {
+  const { startCommand, promptPrefix } = workflowDefaults.afk;
+  const skillArgument = startCommand.indexOf('--skill');
+  assert.ok(skillArgument >= 0);
+  assert.equal(startCommand[skillArgument + 1], '{skillPath}');
+  assert.equal(startCommand[startCommand.indexOf('--thinking') + 1], 'off');
+  assert.equal(promptPrefix, undefined);
+  const extensionArgument = startCommand.indexOf('--extension');
+  assert.ok(extensionArgument >= 0);
+  assert.equal(startCommand[extensionArgument + 1], '{extensionPath}');
+  assert.equal(startCommand[startCommand.indexOf('--tools') + 1], 'bash,workflow');
+  assert.equal(realpathSync(afkWorkflowSkillPath()), afkWorkflowSkillPath());
+  assert.equal(realpathSync(afkWorkflowExtensionPath()), afkWorkflowExtensionPath());
+});
+
+test('AFK issue close requires the completed Pi report and released hold', () => {
+  const request = { runId: 'run-1', issue: '1082' };
+  const report = 'Run ID: `run-1`; Pi process: **completed**. Pi workflow extension called the Node workflow CLI.';
+  const comments = [{ id: 2, body: report }];
+  const common = { request, runId: 'run-1', issue: 1082, report, comments, baselineCommentIds: [1] };
+  assert.equal(afkCanCloseIssue({ ...common, held: false }), false);
+  assert.equal(afkCanCloseIssue({ ...common, report: 'Run ID: `run-1`; Pi process: **aborted**.' }), false);
+  assert.equal(afkCanCloseIssue({ ...common, runId: 'run-2', held: true }), false);
+  assert.equal(afkCanCloseIssue({ ...common, held: true, comments: [...comments, { id: 3, body: 'Ready for review' }] }), false);
+  assert.equal(afkCanCloseIssue({ ...common, held: true }), true);
+});
+
+test('AFK close denies changed paths outside the assigned scope', () => {
+  assert.equal(afkPathsWithinScope(['docs/a.md'], ['docs/']), true);
+  assert.equal(afkPathsWithinScope(['.captures-886/a.jpeg'], ['docs/']), false);
+  assert.equal(afkPathsWithinScope(['docs/read-only.md'], []), false);
+  assert.equal(afkPathsWithinScope([], []), true);
+  assert.equal(afkPathsWithinScope([], null), true);
+  assert.equal(afkPathsWithinScope(['src/app.dart'], null), true);
+});
+
+test('AFK scope makes explicit no-repository-change constraints read-only', () => {
+  assert.deepEqual(afkPathsFromIssueBody('Make no repository changes, commits, PRs, deployments.'), []);
+  assert.deepEqual(afkPathsFromIssueBody('```scope\n{"paths":["docs/"]}\n```'), ['docs/']);
+  assert.equal(afkPathsFromIssueBody('no valid packet'), null);
+});
+
+test('Pi AFK extension posts one bound final report through the Node workflow CLI', async t => {
+  const cwd = mkdtempSync(join(tmpdir(), 'workflow-pi-afk-'));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const cli = join(cwd, 'mock-cli.mjs');
+  const saved = Object.fromEntries(['WORKFLOW_CLI_PATH', 'WORKFLOW_RUN_ID', 'WORKFLOW_ISSUE_NUMBER', 'WORKFLOW_MODEL', 'WORKFLOW_READ_ONLY', 'WORKFLOW_CLOSE_REQUEST_PATH', 'WORKFLOW_TEST_BODY', 'WORKFLOW_TEST_CALLS'].map(key => [key, process.env[key]]));
+  t.after(() => { for (const [key, value] of Object.entries(saved)) value === undefined ? delete process.env[key] : process.env[key] = value; });
+  writeFileSync(cli, `import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';\nconst args=process.argv.slice(2);\nif(args[0]==='issue'&&args[1]==='comment'){if(args[2]!=='--number'||args[3]!=='1082'||args[4]!=='--body-file')process.exit(2);const body=readFileSync(args.at(-1),'utf8');if(!body.includes('afk-test-run')||!body.includes('coding:latest')||!body.includes('Pi workflow extension called the Node workflow CLI')||!body.includes('Task finished'))process.exit(3);writeFileSync(process.env.WORKFLOW_TEST_BODY,body);appendFileSync(process.env.WORKFLOW_TEST_CALLS,'comment\\n');console.log('Commented on #1082');process.exit(0)}\nif(args[0]==='commit'){appendFileSync(process.env.WORKFLOW_TEST_CALLS,JSON.stringify(args)+'\\n');console.log('Mock commit');process.exit(0)}\nprocess.exit(4);\n`);
+  const closeRequest = join(cwd, 'close-request.json');
+  Object.assign(process.env, { WORKFLOW_CLI_PATH: cli, WORKFLOW_RUN_ID: 'afk-test-run', WORKFLOW_ISSUE_NUMBER: '1082', WORKFLOW_MODEL: 'coding:latest', WORKFLOW_READ_ONLY: 'true', WORKFLOW_CLOSE_REQUEST_PATH: closeRequest, WORKFLOW_TEST_BODY: join(cwd, 'captured.md'), WORKFLOW_TEST_CALLS: join(cwd, 'calls') });
+  const handlers = new Map();
+  const tools = new Map();
+  installPiAfkExtension({ on: (name, handler) => handlers.set(name, handler), registerTool: tool => tools.set(tool.name, tool) });
+  const instructions = handlers.get('before_agent_start')({ systemPrompt: 'Pi system prompt' });
+  assert.match(instructions.systemPrompt, /no writable paths/);
+  assert.match(instructions.systemPrompt, /do not edit files, run project tests/);
+  assert.match(instructions.systemPrompt, /Do not poll issue state/);
+  assert.equal(handlers.get('tool_call')({ toolName: 'bash', input: { command: 'find . -type f | head' } }).block, true);
+  assert.equal(handlers.get('tool_call')({ toolName: 'bash', input: { command: 'rg --files' } }), undefined);
+  assert.match(handlers.get('tool_call')({ toolName: 'bash', input: { command: 'git -C app commit -m "chore: capture"' } }).reason, /workflow tool/);
+  assert.match(handlers.get('tool_call')({ toolName: 'bash', input: { command: 'gh issue comment 1082 --body test' } }).reason, /workflow tool/);
+  const context = { cwd, sessionManager: { getLeafEntry: () => ({ type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: 'Task finished' }] } }) } };
+  await handlers.get('agent_settled')({ aborted: false }, context);
+  await handlers.get('agent_settled')({ aborted: false }, context);
+  assert.match(readFileSync(join(cwd, 'captured.md'), 'utf8'), /Completion|Pi process: \*\*completed\*\*/);
+  const workflow = tools.get('workflow');
+  assert.ok(workflow);
+  assert.equal(workflow.promptGuidelines.length, 1);
+  assert.deepEqual(workflow.parameters.properties.action.enum, ['issue-status', 'issue-close', 'commit', 'push']);
+  await workflow.execute('call', { action: 'commit', message: 'feat: smoke-test', paths: ['docs/a.md'] }, null, null, context);
+  const calls = readFileSync(join(cwd, 'calls'), 'utf8').trim().split('\n').map(value => value === 'comment' ? value : JSON.parse(value));
+  assert.equal(calls[0], 'comment');
+  assert.deepEqual(calls[1], ['commit', '--message', 'feat: smoke-test', '--', 'docs/a.md']);
+  const close = await workflow.execute('call-close', { action: 'issue-close' }, null, null, context);
+  assert.match(close.content[0].text, /after it posts the report and releases the hold/);
+  assert.deepEqual(JSON.parse(readFileSync(closeRequest, 'utf8')), { runId: 'afk-test-run', issue: '1082' });
+  assert.equal(readFileSync(join(cwd, 'calls'), 'utf8').trim().split('\n').length, 2);
+  assert.match(buildAfkReport({ runId: 'r', model: 'm', outcome: 'aborted', summary: 'stopped' }), /\*\*aborted\*\*/);
+});
+
+test('Pi AFK blocks raw GitHub writes and Git commit/push but permits reads', () => {
+  for (const command of [
+    'git commit -m "feat: x"', 'git -C repo push', 'git --no-pager commit -m "feat: x"', 'git --git-dir=.git push',
+    'gh issue close 1082', 'gh --repo acme/app issue close 1082', 'gh issue --repo acme/app close 1082',
+    'gh api -X PATCH repos/a/b/issues/1', 'gh --repo acme/app api repos/a/b/issues/1 -X PATCH',
+    'gh project item-edit --id 1', '$(git commit -m x)', '`git push origin main`',
+    `bash -c 'git commit -m x'`, `bash -lc 'gh issue close 1082'`,
+    `g''it commit -m x`, `g\\it commit -m x`, `$'git' commit -m x`, `g''h issue close 1`,
+    'x=git; $x push', 'cmd=gh; $cmd issue close 1', '$(printf git) commit -m x',
+    '${CMD:-git} commit -m x', '${CMD:-gh} issue close 1',
+    '$(printf g)it commit -m x', '$(printf g)h issue close 1',
+  ]) {
+    assert.ok(blockedWorkflowCommand(command), command);
+  }
+  for (const command of ['git status --short', 'gh issue view 1082', 'gh --repo acme/app issue view 1082', 'gh pr checks 1']) {
+    assert.equal(blockedWorkflowCommand(command), null, command);
+  }
+});
+
 const epic = { number: 1, labels: ['type:epic'], ancestors: [], priority: 1 };
 function issue(number, labels, extra = {}) {
   return { number, labels, ancestors: [1], blocked: false, paths: [`src/${number}.js`], priority: 2, ...extra };
@@ -217,12 +319,25 @@ test('issue comment body files stay inside the worktree, including canonical sym
 });
 
 test('AFK runner does not inherit GitHub credentials or account selection', () => {
-  const env = afkAgentEnvironment({ GH_TOKEN: 'secret', GITHUB_TOKEN: 'also-secret', GH_CONFIG_DIR: '/private/gh-agents', OLLAMA_HOST: 'http://localhost:11434', PATH: '/bin' });
+  const env = afkAgentEnvironment({ GH_TOKEN: 'secret', GITHUB_TOKEN: 'also-secret', GH_CONFIG_DIR: '/private/gh-agents', SSH_AUTH_SOCK: '/private/ssh-agent', SSH_AGENT_PID: '1234', OLLAMA_HOST: 'http://localhost:11434', PATH: '/bin' });
   assert.equal(env.GH_TOKEN, undefined);
   assert.equal(env.GITHUB_TOKEN, undefined);
   assert.equal(env.GH_CONFIG_DIR, undefined);
+  assert.equal(env.SSH_AUTH_SOCK, undefined);
+  assert.equal(env.SSH_AGENT_PID, undefined);
   assert.equal(env.OLLAMA_HOST, 'http://localhost:11434');
   assert.equal(env.PATH, '/bin');
+  const piEnv = afkPiEnvironment({ GH_TOKEN: 'secret', GITHUB_TOKEN: 'also-secret', GH_CONFIG_DIR: '/private/gh-agents', GIT_CONFIG_GLOBAL: '/user/config', SSH_AUTH_SOCK: '/private/ssh-agent', SSH_AGENT_PID: '1234', OLLAMA_HOST: 'http://localhost:11434', PATH: '/bin' }, '/tmp/isolated-gh-config');
+  assert.equal(piEnv.GH_TOKEN, undefined);
+  assert.equal(piEnv.GITHUB_TOKEN, undefined);
+  assert.equal(piEnv.GH_CONFIG_DIR, '/tmp/isolated-gh-config');
+  assert.equal(piEnv.GIT_CONFIG_GLOBAL, '/dev/null');
+  assert.equal(piEnv.GIT_CONFIG_NOSYSTEM, '1');
+  assert.deepEqual([piEnv.GIT_CONFIG_COUNT, piEnv.GIT_CONFIG_KEY_0, piEnv.GIT_CONFIG_VALUE_0], ['1', 'credential.helper', '']);
+  assert.match(piEnv.GIT_SSH_COMMAND, /IdentityAgent=none/);
+  assert.equal(piEnv.SSH_AUTH_SOCK, undefined);
+  assert.equal(piEnv.SSH_AGENT_PID, undefined);
+  assert.equal(piEnv.OLLAMA_HOST, 'http://localhost:11434');
 });
 
 test('watcher resolves the CLI that installed it without host plugin metadata', () => {
