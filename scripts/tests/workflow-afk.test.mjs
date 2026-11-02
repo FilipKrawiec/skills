@@ -200,20 +200,11 @@ test('a proposed issue a run already checked waits for a change, whoever posted 
   assert.equal(plan(comments.map(comment => ({ ...comment, user: { login: 'stranger' } }))).length, 1, 'only the implementer or Reviewer records a verdict');
 });
 
-test('a ready issue a run left without a PR waits for a change or a day', () => {
-  const at = minutes => new Date(Date.now() + minutes * 60_000).toISOString();
-  const ready = issue(7, ['lane:afk'], { lastEditedAt: at(-120) });
-  const comments = [
-    { user: { login: 'builder' }, created_at: at(-60), body: '<!-- afk-issue-released session=run-1 -->\nUsage: 9 turns' },
-    { user: { login: 'builder' }, created_at: at(-50), body: 'Blocked: the scope packet misses a path.' },
-  ];
-  const plan = (list, edited = at(-120)) => afkPlan({ ...cfg, implementer: 'builder' }, [], number => number === 7 ? list : [], 'new-run', { issues: [epic, { ...ready, lastEditedAt: edited }], prs: [] }).epics[0].units;
-  assert.deepEqual(plan(comments), []);
-  assert.equal(plan(comments, at(-10)).length, 1, 'an edit after the hold re-queues it');
-  assert.equal(plan([...comments, { user: { login: 'owner' }, created_at: at(-5), body: 'Added the path.' }]).length, 1);
-  assert.equal(plan(comments.map(comment => ({ ...comment, created_at: at(-25 * 60) })), at(-26 * 60)).length, 1, 'a day later it is retried');
-  assert.equal(plan([{ ...comments[0], body: '<!-- afk-issue-released session=run-1 -->\nStart failed; hold released.' }]).length, 1);
-  assert.equal(plan([]).length, 1);
+test('a Blocked card stays out of selection until it moves back to Todo', () => {
+  const ready = status => afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, issue(7, ['lane:afk'], { status })], prs: [] }).epics[0].units;
+  assert.deepEqual(ready('Blocked'), []);
+  assert.equal(ready('Todo').length, 1);
+  assert.equal(ready(null).length, 1);
 });
 
 test('AFK imports the configured gh profile without importing git overrides', t => {
