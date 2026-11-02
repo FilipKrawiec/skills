@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -57,7 +58,10 @@ test('workflow label catalog is centralized in the CLI', () => {
 
 test('AFK and explore use conventional defaults with four concurrent runs', () => {
   assert.equal(workflowDefaults.afk.maxRuns, 4);
-  assert.deepEqual(workflowDefaults.afk.startCommand, ['claude', '--print', '--name', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}']);
+  assert.deepEqual(workflowDefaults.afk.startCommand, ['claude', '--print', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}']);
+  assert.equal(workflowDefaults.afk.toolingRepository, 'https://github.com/FilipKrawiec/skills.git');
+  assert.equal(workflowDefaults.afk.toolingRef, 'main');
+  assert.equal(workflowDefaults.afk.toolingDirectory, '~/.local/share/workflow-cli/skills');
   assert.equal(workflowDefaults.afk.permissionMode, 'auto');
   assert.equal(workflowDefaults.explore.personas, '.agents/personas.md');
 });
@@ -261,4 +265,50 @@ test('launchd ownership check accepts only this watcher or the same-repo legacy 
   assert.equal(afkPlistBelongsToWorkflow(owned.replace('/repo/.worktrees/afk-watch', '/tmp/other'), identity), false);
   assert.equal(afkPlistBelongsToWorkflow(owned.replace('</array>', '<string>--unexpected</string></array>'), identity), false);
   assert.equal(afkPlistBelongsToWorkflow(legacy.replace('</array>', '<string>--unexpected</string></array>'), { ...identity, allowLegacy: true }), false);
+});
+
+test('runs load the plugins shipped next to the running CLI', () => {
+  assert.equal(afkPluginDir('/tools/skills/plugins/common/workflow/scripts/workflow.mjs'), '/tools/skills/plugins/common');
+});
+
+const gitEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^GIT_CONFIG_/.test(key)));
+function gitIn(cwd, ...args) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...gitEnv, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+function publish(origin, version) {
+  const cli = join(origin, 'plugins', 'common', 'workflow', 'scripts');
+  mkdirSync(cli, { recursive: true });
+  writeFileSync(join(cli, 'workflow.mjs'), `console.log('v${version}', process.argv.slice(2).join(' '));\n`);
+  gitIn(origin, 'add', '-A'); gitIn(origin, 'commit', '--quiet', '-m', `v${version}`);
+}
+
+test('the watcher launcher keeps its own tooling checkout on the latest release', t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'tooling-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const origin = join(root, 'origin'); mkdirSync(origin);
+  gitIn(origin, 'init', '--quiet', '--initial-branch', 'main');
+  publish(origin, 1);
+  const tooling = join(root, 'tooling');
+  afkEnsureTooling(tooling, origin, 'main');
+  assert.equal(gitIn(tooling, 'rev-parse', 'HEAD'), gitIn(origin, 'rev-parse', 'HEAD'));
+  const launcher = join(root, 'launch.mjs');
+  writeFileSync(launcher, afkLauncherSource({ toolingDirectory: tooling, ref: 'main' }));
+  const launch = () => spawnSync(process.execPath, [launcher, 'afk', 'watch'], { encoding: 'utf8', env: gitEnv });
+
+  assert.match(launch().stdout, /^v1 afk watch/);
+  publish(origin, 2);
+  assert.match(launch().stdout, /^v2 afk watch/);
+
+  writeFileSync(join(tooling, 'plugins', 'common', 'workflow', 'scripts', 'workflow.mjs'), "console.log('local');\n");
+  publish(origin, 3);
+  const dirty = launch();
+  assert.match(dirty.stdout, /^local/);
+  assert.match(dirty.stderr, /local changes/);
+
+  assert.throws(() => afkEnsureTooling(tooling, origin, 'main'), /local changes/);
+  const stranger = join(root, 'stranger'); mkdirSync(stranger);
+  writeFileSync(join(stranger, 'file'), 'x');
+  assert.throws(() => afkEnsureTooling(stranger, origin, 'main'), /not a Git checkout/);
 });

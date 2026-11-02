@@ -37,8 +37,9 @@ export const workflowDefaults = {
   github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
   afk: {
     runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
-    watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--name', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
+    watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
     permissionMode: 'auto', pluginUpdateCommands: [],
+    toolingRepository: 'https://github.com/FilipKrawiec/skills.git', toolingRef: 'main', toolingDirectory: '~/.local/share/workflow-cli/skills',
   },
   explore: { personas: '.agents/personas.md', maxIssues: 3, idleHours: 24, capturesBranch: 'explore-captures' },
 };
@@ -473,6 +474,7 @@ function afkConfig(refreshMetadata = false) {
   }
   lanes.base = lanes.base || baseRef.slice('refs/remotes/origin/'.length);
   if (typeof lanes.environmentFile !== 'string' || !lanes.environmentFile.trim()) throw new Error('afk.environmentFile must be a non-empty string');
+  for (const key of ['toolingRepository', 'toolingRef', 'toolingDirectory']) if (typeof lanes[key] !== 'string' || !lanes[key].trim()) throw new Error(`afk.${key} must be a non-empty string`);
   if (lanes.startCommand.some(value => value.includes('{model}')) && (typeof lanes.model !== 'string' || !lanes.model.trim())) throw new Error('Configure afk.model because startCommand uses {model}');
   if (lanes.startCommand.some(value => value.includes('{permissionMode}')) && (typeof lanes.permissionMode !== 'string' || !lanes.permissionMode.trim())) throw new Error('Configure afk.permissionMode because startCommand uses {permissionMode}');
   if (lanes.promptPrefix !== undefined && typeof lanes.promptPrefix !== 'string') throw new Error('Configure afk.promptPrefix as a string');
@@ -1085,6 +1087,41 @@ function afkEndRun(cfg, common, id) {
 }
 function afkExpandedPath(path) { return path.replace(/^~(?=\/|$)/, homedir()); }
 export function afkWorkflowCliPath() { return realpathSync(fileURLToPath(import.meta.url)); }
+export function afkPluginDir(cliPath) { return resolve(dirname(cliPath), '..', '..'); }
+const toolingCli = join('plugins', 'common', 'workflow', 'scripts', 'workflow.mjs');
+export function afkEnsureTooling(directory, repository, ref) {
+  const env = cleanEnvironment();
+  if (!existsSync(directory)) {
+    mkdirSync(dirname(directory), { recursive: true });
+    run('git', ['clone', '--quiet', '--no-checkout', repository, directory], { env });
+  } else {
+    let top;
+    try { top = realpathSync(run('git', ['rev-parse', '--show-toplevel'], { cwd: directory, env })); } catch {}
+    if (top !== realpathSync(directory)) throw new Error(`${directory} is not a Git checkout of the workflow tooling; preserve it and choose another afk.toolingDirectory`);
+    if (run('git', ['remote', 'get-url', 'origin'], { cwd: directory, env }) !== repository) throw new Error(`${directory} tracks another repository; preserve it and choose another afk.toolingDirectory`);
+    run('git', ['fetch', '--quiet', 'origin', ref], { cwd: directory, env });
+    if (run('git', ['status', '--porcelain'], { cwd: directory, env })) throw new Error(`${directory} has local changes; preserve them and retry after cleanup`);
+  }
+  run('git', ['checkout', '--quiet', '--detach', `origin/${ref}`], { cwd: directory, env });
+  return join(directory, toolingCli);
+}
+export function afkLauncherSource({ toolingDirectory, ref }) {
+  return `import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+const dir = ${JSON.stringify(toolingDirectory)};
+const ref = ${JSON.stringify(ref)};
+const cli = join(dir, ${JSON.stringify(toolingCli)});
+const git = (...args) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+if (git('fetch', '--quiet', 'origin', ref).status !== 0) console.error('Workflow tooling update failed; running the current version');
+else if (git('status', '--porcelain').stdout.trim()) console.error(\`Workflow tooling at \${dir} has local changes; running its current version\`);
+else if (git('checkout', '--quiet', '--detach', \`origin/\${ref}\`).status !== 0) console.error('Workflow tooling checkout failed; running the current version');
+if (!existsSync(cli)) { console.error('The workflow CLI is missing; rerun afk install'); process.exit(1); }
+const result = spawnSync(process.execPath, [cli, ...process.argv.slice(2)], { stdio: 'inherit' });
+if (result.error) { console.error(result.error.message); process.exit(1); }
+process.exit(result.status ?? 1);
+`;
+}
 export function afkLoadEnvironment(cfg) {
   for (const key of Object.keys(process.env)) {
     if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete process.env[key];
@@ -1220,14 +1257,9 @@ function afkInstall(cfg) {
     const loaded = spawnSync('launchctl', ['print', `gui/${process.getuid()}/${label}`], { stdio: 'ignore' });
     if (!loaded.error && loaded.status === 0) throw new Error(`LaunchAgent ${label} is already loaded without an owned plist; preserve it and choose a unique afk.serviceLabel`);
   }
-  const launcherSource = `import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-const cli = ${JSON.stringify(cliPath)};
-try { readFileSync(cli); } catch { console.error('The workflow CLI is missing; reinstall the workflow package and retry'); process.exit(1); }
-const result = spawnSync(process.execPath, [cli, ...process.argv.slice(2)], { stdio: 'inherit' });
-if (result.error) { console.error(result.error.message); process.exit(1); }
-process.exit(result.status ?? 1);
-`;
+  const toolingDirectory = afkExpandedPath(cfg.toolingDirectory);
+  afkEnsureTooling(toolingDirectory, cfg.toolingRepository, cfg.toolingRef);
+  const launcherSource = afkLauncherSource({ toolingDirectory, ref: cfg.toolingRef });
   writeFileSync(launcher, launcherSource, { mode: 0o700 });
   const logPath = join(homedir(), 'Library', 'Logs', `${label}.log`);
   const xml = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
@@ -1286,7 +1318,7 @@ function afkWatch(cfg, common, requestedIssue = null) {
     let output;
     try {
       if (held && (holds.length !== 1 || !Number.isSafeInteger(holds[0].number) || holds[0].number < 1)) throw new Error('AFK watcher cannot bind the held issue');
-      output = afkLaunchAgent({ argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, repository: cfg.repo }, cwd: watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0].number : null });
+      output = afkLaunchAgent({ argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0].number : null });
     } finally {
       if (held) afkEndRun(cfg, common, runId);
     }
