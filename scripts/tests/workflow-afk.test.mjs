@@ -29,14 +29,23 @@ function issue(number, labels, extra = {}) {
   return { number, labels, ancestors: [1], blocked: false, paths: [`src/${number}.js`], priority: 2, ...extra };
 }
 
-test('AFK plan skips live claims but lets a new run take a stale claim', () => {
-  const issues = [epic, issue(2, ['lane:afk']), issue(3, ['lane:afk']), issue(4, ['lane:afk'])];
+test('AFK plan skips live claims and holds but lets a new run take a stale claim', () => {
+  const issues = [epic, issue(2, ['lane:afk']), issue(3, ['lane:afk']), issue(4, ['lane:afk']), issue(5, ['lane:afk'])];
   const comments = new Map([
     [3, [{ body: '<!-- afk-claim session=live-run -->' }]],
     [4, [{ body: '<!-- afk-claim session=finished-run -->' }]],
+    [5, [{ id: 1, body: '<!-- afk-issue-hold session=live-run -->' }, { id: 2, body: '<!-- afk-claim session=finished-run -->' }]],
   ]);
   const plan = afkPlan(cfg, ['live-run'], number => comments.get(number) || [], 'new-run', { issues, prs: [] });
   assert.deepEqual(plan.epics[0].units.map(unit => unit.issue), [2, 4]);
+});
+
+test('AFK plan offers no review of a PR whose linked issue a live run holds', () => {
+  const pr = (number, linked) => ({ number, title: `PR ${number}`, body: `Closes #${linked}`, headRefOid: 'abc', labels: [], reviews: [], statusCheckRollup: [], mergeable: 'MERGEABLE' });
+  const loose = { ...issue(5, ['lane:afk']), ancestors: [] };
+  const comments = new Map([[5, [{ body: '<!-- afk-issue-hold session=live-run -->' }]]]);
+  const plan = afkPlan(cfg, ['live-run'], number => comments.get(number) || [], 'new-run', { issues: [epic, loose, issue(6, ['lane:afk'])], prs: [pr(10, 5), pr(11, 6)] });
+  assert.deepEqual(plan.epics[0].units.map(unit => unit.text), ['PR #11 (PR 11) awaits its review']);
 });
 
 test('one-shot AFK runs are counted from live watcher PIDs', t => {
