@@ -1013,7 +1013,7 @@ function afkChangedPaths(root, beforeHead) {
     return result.stdout.split('\0').filter(Boolean);
   };
   return [...new Set([
-    ...paths(['diff', '--no-renames', '--name-only', '-z', `${beforeHead}..HEAD`]),
+    ...paths(['diff', '--no-renames', '--name-only', '-z', `${beforeHead}...HEAD`]),
     ...paths(['diff', '--no-renames', '--name-only', '-z', '--cached']),
     ...paths(['diff', '--no-renames', '--name-only', '-z']),
     ...paths(['ls-files', '--others', '--exclude-standard', '-z']),

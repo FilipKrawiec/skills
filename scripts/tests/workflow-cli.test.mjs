@@ -447,6 +447,31 @@ test('AFK push rejects staged and committed renames from outside scope', t => {
   assertNoPush(f);
 });
 
+test('AFK push scope ignores base commits the branch has not merged', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.main, 'outside.txt'), 'base moved');
+  assert.equal(f.git('add', 'outside.txt').status, 0);
+  commitFixture(f, f.main);
+  f.env.REMOTE_BASE_SHA = f.git('rev-parse', 'HEAD').stdout.trim();
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/'] }] }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  mkdirSync(join(f.repo, 'docs'));
+  writeFileSync(join(f.repo, 'docs', 'report.md'), 'in scope');
+  assert.equal(f.linkedGit('add', 'docs/report.md').status, 0);
+  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'docs').status, 0);
+  const inScope = f.cliRun('push');
+  assert.doesNotMatch(inScope.stderr, /assigned AFK scope/);
+  assert.equal(inScope.status, 0, inScope.stderr);
+  writeFileSync(join(f.repo, 'own.txt'), 'outside');
+  assert.equal(f.linkedGit('add', 'own.txt').status, 0);
+  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'own').status, 0);
+  const outOfScope = f.cliRun('push');
+  assert.notEqual(outOfScope.status, 0);
+  assert.match(outOfScope.stderr, /Push paths exceed the assigned AFK scope/);
+});
+
 test('AFK push rejects raw commits outside the issue scope before authenticating', t => {
   const f = fixture(t);
   const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
