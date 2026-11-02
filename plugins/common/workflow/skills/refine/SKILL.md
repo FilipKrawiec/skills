@@ -24,13 +24,13 @@ For each item, apply the first matching case:
 4. Owner decision supersedes the body: record the binding decision and update dependent slices; invoke `spec` to update the epic body.
 5. Unclear or oversized work: use `spec` to ground and split into independently verifiable outcomes. Decide the lane from the nature of the remaining change and required owner participation; line counts never determine authority.
 
-Give open issues a milestone, slices their epic's milestone, and approved epics no lane; a draft epic keeps `lane:owner` until the owner answers its open questions. Preserve required work and its lane when waiting. Trace outcome dependencies across open and closed items; record them as blocked-by links, detect cycles and missing prerequisites, and remove ordering links based solely on shared files or integration. Unattended, add links supported by the packet or dependency section; report removals instead. Check scope covers criteria, tests, locales and required docs, including project-wide allowances; record protected paths and owner actions.
+Give open issues a milestone, slices their epic's milestone, and approved epics no lane; a draft epic keeps `lane:owner` until the owner answers its open questions. Preserve required work and its lane when waiting, but first re-read each recorded wait's retry condition against current evidence (runs, PRs, merges); when it is met, act on it instead of repeating the wait. Trace outcome dependencies across open and closed items; record them as blocked-by links, detect cycles and missing prerequisites, and remove ordering links based solely on shared files or integration. Unattended, add links supported by the packet or dependency section; report removals instead. Check scope covers criteria, tests, locales and required docs, including project-wide allowances; record protected paths and owner actions.
 
 Delegate routine technical decisions; reserve product strategy, new costs, authority and quality-gate weakening for the owner. New interactions need owner prototype direction. Continue independent work while a reserved decision waits.
 
 Clear Blocked cards first: an AFK run stopped there and its `afk-issue-blocked` comment says why. Remove the blocker (packet, dependency, split or routine decision), then move the card to Todo. If it cannot be cleared yet, comment why and leave it Blocked; the watcher retries it after the next merge. `lane:owner` is only for owner-reserved decisions. For a `lane:proposed` Backlog item, have a fresh-context subagent load `agent-review` for its eligibility, running each `gh` call as `GH_TOKEN=$(gh auth token --user <identities.reviewer>) gh ...` and never printing the token. Only when the Reviewer identity authored the `APPROVED AFK` marker, set `lane:afk` and move the card to Todo.
 
-**Exit gate:** each item has a disposition and unresolved conflicts have an owner and wait.
+**Exit gate:** each item has a disposition and unresolved conflicts have an owner and a wait whose retry condition is unmet.
 
 ## 3. Apply and verify
 
