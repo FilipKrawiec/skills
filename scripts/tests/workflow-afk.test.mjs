@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -39,7 +39,11 @@ test('AFK plan skips live claims but lets a new run take a stale claim', () => {
   assert.deepEqual(plan.epics[0].units.map(unit => unit.issue), [2, 4]);
 });
 
-test('one-shot AFK runs are counted from live watcher PIDs', () => {
+test('one-shot AFK runs are counted from live watcher PIDs', t => {
+  const outside = mkdtempSync(join(tmpdir(), 'afk-live-'));
+  const previous = process.cwd();
+  t.after(() => { process.chdir(previous); rmSync(outside, { recursive: true, force: true }); });
+  process.chdir(outside);
   assert.deepEqual(afkLive({}), []);
   const ledger = {
     live: [{ oneShot: true, watcherPid: 12 }],
@@ -380,6 +384,24 @@ test('AFK removes a finished run worktree and the branch Claude Code made for it
   assert.equal(existsSync(running), true);
   assert.equal(existsSync(stranded), true);
   assert.deepEqual(logs, [`Kept: ${stranded} holds work that is not on the remote; preserve it.`]);
+});
+
+test('AFK counts a run live while its watcher or its supervisor is', t => {
+  const common = mkdtempSync(join(tmpdir(), 'afk-alive-'));
+  t.after(() => rmSync(common, { recursive: true, force: true }));
+  mkdirSync(join(common, 'afk-runs'));
+  const job = (name, value) => writeFileSync(join(common, 'afk-runs', `${name}.json`), JSON.stringify(value));
+  const alive = pid => pid === 7;
+  assert.equal(afkRunAlive(common, 7, 'watched', alive), true);
+  job('supervised', { pid: 7 });
+  assert.equal(afkRunAlive(common, 8, 'supervised', alive), true);
+  job('unrecorded', {});
+  assert.equal(afkRunAlive(common, 8, 'unrecorded', alive), false);
+  assert.equal(existsSync(join(common, 'afk-runs', 'unrecorded.json')), false);
+  job('ended', { pid: 9 });
+  assert.equal(afkRunAlive(common, 8, 'ended', alive), false);
+  assert.equal(existsSync(join(common, 'afk-runs', 'ended.json')), false);
+  assert.equal(afkRunAlive(common, 8, 'unknown', alive), false);
 });
 
 test('AFK keeps watcher and run worktrees out of the main checkout status once', t => {

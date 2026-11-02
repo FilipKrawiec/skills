@@ -1337,14 +1337,14 @@ export function afkReleaseRunTree(tree, root) {
   return true;
 }
 // Releases run worktrees whose watcher process has ended, so a crashed or killed run never leaves one behind unreported.
-export function afkSweepRunTrees(cfg, root, alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } }) {
+export function afkSweepRunTrees(cfg, root, alive = afkPidAlive) {
   const listed = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8', env: cleanEnvironment() });
   if (listed.status !== 0) return;
   for (const line of listed.stdout.split('\n')) {
     if (!line.startsWith('worktree ')) continue;
     const tree = line.slice(9), name = basename(tree);
     const pid = Number(new RegExp(`^${cfg.runPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d{14}-(\\d+)-\\d+$`).exec(name)?.[1]);
-    if (!pid || alive(pid)) continue;
+    if (!pid || alive(pid, name)) continue;
     if (!afkReleaseRunTree(tree, root)) console.log(`Kept: ${tree} holds work that is not on the remote; preserve it.`);
   }
 }
@@ -1427,7 +1427,7 @@ function afkWatch(cfg, common, requestedIssue = null) {
     }
   }
   afkReap(cfg, common);
-  if (!cfg.runsCommand) afkSweepRunTrees(cfg, dirname(common));
+  if (!cfg.runsCommand) afkSweepRunTrees(cfg, dirname(common), (pid, name) => afkRunAlive(common, pid, name));
   const result = {};
   const code = afkCheckRun(cfg, common, true, result, requestedIssue);
   for (let i = 1; i <= (result.start || 0); i++) {
@@ -1441,20 +1441,76 @@ function afkWatch(cfg, common, requestedIssue = null) {
     if (!cfg.runsCommand && !held && !explore) continue;
     const holds = afkReadLedger(join(common, 'afk-holds.json'))[runId] || [];
     const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : explore ? ' The workflow CLI assigned an unattended `explore` pass: no work is free. Play `explore`; do not call afk start or afk end.' : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
-    let output, runTree = null, usage = null;
+    const launch = { argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0]?.number : null };
+    if (cfg.runsCommand) { console.log(afkRunReport(runId, afkLaunchAgent(launch))); continue; }
+    let runTree = null;
     try {
       if (held && (holds.length !== 1 || !Number.isSafeInteger(holds[0].number) || holds[0].number < 1)) throw new Error('AFK watcher cannot bind the held issue');
-      if (!cfg.runsCommand) runTree = afkRunTree(cfg, common, runId);
-      output = afkLaunchAgent({ argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: runTree && !runTree.native ? runTree.tree : watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0].number : null });
-      usage = afkRunUsage(output);
-    } finally {
-      if (held) afkEndRun(cfg, common, runId, usage?.line);
+      runTree = afkRunTree(cfg, common, runId);
+      if (!runTree.native) launch.cwd = runTree.tree;
+      afkSpawnRun(common, runId, { launch, held, tree: runTree.tree, root: dirname(common) });
+    } catch (error) {
+      if (held) afkEndRun(cfg, common, runId);
       if (runTree && !afkReleaseRunTree(runTree.tree, dirname(common))) console.log(`Kept: ${runTree.tree} holds work that is not on the remote; preserve it.`);
+      throw error;
     }
-    console.log(output ? `Completed: ${runId}\n${usage ? `${usage.result}\n${usage.line}` : output}` : `Started: ${runId}`);
+    console.log(`Launched: ${runId}`);
   }
   return code === 2 ? 2 : 0;
 }
+function afkRunReport(runId, output) {
+  const usage = afkRunUsage(output);
+  return output ? `Completed: ${runId}\n${usage ? `${usage.result}\n${usage.line}` : output}` : `Started: ${runId}`;
+}
+function afkJobPath(common, runId) { return join(common, 'afk-runs', `${runId}.json`); }
+function afkWriteJob(path, job) {
+  mkdirSync(dirname(path), { recursive: true });
+  const temp = `${path}.${process.pid}.tmp`;
+  writeFileSync(temp, JSON.stringify(job)); renameSync(temp, path);
+}
+// Each run gets a detached supervisor, so the watcher returns at once and every tick can start runs up to afk.maxRuns.
+// The supervisor owns the hold from here: the watcher still holds the start lock, so the run cannot end before it is rebound.
+function afkSpawnRun(common, runId, job) {
+  const path = afkJobPath(common, runId);
+  afkWriteJob(path, job);
+  const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'supervise', '--me', runId], { cwd: job.launch.cwd, detached: true, stdio: 'inherit', env: process.env });
+  child.on('error', error => console.error(`Blocked: the supervisor of run ${runId} failed: ${error.message}`));
+  child.unref();
+  if (!Number.isSafeInteger(child.pid)) { rmSync(path, { force: true }); throw new Error(`cannot start the supervisor of run ${runId}`); }
+  afkWriteJob(path, { ...job, pid: child.pid });
+  if (!job.held) return;
+  withRepoLock('afk-start', () => {
+    const ledgerPath = join(common, 'afk-holds.json'); const ledger = afkReadLedger(ledgerPath);
+    for (const hold of ledger[runId] || []) hold.watcherPid = child.pid;
+    afkWriteLedger(ledgerPath, ledger);
+  });
+}
+// Runs one launched agent to its end, then releases its hold and its worktree.
+function afkSupervise(common, runId) {
+  const path = afkJobPath(common, runId);
+  const job = JSON.parse(readFileSync(path, 'utf8'));
+  let output, usage = null;
+  try {
+    output = afkLaunchAgent(job.launch);
+    usage = afkRunUsage(output);
+  } finally {
+    const finished = job.held ? spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'finish', '--me', runId, ...(usage ? ['--note', usage.line] : [])], { cwd: job.root, stdio: 'inherit', env: process.env }) : null;
+    if (finished && finished.status !== 0) console.error(`Blocked: run ${runId} still holds its issue; release it with afk end --me ${runId}.`);
+    if (job.tree && !afkReleaseRunTree(job.tree, job.root)) console.log(`Kept: ${job.tree} holds work that is not on the remote; preserve it.`);
+    rmSync(path, { force: true });
+  }
+  console.log(afkRunReport(runId, output));
+  return 0;
+}
+// A run is live while its watcher or its supervisor is; the watcher records the supervisor in the job file as it starts it.
+export function afkRunAlive(common, pid, name, isAlive = afkPidAlive) {
+  if (pid && isAlive(pid)) return true;
+  let job; try { job = JSON.parse(readFileSync(afkJobPath(common, name), 'utf8')); } catch { return false; }
+  if (Number.isSafeInteger(job.pid) && isAlive(job.pid)) return true;
+  rmSync(afkJobPath(common, name), { force: true });
+  return false;
+}
+function afkPidAlive(pid) { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } }
 function afkCommand(args) {
   try {
     const [action, ...rest] = args;
@@ -1468,6 +1524,11 @@ function afkCommand(args) {
       const issue = flags['--issue'] === undefined ? null : Number(flags['--issue']);
       if (issue !== null && (!Number.isSafeInteger(issue) || issue < 1)) throw new Error('afk watch --issue must be a positive issue number');
       return afkWatch(cfg, common, issue);
+    }
+    if (action === 'supervise' || action === 'finish') {
+      const flags = afkFlags(rest, ['--me', '--note']); const id = flags['--me'];
+      if (!/^[\w.-]+$/.test(id || '')) throw new Error(`Usage: afk ${action} --me RUN_ID`);
+      return action === 'supervise' ? afkSupervise(common, id) : afkEndRun(cfg, common, id, flags['--note'] || null);
     }
     if (action === 'reap') { afkLoadEnvironment(cfg); afkReap(cfg, common); return 0; }
     if (action === 'runs') {
@@ -1496,7 +1557,7 @@ function afkCommand(args) {
       if (!/^[\w.-]+$/.test(id || '')) throw new Error('Usage: afk end --me RUN_ID');
       return afkEndRun(cfg, common, id);
     }
-    throw new Error('Usage: afk <install|uninstall|watch|start|check|merge|end|runs|reap>');
+    throw new Error('Usage: afk <install|uninstall|watch|start|check|merge|end|runs|reap|supervise|finish>');
   } catch (error) { console.error(`Blocked: ${error.message}; resolve the cause and retry.`); return 2; }
 }
 function requiredLocks(command, args) {
@@ -1514,7 +1575,7 @@ function requiredLocks(command, args) {
     }
   }
   if (command === 'afk') {
-    if (['start', 'check', 'merge', 'end'].includes(args[0])) return ['afk-start'];
+    if (['start', 'check', 'merge', 'end', 'finish'].includes(args[0])) return ['afk-start'];
     if (['install', 'uninstall'].includes(args[0])) return ['afk-watch-tree'];
     if (args[0] === 'reap') return ['afk-reap'];
     if (args[0] === 'watch') return ['afk-start', 'afk-reap', 'afk-watch-tree'];
@@ -1563,6 +1624,7 @@ function oneShotWatcherActive(id) {
     }
     if (!processes.get(ownerPid)?.command.includes(fileURLToPath(import.meta.url))) return false;
     if (!hasProcessAncestor(processes, process.ppid, ownerPid)) return false;
+    if (processes.get(ownerPid).command.includes(' afk supervise ')) return true;
     const lockPath = join(common, 'workflow-locks', 'afk-start.lock');
     const probe = process.platform === 'darwin'
       ? spawnSync('lockf', ['-t', '0', lockPath, 'true'], { stdio: 'ignore' })
