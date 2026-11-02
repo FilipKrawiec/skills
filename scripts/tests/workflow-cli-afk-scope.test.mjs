@@ -240,3 +240,31 @@ test('AFK commit and push follow a scope packet corrected on the held issue', t 
   assert.match(reverted.stderr, /Push paths exceed the assigned AFK scope/);
 });
 
+test('AFK merge commit follows a scope packet corrected on the held issue', t => {
+  const f = fixture(t);
+  const g = (...args) => run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.repo });
+  mkdirSync(join(f.repo, 'docs'));
+  writeFileSync(join(f.repo, 'docs', 'moved.md'), 'base');
+  assert.equal(g('add', 'docs/moved.md').status, 0); assert.equal(g('commit', '-qm', 'base').status, 0);
+  assert.equal(g('checkout', '-qb', 'other').status, 0);
+  writeFileSync(join(f.repo, 'docs', 'moved.md'), 'theirs'); assert.equal(g('commit', '-qam', 'theirs').status, 0);
+  assert.equal(g('checkout', '-q', 'feature/test').status, 0);
+  writeFileSync(join(f.repo, 'docs', 'moved.md'), 'ours'); assert.equal(g('commit', '-qam', 'ours').status, 0);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/old.md'] }] }));
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  Object.assign(f.env, { WORKFLOW_RUN_ID: 'afk-test-run', WORKFLOW_ISSUE_NUMBER: '1082' });
+  const before = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  assert.notEqual(g('merge', '--no-ff', '--no-commit', 'other').status, 0);
+  writeFileSync(join(f.repo, 'docs', 'moved.md'), 'resolved');
+  f.env.FAKE_ISSUE_BODY = 'Scope\n```scope\n{"paths":["docs/old.md"]}\n```';
+  const stale = f.cliRun('commit', '--message', 'chore: merge base', '--', 'docs/moved.md');
+  assert.notEqual(stale.status, 0);
+  assert.match(stale.stderr, /assigned AFK scope: docs\/moved\.md differ/);
+  assert.equal(f.linkedGit('rev-parse', 'HEAD').stdout.trim(), before);
+  f.env.FAKE_ISSUE_BODY = 'Scope\n```scope\n{"paths":["docs/moved.md"]}\n```';
+  const corrected = f.cliRun('commit', '--message', 'chore: merge base', '--', 'docs/moved.md');
+  assert.equal(corrected.status, 0, corrected.stderr);
+  assert.equal(f.linkedGit('show', 'HEAD:docs/moved.md').stdout, 'resolved');
+});
+

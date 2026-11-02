@@ -227,8 +227,9 @@ function commit(args) {
   if (!merging && !paths.length) throw new Error('Usage: commit --message MESSAGE [-- PATH...]; paths are optional only while a merge is in progress');
   const runId = process.env.WORKFLOW_RUN_ID;
   let scope = null;
+  let hold = null;
   if (runId) {
-    const hold = afkBoundHold(root, 'commit');
+    hold = afkBoundHold(root, 'commit');
     if (Array.isArray(hold.paths)) scope = merging ? hold.paths : afkHeldScope(hold, paths);
     if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error('Commit paths exceed the assigned AFK scope');
     const cfg = config().lanes;
@@ -252,7 +253,7 @@ function commit(args) {
     };
     const fromBase = new Set(changed('MERGE_HEAD'));
     const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
-    if (outside.length) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
+    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
   }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error('Commit failed; selected paths remain staged for inspection');
