@@ -34,4 +34,9 @@ test('git guard blocks plain commits only in repositories with workflow config',
   assert.equal(runGuard(join(root, 'plain'), 'git push').status, 0);
   assert.match(runGuard(join(root, 'governed'), 'git merge origin/main').stderr, /merge --no-ff --no-commit/);
   assert.equal(spawnSync(process.execPath, [guard], { input: 'null', encoding: 'utf8' }).status, 0);
+  assert.equal(runGuard(join(root, 'governed'), `cd ${join(root, 'plain')} && git commit -m x`).status, 0);
+  assert.equal(runGuard(join(root, 'governed'), 'git -C ../plain push').status, 0);
+  assert.equal(runGuard(join(root, 'plain'), 'cd ../governed && git commit -m x').status, 2);
+  assert.equal(runGuard(join(root, 'plain'), `git -C ${join(root, 'governed')} push`).status, 2);
+  assert.equal(runGuard(join(root, 'plain'), 'cd "$TARGET" && git push').status, 0);
 });

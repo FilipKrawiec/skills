@@ -3,24 +3,36 @@
 // which authors as the implementer and checks scope; plain git would act as the host's Git user.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const GLOBAL_OPTIONS_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--config-env']);
 
-export function blockedGitSubcommand(command) {
+// With a cwd, follows `cd <dir>` and `git -C <dir>` and blocks only where the target checkout is governed;
+// a target it cannot resolve (a shell variable) is judged by the directory it last knew.
+export function blockedGitSubcommand(command, cwd = null, isGoverned = governed) {
+  let dir = cwd;
+  const target = (from, path) => path.includes('$') ? from : resolve(from, path.replace(/^~(?=\/|$)/, homedir()).replace(/^(['"])(.*)\1$/, '$2'));
   for (const segment of String(command).split(/&&|\|\||[;|\n&()]/)) {
     const words = segment.trim().split(/\s+/).filter(Boolean);
+    if (dir && words[0] === 'cd') { dir = words[1] ? target(dir, words[1]) : homedir(); continue; }
     let i = 0;
     while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i])) i++;
     if (['env', 'command', 'exec', 'sudo'].includes(words[i])) i++;
     while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i])) i++;
     if (!/(^|\/)git$/.test(words[i] || '')) continue;
     i++;
-    while (i < words.length && words[i].startsWith('-')) i += GLOBAL_OPTIONS_WITH_VALUE.has(words[i]) ? 2 : 1;
-    if (['commit', 'push'].includes(words[i])) return words[i];
+    let gitDir = dir;
+    while (i < words.length && words[i].startsWith('-')) {
+      if (words[i] === '-C' && gitDir && words[i + 1]) gitDir = target(gitDir, words[i + 1]);
+      i += GLOBAL_OPTIONS_WITH_VALUE.has(words[i]) ? 2 : 1;
+    }
+    let subcommand = null;
+    if (['commit', 'push'].includes(words[i])) subcommand = words[i];
     // A merge may stop before committing; the CLI's commit then records it as the implementer.
-    if (words[i] === 'merge' && !words.slice(i + 1).some(word => ['--no-commit', '--abort', '--quit', '--squash', '--ff-only'].includes(word))) return 'merge';
+    if (words[i] === 'merge' && !words.slice(i + 1).some(word => ['--no-commit', '--abort', '--quit', '--squash', '--ff-only'].includes(word))) subcommand = 'merge';
+    if (subcommand && (!gitDir || isGoverned(gitDir))) return subcommand;
   }
   return null;
 }
@@ -33,8 +45,8 @@ function governed(cwd) {
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   let input = {};
   try { input = JSON.parse(readFileSync(0, 'utf8')); } catch { process.exit(0); }
-  const subcommand = blockedGitSubcommand(input?.tool_input?.command || '');
-  if (!subcommand || !governed(input?.cwd || process.cwd())) process.exit(0);
+  const subcommand = blockedGitSubcommand(input?.tool_input?.command || '', input?.cwd || process.cwd());
+  if (!subcommand) process.exit(0);
   const cli = join(dirname(fileURLToPath(import.meta.url)), 'workflow.mjs');
   const commit = `node ${cli} commit --message "<conventional message>" -- <paths>`;
   const usage = { commit, push: `node ${cli} push`, merge: `git merge --no-ff --no-commit <base>, resolve any conflicts, then ${commit}` }[subcommand];
