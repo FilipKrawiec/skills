@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkSlots, afkPrFiles, afkEndStatus, afkSlices, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkSlots, afkPrFiles, afkEndStatus, afkSlices, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -728,4 +728,39 @@ test('an epic-check verdict holds only its own stage and sub-issue count, so a s
   assert.deepEqual(stages(at(3, 3), [verdict('close', '2/2')]), ['close'], 'a slice added by the close check and then closed serves it again');
   assert.deepEqual(stages(at(3, 3), [verdict('close', '3/3')]), [], 'an unchanged count stays held');
   assert.deepEqual(stages({ ...at(3, 3), labels: ['type:epic', 'lane:owner'] }, []), [], 'an epic waiting on the owner is never staged');
+});
+
+test('a foreign push on a held PR releases its run, and the PR is served again at the new head', t => {
+  const root = mkdtempSync(join(tmpdir(), 'afk-foreign-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd, env, encoding: 'utf8' });
+  const repo = join(root, 'repo'), tree = join(root, 'run');
+  assert.equal(git(root, 'init', '-q', '-b', 'main', repo).status, 0);
+  assert.equal(git(repo, 'commit', '-q', '--allow-empty', '-m', 'base').status, 0);
+  assert.equal(git(repo, 'worktree', 'add', '-q', '-b', 'run', tree).status, 0);
+  const head = cwd => git(cwd, 'rev-parse', 'HEAD').stdout.trim();
+  const taken = head(repo);
+  const pr = sha => ({ number: 9, title: 'Fix', body: '', closingIssuesReferences: [], headRefOid: sha, labels: [], reviews: [], statusCheckRollup: [], mergeable: 'MERGEABLE' });
+  const plan = sha => afkPlan(cfg, [], () => [], 'new-run', { issues: [epic], prs: [pr(sha)] });
+  const [unit] = plan(taken).epics[0].units;
+  assert.deepEqual({ issue: unit.issue, review: unit.review, pr: unit.pr, head: unit.head }, { issue: 9, review: true, pr: 9, head: taken }, 'the hold records the head it was taken at');
+
+  const ledger = { 'run-1': [{ number: 9, epic: 1, paths: [], review: true, pr: 9, head: taken, comment: 5 }] };
+  const owns = (id, sha) => afkOwnsHead(tree, sha);
+  assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => taken, owns), [], 'an unchanged head keeps the run');
+  assert.equal(git(tree, 'commit', '-q', '--allow-empty', '-m', 'own fix').status, 0);
+  assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => head(tree), owns), [], 'a head the run pushed keeps the run');
+  const pushed = head(tree);
+  assert.equal(git(tree, 'commit', '-q', '--amend', '--allow-empty', '-m', 'own fix, amended').status, 0);
+  assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => pushed, owns), [], 'a head the run pushed and then rewrote keeps the run');
+  assert.equal(git(repo, 'commit', '-q', '--allow-empty', '-m', 'foreign fix').status, 0);
+  const foreign = head(repo);
+  assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => foreign, owns), [{ id: 'run-1', pr: 9, from: taken, to: foreign }]);
+  assert.deepEqual(afkForeignHeads(ledger, [], () => foreign, owns), [], 'an ended run is left to its own release');
+  assert.equal(afkOwnsHead(tree, '0'.repeat(40)), false, 'a head this checkout never fetched is foreign');
+
+  delete ledger['run-1'];
+  const [again] = [...afkCandidates(plan(foreign).epics, afkOtherHolds(ledger, [], 'new-run'), true, () => false)];
+  assert.deepEqual({ number: again.number, head: again.unit.head }, { number: 9, head: foreign }, 'the released PR is served at its new head');
 });
