@@ -22,7 +22,7 @@ Delegate routine work; product direction, paid services, budgets, authority and 
 
 For AFK, the CLI's `Hold:`/`Work:` output is the assignment; take no second item. Owner requests use `afk start --me ID --issue NUMBER`.
 
-Write issues through the workflow CLI: `issue comment` or `issue edit --number N --body-file PATH` (a single-link worktree file) and `issue close --number N`; invoke `spec` for transitions, and to slice or close the epic a `Work: epic #N` line names. A `refine` unit changes no files.
+Write implementer records through the workflow CLI: `issue comment` or `issue edit --number N --body-file PATH` (a single-link worktree file) and `issue close --number N`; invoke `spec` for transitions, and to slice or close the epic a `Work: epic #N` line names. A `refine` unit changes no files.
 
 **Exit gate:** resumed PR, exclusive assignment, or queue empty/wait reason.
 
