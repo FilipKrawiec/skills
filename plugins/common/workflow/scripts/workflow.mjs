@@ -37,7 +37,7 @@ const heldWorkflowLocks = new Set();
 export const workflowDefaults = {
   github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
   afk: {
-    runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
+    runPrefix: 'afk-', maxRuns: 4, maxReviewRuns: 2, environmentFile: '~/.config/gh-agents/workflow-env.json',
     watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--output-format', 'json', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--worktree', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
     permissionMode: 'auto', pluginUpdateCommands: [],
     toolingRepository: 'https://github.com/FilipKrawiec/skills.git', toolingRef: 'main', toolingDirectory: '~/.local/share/workflow-cli/skills',
@@ -491,6 +491,7 @@ function afkConfig(refreshMetadata = false) {
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
   if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
+  if (!Number.isSafeInteger(lanes.maxReviewRuns) || lanes.maxReviewRuns < 0) throw new Error('afk.maxReviewRuns must be a non-negative integer');
   lanes.explore = { ...workflowDefaults.explore };
   if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
   requireTestStep(lanes.steps);
@@ -719,7 +720,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
       ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true }
       : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths };
     const parent = epics.find(epic => epic.issue.number === target);
-    if (parent) parent.units.push(unit);
+    if (parent) parent.units.push({ ...unit, rank: review ? 1 : pr.broken ? 0 : 2 });
   }
   return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits };
 }
@@ -727,17 +728,37 @@ export function* afkCandidates(epics, others, share, heldElsewhere) {
   const taken = new Set(others.map(hold => hold.number));
   const busy = new Set(others.map(hold => hold.epic));
   const whole = new Set(others.filter(hold => hold.paths === null).map(hold => hold.epic));
-  for (const epic of epics) {
-    const number = epic.issue.number;
-    if (!epic.units.length || whole.has(number) || heldElsewhere(number)) continue;
-    for (const unit of epic.units) {
-      if (!share) {
-        if (!busy.has(number)) yield { number, epic: number, paths: null, unit };
-        break;
-      }
-      if (!taken.has(unit.issue)) yield { number: unit.issue, epic: number, paths: unit.paths, unit };
-    }
+  const open = epics.filter(epic => epic.units.length && !whole.has(epic.issue.number) && !heldElsewhere(epic.issue.number));
+  if (!share) {
+    for (const epic of open) if (!busy.has(epic.issue.number)) yield { number: epic.issue.number, epic: epic.issue.number, paths: null, unit: epic.units[0] };
+    return;
   }
+  // Across every epic: blockers (a red or conflicting PR), then reviews, then PRs in progress, then new issues.
+  for (const rank of [0, 1, 2, 3]) for (const epic of open) for (const unit of epic.units) {
+    if ((unit.rank ?? 3) === rank && !taken.has(unit.issue)) yield { number: unit.issue, epic: epic.issue.number, paths: unit.paths, unit };
+  }
+}
+// Reviews have their own afk.maxReviewRuns slots, so runs busy on tickets never block a review; everything else shares afk.maxRuns.
+// WIP is every open PR plus every ticket run without one yet; a new ticket starts only while WIP stays under afk.maxRuns.
+export function afkSlots(cfg, ledger, live, me = '', prs = []) {
+  const inPr = new Set(prs.flatMap(pr => [pr.number, ...(pr.issues || [])]));
+  const used = { review: 0, work: 0 }; let wip = prs.length;
+  for (const id of live) {
+    if (id === me) continue;
+    const holds = ledger[id] || [];
+    used[holds.some(hold => hold.review) ? 'review' : 'work']++;
+    if (holds.length && !holds.some(hold => hold.review || inPr.has(hold.number))) wip++;
+  }
+  const cap = { review: Number(cfg.maxReviewRuns ?? 2), work: Number(cfg.maxRuns) || Infinity };
+  return {
+    full: () => used.review >= cap.review && used.work >= cap.work,
+    take: candidate => {
+      const kind = candidate.unit?.review ? 'review' : 'work', ticket = kind === 'work' && (candidate.unit?.rank ?? 3) === 3;
+      if (used[kind] >= cap[kind] || (ticket && wip >= cap.work)) return false;
+      used[kind]++; if (ticket) wip++;
+      return true;
+    },
+  };
 }
 export function afkLiveHolds(comments, live, me) {
   const holds = [];
@@ -1128,17 +1149,20 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
     }
     const live = afkLive(cfg);
     const others = live.filter(runId => runId !== id);
-    if (Number(cfg.maxRuns) > 0 && others.length >= Number(cfg.maxRuns)) {
-      console.log(`Done: ${others.length} other runs are live, as many as afk.maxRuns allows.`);
+    const slots = afkSlots(cfg, ledger, live, id);
+    if (slots.full()) {
+      console.log(`Done: ${others.length} other runs are live, as many as afk.maxRuns and afk.maxReviewRuns allow.`);
       output.forEach(line => console.log(line)); return 3;
     }
     const threads = afkThreadReader(cfg);
-    const { epics, heldOnEpic } = afkPlan(cfg, live, threads, id);
+    const { epics, heldOnEpic, prs } = afkPlan(cfg, live, threads, id);
+    const wipSlots = afkSlots(cfg, ledger, live, id, prs);
     const othersHolds = afkOtherHolds(ledger, live, id);
     afkWriteLedger(ledgerPath, ledger);
     const cap = Number(cfg.maxRuns) || 0;
     for (const candidate of afkCandidates(epics, othersHolds, Boolean(cap), heldOnEpic)) {
       if (requestedIssue && candidate.number !== requestedIssue) continue;
+      if (cap && !wipSlots.take(candidate)) continue;
       const type = candidate.paths === null ? 'epic' : 'issue';
       const comment = afkHold(cfg, live, id, candidate.number, type);
       if (!comment) continue;
@@ -1191,7 +1215,7 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const output = afkMerge(cfg, afkPrs(cfg));
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { epics, heldOnEpic, waits } = afkPlan(cfg, live, threads);
+  const { epics, heldOnEpic, waits, prs } = afkPlan(cfg, live, threads);
   for (const wait of waits) output.push(`Wait: #${wait.issue} until ${wait.until}: ${wait.cause}`);
   const ledgerPath = join(common, 'afk-holds.json');
   let start = withRepoLock('afk-start', () => {
@@ -1199,16 +1223,17 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
     const others = afkOtherHolds(ledger, live, '');
     const booting = live.filter(id => !ledger[id]?.length);
     const cap = Number(cfg.maxRuns) || 0;
-    const slots = cap ? cap - live.length : epics.length;
+    // A booting run (no hold yet) takes the first free work itself, so it counts against the work slots it will use.
+    const slots = afkSlots(cfg, ledger, live.filter(id => !booting.includes(id)), '', prs);
     const chosen = [];
-    for (const candidate of afkCandidates(epics, [...others, ...chosen], Boolean(cap), heldOnEpic)) {
+    for (const candidate of afkCandidates(epics, others, Boolean(cap), heldOnEpic)) {
       if (requestedIssue && candidate.number !== requestedIssue) continue;
-      if (chosen.length >= Math.max(0, slots) + booting.length) break;
-      chosen.push(candidate);
+      if (!cap || slots.take(candidate)) chosen.push(candidate);
     }
     if (requestedIssue && !chosen.length) return 0;
     afkWriteLedger(ledgerPath, ledger);
-    return Math.max(0, Math.min(slots, chosen.length - booting.length));
+    const reviews = chosen.filter(candidate => candidate.unit?.review).length;
+    return reviews + Math.max(0, chosen.length - reviews - booting.length);
   });
   if (!requestedIssue && !start && !live.length && afkExploreDue(cfg, live)) start = 1;
   result.start = start;
