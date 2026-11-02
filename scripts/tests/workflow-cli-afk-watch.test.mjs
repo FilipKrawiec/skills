@@ -90,6 +90,32 @@ test('issue create reuses an open exact-title issue with --unique and creates ot
   assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/skills\/issues /);
 });
 
+test('issue create lists open issues sharing a scope path before filing a follow-up', t => {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nrequire('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='issue' && a[1]==='list') { out([{number:307,title:'fix(afk): reap',body:'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"scripts/\\"]}\\n\\u0060\\u0060\\u0060'},{number:8,title:'loose',body:'scripts/x.mjs'}]); process.exit(0); }\nif(a.includes('repos/acme/app/issues')) { out({number:31}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('{}');\n`);
+  chmodSync(gh, 0o755);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  writeFileSync(join(f.repo, 'match.md'), 'Evidence\n\u0060\u0060\u0060scope\n{"paths": ["scripts/run.mjs"]}\n\u0060\u0060\u0060');
+  writeFileSync(join(f.repo, 'other.md'), 'Evidence\n\u0060\u0060\u0060scope\n{"paths": ["docs/"]}\n\u0060\u0060\u0060');
+  f.env.TEST_CALLS = join(f.root, 'calls.log');
+  const checked = f.cliRun('issue', 'create', '--check', '--title', 'fix(afk): reap again', '--body-file', 'match.md', '--labels', 'type:bug,lane:afk');
+  assert.equal(checked.status, 0, checked.stderr);
+  assert.equal(checked.stdout.trim(), 'Overlaps: #307 fix(afk): reap');
+  assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/app\/issues /);
+  const filed = f.cliRun('issue', 'create', '--title', 'chore: docs', '--body-file', 'other.md', '--labels', 'type:chore');
+  assert.equal(filed.status, 0, filed.stderr);
+  assert.equal(filed.stdout.trim(), 'Overlaps: none\nCreated: #31');
+  writeFileSync(f.env.TEST_CALLS, '');
+  const task = f.cliRun('issue', 'create', '--title', 'task', '--body-file', 'match.md', '--labels', 'type:task');
+  assert.equal(task.status, 0, task.stderr);
+  assert.equal(task.stdout.trim(), 'Created: #31');
+  assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /issue list --repo acme\/app --state open --limit 1000/);
+});
+
 test('an idle AFK watcher logs that nothing has work and launches no agent', t => {
   const f = fixture(t);
   const child = join(f.root, 'agent.mjs');
