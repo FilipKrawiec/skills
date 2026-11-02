@@ -176,3 +176,42 @@ test('AFK push --to accepts the PR that closes or is part of the held issue', t 
   assert.ok(pushRecord(f).args.some(arg => arg.endsWith(':refs/heads/fix/held')));
 });
 
+test('AFK commit records a base merge that brings in files outside the scope', t => {
+  const f = fixture(t);
+  const g = (...args) => run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.repo });
+  mkdirSync(join(f.repo, 'docs'));
+  writeFileSync(join(f.repo, 'docs', 'report.md'), 'base'); writeFileSync(join(f.repo, 'outside.txt'), 'base');
+  assert.equal(g('add', 'docs/report.md', 'outside.txt').status, 0); assert.equal(g('commit', '-qm', 'base').status, 0);
+  assert.equal(g('checkout', '-qb', 'other').status, 0);
+  writeFileSync(join(f.repo, 'outside.txt'), 'base change'); writeFileSync(join(f.repo, 'docs', 'report.md'), 'theirs');
+  assert.equal(g('commit', '-qam', 'base change').status, 0);
+  assert.equal(g('checkout', '-q', 'feature/test').status, 0);
+  writeFileSync(join(f.repo, 'docs', 'report.md'), 'ours'); assert.equal(g('commit', '-qam', 'ours').status, 0);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/'] }] }));
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  const before = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  assert.notEqual(g('merge', '--no-ff', '--no-commit', 'other').status, 0);
+  writeFileSync(join(f.repo, 'docs', 'report.md'), 'resolved');
+  writeFileSync(join(f.repo, 'outside.txt'), 'edited during merge');
+  const evil = f.cliRun('commit', '--message', 'chore: merge base', '--', 'docs/report.md', 'outside.txt');
+  assert.notEqual(evil.status, 0);
+  assert.match(evil.stderr, /assigned AFK scope/);
+  assert.equal(f.linkedGit('rev-parse', 'HEAD').stdout.trim(), before);
+  assert.equal(g('checkout', 'MERGE_HEAD', '--', 'outside.txt').status, 0);
+  const result = f.cliRun('commit', '--message', 'chore: merge base');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.linkedGit('show', '-s', '--format=%P', 'HEAD').stdout.trim().split(' ').length, 2);
+  assert.equal(f.linkedGit('show', 'HEAD:outside.txt').stdout, 'base change');
+  assert.equal(f.linkedGit('show', 'HEAD:docs/report.md').stdout, 'resolved');
+});
+
+test('commit without paths requires a merge in progress', t => {
+  const f = fixture(t);
+  const result = f.cliRun('commit', '--message', 'chore: nothing');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /only while a merge is in progress/);
+});
+
