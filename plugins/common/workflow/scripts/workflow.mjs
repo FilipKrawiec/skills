@@ -1096,9 +1096,9 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
     output.forEach(line => console.log(line)); return 3;
   });
 }
-export function afkToolingVersion() {
-  try { return JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'plugin.json'), 'utf8')).version || ''; } catch { return ''; }
-}
+// Read once at load: an in-place update during `afk watch` must not stamp the new version on a check the old code ran.
+const loadedToolingVersion = (() => { try { return JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'plugin.json'), 'utf8')).version || ''; } catch { return ''; } })();
+export function afkToolingVersion() { return loadedToolingVersion; }
 // A tooling update can free work no repository event shows, so a changed or missing version ends the quiet window.
 export function afkCheckQuiet(previous, signal, version, now = Date.now()) {
   return Boolean(version) && previous?.version === version && previous.signal === signal && now - previous.at < 1_800_000;
