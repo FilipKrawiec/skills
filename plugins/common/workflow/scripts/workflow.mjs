@@ -223,7 +223,7 @@ function commit(args) {
   if (paths.some(path => !path || path === '.' || path.startsWith('/') || path.startsWith(':') || path.split('/').includes('..'))) throw new Error('Provide explicit repository-relative paths');
   const root = requireLinkedWorktree();
   if (realpathSync(process.cwd()) !== realpathSync(root)) throw new Error('Run commit from the repository root');
-  const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: root }).status === 0;
+  const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: root, env: cleanEnvironment() }).status === 0;
   if (!merging && !paths.length) throw new Error('Usage: commit --message MESSAGE [-- PATH...]; paths are optional only while a merge is in progress');
   const runId = process.env.WORKFLOW_RUN_ID;
   let scope = null;
@@ -251,7 +251,8 @@ function commit(args) {
       return diff.stdout.split('\0').filter(Boolean);
     };
     const fromBase = new Set(changed('MERGE_HEAD'));
-    if (!afkPathsWithinScope(changed('HEAD').filter(path => fromBase.has(path)), scope)) throw new Error('Commit paths exceed the assigned AFK scope');
+    const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
+    if (outside.length) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
   }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error('Commit failed; selected paths remain staged for inspection');

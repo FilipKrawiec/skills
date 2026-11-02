@@ -198,7 +198,7 @@ test('AFK commit records a base merge that brings in files outside the scope', t
   writeFileSync(join(f.repo, 'outside.txt'), 'edited during merge');
   const evil = f.cliRun('commit', '--message', 'chore: merge base', '--', 'docs/report.md', 'outside.txt');
   assert.notEqual(evil.status, 0);
-  assert.match(evil.stderr, /assigned AFK scope/);
+  assert.match(evil.stderr, /assigned AFK scope: outside\.txt differ/);
   assert.equal(f.linkedGit('rev-parse', 'HEAD').stdout.trim(), before);
   assert.equal(g('checkout', 'MERGE_HEAD', '--', 'outside.txt').status, 0);
   const result = f.cliRun('commit', '--message', 'chore: merge base');
