@@ -1527,10 +1527,15 @@ function afkConfiguredCommand(argv, replacements = {}, options = {}) {
   const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, env: afkAgentEnvironment(), ...spawnOptions });
   if (result.error?.code === 'ETIMEDOUT') {
     if (options.detached) afkStopGroup(result.pid, graceMs);
-    throw Object.assign(new Error(`${program} ${args[0] || ''} stopped after ${Math.round(options.timeout / 60_000)} minutes`), { code: 'ETIMEDOUT' });
+    throw Object.assign(new Error(`${program} ${args[0] || ''} stopped after ${afkDuration(options.timeout)}`), { code: 'ETIMEDOUT' });
   }
   if (result.error || result.status !== 0) throw new Error(`${program} ${args[0] || ''} failed`);
   return (result.stdout || '').trim();
+}
+// A limit under a minute, as only a test sets, reads in seconds, never as "0 minutes".
+export function afkDuration(ms) {
+  const [count, unit] = ms >= 60_000 ? [Math.round(ms / 60_000), 'minute'] : [Math.ceil(ms / 1000), 'second'];
+  return `${count} ${unit}${count === 1 ? '' : 's'}`;
 }
 // Stops a whole process group: SIGTERM first, SIGKILL for whatever is left after the grace period.
 function afkStopGroup(pid, graceMs = 10_000) {
@@ -1568,7 +1573,7 @@ export function afkReap(cfg, common) {
     const reason = agent.waitingFor || (ended ? 'finished turn' : null);
     if (reason) waiting[agent.id] = previous[agent.id] || now;
     const started = afkRunStarted(agent.name.slice(cfg.runPrefix.length));
-    if (started !== null && !['done', 'stopped', 'failed'].includes(agent.state || agent.status) && now - started >= cfg.maxRunMinutes * 60_000) stops.push({ agent, why: `stopped after ${cfg.maxRunMinutes} minutes` });
+    if (started !== null && !['done', 'stopped', 'failed'].includes(agent.state || agent.status) && now - started >= cfg.maxRunMinutes * 60_000) stops.push({ agent, why: `stopped after ${afkDuration(cfg.maxRunMinutes * 60_000)}` });
     else if (agent.state === 'done' || (agent.state === 'blocked' && !agent.waitingFor) || (reason && now - waiting[agent.id] >= cfg.waitTimeoutMinutes * 60_000)) stops.push({ agent, why: 'wait ended' });
   }
   mkdirSync(dirname(file), { recursive: true });
@@ -1858,7 +1863,7 @@ function afkSupervise(common, runId) {
     usage = afkRunUsage(output);
     why = usage?.result?.trim() ? usage.result : null;
   } catch (error) {
-    if (error.code === 'ETIMEDOUT') why = `Stopped after ${Math.round(job.launch.timeoutMs / 60_000)} minutes, the afk.maxRunMinutes limit.`;
+    if (error.code === 'ETIMEDOUT') why = `Stopped after ${afkDuration(job.launch.timeoutMs)}, the afk.maxRunMinutes limit.`;
     throw error;
   } finally {
     const finished = job.held ? spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'finish', '--me', runId, ...(why ? ['--why', why] : []), ...(usage ? ['--note', usage.line] : []), ...(usage?.ok ? ['--spent', 'yes'] : [])], { cwd: job.root, stdio: 'inherit', env: process.env }) : null;

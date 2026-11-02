@@ -251,3 +251,15 @@ test('a locked issue command completes from a path ps cannot show literally', as
   assert.equal(result.status, 0, result.stderr);
   assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/app\/issues\/7\/comments -f body=Run evidence/);
 });
+
+test('afk rejects an afk.maxRunMinutes that is not a positive whole number', t => {
+  for (const maxRunMinutes of [0, 1.5, '30']) {
+    const f = fixture(t);
+    writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { maxRunMinutes } }));
+    assert.equal(f.linkedGit('add', configPath).status, 0);
+    commitFixture(f);
+    const result = f.cliRun('afk', 'runs');
+    assert.equal(result.status, 2, `${JSON.stringify(maxRunMinutes)}: ${result.stderr}`);
+    assert.match(result.stderr, /Configure afk\.maxRunMinutes as a positive integer/);
+  }
+});
