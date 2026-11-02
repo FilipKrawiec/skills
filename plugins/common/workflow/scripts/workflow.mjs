@@ -50,9 +50,15 @@ function run(program, args, options = {}) {
   if (result.error || result.status !== 0) {
     const scopeFailure = program === 'gh' ? githubScopeFailure(result.stderr || '') : null;
     const network = program === 'gh' && /error connecting|could not resolve host|failed to connect|connection (?:timed out|refused)|network is unreachable|no such host|dial tcp/i.test(result.stderr || '');
-    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? 'GitHub command failed; check network access and the configured account before reauthenticating.' : `${program} ${args[0]} failed`));
+    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? 'GitHub command failed; check network access and the configured account before reauthenticating.' : `${program} ${args[0]} failed${failureCause(result)}`));
   }
   return result.stdout.trim();
+}
+// Name the cause so an intermittent failure can be diagnosed instead of re-run blindly.
+function failureCause(result) {
+  if (result.error) return ` (${result.error.code || result.error.message})`;
+  const line = gitFailureLine(result.stderr || '', { last: true, max: 200 });
+  return ` (${result.signal ? `signal ${result.signal}` : `exit ${result.status}`})${line ? `: ${line}` : ''}`;
 }
 export function githubScopeFailure(stderr) {
   const direct = /missing required scopes?\s*\[([^\]]*)\]/i.exec(stderr);
@@ -215,10 +221,11 @@ function implementerCommitIdentity(root) {
   const email = `${id}+${login}@users.noreply.github.com`;
   return { GIT_AUTHOR_NAME: login, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: email };
 }
-// Git's first diagnostic line, with tokens and URL credentials removed.
-export function gitFailureLine(output) {
-  const line = String(output).split(/\r?\n/).map(text => text.trim()).find(Boolean) || '';
-  return line.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, '[redacted]').replace(/(\/\/)[^/@\s]+@/g, '$1[redacted]@').slice(0, 300);
+// Git's first (or last) diagnostic line, with tokens and URL credentials removed.
+export function gitFailureLine(output, { last = false, max = 300 } = {}) {
+  const lines = String(output).split(/\r?\n/).map(text => text.trim()).filter(Boolean);
+  const line = (last ? lines.at(-1) : lines[0]) || '';
+  return line.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, '[redacted]').replace(/(\/\/)[^/@\s]+@/g, '$1[redacted]@').slice(0, max);
 }
 function commit(args) {
   if (args[0] !== '--message' || !(args.length === 2 || (args.length >= 4 && args[2] === '--'))) throw new Error('Usage: commit --message MESSAGE [-- PATH...]');
@@ -742,9 +749,9 @@ function afkUnitText(column, issue) {
 }
 export function afkPlan(cfg, live, threads, me = '', data = null) {
   const issues = data?.issues || afkIssues(cfg); const prs = (data?.prs || afkPrData(cfg)).map(pr => afkPrRecord(pr, cfg));
-  // A unit a finished run left unchanged gets no new run until something about it changes.
-  const spent = data ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [], orphans = [], units = [];
-  const base = data ? data.base || '' : (() => { try { return git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { return ''; } })();
+  // A unit a finished run left unchanged gets no new run until something about it changes. Given issues, the ledger and base come from data too.
+  const spent = data?.issues ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [], orphans = [], units = [], held = [];
+  const base = data?.issues ? data.base || '' : (() => { try { return git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { return ''; } })();
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
   const heldElsewhere = number => afkLiveHolds(threads(number), live, me).some(hold => hold.run !== me);
   const inPr = new Set(prs.flatMap(pr => pr.issues)), openPrs = new Set(prs.map(pr => pr.number));
@@ -767,6 +774,9 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
       if (epic && !(slices && (slices.total === 0 || slices.completed === slices.total))) continue;
       // A ready issue waits for its open blockers and for an open PR its packet depends on; a packet-less story is refined meanwhile.
       if ((epic || issue.paths !== null) && (issue.blocked || (issue.dependencies || []).some(number => openPrs.has(number)))) continue;
+      // It also waits while an open PR changes a file its packet covers: two builds in one area conflict on each merge.
+      const overlap = Array.isArray(issue.paths) && prs.find(pr => !pr.filesUnread && (pr.files || []).some(file => [file.path, file.previousPath].some(path => path && afkPathsWithinScope([path], issue.paths))));
+      if (overlap) { held.push({ issue: issue.number, pr: overlap.number }); continue; }
     }
     const write = column === 'Todo' && !epic && issue.paths !== null;
     offer({ column, text: afkUnitText(column, issue), issue: issue.number, priority: issue.priority, paths: write ? issue.paths : [], ...(write ? {} : { refine: true }) }, issue.number, afkIssueState(issue, column, threads(issue.number), cfg, base));
@@ -789,7 +799,13 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg, base));
   }
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
-  return { units, prs, byNumber, threads, unchanged, orphans };
+  return { units, prs, byNumber, threads, unchanged, orphans, held };
+}
+// Every tick merges ready PRs before it plans: the plan re-reads the open PRs, so it neither serves nor holds a build behind a PR
+// merged this tick. `merge: false` skips merging for a tick another step already merged for.
+export function afkMergeThenPlan(cfg, { readPrs = () => afkPrs(cfg), gh, issues, merge = true } = {}) {
+  const merged = merge ? afkMerge(cfg, readPrs(), null, gh) : [];
+  return { merged, plan: (live, threads, me = '') => afkPlan(cfg, live, threads, me, { ...(issues ? { issues } : {}), prs: readPrs() }) };
 }
 // Why `afk start --issue` could not hold an issue; a packet-less issue names its missing packet, which a refine run adds.
 export function afkStartRefusal(number, issue) {
@@ -1185,7 +1201,7 @@ function issueQueue(args, lanes) { afkQueue(args); }
 function afkPrs(cfg) {
   return afkPrData(cfg);
 }
-function afkMerge(cfg, prs, wanted = null) {
+function afkMerge(cfg, prs, wanted = null, gh = args => spawnSync('gh', args, { encoding: 'utf8' })) {
   const messages = [];
   for (const pr of prs) {
     if (wanted && !wanted.has(pr.number)) continue;
@@ -1204,8 +1220,8 @@ function afkMerge(cfg, prs, wanted = null) {
     const failed = checks.some(c => ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes((c.conclusion || c.state || '').toUpperCase()));
     if (!passed || !approved || ownerNeeded || failed || pr.mergeable === 'CONFLICTING') continue;
     const args = ['pr', 'merge', String(pr.number), '--repo', cfg.repo, '--squash', '--match-head-commit', head];
-    const merged = spawnSync('gh', args, { encoding: 'utf8' });
-    const queued = merged.status === 0 ? null : spawnSync('gh', [...args, '--auto'], { encoding: 'utf8' });
+    const merged = gh(args);
+    const queued = merged.status === 0 ? null : gh([...args, '--auto']);
     messages.push(`PR #${pr.number} ${merged.status === 0 ? 'merged' : queued?.status === 0 ? 'will merge after checks' : 'merge refused'}`);
   }
   return messages;
@@ -1215,7 +1231,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
   const existing = afkReadLedger(ledgerPath)[id]?.[0];
   const resumingOneShot = !prepared && !cfg.runsCommand && Boolean(existing?.oneShot);
   if (!prepared) afkPreflight(cfg);
-  const output = prepared || resumingOneShot ? [] : afkMerge(cfg, afkPrs(cfg));
+  const tick = afkMergeThenPlan(cfg, { merge: !prepared && !resumingOneShot }), output = tick.merged;
   return withRepoLock('afk-start', () => {
     const ledger = afkReadLedger(ledgerPath);
     if (ledger[id]?.length) {
@@ -1228,7 +1244,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       output.forEach(line => console.log(line)); return 3;
     }
     const threads = afkThreadReader(cfg);
-    const { units, byNumber } = afkPlan(cfg, live, threads, id);
+    const { units, byNumber } = tick.plan(live, threads, id);
     const othersHolds = afkOtherHolds(ledger, live, id);
     afkWriteLedger(ledgerPath, ledger);
     for (const candidate of afkCandidates(units, othersHolds)) {
@@ -1285,12 +1301,13 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const budget = afkBudget();
   if (budget.remaining < 1000) { result.start = 0; console.log(`Quiet: GitHub GraphQL has ${budget.remaining} points until ${budget.reset}; live runs keep them.`); return 3; }
   afkPreflight(cfg);
-  const output = afkMerge(cfg, afkPrs(cfg));
+  const tick = afkMergeThenPlan(cfg), output = tick.merged;
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { units, unchanged, orphans } = afkPlan(cfg, live, threads);
+  const { units, unchanged, orphans, held } = tick.plan(live, threads);
   for (const number of orphans) { afkStatus(cfg, number, 'TODO', true); output.push(`Orphaned: #${number} was In progress with no live run; back to Todo`); }
   for (const number of unchanged) output.push(`Unchanged: #${number} since its last run; no new run until it changes`);
+  for (const hold of held) output.push(`Held: #${hold.issue} overlaps open PR #${hold.pr}; no build until it merges or closes`);
   if (units[0]) output.push(`Next: ${units[0].column}: ${units[0].text}`);
   const ledgerPath = join(common, 'afk-holds.json');
   const start = withRepoLock('afk-start', () => {
