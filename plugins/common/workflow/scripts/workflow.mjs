@@ -777,8 +777,9 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const target = owners[0] || firstEpic;
     const suffix = owners.length ? '' : ' (under no epic)';
     // Its issues' packets, then the PR's own packet, then the files it already changes.
-    const paths = stories.some(issue => Array.isArray(issue.paths)) ? stories.flatMap(issue => issue.paths || [])
-      : afkPathsFromIssueBody(pr.body || '') ?? (pr.filesUnread ? null : (pr.files || []).flatMap(file => [file.path, file.previousPath].filter(Boolean)));
+    const packet = stories.some(issue => Array.isArray(issue.paths)) ? stories.flatMap(issue => issue.paths || []) : afkPathsFromIssueBody(pr.body || '');
+    const scopedByFiles = packet === null && !pr.filesUnread;
+    const paths = packet ?? (scopedByFiles ? (pr.files || []).flatMap(file => [file.path, file.previousPath].filter(Boolean)) : null);
     const review = pr.awaitingReview && !pr.broken;
     // A fix scoped by files that could not be read waits for a later plan rather than holding an incomplete scope.
     if (!review && paths === null) continue;
@@ -786,7 +787,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (spent[pr.number] === state) { unchanged.push(pr.number); continue; }
     const unit = review
       ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true, pr: pr.number, head: pr.headRefOid, state }
-      : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths, pr: pr.number, head: pr.headRefOid, state };
+      : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid, state };
     const parent = epics.find(epic => epic.issue.number === target);
     if (parent) parent.units.push({ ...unit, rank: review ? 1 : pr.broken ? 0 : 2 });
   }
@@ -1170,9 +1171,9 @@ function afkAssertPushScope(root, baseRef) {
     if (!afkPathsWithinScope(changed, afkHeldScope(hold, changed))) throw new Error(`Push paths exceed the assigned AFK scope${afkScopeHint(hold)}`);
   }
 }
-// A PR's scope follows its paths into the files the base renamed them to since the held head; the branch's own renames widen nothing.
+// A PR scoped by its changed files follows them into the files the base renamed them to since the held head; the branch's own renames widen nothing.
 function afkBaseRenamedScope(hold) {
-  if (!hold.pr) return hold.paths;
+  if (!hold.scopedByFiles) return hold.paths;
   const base = 'refs/remotes/origin/HEAD';
   const env = cleanEnvironment();
   const from = hold.head || spawnSync('git', ['merge-base', 'HEAD', base], { env, encoding: 'utf8' }).stdout?.trim();
@@ -1186,7 +1187,7 @@ function afkBaseRenamedScope(hold) {
   }
   return scope;
 }
-function afkScopeHint(hold) { return `; add a \`scope\` packet listing them to #${hold.number}'s body`; }
+function afkScopeHint(hold) { return hold.scopedByFiles ? `; add a \`scope\` packet listing them to #${hold.number}'s body` : ''; }
 // The hold copies the scope packet at start; a packet corrected on the issue since then is rechecked before refusing.
 function afkHeldScope(hold, paths) {
   if (!Array.isArray(hold.paths) || afkPathsWithinScope(paths, hold.paths) || hold.review || hold.check || hold.stage) return hold.paths;
@@ -1270,7 +1271,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       const type = candidate.paths === null ? 'epic' : 'issue';
       const comment = afkHold(cfg, live, id, candidate.number, type);
       if (!comment) continue;
-      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), ...(candidate.unit?.stage ? { stage: candidate.unit.stage } : {}), ...(candidate.unit?.pr ? { pr: candidate.unit.pr, ...(candidate.unit.head ? { head: candidate.unit.head } : {}), ...(candidate.unit.state ? { state: candidate.unit.state } : {}) } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
+      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), ...(candidate.unit?.stage ? { stage: candidate.unit.stage } : {}), ...(candidate.unit?.pr ? { pr: candidate.unit.pr, ...(candidate.unit.head ? { head: candidate.unit.head } : {}), ...(candidate.unit.scopedByFiles ? { scopedByFiles: true } : {}), ...(candidate.unit.state ? { state: candidate.unit.state } : {}) } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
       ledger[id] = [...(ledger[id] || []), held];
       try {
         // A review hold names a PR, which has no card of its own; its issues stay in Review.

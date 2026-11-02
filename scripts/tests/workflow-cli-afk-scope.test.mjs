@@ -19,6 +19,7 @@ test('AFK commit enforces the issue scope recorded in the hold', t => {
   const denied = f.cliRun('commit', '--message', 'chore: out of scope', '--', '.captures-886/after.jpeg');
   assert.notEqual(denied.status, 0);
   assert.match(denied.stderr, /assigned AFK scope/);
+  assert.doesNotMatch(denied.stderr, /add a `scope` packet/, 'a packet scope is not widened by its own run');
   assert.equal(f.linkedGit('diff', '--cached', '--name-only').stdout.trim(), '');
   delete f.env.WORKFLOW_ISSUE_NUMBER;
   const selfClaim = f.cliRun('commit', '--message', 'chore: out of scope', '--', '.captures-886/after.jpeg');
@@ -281,7 +282,7 @@ test('AFK commit and push let a PR scoped by its files follow paths the base ren
   assert.equal(g('checkout', '-q', 'feature/test').status, 0);
   const head = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
   const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
-  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 295, pr: 295, head, paths: ['tests/old.test.mjs'] }] }));
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 295, pr: 295, head, scopedByFiles: true, paths: ['tests/old.test.mjs'] }] }));
   writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
   Object.assign(f.env, { WORKFLOW_RUN_ID: 'afk-test-run', WORKFLOW_ISSUE_NUMBER: '295', FAKE_ISSUE_BODY: 'No packet', REMOTE_BASE_SHA: f.linkedGit('rev-parse', 'other').stdout.trim(), GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.test', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.test' });
   assert.equal(g('merge', '-q', '--no-ff', '-m', 'merge base', 'other').status, 0);
