@@ -14,7 +14,7 @@ const help = `Usage:
   node workflow.mjs commit --message MESSAGE -- PATH...
   node workflow.mjs push [--owner-bootstrap]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
-  node workflow.mjs issue claim|status|comment|close|reopen|queue ...
+  node workflow.mjs issue claim|status|create|comment|close|reopen|queue ...
   node workflow.mjs labels ensure
   node workflow.mjs cache show|refresh
   node workflow.mjs cache refresh
@@ -880,15 +880,53 @@ function issueStatus(args, lanes) {
   if (!Number.isInteger(n) || n < 1) throw new Error('Usage: issue status --number N --value STATUS');
   const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg); afkStatus(cfg, n, (o['--value'] || '').toUpperCase());
 }
-function issueComment(args) {
-  const o = afkFlags(args, ['--number', '--body-file']);
-  const n = Number(o['--number']);
-  if (!Number.isInteger(n) || n < 1 || !o['--body-file']) throw new Error('Usage: issue comment --number N --body-file PATH');
+// Issue writes stay in this repository or the workflow tooling repository, where skill improvements belong.
+export function issueTargetRepo(cfg, requested) {
+  if (!requested || requested === cfg.repo) return cfg.repo;
+  const tooling = githubRepoFromRemote(cfg.toolingRepository);
+  if (requested === tooling) return tooling;
+  throw new Error(`Issue writes reach only ${cfg.repo} or the workflow tooling repository ${tooling}`);
+}
+export function oldestExactTitle(issues, title) {
+  return issues.filter(issue => issue.title === title).map(issue => issue.number).sort((a, b) => a - b)[0] ?? null;
+}
+function issueCreate(args) {
+  const unique = args.includes('--unique');
+  const o = afkFlags(args.filter(arg => arg !== '--unique'), ['--title', '--body-file', '--labels', '--repo']);
+  const title = (o['--title'] || '').trim();
+  if (!title || !o['--body-file']) throw new Error('Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--unique]');
   const root = git('rev-parse', '--show-toplevel');
   const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
-  const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg);
+  const cfg = afkConfig(); afkLoadEnvironment(cfg);
+  const repo = issueTargetRepo(cfg, o['--repo']);
+  afkActor(cfg);
+  const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
+  const open = () => afkGh(['issue', 'list', '--repo', repo, '--state', 'open', '--search', `in:title "${title.replaceAll('"', '')}"`, '--limit', '100', '--json', 'number,title']);
+  return withRepoLock('issue-create', () => {
+    const existing = unique ? oldestExactTitle(open(), title) : null;
+    if (existing) { console.log(`Exists: #${existing}`); return; }
+    const created = afkGh(['api', `repos/${repo}/issues`, '-f', `title=${title}`, '-f', `body=${body}`, ...labels.flatMap(label => ['-f', `labels[]=${label}`])]);
+    if (!Number.isSafeInteger(created.number)) throw new Error(`GitHub did not confirm the issue in ${repo}`);
+    // Runs on other hosts do not share this lock; the oldest exact-title issue wins and a newer duplicate closes.
+    const oldest = unique ? oldestExactTitle(open(), title) : null;
+    if (oldest && oldest < created.number) {
+      afkGh(['api', '-X', 'PATCH', `repos/${repo}/issues/${created.number}`, '-f', 'state=closed', '-f', 'state_reason=not_planned']);
+      console.log(`Exists: #${oldest}`); return;
+    }
+    console.log(`Created: #${created.number}`);
+  });
+}
+function issueComment(args) {
+  const o = afkFlags(args, ['--number', '--body-file', '--repo']);
+  const n = Number(o['--number']);
+  if (!Number.isInteger(n) || n < 1 || !o['--body-file']) throw new Error('Usage: issue comment --number N --body-file PATH [--repo OWNER/NAME]');
+  const root = git('rev-parse', '--show-toplevel');
+  const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
+  const cfg = afkConfig(); afkLoadEnvironment(cfg);
+  const repo = issueTargetRepo(cfg, o['--repo']);
+  afkActor(cfg);
   return withRepoLock(`issue-comment-${n}`, () => {
-    const result = afkGh(['api', `repos/${cfg.repo}/issues/${n}/comments`, '-f', `body=${body}`]);
+    const result = afkGh(['api', `repos/${repo}/issues/${n}/comments`, '-f', `body=${body}`]);
     if (!Number.isSafeInteger(result.id)) throw new Error(`GitHub did not confirm the comment on #${n}`);
     console.log(`Commented on #${n} (${result.id})`);
   });
@@ -1424,6 +1462,7 @@ function afkCommand(args) {
 function requiredLocks(command, args) {
   if (command === 'issue') {
     if (args[0] === 'queue') return ['afk-queue'];
+    if (args[0] === 'create') return ['issue-create'];
     if (args[0] === 'status') return ['afk-start'];
     if (args[0] === 'claim') {
       const index = args.indexOf('--number');
@@ -1560,6 +1599,7 @@ async function execute(command, args) {
   else if (command === 'review-context') reviewContext(args);
   else if (command === 'issue' && args[0] === 'claim') { const { lanes } = config(); issueClaim(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'status') { const { lanes } = config(); issueStatus(args.slice(1), lanes); }
+  else if (command === 'issue' && args[0] === 'create') { config(); issueCreate(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'comment') { config(); issueComment(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'reopen') { config(); issueReopen(args.slice(1)); }

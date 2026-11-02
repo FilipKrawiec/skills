@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, issueTargetRepo, oldestExactTitle } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -358,4 +358,18 @@ test('AFK run usage summarizes a JSON runner result and ignores plain output', (
   assert.equal(afkRunUsage('Summary: plain text'), null);
   assert.equal(afkRunUsage('{"other":1}'), null);
   assert.equal(afkRunUsage(undefined), null);
+});
+
+test('issue writes reach only the configured repository or the workflow tooling repository', () => {
+  const cfg = { repo: 'acme/app', toolingRepository: 'https://github.com/acme/skills.git' };
+  assert.equal(issueTargetRepo(cfg, undefined), 'acme/app');
+  assert.equal(issueTargetRepo(cfg, 'acme/app'), 'acme/app');
+  assert.equal(issueTargetRepo(cfg, 'acme/skills'), 'acme/skills');
+  assert.throws(() => issueTargetRepo(cfg, 'other/repo'), /only acme\/app or the workflow tooling repository acme\/skills/);
+});
+
+test('a unique issue title resolves to the oldest open exact match', () => {
+  const issues = [{ number: 9, title: 'Owner improvements' }, { number: 4, title: 'Owner improvements' }, { number: 2, title: 'Owner improvements (old)' }];
+  assert.equal(oldestExactTitle(issues, 'Owner improvements'), 4);
+  assert.equal(oldestExactTitle(issues, 'Missing'), null);
 });

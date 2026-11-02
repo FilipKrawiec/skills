@@ -260,6 +260,33 @@ test('AFK watcher records the run usage on the released hold', t => {
   assert.match(readFileSync(f.env.TEST_PATCHES, 'utf8'), /issues\/comments\/12 -f body=<!-- afk-issue-released session=afk-\S+ -->\nUsage: \$0\.50, 7 turns, 2 min, tokens in 10, out 20, cache read 30, cache write 40/);
 });
 
+test('issue create reuses an open exact-title issue with --unique and creates otherwise', t => {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nrequire('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='issue' && a[1]==='list') { out(process.env.TEST_EXISTING ? [{number:7,title:'Owner improvements'}] : []); process.exit(0); }\nif(a.includes('repos/acme/skills/issues')) { out({number:31}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('{}');\n`);
+  chmodSync(gh, 0o755);
+  const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { toolingRepository: 'https://github.com/acme/skills.git' } };
+  writeFileSync(join(f.repo, configPath), json(cfg));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  writeFileSync(join(f.repo, 'body.md'), 'Run evidence');
+  f.env.TEST_CALLS = join(f.root, 'calls.log');
+  f.env.TEST_EXISTING = '1';
+  const reused = f.cliRun('issue', 'create', '--title', 'Owner improvements', '--body-file', 'body.md', '--labels', 'lane:owner', '--repo', 'acme/skills', '--unique');
+  assert.equal(reused.status, 0, reused.stderr);
+  assert.match(reused.stdout, /Exists: #7/);
+  assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/skills\/issues /);
+  delete f.env.TEST_EXISTING;
+  const created = f.cliRun('issue', 'create', '--title', 'chore(afk): cut rereads', '--body-file', 'body.md', '--labels', 'type:chore,lane:afk', '--repo', 'acme/skills');
+  assert.equal(created.status, 0, created.stderr);
+  assert.match(created.stdout, /Created: #31/);
+  assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/skills\/issues -f title=chore\(afk\): cut rereads -f body=Run evidence -f labels\[\]=type:chore -f labels\[\]=lane:afk/);
+  const denied = f.cliRun('issue', 'create', '--title', 'x', '--body-file', 'body.md', '--repo', 'other/repo');
+  assert.notEqual(denied.status, 0);
+  assert.match(denied.stderr, /workflow tooling repository/);
+});
+
 test('AFK watcher hands an explore pass to the agent without a second afk start', t => {
   const f = fixture(t);
   const child = join(f.root, 'agent.mjs');
