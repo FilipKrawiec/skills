@@ -220,6 +220,14 @@ test('a Blocked card stays out of selection until it moves back to Todo', () => 
   assert.equal(ready(null).length, 1);
 });
 
+test('a red PR unit takes its scope from its packet, else its changed files', () => {
+  const red = (body, extra = {}) => ({ number: 9, title: 'Fix', body, headRefOid: 'abc', labels: [], isDraft: false, mergeable: 'CONFLICTING', reviews: [{ author: { login: cfg.reviewer }, commit: { oid: 'abc' }, state: 'COMMENTED' }], files: [{ path: 'src/a.js' }, { path: 'docs/b.md' }], ...extra });
+  const paths = (pr, issues = [epic]) => afkPlan(cfg, [], () => [], 'new-run', { issues, prs: [pr] }).epics[0].units[0].paths;
+  assert.deepEqual(paths(red('No linked issue.')), ['src/a.js', 'docs/b.md']);
+  assert.deepEqual(paths(red('```scope\n{"paths":["src/"]}\n```')), ['src/'], 'the PR body packet wins');
+  assert.deepEqual(paths(red('Closes #2'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'the linked issue packet wins');
+});
+
 test('AFK imports the configured gh profile without importing git overrides', t => {
   const directory = mkdtempSync(join(tmpdir(), 'afk-env-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));

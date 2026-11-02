@@ -588,7 +588,7 @@ export function afkEpicOrder(a, b) {
   return afkPriority(a.priority) - afkPriority(b.priority) || am[0] - bm[0] || String(am[1]).localeCompare(String(bm[1])) || Number(am[2]) - Number(bm[2]) || a.number - b.number;
 }
 function afkPrData(cfg) {
-  return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable']);
+  return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files']);
 }
 // Decides on the newest marked Reviewer review; unmarked ones are thread replies.
 export function afkReviewerApproved(pr, cfg) {
@@ -655,7 +655,9 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (owners.length && pr.issues.some(number => epicOf(number) && claimedElsewhere(number))) continue;
     const target = owners[0] || firstEpic;
     const suffix = owners.length ? '' : ' (under no epic)';
-    const paths = stories.flatMap(issue => issue.paths || []);
+    // The PR's own packet, then its issues' packets, then the files it already changes.
+    const linked = stories.flatMap(issue => issue.paths || []);
+    const paths = afkPathsFromIssueBody(pr.body || '') ?? (linked.length ? linked : (pr.files || []).map(file => file.path));
     const unit = pr.awaitingReview && !pr.broken
       ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [] }
       : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths };
