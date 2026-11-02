@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkSlots, afkPrFiles, afkEndStatus, afkSlices, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkSlots, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkSlices, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -257,15 +257,41 @@ test('a new ticket starts only while open PRs and ticket runs without a PR stay 
   assert.equal(free.take(blocker), true, 'work on an open PR still starts');
 });
 
-test('eligibility checks and epic stages start and add no WIP when WIP is full; drafts are not WIP', () => {
+test('eligibility checks and epic stages start and add no WIP when WIP is full', () => {
   const four = [{ number: 10 }, { number: 11 }, { number: 12 }, { number: 13 }];
   const full = afkSlots({ maxRuns: 4 }, {}, [], '', four);
   assert.equal(full.take({ unit: { check: true } }), true, 'WIP is 4, yet an eligibility check starts');
   assert.equal(full.take({ unit: { stage: 'close' } }), true, 'and so does an epic stage');
   assert.equal(full.take({ unit: {} }), false, 'a new ticket waits');
-  const checking = afkSlots({ maxRuns: 5 }, { c: [{ number: 7, check: true }], s: [{ number: 8, stage: 'slice' }] }, ['c', 's'], '', four.slice(0, 3));
-  assert.equal(checking.take({ unit: {} }), true, 'live checks and stages add no WIP');
-  assert.equal(afkSlots({ maxRuns: 4 }, {}, [], '', four.map(pr => ({ ...pr, isDraft: true }))).take({ unit: {} }), true);
+  const checking = afkSlots({ maxRuns: 5 }, { c: [{ number: 7, check: true }] }, ['c'], '', four);
+  assert.equal(checking.take({ unit: {} }), true, 'a live check hold alone adds no WIP');
+  const staging = afkSlots({ maxRuns: 5 }, { s: [{ number: 8, stage: 'slice' }] }, ['s'], '', four);
+  assert.equal(staging.take({ unit: {} }), true, 'a live stage hold alone adds no WIP');
+});
+
+test('draft PRs count as WIP, and a held-back ticket says why', () => {
+  const drafts = [10, 11, 12, 13].map(number => ({ number, isDraft: true }));
+  const slots = afkSlots({ maxRuns: 4 }, {}, [], '', drafts);
+  assert.equal(slots.waiting(), null);
+  assert.equal(slots.take({ unit: {} }), false, 'four draft PRs: no new ticket');
+  assert.equal(slots.waiting(), 'Waiting: WIP 4/4; no new ticket');
+  assert.equal(afkStartCount({ maxRuns: 4 }, {}, [], [{ unit: {} }], drafts).waiting, 'Waiting: WIP 4/4; no new ticket');
+});
+
+test('a booting run takes no slot when a peer starts, and covers one chosen candidate in the start count', () => {
+  const ledger = { a: [{ number: 1 }], b: [{ number: 2 }], c: [{ number: 3 }] };
+  const live = ['a', 'b', 'c', 'boot'];
+  assert.equal(afkSlots({ maxRuns: 4 }, ledger, live, 'me').take({ unit: {} }), true, 'the booting peer does not take the last slot from this run');
+  const tickets = [{ unit: {} }, { unit: {} }];
+  assert.deepEqual(afkStartCount({ maxRuns: 4 }, ledger, live, tickets, []), { count: 0, waiting: null }, 'the booting run takes the one free run slot');
+  assert.equal(afkStartCount({ maxRuns: 5 }, ledger, live, tickets, []).count, 1);
+  assert.equal(afkStartCount({ maxRuns: 5 }, ledger, live, [{ unit: { review: true } }], []).count, 1, 'reviews have their own slots');
+});
+
+test('run limits must be positive integers', () => {
+  assert.doesNotThrow(() => afkCheckRunLimits({ maxRuns: 4, maxReviewRuns: 2 }));
+  assert.throws(() => afkCheckRunLimits({ maxRuns: 4, maxReviewRuns: 0 }), /afk\.maxReviewRuns must be a positive integer/);
+  assert.throws(() => afkCheckRunLimits({ maxRuns: 0, maxReviewRuns: 2 }), /afk\.maxRuns must be a positive integer/);
 });
 
 test('the plan ranks a red PR, a PR awaiting review and a PR with requested changes for selection', () => {
