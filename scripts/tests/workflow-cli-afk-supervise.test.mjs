@@ -5,13 +5,13 @@ import { readFileSync, writeFileSync, chmodSync, existsSync, openSync, closeSync
 import { join } from 'node:path';
 import { cli, configPath, json, config, run, fixture, commitFixture } from './support/workflow-cli-fixture.mjs';
 
-async function supervisedRun(t, state, lane, selectLane = 'lane:afk', pr = false) {
+async function supervisedRun(t, state, lane, selectLane = 'lane:afk', pr = false, foreign = false) {
   if (spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { stdio: 'ignore' }).status !== 0) { t.skip('watcher lock ownership requires process inspection'); return; }
   const f = fixture(t);
   const child = join(f.root, 'agent.mjs');
   writeFileSync(child, `import { spawnSync } from 'node:child_process';\nimport { existsSync, writeFileSync } from 'node:fs';\nconst begun = Date.now(), wait = () => existsSync(process.env.TEST_GO) || Date.now() - begun > 120000 ? finish() : setTimeout(wait, 50);\nconst finish = () => { const r = spawnSync(process.execPath, [process.env.TEST_CLI, 'afk', 'end', '--me', process.env.WORKFLOW_RUN_ID], { encoding: 'utf8' }); writeFileSync(process.env.TEST_RESULT, r.stdout + r.stderr); console.log(JSON.stringify({type:'result',result:'Summary: done',num_turns:3})); };\nwait();\n`);
   const gh = join(f.root, 'bin', 'gh');
-  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a.includes('PATCH') || a.some(x=>x.startsWith('body=<!-- afk-issue-blocked'))) require('fs').appendFileSync(process.env.TEST_PATCHES, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr' || a[0]==='issue') { out(a[0]==='pr' && process.env.TEST_PR ? [{number:2000,title:'pr',body:'Closes #1082',headRefOid:'abc',labels:[],reviews:[],isDraft:false,statusCheckRollup:[],mergeable:'MERGEABLE'}] : []); process.exit(0); }\nif(a.some(x=>x.includes('pullRequests(states'))) { out({data:{repository:{pullRequests:{nodes:[]}}}}); process.exit(0); }\nif(a[0]==='project') { out({id:'P1',title:'Board'}); process.exit(0); }\nif(a.includes('number=2000')) { console.error('Could not resolve to an Issue with the number of 2000.'); process.exit(1); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[{project:{number:5,title:'Board',owner:{login:'acme'}}}]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,[process.env.TEST_SELECT_LANE||'lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"]}\\n\\u0060\\u0060\\u0060')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.some(x=>x.includes('/comments'))) { out({id:12}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app/issues/1082')) { out({state:process.env.TEST_STATE||'open',labels:[{name:process.env.TEST_LANE||'lane:afk'}]}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a.includes('PATCH') || a.some(x=>x.startsWith('body=<!-- afk-issue-blocked'))) require('fs').appendFileSync(process.env.TEST_PATCHES, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr' || a[0]==='issue') { out(a[0]==='pr' && process.env.TEST_PR ? [{number:2000,title:'pr',body:'Closes #1082',headRefOid:'abc',labels:[],reviews:[],isDraft:false,statusCheckRollup:[],mergeable:'MERGEABLE'}] : []); process.exit(0); }\nif(a.some(x=>x.includes('pullRequests(states'))) { out({data:{repository:{pullRequests:{nodes:[]}}}}); process.exit(0); }\nif(a[0]==='project') { out({id:'P1',title:'Board'}); process.exit(0); }\nif(a.includes('number=2000')) { console.error('Could not resolve to an Issue with the number of 2000.'); process.exit(1); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[{project:{number:5,title:'Board',owner:{login:'acme'}}}]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,[process.env.TEST_SELECT_LANE||'lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"]}\\n\\u0060\\u0060\\u0060')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.some(x=>x.includes('/comments'))) { out({id:12}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app/pulls/2000')) { out({head:{sha:process.env.TEST_HEAD||'abc'}}); process.exit(0); }\nif(a.includes('repos/acme/app/issues/1082')) { out({state:process.env.TEST_STATE||'open',labels:[{name:process.env.TEST_LANE||'lane:afk'}]}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
   chmodSync(gh, 0o755);
   const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { startCommand: [process.execPath, child, '{runId}', '{prompt}'] } };
   writeFileSync(join(f.repo, configPath), json(cfg));
@@ -32,6 +32,28 @@ async function supervisedRun(t, state, lane, selectLane = 'lane:afk', pr = false
   assert.notEqual(hold.watcherPid, watch.pid);
   assert.match(spawnSync('ps', ['-p', String(hold.watcherPid), '-o', 'command='], { encoding: 'utf8' }).stdout, / afk supervise --me /);
   assert.equal(JSON.parse(readFileSync(join(common, 'afk-runs', `${runId}.json`), 'utf8')).pid, hold.watcherPid);
+  if (pr) assert.deepEqual({ pr: hold.pr, head: hold.head }, { pr: 2000, head: 'abc' }, 'the hold records the PR head it was taken at');
+  if (foreign) {
+    const moved = 'f'.repeat(40);
+    f.env.TEST_HEAD = moved;
+    const tickLog = join(f.root, 'tick.log'), tickOutput = openSync(tickLog, 'w');
+    const tick = spawnSync(process.execPath, [cli, 'afk', 'watch', '--issue', '2000'], { cwd: f.repo, env: f.env, stdio: ['ignore', tickOutput, tickOutput] });
+    closeSync(tickOutput);
+    const ticked = readFileSync(tickLog, 'utf8');
+    assert.equal(tick.status, 0, ticked);
+    assert.match(ticked, new RegExp(`stopped ${runId}: PR #2000's head moved from abc to fffffff, a push it did not make`));
+    assert.match(readFileSync(f.env.TEST_PATCHES, 'utf8'), new RegExp(`afk-issue-released session=${runId} -->\\nStopped: PR #2000's head moved to ${moved}, a push this run did not make`));
+    assert.match(ticked, /Launched: afk-/, 'the next check serves the PR again');
+    const holds = JSON.parse(readFileSync(join(common, 'afk-holds.json'), 'utf8'));
+    assert.equal(holds[runId], undefined);
+    const [[next, [served]]] = Object.entries(holds);
+    assert.deepEqual({ number: served.number, review: served.review }, { number: 2000, review: true });
+    for (let i = 0; i < 100 && spawnSync('ps', ['-p', String(hold.watcherPid)]).status === 0; i++) await new Promise(done => setTimeout(done, 100));
+    assert.notEqual(spawnSync('ps', ['-p', String(hold.watcherPid)]).status, 0, 'the stopped run ends');
+    writeFileSync(f.env.TEST_GO, '');
+    for (let i = 0; i < 200 && existsSync(join(common, 'afk-runs', `${next}.json`)); i++) await new Promise(done => setTimeout(done, 100));
+    return;
+  }
   const lock = join(common, 'workflow-locks', 'afk-start.lock');
   const probe = process.platform === 'darwin' ? spawnSync('lockf', ['-t', '0', lock, 'true']) : spawnSync('flock', ['-n', lock, 'true']);
   assert.equal(probe.status, 0, 'the start lock is free while the run works');
@@ -58,3 +80,5 @@ test('an eligibility check that approves its issue into lane:afk does not block 
 test('a run whose issue closed does not block it', t => supervisedRun(t, 'closed', 'lane:afk'));
 
 test('a run that reviews a PR starts without a card for the PR and never blocks it', t => supervisedRun(t, 'open', 'lane:afk', 'lane:afk', true));
+
+test('a foreign push on a held PR stops its run, releases the hold naming the new head and serves the PR again', t => supervisedRun(t, 'open', 'lane:afk', 'lane:afk', true, true));

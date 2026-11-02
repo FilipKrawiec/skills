@@ -747,8 +747,8 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     // A fix scoped by files that could not be read waits for a later plan rather than holding an incomplete scope.
     if (!review && paths === null) continue;
     const unit = review
-      ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true }
-      : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths };
+      ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
+      : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths, pr: pr.number, head: pr.headRefOid };
     const parent = epics.find(epic => epic.issue.number === target);
     if (parent) parent.units.push({ ...unit, rank: review ? 1 : pr.broken ? 0 : 2 });
   }
@@ -1197,7 +1197,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       const type = candidate.paths === null ? 'epic' : 'issue';
       const comment = afkHold(cfg, live, id, candidate.number, type);
       if (!comment) continue;
-      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), ...(candidate.unit?.stage ? { stage: candidate.unit.stage } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
+      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), ...(candidate.unit?.stage ? { stage: candidate.unit.stage } : {}), ...(candidate.unit?.head ? { pr: candidate.unit.pr, head: candidate.unit.head } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
       ledger[id] = [...(ledger[id] || []), held];
       try {
         // A review hold names a PR, which has no card of its own; its issues stay in Review.
@@ -1428,6 +1428,44 @@ function afkReap(cfg, common) {
     console.error(`stopped ${agent.name}: wait ended`);
   }
 }
+// A held PR whose head moved to a commit its live run's checkout does not contain was pushed by someone else, so that run's work is stale.
+export function afkForeignHeads(ledger, live, headOf, ownsHead) {
+  return Object.entries(ledger).filter(([id]) => live.includes(id)).flatMap(([id, holds]) => holds
+    .filter(hold => typeof hold.head === 'string' && Number.isSafeInteger(hold.pr))
+    .map(hold => ({ id, pr: hold.pr, from: hold.head, to: headOf(hold.pr) }))
+    .filter(moved => moved.to && moved.to !== moved.from && !ownsHead(id, moved.to)));
+}
+// A run pushed a head its checkout's HEAD contains or once pointed at (it may rebase after pushing); a head the checkout never fetched is someone else's.
+export function afkOwnsHead(tree, head) {
+  const env = cleanEnvironment();
+  if (spawnSync('git', ['merge-base', '--is-ancestor', head, 'HEAD'], { cwd: tree, stdio: 'ignore', env }).status === 0) return true;
+  const visited = spawnSync('git', ['log', '-g', '--format=%H', 'HEAD'], { cwd: tree, encoding: 'utf8', env });
+  return visited.status === 0 && visited.stdout.split('\n').includes(head);
+}
+// Stops each run whose held PR someone else pushed, as reap does, and releases its hold so the next check serves the PR again.
+function afkReleaseForeignHeads(cfg, common) {
+  const live = afkLive(cfg);
+  const ledger = afkReadLedger(join(common, 'afk-holds.json'));
+  const treeOf = id => { try { return JSON.parse(readFileSync(afkJobPath(common, id), 'utf8')).tree; } catch { return join(dirname(common), '.claude', 'worktrees', id); } };
+  // A run whose checkout cannot be found cannot be told from a foreign pusher, so it keeps its hold.
+  const owns = (id, head) => { const tree = treeOf(id); return !tree || !existsSync(tree) || afkOwnsHead(tree, head); };
+  const headOf = number => { try { return afkGh(['api', `repos/${cfg.repo}/pulls/${number}`]).head?.sha; } catch { return null; } };
+  const moved = afkForeignHeads(ledger, live, headOf, owns);
+  // The released PR is served by this tick's check, never skipped as quiet.
+  if (moved.length) rmSync(join(common, 'afk-check.json'), { force: true });
+  for (const { id, pr, from, to } of moved) {
+    if (cfg.runsCommand) {
+      const agent = JSON.parse(run(cfg.runsCommand[0], cfg.runsCommand.slice(1)) || '[]').find(item => item.name === id && typeof item.id === 'string' && /^[A-Za-z0-9._-]+$/.test(item.id));
+      if (agent) afkConfiguredCommand(cfg.stopCommand, { runId: id, id: agent.id });
+    } else {
+      // Ending the supervisor's agent lets the supervisor release the run's worktree as usual.
+      let job = {}; try { job = JSON.parse(readFileSync(afkJobPath(common, id), 'utf8')); } catch {}
+      if (Number.isSafeInteger(job.pid)) spawnSync('pkill', ['-TERM', '-P', String(job.pid)], { stdio: 'ignore' });
+    }
+    console.error(`stopped ${id}: PR #${pr}'s head moved from ${from.slice(0, 7)} to ${to.slice(0, 7)}, a push it did not make`);
+    afkEndRun(cfg, common, id, `Stopped: PR #${pr}'s head moved to ${to}, a push this run did not make; the PR is served again.`);
+  }
+}
 function afkWatchTree(cfg) {
   const root = git('rev-parse', '--show-toplevel');
   const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
@@ -1596,6 +1634,7 @@ function afkWatch(cfg, common, requestedIssue = null) {
     }
   }
   afkReap(cfg, common);
+  afkReleaseForeignHeads(cfg, common);
   if (!cfg.runsCommand) afkSweepRunTrees(cfg, dirname(common), (pid, name) => afkRunAlive(common, pid, name));
   const result = {};
   const code = afkCheckRun(cfg, common, true, result, requestedIssue);
