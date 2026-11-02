@@ -35,7 +35,7 @@ Re-read the body, then edit it with `issue edit --number N --body-file PATH` onl
 
 - A binding decision or a new design: record it under Decisions. Re-run Decided on each open slice: amend criteria within approved intent, record substantive contradictions for replanning, and notify claimed runs. Each slice names the designs that bind it, or says none do.
 - A scope change, a split, or a new or withdrawn slice: update Acceptance criteria so the slices still cover them.
-- A wait on an owner, a dependency or a deployment: update Status.
+- A wait on an owner or a dependency: update Status.
 
 A merged, closed or shipped slice needs no edit. An epic a run left unchanged is served again only after its body, labels, slice counts or outside comments change.
 
@@ -45,5 +45,5 @@ An epic whose sub-issues are all closed is served with the same `Work:` line. Th
 
 1. Delivered: tick each criterion and link its slice, the candidate and the deployment run. Comment `## Delivered` with that list, close with `issue close --number N`, and confirm the card is in Done.
 2. A criterion has no covering slice: create the missing slice under the epic.
-3. The test deployment is pending: update Status and end the run; the CLI serves the epic again after the next merge to the base. If it failed, report that to `ship` and wait the same way.
+3. The test deployment is pending: comment the wait without editing the body, since an edit serves the epic again; the CLI serves it after the next merge to the base. If it failed, report that to `ship` and wait the same way.
 4. A criterion needs the owner: keep the epic open, put `lane:owner` back on it, queue the question and comment it.

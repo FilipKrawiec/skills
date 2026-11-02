@@ -707,7 +707,7 @@ test('an issue a finished run left unchanged gets no new run; a Blocked one is r
   assert.equal(plan({ ...blocked, lastEditedAt: '2026-10-02T00:00:00Z' }).units.length, 1, 'an edit');
   assert.equal(plan({ ...blocked, status: 'Todo' }).units.length, 1, 'a new column');
   const todo = board(7, 'Todo', ['lane:afk']);
-  assert.equal(afkIssueState(todo, 'Todo', [], workflowCfg, 'base1'), afkIssueState(todo, 'Todo', [], workflowCfg, 'base2'), 'only a Blocked card reads the base head');
+  assert.equal(afkIssueState(todo, 'Todo', [], workflowCfg, 'base1'), afkIssueState(todo, 'Todo', [], workflowCfg, 'base2'), 'a ready story never reads the base head');
 });
 
 test('a sliced epic comes back for its close check once its slices close, and a waiting close check after the next merge', () => {
@@ -720,6 +720,9 @@ test('a sliced epic comes back for its close check once its slices close, and a 
   const waiting = { 30: plan(at('In progress', 3, 3), {}).units[0].state };
   assert.deepEqual(plan(at('In progress', 3, 3), waiting).unchanged, [30], 'a close check waiting on a deployment');
   assert.equal(plan(at('In progress', 3, 3), waiting, 'base2').units.length, 1, 'is retried after the next merge');
+  const workflowCfg = { ...cfg, implementer: 'builder' }, note = [{ id: 3, user: { login: 'builder' }, body: 'Waiting on the test deployment of base1' }];
+  const commented = afkPlan(workflowCfg, [], () => note, 'new-run', { issues: [at('In progress', 3, 3)], prs: [], spent: { 30: afkIssueState(at('In progress', 3, 3), 'Todo', [], workflowCfg, 'base1') }, base: 'base1' });
+  assert.deepEqual(commented.unchanged, [30], 'the run\'s own wait comment is not new input');
 });
 
 test('an implementation run ends in Review with a PR, Blocked without one, else Todo', () => {
