@@ -34,3 +34,11 @@ test('manifest validator rejects broken relative links', t => {
   writeFileSync(join(root, 'plugins/common/workflow/skills/afk/references/broken.md'), '[missing](no-file.md)');
   assert.throws(() => validateRepository(root), /contains broken relative link/);
 });
+
+test('manifest validator accepts only tool-call guard hooks', t => {
+  const root = fixture(t);
+  const path = join(root, 'plugins/common/workflow/hooks/hooks.json');
+  assert.doesNotThrow(() => validateRepository(root));
+  writeFileSync(path, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'cat rules.md' }] }] } }));
+  assert.throws(() => validateRepository(root), /may only guard tool calls/);
+});

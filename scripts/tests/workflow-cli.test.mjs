@@ -364,6 +364,22 @@ test('commit excludes a path staged concurrently', t => {
   assert.deepEqual(f.linkedGit('diff', '--cached', '--name-only').stdout.trim().split('\\n'), ['unrelated.txt']);
 });
 
+test('commit records a stopped merge as the implementer', t => {
+  const f = fixture(t);
+  const g = (...args) => run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.repo });
+  writeFileSync(join(f.repo, 'song.txt'), 'base');
+  assert.equal(g('add', 'song.txt').status, 0); assert.equal(g('commit', '-qm', 'base').status, 0);
+  assert.equal(g('checkout', '-qb', 'other').status, 0);
+  writeFileSync(join(f.repo, 'song.txt'), 'theirs'); assert.equal(g('commit', '-qam', 'theirs').status, 0);
+  assert.equal(g('checkout', '-q', 'feature/test').status, 0);
+  writeFileSync(join(f.repo, 'song.txt'), 'ours'); assert.equal(g('commit', '-qam', 'ours').status, 0);
+  assert.notEqual(g('merge', '--no-commit', 'other').status, 0);
+  writeFileSync(join(f.repo, 'song.txt'), 'resolved');
+  const result = f.cliRun('commit', '--message', 'chore: merge other', '--', 'song.txt');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.linkedGit('show', '-s', '--format=%p|%an', 'HEAD').stdout.trim().split('|').map((v, i) => i ? v : v.split(' ').length).join('|'), '2|builder');
+});
+
 test('commit refuses existing staged changes', t => {
   const f = fixture(t);
   writeFileSync(join(f.repo, 'previous.txt'), 'preserve'); writeFileSync(join(f.repo, 'assigned.txt'), 'assigned');

@@ -10,7 +10,7 @@ const REFERENCE_NAME = /^[a-z0-9][a-z0-9-]*\.md$/;
 const ALLOWED_FRONTMATTER = new Set(['name', 'description', 'license', 'compatibility', 'metadata', 'disable-model-invocation', 'allowed-tools']);
 const CODEX_FIELDS = ['author', 'homepage', 'repository', 'license', 'keywords', 'interface'];
 const AGY_FIELDS = ['author', 'homepage', 'repository', 'license', 'keywords'];
-const ROOT_ENTRIES = new Set(['.claude-plugin', '.codex-plugin', 'package-metadata.json', 'plugin.json', 'scripts', 'skills']);
+const ROOT_ENTRIES = new Set(['.claude-plugin', '.codex-plugin', 'hooks', 'package-metadata.json', 'plugin.json', 'scripts', 'skills']);
 const PROVIDER = /\b(claude|anthropic|codex|openai|chatgpt|gpt-?\d|gemini|antigravity|copilot|cursor)\b/i;
 
 export function fail(message) { throw new Error(message); }
@@ -106,6 +106,19 @@ function expectedManifests(metadata) {
     '.codex-plugin/plugin.json': { ...host, ...select(CODEX_FIELDS) },
   };
 }
+// Hooks may only guard tool calls (PreToolUse commands); a skill's rules live in its SKILL.md, never in injected context.
+function validateGuardHooks(packageRoot, root) {
+  const directory = resolve(packageRoot, 'hooks');
+  if (!existsSync(directory)) return;
+  const extras = readdirSync(directory).filter(name => name !== 'hooks.json' && name !== '.DS_Store');
+  if (extras.length) fail(`${rel(directory, root)} may hold only hooks.json, not ${extras.sort().join(', ')}`);
+  const events = json(resolve(directory, 'hooks.json')).hooks;
+  if (!events || typeof events !== 'object' || Array.isArray(events)) fail(`${rel(directory, root)}/hooks.json must define hooks`);
+  for (const [event, groups] of Object.entries(events)) {
+    if (event !== 'PreToolUse') fail(`${rel(directory, root)}/hooks.json may only guard tool calls (PreToolUse), not ${event}`);
+    if (!Array.isArray(groups) || !groups.every(group => Array.isArray(group?.hooks) && group.hooks.every(hook => hook?.type === 'command'))) fail(`${rel(directory, root)}/hooks.json PreToolUse hooks must be commands`);
+  }
+}
 function validatePackage(metadataPath, expectedName, root) {
   const metadata = json(metadataPath);
   if (metadata.name !== expectedName) fail(`${rel(metadataPath, root)} must use package name ${expectedName}`);
@@ -124,6 +137,7 @@ function validatePackage(metadataPath, expectedName, root) {
   const allowed = new Set([...ROOT_ENTRIES, '.DS_Store']);
   const extras = readdirSync(packageRoot).filter(name => !allowed.has(name));
   if (extras.length) fail(`${rel(packageRoot, root)}: package root may hold only ${[...ROOT_ENTRIES].sort().join(', ')}, not ${extras.sort().join(', ')}`);
+  validateGuardHooks(packageRoot, root);
   const skillsRoot = resolve(packageRoot, 'skills');
   for (const entry of readdirSync(skillsRoot, { withFileTypes: true })) if (entry.name !== '.DS_Store' && (!entry.isDirectory() || !existsSync(resolve(skillsRoot, entry.name, 'SKILL.md')))) fail(`${rel(packageRoot, root)}: skills/${entry.name} is not a skill`);
   return { metadata, packageRoot, expectedName };
