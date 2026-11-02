@@ -239,6 +239,26 @@ test('AFK watcher binds its held issue to the launched agent', t => {
   assert.match(result.stderr, /assigned AFK scope/);
 });
 
+test('AFK watcher hands an explore pass to the agent without a second afk start', t => {
+  const f = fixture(t);
+  const child = join(f.root, 'agent.mjs');
+  writeFileSync(child, `import { writeFileSync } from 'node:fs';\nwriteFileSync(process.env.TEST_RESULT, process.argv[3]);\n`);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr' || a[0]==='issue') { out([]); process.exit(0); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments'))) { out([[]]); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
+  chmodSync(gh, 0o755);
+  const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { startCommand: [process.execPath, child, '{runId}', '{prompt}'] } };
+  writeFileSync(join(f.repo, configPath), json(cfg));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.TEST_RESULT = join(f.root, 'agent-prompt.txt');
+  const watch = f.cliRun('afk', 'watch');
+  assert.equal(watch.status, 0, `${watch.stdout}\n${watch.stderr}`);
+  const prompt = readFileSync(f.env.TEST_RESULT, 'utf8');
+  assert.match(prompt, /explore/);
+  assert.doesNotMatch(prompt, /afk start --me/);
+});
+
 test('AFK commit enforces the issue scope recorded in the hold', t => {
   const f = fixture(t);
   const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
