@@ -798,6 +798,26 @@ test('a stage run gets its fallback marker only while the epic is still in the h
   assert.equal(fallback('slice', at(0, 0), [{ id: 11, user: { login: 'builder' }, created_at: '2026-10-02T00:00:00Z', body: afkStageMarker('slice', '0/0', 'run-0') }]), null, 'a recorded verdict needs no fallback');
 });
 
+test('a stage run posts no fallback marker for an epic afkPlan skips for a lane, an open PR or another run\'s hold', () => {
+  const done = { ...epic, lastEditedAt: '2026-10-01T00:00:00Z', subIssuesSummary: { total: 2, completed: 2 } };
+  const hold = run => ({ id: 10, user: { login: 'builder' }, created_at: '2026-10-02T00:00:00Z', body: `<!-- afk-epic-hold session=${run} -->` });
+  const pr = { number: 50, title: 'Deliver', body: 'Part of #1', closingIssuesReferences: [], headRefOid: 'abc', labels: [], statusCheckRollup: [], reviews: [], files: [] };
+  const cases = [
+    [done, [], [], true, 'nothing to skip'],
+    [{ ...done, labels: ['type:epic', 'lane:owner'] }, [], [], false, 'a lane label'],
+    [done, [pr], [], false, 'an issue already in a PR'],
+    [done, [], [hold('run-2')], false, 'another live run holds the epic'],
+    [done, [], [hold('run-1')], true, 'the ending run\'s own hold'],
+  ];
+  for (const [target, prs, comments, expected, why] of cases) {
+    const plan = afkPlan({ ...cfg, implementer: 'builder' }, ['run-1', 'run-2'], () => comments, 'run-1', { issues: [target], prs, now: 0 });
+    const inPr = new Set(plan.prs.flatMap(record => record.issues));
+    const marker = afkStageFallback({ ...cfg, implementer: 'builder' }, { number: 1, stage: 'close', comment: 10 }, target, comments, 'run-1', 0, inPr, ['run-1', 'run-2']);
+    assert.equal(marker !== null, expected, why);
+    assert.deepEqual(plan.epics[0].units.filter(unit => unit.stage).map(unit => unit.stage), expected ? ['close'] : [], `afkPlan agrees: ${why}`);
+  }
+});
+
 test('a stage run that ended without a matching verdict gets the exact fallback marker, which then holds the epic', () => {
   assert.equal(afkSlices({ completed: 2, total: 3 }), '2/3');
   assert.equal(afkSlices(undefined), null, 'a missing summary is no count');

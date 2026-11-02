@@ -726,6 +726,18 @@ export function afkAwaitsVerdict(cfg, lastEditedAt, comments, verdict) {
   const latest = comments.filter(comment => verdictBy.has(comment.user?.login?.toLowerCase()) && verdict.test(comment.body || '')).map(comment => comment.created_at).at(-1);
   return !latest || lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=|^<!-- afk-wait /.test(comment.body || ''));
 }
+// Another live run's `afk-epic-hold` marker on an epic's thread.
+export function afkEpicHeldElsewhere(comments, live, me) {
+  return comments.some(comment => {
+    const id = /<!-- afk-epic-hold session=(\S+) -->/.exec(comment.body || '')?.[1];
+    return Boolean(id && id !== me && live.includes(id));
+  });
+}
+// The epics no stage run serves, shared by `afkPlan` and a stage run's end: a `lane:` label, an issue already in a PR,
+// or another live run's hold.
+export function afkEpicSkipped(epic, inPr, held) {
+  return inPr.has(epic.number) || (epic.labels || []).some(label => label.startsWith('lane:')) || held;
+}
 export function afkPlan(cfg, live, threads, me = '', data = null) {
   const issues = data?.issues || afkIssues(cfg); const prs = (data?.prs || afkPrData(cfg)).map(pr => afkPrRecord(pr, cfg));
   // A PR a finished run left unchanged gets no new run until something about it changes.
@@ -760,6 +772,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (issue.paths === null) refines.push(issue.number);
     return issue.paths !== null;
   };
+  const heldOnEpic = number => afkEpicHeldElsewhere(threads(number), live, me);
   for (const epic of epics) for (const issue of issues) {
     const owner = epicOf(issue.number);
     if (issue.labels.includes('type:epic') || (owner || firstEpic) !== epic.issue.number || inPr.has(issue.number)) continue;
@@ -771,15 +784,11 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   // gets one delivery check. An `epic-check` verdict holds the epic only for the same stage and sub-issue count, until it changes.
   for (const epic of epics) {
     const { issue } = epic, slices = issue.subIssuesSummary;
-    if (!slices || inPr.has(issue.number) || issue.labels.some(label => label.startsWith('lane:'))) continue;
+    if (!slices || afkEpicSkipped(issue, inPr, heldOnEpic(issue.number))) continue;
     const stage = afkEpicStage(slices);
     if (!stage || !awaitsVerdict(issue, afkEpicCheck(stage, afkSlices(slices)).pattern) || waiting(issue.number)) continue;
     epic.units.push({ text: stage === 'slice' ? `epic #${issue.number} is approved and has no sub-issues; slice it` : `epic #${issue.number} has every sub-issue closed; verify its delivery and close it`, issue: issue.number, paths: [], stage });
   }
-  const heldOnEpic = number => threads(number).some(comment => {
-    const id = /<!-- afk-epic-hold session=(\S+) -->/.exec(comment.body || '')?.[1];
-    return Boolean(id && id !== me && live.includes(id));
-  });
   for (const pr of prs) {
     if (!pr.needsWork) continue;
     const stories = pr.issues.map(number => byNumber.get(number)).filter(issue => issue && !issue.labels.includes('type:epic'));
@@ -1401,16 +1410,18 @@ export function afkStageUnrecorded(cfg, epic, comments, stage, slices, now = Dat
   return afkAwaitsVerdict(cfg, epic.lastEditedAt, comments, afkEpicCheck(stage, slices).pattern) && !afkWait(comments, afkWaitBy(cfg), now);
 }
 // The marker a stage run's end posts, or null: none once the epic left the held stage (slicing created sub-issues)
-// or `afkPlan` would no longer serve it.
-export function afkStageFallback(cfg, held, epic, comments, id, now = Date.now()) {
+// or `afkPlan` would no longer serve it, including the epics it skips (`inPr` holds the issues open PRs name).
+export function afkStageFallback(cfg, held, epic, comments, id, now = Date.now(), inPr = new Set(), live = []) {
   const slices = afkSlices(epic.subIssuesSummary);
-  return slices && afkEpicStage(epic.subIssuesSummary) === held.stage && afkStageUnrecorded(cfg, epic, comments, held.stage, slices, now) ? afkStageMarker(held.stage, slices, id) : null;
+  if (!slices || afkEpicSkipped({ number: held.number, labels: epic.labels }, inPr, afkEpicHeldElsewhere(comments, live, id))) return null;
+  return afkEpicStage(epic.subIssuesSummary) === held.stage && afkStageUnrecorded(cfg, epic, comments, held.stage, slices, now) ? afkStageMarker(held.stage, slices, id) : null;
 }
-// The epic's state, sub-issue count and last body edit, which `afkPlan` reads through `afkIssues`.
+// The epic's state, labels, sub-issue count and last body edit, which `afkPlan` reads through `afkIssues`.
 function afkEpicNow(cfg, number) {
   const [owner, name] = cfg.repo.split('/');
-  const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){state lastEditedAt subIssuesSummary{total completed}}}}';
-  return afkGh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]).data?.repository?.issue || {};
+  const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){state lastEditedAt labels(first:30){nodes{name}} subIssuesSummary{total completed}}}}';
+  const issue = afkGh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]).data?.repository?.issue || {};
+  return { ...issue, labels: (issue.labels?.nodes || []).map(label => label.name) };
 }
 // A closed issue lands in Done whatever is passed; an epic left open after its slicing or delivery check stays In progress.
 export function afkEndStatus(held, named, blocked) {
@@ -1421,8 +1432,8 @@ function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
   return withRepoLock('afk-start', () => {
     const path = join(common, 'afk-holds.json'); const ledger = afkReadLedger(path);
     const dropped = ledger[id] || []; delete ledger[id];
-    const prs = dropped.some(hold => hold.paths !== null) ? afkPrData(cfg).map(pr => afkPrRecord(pr, cfg)) : [];
-    const named = new Set(prs.flatMap(pr => pr.issues));
+    const prs = dropped.some(hold => hold.paths !== null || hold.stage) ? afkPrData(cfg).map(pr => afkPrRecord(pr, cfg)) : [];
+    const named = new Set(prs.flatMap(pr => pr.issues)), live = dropped.some(hold => hold.stage) ? afkLive(cfg) : [];
     for (const held of dropped) {
       const kind = held.paths === null ? 'epic' : 'issue';
       run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${held.comment}`, '-f', `body=${afkMarker(`${kind}-released`, id)}${note ? `\n${note}` : ''}`]);
@@ -1432,7 +1443,7 @@ function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
       const epicNow = held.stage ? afkEpicNow(cfg, held.number) : null;
       const epic = epicNow?.state === 'OPEN' ? epicNow : null;
       if (epic && !afkSlices(epic.subIssuesSummary)) console.log(`Skipped: epic #${held.number} stage marker, since GitHub returned no sub-issue count`);
-      const marker = epic && afkSlices(epic.subIssuesSummary) ? afkStageFallback(cfg, held, epic, afkComments(cfg, held.number), id) : null;
+      const marker = epic && afkSlices(epic.subIssuesSummary) ? afkStageFallback(cfg, held, epic, afkComments(cfg, held.number), id, Date.now(), named, live) : null;
       if (marker) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${marker}`]);
       if ((kind === 'issue' && !held.review) || held.stage) afkStatus(cfg, held.number, afkEndStatus(held, named.has(held.number), blocked), true);
     }
