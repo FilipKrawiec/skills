@@ -680,12 +680,12 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked' && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
   }
   // An approved epic (no lane; a draft keeps lane:owner) with no slices gets one slicing run, and one whose slices all closed
-  // gets one delivery check; an `epic-check` verdict from either holds the epic back until it changes.
+  // gets one delivery check. An `epic-check` verdict holds the epic only for the same stage and sub-issue count, until it changes.
   for (const epic of epics) {
     const { issue } = epic, slices = issue.subIssuesSummary;
-    if (!slices || inPr.has(issue.number) || !awaitsVerdict(issue, /<!-- epic-check\b/)) continue;
-    const stage = slices.total === 0 ? (issue.labels.some(label => label.startsWith('lane:')) ? null : 'slice') : slices.completed === slices.total ? 'close' : null;
-    if (!stage || waiting(issue.number)) continue;
+    if (!slices || inPr.has(issue.number) || issue.labels.some(label => label.startsWith('lane:'))) continue;
+    const stage = slices.total === 0 ? 'slice' : slices.completed === slices.total ? 'close' : null;
+    if (!stage || !awaitsVerdict(issue, new RegExp(`<!-- epic-check stage=${stage} slices=${afkSlices(slices)}\\b`)) || waiting(issue.number)) continue;
     epic.units.push({ text: stage === 'slice' ? `epic #${issue.number} is approved and has no sub-issues; slice it` : `epic #${issue.number} has every sub-issue closed; verify its delivery and close it`, issue: issue.number, paths: [], stage });
   }
   const heldOnEpic = number => threads(number).some(comment => {
@@ -1227,6 +1227,7 @@ function afkStillReady(cfg, number) {
   const issue = afkGh(['api', `repos/${cfg.repo}/issues/${number}`]);
   return issue.state === 'open' && (issue.labels || []).some(label => label.name === 'lane:afk');
 }
+export function afkSlices(summary) { return `${summary?.completed ?? 0}/${summary?.total ?? 0}`; }
 // A stage run that left neither a verdict nor a wait after its hold would be served again on every poll.
 export function afkStageUnrecorded(comments, holdComment) {
   return !comments.some(comment => Number(comment.id) > Number(holdComment) && /<!-- (?:epic-check|afk-wait)\b/.test(comment.body || ''));
@@ -1248,8 +1249,9 @@ function afkEndRun(cfg, common, id, note = null, why = null) {
       console.log(`Released: ${kind} #${held.number}`);
       const blocked = kind === 'issue' && !held.check && !held.review && !held.stage && why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
       if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
-      if (held.stage && afkStageUnrecorded(afkComments(cfg, held.number), held.comment) && afkGh(['api', `repos/${cfg.repo}/issues/${held.number}`]).state === 'open') {
-        run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=<!-- epic-check stage=${held.stage} verdict=none session=${id} -->\nRun ${id} ended without a verdict; this epic waits for an edit or a new comment.`]);
+      const epicNow = held.stage ? afkGh(['api', `repos/${cfg.repo}/issues/${held.number}`]) : null;
+      if (held.stage && epicNow.state === 'open' && afkStageUnrecorded(afkComments(cfg, held.number), held.comment)) {
+        run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=<!-- epic-check stage=${held.stage} slices=${afkSlices(epicNow.sub_issues_summary)} verdict=none session=${id} -->\nRun ${id} ended without a verdict; this epic waits for an edit or a new comment.`]);
       }
       if ((kind === 'issue' && !held.review) || held.stage) afkStatus(cfg, held.number, afkEndStatus(held, named.has(held.number), blocked), true);
     }
