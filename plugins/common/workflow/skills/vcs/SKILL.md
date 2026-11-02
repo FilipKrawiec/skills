@@ -18,7 +18,7 @@ Fetch the base and reconcile existing work, claims and dependencies. Never overw
 
 Run `node <this-skill-directory>/../../scripts/workflow.mjs commit --message "<conventional message>" -- <assigned paths>`; the command checks for a linked worktree and refuses existing staged changes to protect them. Run the repository's required pre-push checks for this revision; hosted CI remains a separate merge gate. Before pushing an open PR, disable auto-merge. After opening, merge base instead of rebasing, to preserve review threads. Never force-push a protected/default branch without explicit owner authority.
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs push`; the CLI verifies and binds the configured actor. Use `push --owner-bootstrap` only for an owner-directed first-config branch. Do not run separate authentication checks before pushes or bypass a CLI failure. Diagnose network access before asking anyone to reauthenticate. If Reviewer previously pushed the branch, inspect the effective rules and merge decision; an empty commit may not restore eligibility.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs push`; follow its result. Use `push --owner-bootstrap` only for an owner-directed first-config branch. If Reviewer previously pushed the branch, inspect the effective rules and merge decision; an empty commit may not restore eligibility.
 
 **Exit gate:** pushed head and check evidence, or a specific wait.
 

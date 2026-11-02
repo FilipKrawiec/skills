@@ -29,6 +29,7 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 const out = value => process.stdout.write(JSON.stringify(value) + '\\n');
 if (args[0] === 'auth' && args[1] === 'token') {
+  if (process.env.FAIL_GH_NETWORK) { process.stderr.write('error connecting to github.com SECRET_TOKEN'); process.exit(1); }
   if (process.env.GH_TOKEN || process.env.GH_HOST) process.exit(1);
   if (process.env.AUTH_USERS_FILE) fs.appendFileSync(process.env.AUTH_USERS_FILE, (args.includes('--user') ? args[args.indexOf('--user') + 1] : 'ACTIVE') + '\\n');
   process.stdout.write('SECRET_TOKEN\\n');
@@ -189,6 +190,16 @@ test('commit includes only assigned paths', t => {
   assert.deepEqual(f.linkedGit('show', '--format=', '--name-only', 'HEAD').stdout.trim().split('\\n'), ['assigned.txt']);
   assert.equal(existsSync(join(f.repo, 'unrelated.txt')), true);
   assert.equal(JSON.parse(result.stdout).result, 'committed');
+});
+
+test('push reports GitHub network failure without exposing diagnostics', t => {
+  const f = fixture(t);
+  f.env.FAIL_GH_NETWORK = '1';
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Cannot reach GitHub; check network or sandbox access and retry/);
+  assert.doesNotMatch(result.stderr, /SECRET_TOKEN/);
+  assertNoPush(f);
 });
 
 test('AFK commit enforces the issue scope recorded in the hold', t => {
