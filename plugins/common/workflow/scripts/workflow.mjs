@@ -589,14 +589,20 @@ export function afkEpicOrder(a, b) {
 function afkPrData(cfg) {
   return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable']);
 }
+// Decides on the newest marked Reviewer review; unmarked ones are thread replies.
+export function afkReviewerApproved(pr, cfg) {
+  const mine = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === cfg.reviewer.toLowerCase());
+  const latest = mine.filter(review => /<!-- agent-review\b/.test(review.body || '')).at(-1); const head = pr.headRefOid;
+  const ownerLane = pr.labels?.some(label => label.name === 'review:owner');
+  return Boolean(latest?.state === 'APPROVED' && latest.commit?.oid === head && latest.body.includes(`sha=${head}`) && latest.body.includes(`verdict=${ownerLane ? 'owner' : 'ready'}`) &&
+    !mine.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head));
+}
 export function afkPrRecord(pr, cfg) {
   const issues = [...new Set([...(pr.body || '').matchAll(/(?<![\w/])#(\d+)\b/g)].map(match => Number(match[1])))];
   const reviews = pr.reviews || [];
   const mine = reviews.filter(review => review.author?.login?.toLowerCase() === cfg.reviewer.toLowerCase());
-  const latest = mine.at(-1); const head = pr.headRefOid;
-  const ownerLane = pr.labels.some(label => label.name === 'review:owner');
-  const approved = Boolean(latest?.state === 'APPROVED' && latest.commit?.oid === head && latest.body?.includes(`sha=${head}`) && latest.body?.includes(`verdict=${ownerLane ? 'owner' : 'ready'}`) &&
-    !mine.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head));
+  const head = pr.headRefOid;
+  const approved = afkReviewerApproved(pr, cfg);
   const ownerMine = reviews.filter(review => review.author?.login?.toLowerCase() === cfg.owner?.toLowerCase()).at(-1);
   const ownerApproved = Boolean(cfg.owner && ownerMine?.state === 'APPROVED' && ownerMine.commit?.oid === head);
   const reviewerReviewedHead = mine.some(review => review.commit?.oid === head);
@@ -1019,16 +1025,14 @@ function afkMerge(cfg, prs, wanted = null) {
       if (passed && pr.mergeable === 'MERGEABLE') { run('gh', ['pr', 'ready', String(pr.number), '--repo', cfg.repo]); messages.push(`PR #${pr.number} marked ready`); }
       continue;
     }
-    const mine = (pr.reviews || []).filter(r => r.author?.login?.toLowerCase() === cfg.reviewer.toLowerCase());
-    const latest = mine.at(-1); const head = pr.headRefOid;
+    const head = pr.headRefOid;
     const ownerLane = pr.labels?.some(l => l.name === 'review:owner');
     const ownerReviews = (pr.reviews || []).filter(r => r.author?.login?.toLowerCase() === cfg.owner?.toLowerCase());
     const ownerLatest = ownerReviews.at(-1);
-    const approved = latest?.state === 'APPROVED' && latest.commit?.oid === head && latest.body?.includes(`sha=${head}`) && latest.body?.includes(`verdict=${ownerLane ? 'owner' : 'ready'}`);
-    const blocked = mine.some(r => r.state === 'CHANGES_REQUESTED' && r.commit?.oid === head);
+    const approved = afkReviewerApproved(pr, cfg);
     const ownerNeeded = ownerLane && !(ownerLatest?.state === 'APPROVED' && ownerLatest.commit?.oid === head);
     const failed = checks.some(c => ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes((c.conclusion || c.state || '').toUpperCase()));
-    if (!passed || !approved || blocked || ownerNeeded || failed || pr.mergeable === 'CONFLICTING') continue;
+    if (!passed || !approved || ownerNeeded || failed || pr.mergeable === 'CONFLICTING') continue;
     const args = ['pr', 'merge', String(pr.number), '--repo', cfg.repo, '--squash', '--match-head-commit', head];
     const merged = spawnSync('gh', args, { encoding: 'utf8' });
     const queued = merged.status === 0 ? null : spawnSync('gh', [...args, '--auto'], { encoding: 'utf8' });
