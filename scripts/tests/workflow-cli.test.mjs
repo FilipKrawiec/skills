@@ -282,7 +282,7 @@ async function supervisedRun(t, state, lane, selectLane = 'lane:afk') {
   assert.match(readFileSync(log, 'utf8'), /Launched: afk-/);
   const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
   const [[runId, [hold]]] = Object.entries(JSON.parse(readFileSync(join(common, 'afk-holds.json'), 'utf8')));
-    assert.equal(hold.check, selectLane === 'lane:proposed' ? true : undefined);
+  assert.equal(hold.check, selectLane === 'lane:proposed' ? true : undefined);
   assert.notEqual(hold.watcherPid, watch.pid);
   assert.match(spawnSync('ps', ['-p', String(hold.watcherPid), '-o', 'command='], { encoding: 'utf8' }).stdout, / afk supervise --me /);
   assert.equal(JSON.parse(readFileSync(join(common, 'afk-runs', `${runId}.json`), 'utf8')).pid, hold.watcherPid);

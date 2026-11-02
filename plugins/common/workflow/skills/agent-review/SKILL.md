@@ -22,7 +22,11 @@ Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr 
 
 An exact-head verdict can carry prior findings only when base, Git tree, criteria, scope, applicable decisions and rules are unchanged; otherwise review the affected evidence and corrections. Verify resolved agent threads; human threads remain theirs. Count substantive blocker/fix cycles against `reviewRounds` (default 3), not an empty commit or CI-only rerun; at the limit diagnose and replan rather than approve by exhaustion.
 
-**Exit gate:** both axes and blocking findings evaluated for the exact base/head.
+Before round 1, compare the diff's changed files with the issue's `### Estimate` (S up to about 5, M up to about 20). Past twice that, post `round=0 verdict=split`, not counted against `reviewRounds`, instead of reviewing: whole-diff rounds on an oversized slice keep finding new edges. The implementer splits the issue through `spec` and narrows or closes the PR. A missing estimate is missing evidence.
+
+From round 2, accept review results only from a brief naming the earlier findings and the fix's diff since the last reviewed head. Block only on an earlier finding left unfixed or a regression in what the fix touches; list every other finding in the decision as a follow-up for the implementer to file. A fix-only delta that adds no behaviour needs axis A and the corrections, not axis B; any delta that adds behaviour needs both axes.
+
+**Exit gate:** both axes (axis A alone for a fix-only delta) and blocking findings evaluated for the exact base/head, or `verdict=split`.
 
 ## 3. Record the decision
 
@@ -32,6 +36,6 @@ Read CODEOWNERS from the PR base and inspect the changed paths, including both s
 
 Before approval, verify effective branch protection requires code-owner review and each changed path has one recognized code owner on base. Otherwise keep merge disabled and report the gap. Recheck head and checks after posting; a changed head needs an exact-head verdict. Production approval is separate.
 
-Post `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|owner|fixes|rounds> -->` with matched rule, findings, evidence and attribution. Return at most 8 lines: decision, PR/base/head, checks, unresolved holds and next actor. Never recursively invoke AFK.
+Post `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|owner|fixes|rounds|split> -->` with matched rule, findings, evidence and attribution. Return at most 8 lines: decision, PR/base/head, checks, unresolved holds and next actor. Never recursively invoke AFK.
 
 **Exit gate:** exact-head binding review or a named repair, owner decision or capability wait.
