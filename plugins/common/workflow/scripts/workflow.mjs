@@ -668,10 +668,17 @@ function afkPrData(cfg) {
   return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files,closingIssuesReferences'])
     .map(pr => afkPrFiles(pr, number => afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/pulls/${number}/files`])));
 }
-// Decides on the newest marked Reviewer review; unmarked ones are thread replies.
+// A review carrying the `agent-review` marker is a verdict; an unmarked COMMENTED review from a workflow identity is a
+// thread reply; any other review is someone's input.
+export function afkReviewKind(review, cfg) {
+  if (/<!-- agent-review\b/.test(review.body || '')) return 'verdict';
+  return review.state === 'COMMENTED' && afkWorkflowLogins(cfg).has(review.author?.login?.toLowerCase()) ? 'reply' : 'other';
+}
+// Approves on the newest Reviewer verdict; thread replies never decide. A Reviewer change request at the head blocks
+// whether marked or not, so that check reads the review state rather than its kind.
 export function afkReviewerApproved(pr, cfg) {
   const mine = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === cfg.reviewer.toLowerCase());
-  const latest = mine.filter(review => /<!-- agent-review\b/.test(review.body || '')).at(-1); const head = pr.headRefOid;
+  const latest = mine.filter(review => afkReviewKind(review, cfg) === 'verdict').at(-1); const head = pr.headRefOid;
   const ownerLane = pr.labels?.some(label => label.name === 'review:owner');
   return Boolean(latest?.state === 'APPROVED' && latest.commit?.oid === head && latest.body.includes(`sha=${head}`) && latest.body.includes(`verdict=${ownerLane ? 'owner' : 'ready'}`) &&
     !mine.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head));
@@ -703,8 +710,7 @@ export function afkPrRecord(pr, cfg) {
 // comment from someone outside the workflow. A run's own hold, release, notes and thread replies never change it, so a run
 // that changed nothing leaves the same state behind; a run that waited on a red base or a conflict is served after the next merge.
 export function afkPrState(pr, comments, cfg, base = '') {
-  const workflow = afkWorkflowLogins(cfg);
-  const reviews = (pr.reviews || []).filter(review => !workflow.has(review.author?.login?.toLowerCase()) || review.state !== 'COMMENTED' || /<!-- agent-review\b/.test(review.body || '')).length;
+  const reviews = (pr.reviews || []).filter(review => afkReviewKind(review, cfg) !== 'reply').length;
   return `${pr.headRefOid}:${reviews}:${pr.failed ? 'red' : 'green'}:${(pr.mergeable || 'UNKNOWN').toLowerCase()}:${base}:${afkOutsideInput(comments, cfg)}`;
 }
 function afkWorkflowLogins(cfg) { return new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase())); }

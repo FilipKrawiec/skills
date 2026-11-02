@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkReviewKind, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -179,6 +179,26 @@ test('a Reviewer thread reply after an approval keeps the approval, a change req
   assert.equal(afkReviewerApproved(pr([approval, fixes]), cfg), false);
   assert.equal(afkReviewerApproved(pr([approval, { ...fixes, body: '' }]), cfg), false);
   assert.equal(afkPrRecord(pr([approval, reply, fixes]), cfg).approved, false);
+});
+
+test('the approval check and the spent ledger classify the same reviews as verdicts and thread replies', () => {
+  const workflowCfg = { ...cfg, implementer: 'builder' };
+  const approval = { author: { login: 'reviewer' }, state: 'APPROVED', commit: { oid: 'head' }, body: '<!-- agent-review sha=head verdict=ready -->' };
+  const replies = [
+    { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'head' }, body: 'Agreed, as agent-review asked.' },
+    { author: { login: 'builder' }, state: 'COMMENTED', commit: { oid: 'head' }, body: 'Fixed in head.' },
+  ];
+  const outside = { author: { login: 'owner' }, state: 'COMMENTED', commit: { oid: 'head' }, body: '' };
+  assert.deepEqual([approval, ...replies, outside].map(review => afkReviewKind(review, workflowCfg)), ['verdict', 'reply', 'reply', 'other']);
+  const pr = reviews => afkPrRecord({ number: 7, title: 'Update', body: 'Issue #8', headRefOid: 'head', labels: [], statusCheckRollup: [], mergeable: 'MERGEABLE', reviews }, workflowCfg);
+  const state = reviews => afkPrState(pr(reviews), [], workflowCfg, 'base1');
+  assert.equal(pr([approval, ...replies]).approved, true, 'thread replies keep the approval');
+  assert.equal(state([approval, ...replies]), state([approval]), 'thread replies leave the spent state');
+  assert.notEqual(state([approval, outside]), state([approval]), 'an outside review changes the spent state');
+  const unmarkedFixes = { author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'head' }, body: '' };
+  assert.equal(afkReviewKind(unmarkedFixes, workflowCfg), 'other');
+  assert.equal(pr([approval, unmarkedFixes]).approved, false, 'an unmarked Reviewer change request still blocks');
+  assert.notEqual(state([approval, unmarkedFixes]), state([approval]), 'and changes the spent state');
 });
 
 test('run limits must be positive integers', () => {
