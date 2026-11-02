@@ -93,6 +93,33 @@ function role(repo, login) {
   return 'none';
 }
 function protectionStatus(repo, base) { return optionalApi(repo, `branches/${encodeURIComponent(base)}/protection`); }
+// A branch ruleset may be bypassed only by repository admins (role 5) or organization admins.
+export function branchRulesetBypassOkay(ruleset) {
+  if (!Array.isArray(ruleset?.bypass_actors)) return null; // hidden from non-admin readers
+  return ruleset.bypass_actors.every(actor => (actor.actor_type === 'RepositoryRole' && actor.actor_id === 5) || actor.actor_type === 'OrganizationAdmin');
+}
+// Combines classic branch protection with active rulesets (rules/branches); either source may enforce a rule.
+export function effectiveBranchPolicy(protection, rules) {
+  rules = Array.isArray(rules) ? rules : [];
+  if (!protection && !rules.length) return null;
+  const pr = rules.filter(rule => rule.type === 'pull_request').map(rule => rule.parameters || {});
+  const classicReviews = protection?.required_pull_request_reviews;
+  const any = (classic, key) => Boolean(classic) || pr.some(parameters => parameters[key]);
+  const count = Math.max(classicReviews?.required_approving_review_count ?? 0, ...pr.map(parameters => parameters.required_approving_review_count ?? 0));
+  const hasReviews = Boolean(classicReviews) || pr.length > 0;
+  const checks = new Set(protection?.required_status_checks?.contexts || []);
+  for (const rule of rules) if (rule.type === 'required_status_checks') for (const item of rule.parameters?.required_status_checks || []) checks.add(item.context);
+  const has = type => rules.some(rule => rule.type === type);
+  return {
+    reviews: hasReviews ? [count, any(classicReviews?.require_code_owner_reviews, 'require_code_owner_review'), any(classicReviews?.require_last_push_approval, 'require_last_push_approval'), any(classicReviews?.dismiss_stale_reviews, 'dismiss_stale_reviews_on_push')] : null,
+    checks: [...checks].sort(),
+    linearHistory: Boolean(protection?.required_linear_history?.enabled) || has('required_linear_history'),
+    conversationResolution: Boolean(protection?.required_conversation_resolution?.enabled) || pr.some(parameters => parameters.required_review_thread_resolution),
+    forcePushesBlocked: (protection ? protection.allow_force_pushes?.enabled === false : false) || has('non_fast_forward'),
+    deletionsBlocked: (protection ? protection.allow_deletions?.enabled === false : false) || has('deletion'),
+    enforceAdmins: protection ? Boolean(protection.enforce_admins?.enabled) : null,
+  };
+}
 function check(cfg, base) {
   const repo = cfg.repo;
   const drift = { value: false };
@@ -106,14 +133,17 @@ function check(cfg, base) {
   try { ownerRole = api(repo, `collaborators/${cfg.owner}/permission`).role_name; } catch {}
   compare(`${cfg.owner} role`, ownerRole, 'admin', drift);
   for (const login of [cfg.implementer, cfg.reviewer]) compare(`${login} role`, role(repo, login), 'write', drift);
-  const protectedBranch = protectionStatus(repo, base);
-  const reviews = protectedBranch?.required_pull_request_reviews;
-  compare(`${base} reviews`, reviews ? csv([reviews.required_approving_review_count, reviews.require_code_owner_reviews, reviews.require_last_push_approval, reviews.dismiss_stale_reviews]) : 'missing', '1,true,true,true', drift);
-  const actualChecks = (protectedBranch?.required_status_checks?.contexts || []).toSorted();
-  compare(`${base} status checks`, actualChecks.join(','), [...cfg.requiredChecks].sort().join(','), drift);
-  compare(`${base} history and threads`, protectedBranch ? csv([protectedBranch.required_linear_history?.enabled, protectedBranch.required_conversation_resolution?.enabled]) : 'missing', 'true,true', drift);
-  compare(`${base} force pushes and deletions`, protectedBranch ? csv([protectedBranch.allow_force_pushes?.enabled, protectedBranch.allow_deletions?.enabled]) : 'missing', 'false,false', drift);
-  compare(`${base} admins excluded`, String(protectedBranch?.enforce_admins?.enabled ?? 'missing'), 'false', drift);
+  const branchRules = optionalApi(repo, `rules/branches/${encodeURIComponent(base)}?per_page=100`) || [];
+  const policy = effectiveBranchPolicy(protectionStatus(repo, base), branchRules);
+  for (const id of new Set(branchRules.map(rule => rule.ruleset_id).filter(Number.isSafeInteger))) {
+    const ruleset = optionalApi(repo, `rulesets/${id}`);
+    compare(`${base} ruleset ${ruleset?.name || id} bypass`, ({ true: 'admins only', false: 'non-admin bypass', null: 'unknown' })[branchRulesetBypassOkay(ruleset)], 'admins only', drift);
+  }
+  compare(`${base} reviews`, policy?.reviews ? csv(policy.reviews) : 'missing', '1,true,true,true', drift);
+  compare(`${base} status checks`, (policy?.checks || []).join(','), [...cfg.requiredChecks].sort().join(','), drift);
+  compare(`${base} history and threads`, policy ? csv([policy.linearHistory, policy.conversationResolution]) : 'missing', 'true,true', drift);
+  compare(`${base} force pushes and deletions blocked`, policy ? csv([policy.forcePushesBlocked, policy.deletionsBlocked]) : 'missing', 'true,true', drift);
+  if (policy?.enforceAdmins !== null) compare(`${base} admins excluded`, String(policy?.enforceAdmins ?? 'missing'), 'false', drift);
   const secrets = optionalApi(repo, 'actions/secrets');
   compare('repository secrets', String(secrets?.total_count ?? 'unavailable'), '0', drift);
   const environments = optionalApi(repo, 'environments')?.environments || [];

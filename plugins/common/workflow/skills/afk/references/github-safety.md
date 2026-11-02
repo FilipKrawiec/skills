@@ -22,7 +22,7 @@ Use fresh native contexts for judgment and existing authorized credentials for p
 
 ## Base protection
 
-Each project owner configures `.github/CODEOWNERS` and branch protection. Require code-owner review, latest-push approval, stale-review dismissal, named checks, resolved threads and linear history; disable force pushes and deletion and inspect bypasses. Configure one owner per rule: the reviewer for ordinary paths and the owner for held paths. GitHub accepts any one owner when a rule lists multiple; it does not require each. Automated review remains separate from native code-owner approval. If protection or ownership is unclear, keep merge disabled and continue preparation.
+Each project owner configures `.github/CODEOWNERS` and branch protection or an active branch ruleset. Require code-owner review, latest-push approval, stale-review dismissal, named checks, resolved threads and linear history; disable force pushes and deletion and inspect bypasses. Configure one owner per rule: the reviewer for ordinary paths and the owner for held paths. GitHub accepts any one owner when a rule lists multiple; it does not require each. Automated review remains separate from native code-owner approval. If protection or ownership is unclear, keep merge disabled and continue preparation.
 
 ## Repository and deployment
 
