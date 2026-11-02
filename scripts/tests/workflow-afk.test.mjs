@@ -43,8 +43,12 @@ test('one-shot AFK runs are counted from live watcher PIDs', t => {
   const outside = mkdtempSync(join(tmpdir(), 'afk-live-'));
   const previous = process.cwd();
   t.after(() => { process.chdir(previous); rmSync(outside, { recursive: true, force: true }); });
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  assert.equal(spawnSync('git', ['init', '--quiet', outside], { env }).status, 0);
   process.chdir(outside);
   assert.deepEqual(afkLive({}), []);
+  writeFileSync(join(outside, '.git', 'afk-holds.json'), JSON.stringify({ mine: [{ issue: 1, oneShot: true, watcherPid: process.pid }] }));
+  assert.deepEqual(afkLive({}), ['mine']);
   const ledger = {
     live: [{ oneShot: true, watcherPid: 12 }],
     dead: [{ oneShot: true, watcherPid: 13 }],

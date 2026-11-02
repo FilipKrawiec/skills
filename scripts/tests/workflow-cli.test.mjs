@@ -123,7 +123,7 @@ function fixture(t) {
   const writeFake = (name, content) => { const path = join(bin, name); writeFileSync(path, content); chmodSync(path, 0o755); };
   writeFake('gh', fakeGh); writeFake('git', fakeGit);
   const env = {
-    ...process.env,
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WORKFLOW_'))),
     PATH: `${bin}:${process.env.PATH}`,
     HOME: home,
     REAL_GIT: realGit,
