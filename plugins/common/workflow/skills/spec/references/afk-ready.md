@@ -8,7 +8,7 @@ New readiness requires every check or a recorded owner waiver; independent revie
 | Independent | No other open issue must merge with it; dependencies do not depend back on it. |
 | Valuable | Merged alone, it gives a user behaviour or the owner a named benefit. |
 | Small | Estimate is S or M, with its main unknown. Split L work into vertical slices under approved milestone intent. Size guides slicing, never authority. |
-| Bounded | The packet lists changed paths, dependencies and shared components each criterion crosses. Confirm bug causes at `file:line` with a reproducing test or traced call. Resolve input or code uncertainties with a real sample or inspection. |
+| Bounded | The packet lists changed paths and dependencies. For each criterion, trace the call path from the code that observes the effect to the code that causes it, and put every file on that path, shared components included, in the packet. Confirm bug causes at `file:line` with a reproducing test or traced call. Resolve input or code uncertainties with a real sample or inspection. |
 | Decided | Outcomes and constraints are clear; routine choices remain delegated. New interactions follow owner prototype direction or an approved pattern. Resolve reserved decisions. |
 | Unprivileged | Implementation and review need no production credentials. Separate owner actions; do not weaken authority, credentials, release or quality gates. CODEOWNERS review alone does not require owner delivery. |
 
