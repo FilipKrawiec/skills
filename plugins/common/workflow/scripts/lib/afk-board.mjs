@@ -172,7 +172,8 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   };
   for (const issue of issues) {
     let column = afkColumn(issue);
-    if (issue.labels.includes('lane:owner') || heldElsewhere(issue.number)) continue;
+    // `state:started` is an exclusive attended assignment: never orphaned, never offered.
+    if (issue.labels.includes('lane:owner') || issue.labels.includes('state:started') || heldElsewhere(issue.number)) continue;
     // A card In progress with no live run, or in Review with no open PR, is Todo again. An approved epic In progress is
     // served to slice it, stays In progress while its slices are open and comes back for its close check once they all closed.
     const epic = issue.labels.includes('type:epic'), slices = issue.subIssuesSummary;

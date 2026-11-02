@@ -888,6 +888,11 @@ test('a card In progress with no live run, or in Review with no open PR, is serv
   assert.deepEqual([inPr.orphans, inPr.units.map(unit => unit.pr ?? unit.issue)], [[], [20]], 'its PR is the unit');
 });
 
+test('an attended state:started card is never orphaned or offered, while an abandoned state:claimed card is recovered', () => {
+  const plan = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, board(2, 'In progress', ['lane:afk', 'state:started']), board(3, 'Todo', ['lane:afk', 'state:started']), board(4, 'In progress', ['lane:afk', 'state:claimed'])], prs: [] });
+  assert.deepEqual([plan.orphans, plan.units.map(unit => [unit.issue, unit.column])], [[4], [[4, 'Todo']]]);
+});
+
 test('an epic is served only to slice it or to close it once every slice closed', () => {
   const epicAt = (status, total, completed) => ({ number: 30, labels: ['type:epic'], ancestors: [], status, priority: 'P1', paths: null, subIssuesSummary: { total, completed } });
   const units = record => afkPlan(cfg, [], () => [], 'new-run', { issues: [record], prs: [] }).units.map(unit => [unit.column, unit.refine, unit.text]);
