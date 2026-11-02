@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkPrFiles, afkEndStatus, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkPrFiles, afkEndStatus, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -46,6 +46,19 @@ test('AFK plan offers no review of a PR whose linked issue a live run holds', ()
   const comments = new Map([[5, [{ body: '<!-- afk-issue-hold session=live-run -->' }]]]);
   const plan = afkPlan(cfg, ['live-run'], number => comments.get(number) || [], 'new-run', { issues: [epic, loose, issue(6, ['lane:afk'])], prs: [pr(10, 5), pr(11, 6)] });
   assert.deepEqual(plan.epics[0].units.map(unit => unit.text), ['PR #11 (PR 11) awaits its review']);
+});
+
+test('AFK plan blocks an issue whose packet depends on an open PR until that PR merges', () => {
+  assert.deepEqual(afkDependenciesFromIssueBody('```scope\n{"paths":["src/"],"dependencies":["#285", 12, "x"]}\n```'), [285, 12]);
+  assert.deepEqual(afkDependenciesFromIssueBody('no packet'), []);
+  const follow = issue(6, ['lane:afk'], { dependencies: [285] });
+  const open = { number: 285, title: 'Ledger', body: '', headRefOid: 'abc', labels: [], reviews: [], statusCheckRollup: [], mergeable: 'CONFLICTING' };
+  const blocked = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, follow], prs: [open] });
+  assert.equal(blocked.epics[0].units.some(unit => unit.issue === 6), false);
+  assert.deepEqual(blocked.blocks, [{ issue: 6, pr: 285 }]);
+  const merged = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, follow], prs: [] });
+  assert.deepEqual(merged.epics[0].units.map(unit => unit.text), ['#6 is ready']);
+  assert.deepEqual(merged.blocks, []);
 });
 
 test('one-shot AFK runs are counted from live watcher PIDs', t => {
