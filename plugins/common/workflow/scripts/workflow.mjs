@@ -37,8 +37,8 @@ export const workflowDefaults = {
   github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
   afk: {
     runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
-    watchIntervalSeconds: 60, startCommand: ['pi', '--provider', 'ollama', '--model', '{model}', '--thinking', 'off', '--no-session', '--print', '--name', '{runId}', '--tools', 'bash,workflow', '--skill', '{skillPath}', '--extension', '{extensionPath}', '{prompt}'],
-    model: 'coding:latest', pluginUpdateCommands: [],
+    watchIntervalSeconds: 60, startCommand: ['pi', '--provider', 'ollama', '--model', '{model}', '--no-session', '--print', '--name', '{runId}', '--tools', 'bash', '{prompt}'],
+    model: 'coding:latest', promptPrefix: '/skill:afk', pluginUpdateCommands: [],
   },
   explore: { personas: '.agents/personas.md', maxIssues: 3, idleHours: 24, capturesBranch: 'explore-captures' },
 };
@@ -98,19 +98,6 @@ function cleanEnvironment(source = process.env) {
   return env;
 }
 export function afkAgentEnvironment(source = process.env) { return cleanEnvironment(source); }
-export function afkPiEnvironment(source, ghConfigDir) {
-  const env = afkAgentEnvironment(source);
-  env.GH_CONFIG_DIR = ghConfigDir;
-  env.GIT_CONFIG_GLOBAL = '/dev/null';
-  env.GIT_CONFIG_NOSYSTEM = '1';
-  env.GIT_SSH_COMMAND = 'ssh -F /dev/null -o BatchMode=yes -o IdentityAgent=none -o IdentitiesOnly=yes -o IdentityFile=/dev/null';
-  env.GIT_CONFIG_COUNT = '1';
-  env.GIT_CONFIG_KEY_0 = 'credential.helper';
-  env.GIT_CONFIG_VALUE_0 = '';
-  delete env.SSH_AUTH_SOCK;
-  delete env.SSH_AGENT_PID;
-  return env;
-}
 export function assertDistinctPushRoles({ owner, implementer, reviewer }) {
   const values = [owner, implementer, reviewer];
   if (values.some(value => typeof value !== 'string' || !/^[A-Za-z0-9-]+$/.test(value)) || new Set(values.map(value => value.toLowerCase())).size !== values.length) {
@@ -894,11 +881,6 @@ function issueReopen(args) {
     console.log(`Reopened #${n}`);
   });
 }
-export function afkCanCloseIssue({ request, runId, issue, held, report, comments, baselineCommentIds }) {
-  const baseline = new Set(baselineCommentIds || []);
-  const added = (comments || []).filter(comment => !baseline.has(comment.id));
-  return Boolean(held && added.length === 1 && added[0].body === report && request?.runId === runId && String(request.issue) === String(issue) && report?.includes(`Run ID: \`${runId}\``) && report.includes('Pi process: **completed**') && report.includes('Pi workflow extension called the Node workflow CLI'));
-}
 export function afkPathsWithinScope(paths, scope) {
   if (!Array.isArray(paths)) return false;
   if (scope === null) return true;
@@ -1078,8 +1060,6 @@ function afkEndRun(cfg, common, id) {
 }
 function afkExpandedPath(path) { return path.replace(/^~(?=\/|$)/, homedir()); }
 export function afkWorkflowCliPath() { return realpathSync(fileURLToPath(import.meta.url)); }
-export function afkWorkflowSkillPath() { return realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'afk', 'SKILL.md')); }
-export function afkWorkflowExtensionPath() { return realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'pi', 'afk.mjs')); }
 export function afkLoadEnvironment(cfg) {
   for (const key of Object.keys(process.env)) {
     if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete process.env[key];
@@ -1268,42 +1248,13 @@ function afkWatch(cfg, common, requestedIssue = null) {
     const issueArg = requestedIssue ? ` --issue ${requestedIssue}` : '';
     const assignment = cfg.runsCommand ? null : afkStartRun(cfg, runId, common, requestedIssue, true, true);
     const held = typeof assignment === 'string' && assignment.includes('Hold:');
-    const heldIssue = requestedIssue || Number(/Hold: issue #(\d+)|Hold: epic #(\d+)/.exec(assignment || '')?.slice(1).find(Boolean)) || '';
-    const heldRecord = afkReadLedger(join(common, 'afk-holds.json'))[runId]?.find(value => value.number === heldIssue);
-    const baselineCommentIds = heldIssue ? afkComments(cfg, heldIssue).map(comment => comment.id) : [];
-    const beforeHead = run('git', ['rev-parse', 'HEAD'], { cwd: watchRoot });
-    let changedPaths = [];
-    const closeRequestPath = join(common, 'afk-close-requests', `${runId}.json`);
-    mkdirSync(dirname(closeRequestPath), { recursive: true });
-    rmSync(closeRequestPath, { force: true });
-    const prompt = `Follow the loaded AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
-    let output, runError;
+    const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
+    let output;
     try {
-      try {
-        const agentGhConfig = join(common, 'afk-agent-gh-config', runId);
-        mkdirSync(agentGhConfig, { recursive: true });
-        const env = afkPiEnvironment({ ...process.env, WORKFLOW_CLI_PATH: cliPath, WORKFLOW_RUN_ID: runId, WORKFLOW_ISSUE_NUMBER: String(heldIssue), WORKFLOW_MODEL: cfg.model, WORKFLOW_READ_ONLY: String(Array.isArray(heldRecord?.paths) && heldRecord.paths.length === 0), WORKFLOW_CLOSE_REQUEST_PATH: closeRequestPath }, agentGhConfig);
-        output = afkConfiguredCommand(cfg.startCommand, { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, skillPath: afkWorkflowSkillPath(), extensionPath: afkWorkflowExtensionPath(), repository: cfg.repo }, { cwd: watchRoot, env });
-      } catch (error) { runError = error; }
-      finally {
-        changedPaths = afkChangedPaths(watchRoot, beforeHead);
-        if (held) afkEndRun(cfg, common, runId);
-      }
-      if (!runError && existsSync(closeRequestPath)) {
-        const request = JSON.parse(readFileSync(closeRequestPath, 'utf8'));
-        const ledger = afkReadLedger(join(common, 'afk-holds.json'));
-        const comments = afkComments(cfg, heldIssue);
-        const report = comments.map(comment => comment.body || '').find(body => afkCanCloseIssue({ request, runId, issue: heldIssue, held: held && !ledger[runId], report: body, comments, baselineCommentIds }));
-        if (!report) throw new Error(`Close request for #${heldIssue} was not authorized: completed report or released hold is missing`);
-        if (!afkPathsWithinScope(changedPaths, heldRecord?.paths)) throw new Error(`Close request for #${heldIssue} was denied: run changed files outside its assigned scope`);
-        const close = runWithLocks(join(common, 'workflow-locks'), [`issue-close-${heldIssue}`], process.execPath, [cliPath, 'issue', 'close', '--number', String(heldIssue)], { cwd: watchRoot, env: process.env });
-        if (close.status !== 0) throw new Error(`Workflow CLI could not close verified issue #${heldIssue}`);
-      }
+      output = afkConfiguredCommand(cfg.startCommand, { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, repository: cfg.repo }, { cwd: watchRoot });
     } finally {
-      rmSync(closeRequestPath, { force: true });
-    rmSync(join(common, 'afk-agent-gh-config', runId), { recursive: true, force: true });
+      if (held) afkEndRun(cfg, common, runId);
     }
-    if (runError) throw runError;
     console.log(output ? `Completed: ${runId}\n${output}` : `Started: ${runId}`);
   }
   return code === 2 ? 2 : 0;
