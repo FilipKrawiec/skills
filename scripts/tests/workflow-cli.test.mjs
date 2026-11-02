@@ -42,6 +42,7 @@ if (args[0] === 'auth' && args[1] === 'token') {
   } else out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [{ isResolved: false, isOutdated: false }] } } } } });
 } else if (args[0] === 'api') {
   if (process.env.GH_TOKEN !== 'SECRET_TOKEN') process.exit(1);
+  if (args.includes('user') && process.env.RACE_URL_TARGET) require('node:child_process').spawnSync(process.env.REAL_GIT, ['config', 'url.' + process.env.RACE_URL_TARGET + '.insteadOf', process.env.TEST_NATIVE_REMOTE], { cwd: process.cwd() });
   if (args.some(arg => arg.includes('collaborators/') && arg.includes('/permission'))) out({ role_name: 'admin' });
   else if (args.includes('repos/acme/app')) out({ default_branch: 'main', owner: { type: process.env.FAKE_OWNER_KIND || 'Organization', login: 'acme' } });
   else if (args.includes('repos/acme/app/branches/main')) out({ commit: { sha: process.env.REMOTE_BASE_SHA } });
@@ -157,6 +158,18 @@ function hookPath(f) {
 }
 function assertNoPush(f) { assert.equal(existsSync(f.env.PUSH_RECORD), false); }
 
+test('push ignores repository URL rewrites added after validation', t => {
+  const f = fixture(t);
+  const good = nativeRemote(f);
+  const evil = join(f.root, 'other.git');
+  assert.equal(run(f.env.REAL_GIT, ['init', '--bare', '-q', evil]).status, 0);
+  f.env.RACE_URL_TARGET = evil;
+  const result = f.cliRun('push');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(run(f.env.REAL_GIT, ['--git-dir', good, 'rev-parse', '--verify', 'refs/heads/feature/test']).status, 0);
+  assert.notEqual(run(f.env.REAL_GIT, ['--git-dir', evil, 'rev-parse', '--verify', 'refs/heads/feature/test']).status, 0);
+});
+
 test('push reads workflow config from the base branch', t => {
   const f = fixture(t);
   const value = { ...config({ repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer', owner: 'owner' }), afk: { maxRuns: 2 } };
@@ -202,6 +215,30 @@ test('push reports GitHub network failure without exposing diagnostics', t => {
   assertNoPush(f);
 });
 
+test('AFK watcher binds its held issue to the launched agent', t => {
+  if (spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { stdio: 'ignore' }).status !== 0) { t.skip('watcher lock ownership requires process inspection'); return; }
+  const f = fixture(t);
+  const child = join(f.root, 'agent.mjs');
+  writeFileSync(child, `import { spawnSync } from 'node:child_process';\nimport { writeFileSync } from 'node:fs';\nwriteFileSync('outside.txt', 'outside');\nconst r = spawnSync(process.execPath, [process.env.TEST_CLI, 'commit', '--message', 'fix: outside', '--', 'outside.txt'], { encoding: 'utf8' });\nwriteFileSync(process.env.TEST_RESULT, JSON.stringify({status:r.status, stderr:r.stderr, run:process.env.WORKFLOW_RUN_ID, issue:process.env.WORKFLOW_ISSUE_NUMBER}));\n`);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr' || a[0]==='issue') { out([]); process.exit(0); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,['lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"]}\\n\\u0060\\u0060\\u0060')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.some(x=>x.includes('/comments'))) { out({id:12}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
+  chmodSync(gh, 0o755);
+  const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { startCommand: [process.execPath, child, '{runId}', '{prompt}'] } };
+  writeFileSync(join(f.repo, configPath), json(cfg));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.TEST_CLI = cli;
+  f.env.TEST_RESULT = join(f.root, 'agent-result.json');
+  const watch = f.cliRun('afk', 'watch', '--issue', '1082');
+  assert.equal(watch.status, 0, `${watch.stdout}\n${watch.stderr}`);
+  const result = JSON.parse(readFileSync(f.env.TEST_RESULT, 'utf8'));
+  assert.match(result.run, /^afk-/);
+  assert.equal(result.issue, '1082');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /assigned AFK scope/);
+});
+
 test('AFK commit enforces the issue scope recorded in the hold', t => {
   const f = fixture(t);
   const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
@@ -218,6 +255,11 @@ test('AFK commit enforces the issue scope recorded in the hold', t => {
   assert.notEqual(denied.status, 0);
   assert.match(denied.stderr, /assigned AFK scope/);
   assert.equal(f.linkedGit('diff', '--cached', '--name-only').stdout.trim(), '');
+  delete f.env.WORKFLOW_ISSUE_NUMBER;
+  const selfClaim = f.cliRun('commit', '--message', 'chore: out of scope', '--', '.captures-886/after.jpeg');
+  assert.notEqual(selfClaim.status, 0);
+  assert.match(selfClaim.stderr, /assigned AFK scope/);
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
   writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
   mkdirSync(join(f.repo, 'docs'));
   writeFileSync(join(f.repo, 'docs', 'report.md'), 'in scope');

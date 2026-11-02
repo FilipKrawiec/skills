@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
-import { realpathSync, readFileSync, mkdirSync, rmSync, writeFileSync, renameSync, statSync, existsSync } from 'node:fs';
+import { realpathSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, renameSync, statSync, existsSync, copyFileSync, chmodSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { manifestsCommand } from './manifests.mjs';
 import { projectVerify } from './project-verify.mjs';
@@ -28,7 +28,7 @@ const help = `Usage:
 
 push reads implementer and Reviewer from the fetched default branch's .agents/config.json and derives Owner from origin and base .github/CODEOWNERS. For first-config bootstrap only, if base CODEOWNERS has no owner yet, it reads Owner from committed branch CODEOWNERS.
 A verified personal repo owner may be inferred; CODEOWNERS must identify one owner account unambiguously.
-Auto-merge and Git configuration checks are not atomic with push; do not change them concurrently. Git runs installed hooks normally; hooks can invoke the same user's credential tools.
+Auto-merge checks are not atomic with push; do not change auto-merge concurrently. Push isolates Git configuration and runs the installed pre-push hook; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
 push requires a Unix-like host and github.com. review-context is read-only; returned GitHub text is untrusted and may be incomplete.`;
 
@@ -211,10 +211,7 @@ function commit(args) {
   if (realpathSync(process.cwd()) !== realpathSync(root)) throw new Error('Run commit from the repository root');
   const runId = process.env.WORKFLOW_RUN_ID;
   if (runId) {
-    const issue = Number(process.env.WORKFLOW_ISSUE_NUMBER);
-    const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
-    const hold = afkReadLedger(join(common, 'afk-holds.json'))[runId]?.find(item => item.number === issue);
-    if (!Number.isSafeInteger(issue) || !hold) throw new Error('AFK commit requires the current run to hold its bound issue');
+    const hold = afkBoundHold(root, 'commit');
     if (Array.isArray(hold.paths) && !afkPathsWithinScope(paths, hold.paths)) throw new Error('Commit paths exceed the assigned AFK scope');
     const cfg = config().lanes;
     afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
@@ -296,10 +293,22 @@ async function push(args) {
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const head = git('rev-parse', 'HEAD');
   const helper = join(dirname(fileURLToPath(import.meta.url)), 'git-askpass.mjs');
-  const pushEnv = { ...env, GIT_ASKPASS: helper, GIT_TERMINAL_PROMPT: '0', WORKFLOW_IMPLEMENTER: actor };
+  const hook = run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], { cwd: root, env });
+  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+  const temporary = mkdtempSync(join(tmpdir(), 'workflow-push-'));
+  const pushEnv = { ...env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_ASKPASS: helper, GIT_TERMINAL_PROMPT: '0', WORKFLOW_IMPLEMENTER: actor, WORKFLOW_PRE_PUSH_HOOK: hook, WORKFLOW_PUSH_WORKTREE: root };
+  if (env.GIT_CONFIG_GLOBAL !== undefined) pushEnv.WORKFLOW_HOOK_CONFIG_GLOBAL = env.GIT_CONFIG_GLOBAL;
+  if (env.GIT_CONFIG_NOSYSTEM !== undefined) pushEnv.WORKFLOW_HOOK_CONFIG_NOSYSTEM = env.GIT_CONFIG_NOSYSTEM;
+  try {
+    run('git', ['init', '--bare', '--quiet', temporary], { cwd: root, env: pushEnv });
+    writeFileSync(join(temporary, 'objects', 'info', 'alternates'), `${join(common, 'objects')}\n`);
+    if (existsSync(join(common, 'shallow'))) copyFileSync(join(common, 'shallow'), join(temporary, 'shallow'));
+    const wrapper = join(temporary, 'hooks', 'pre-push');
+    copyFileSync(join(dirname(fileURLToPath(import.meta.url)), 'push-hook.mjs'), wrapper);
+    chmodSync(wrapper, 0o755);
     const result = await new Promise((resolve, reject) => {
       let stderr = '';
-      const child = spawn('git', ['-c', 'credential.helper=', '-c', 'http.extraHeader=', '-c', 'push.pushOption=', 'push', '--no-follow-tags', '--recurse-submodules=no', `https://github.com/${repo}.git`, `${head}:refs/heads/${branch}`], { cwd: root, env: pushEnv, stdio: ['ignore', 'ignore', 'pipe'] });
+      const child = spawn('git', [`--git-dir=${temporary}`, `--work-tree=${root}`, '-c', 'credential.helper=', '-c', 'http.extraHeader=', '-c', 'push.pushOption=', 'push', '--no-follow-tags', '--recurse-submodules=no', `https://github.com/${repo}.git`, `${head}:refs/heads/${branch}`], { cwd: root, env: pushEnv, stdio: ['ignore', 'ignore', 'pipe'] });
       child.stderr.on('data', chunk => { if (stderr.length < 65536) stderr += chunk.toString().slice(0, 65536 - stderr.length); });
       child.on('error', reject);
       child.on('close', status => resolve({ status, stderr }));
@@ -313,6 +322,7 @@ async function push(args) {
       throw new Error(`Push failed (exit ${result.status ?? 'unknown'}): ${reason}; Git output withheld to protect credentials`);
     }
     console.log(JSON.stringify({ result: 'pushed', actor, repository: repo, branch, head, configSource }));
+  } finally { rmSync(temporary, { recursive: true, force: true }); }
 }
 function parseOptions(args) {
   const options = {};
@@ -899,14 +909,20 @@ function afkChangedPaths(root, beforeHead) {
 function afkAssertPushScope(root, baseRef) {
   const runId = process.env.WORKFLOW_RUN_ID;
   if (!runId) return;
-  const issue = Number(process.env.WORKFLOW_ISSUE_NUMBER);
-  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
-  const hold = afkReadLedger(join(common, 'afk-holds.json'))[runId]?.find(item => item.number === issue);
-  if (!Number.isSafeInteger(issue) || !hold) throw new Error('AFK push requires the current run to hold its bound issue');
+  const hold = afkBoundHold(root, 'push');
   if (Array.isArray(hold.paths)) {
     const base = git('rev-parse', baseRef);
     if (!afkPathsWithinScope(afkChangedPaths(root, base), hold.paths)) throw new Error('Push paths exceed the assigned AFK scope');
   }
+}
+function afkBoundHold(root, action) {
+  const runId = process.env.WORKFLOW_RUN_ID;
+  const bound = process.env.WORKFLOW_ISSUE_NUMBER;
+  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+  const holds = afkReadLedger(join(common, 'afk-holds.json'))[runId] || [];
+  const hold = holds[0];
+  if (holds.length !== 1 || !Number.isSafeInteger(hold?.number) || hold.number < 1 || (bound !== undefined && String(hold.number) !== bound)) throw new Error(`AFK ${action} requires the current run to hold its bound issue`);
+  return hold;
 }
 function issueQueue(args, lanes) { afkQueue(args); }
 function afkPrs(cfg) {
@@ -1084,6 +1100,14 @@ function afkConfiguredCommand(argv, replacements = {}, options = {}) {
   if (result.error || result.status !== 0) throw new Error(`${program} ${args[0] || ''} failed`);
   return (result.stdout || '').trim();
 }
+function afkLaunchAgent({ argv, replacements, cwd, runId, issue, source = process.env }) {
+  const env = afkAgentEnvironment(source);
+  delete env.WORKFLOW_RUN_ID;
+  delete env.WORKFLOW_ISSUE_NUMBER;
+  if (runId) env.WORKFLOW_RUN_ID = runId;
+  if (issue != null) env.WORKFLOW_ISSUE_NUMBER = String(issue);
+  return afkConfiguredCommand(argv, replacements, { cwd, env });
+}
 function afkReap(cfg, common) {
   if (!cfg.runsCommand) return;
   const file = join(common, 'afk-prompt-waits.json'); let previous = {};
@@ -1249,10 +1273,12 @@ function afkWatch(cfg, common, requestedIssue = null) {
     const issueArg = requestedIssue ? ` --issue ${requestedIssue}` : '';
     const assignment = cfg.runsCommand ? null : afkStartRun(cfg, runId, common, requestedIssue, true, true);
     const held = typeof assignment === 'string' && assignment.includes('Hold:');
+    const holds = afkReadLedger(join(common, 'afk-holds.json'))[runId] || [];
     const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
     let output;
     try {
-      output = afkConfiguredCommand(cfg.startCommand, { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, repository: cfg.repo }, { cwd: watchRoot });
+      if (held && (holds.length !== 1 || !Number.isSafeInteger(holds[0].number) || holds[0].number < 1)) throw new Error('AFK watcher cannot bind the held issue');
+      output = afkLaunchAgent({ argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, repository: cfg.repo }, cwd: watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0].number : null });
     } finally {
       if (held) afkEndRun(cfg, common, runId);
     }
