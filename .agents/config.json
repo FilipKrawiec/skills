@@ -10,6 +10,7 @@
     "test": ["just", "verify"]
   },
   "afk": {
-    "maxRuns": 8
+    "maxRuns": 8,
+    "retros": "bugs-when-empty"
   }
 }

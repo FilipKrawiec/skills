@@ -116,6 +116,31 @@ test('issue create lists open issues sharing a scope path before filing a follow
   assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /issue list --repo acme\/app --state open --limit 1000/);
 });
 
+test('issue create --retro follows the target repository retro setting', t => {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nrequire('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='issue' && a[1]==='list') { out(process.env.TEST_OPEN ? [{number:3,title:'x',labels:[]},{number:8,title:'Owner improvements',labels:[{name:'lane:owner'}]}] : [{number:8,title:'Owner improvements',labels:[{name:'lane:owner'}]}]); process.exit(0); }\nif(a.includes('repos/acme/skills/contents/.agents/config.json')) { out({content:Buffer.from(JSON.stringify({afk:{retros:'bugs-when-empty'}})).toString('base64')}); process.exit(0); }\nif(a.includes('repos/acme/skills/issues')) { out({number:31}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('{}');\n`);
+  chmodSync(gh, 0o755);
+  const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { toolingRepository: 'https://github.com/acme/skills.git' } };
+  writeFileSync(join(f.repo, configPath), json(cfg));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  writeFileSync(join(f.repo, 'body.md'), 'Run evidence');
+  f.env.TEST_CALLS = join(f.root, 'calls.log');
+  f.env.TEST_OPEN = '1';
+  const paused = f.cliRun('issue', 'create', '--retro', '--title', 'fix(afk): x', '--body-file', 'body.md', '--labels', 'type:bug,lane:afk', '--repo', 'acme/skills');
+  assert.equal(paused.status, 0, paused.stderr);
+  assert.match(paused.stdout, /Skipped: Retro filing is paused until the backlog is empty \(1 open issues\)/);
+  delete f.env.TEST_OPEN;
+  const chore = f.cliRun('issue', 'create', '--retro', '--title', 'chore(afk): x', '--body-file', 'body.md', '--labels', 'type:chore,lane:afk', '--repo', 'acme/skills');
+  assert.match(chore.stdout, /Skipped: Retro filing takes only type:bug/);
+  assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/skills\/issues /);
+  const bug = f.cliRun('issue', 'create', '--retro', '--title', 'fix(afk): x', '--body-file', 'body.md', '--labels', 'type:bug,lane:afk', '--repo', 'acme/skills');
+  assert.equal(bug.status, 0, bug.stderr);
+  assert.match(bug.stdout, /Created: #31/);
+});
+
 test('an idle AFK watcher logs that nothing has work and launches no agent', t => {
   const f = fixture(t);
   const child = join(f.root, 'agent.mjs');
