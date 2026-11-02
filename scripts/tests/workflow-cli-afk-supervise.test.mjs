@@ -1,19 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, chmodSync, existsSync, openSync, closeSync } from 'node:fs';
+import { readFileSync, writeFileSync, chmodSync, existsSync, openSync, closeSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { cli, configPath, json, config, run, fixture, commitFixture } from './support/workflow-cli-fixture.mjs';
+
+function fakeGh(f) {
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a.includes('PATCH') || a.some(x=>x.startsWith('body=<!-- afk-issue-blocked'))) require('fs').appendFileSync(process.env.TEST_PATCHES, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr' || a[0]==='issue') { out(a[0]==='pr' && process.env.TEST_PR ? [{number:2000,title:'pr',body:'Closes #1082',headRefOid:'abc',labels:[],reviews:[],isDraft:false,statusCheckRollup:[],mergeable:'MERGEABLE'}] : []); process.exit(0); }\nif(a.some(x=>x.includes('pullRequests(states'))) { out({data:{repository:{pullRequests:{nodes:[]}}}}); process.exit(0); }\nif(a[0]==='project') { out({id:'P1',title:'Board'}); process.exit(0); }\nif(a.includes('number=2000')) { console.error('Could not resolve to an Issue with the number of 2000.'); process.exit(1); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[{project:{number:5,title:'Board',owner:{login:'acme'}}}]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,[process.env.TEST_SELECT_LANE||'lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"]}\\n\\u0060\\u0060\\u0060')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.some(x=>x.includes('/comments'))) { out({id:12}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app/pulls/2000')) { out({head:{sha:process.env.TEST_HEAD||'abc'}}); process.exit(0); }\nif(a.includes('repos/acme/app/issues/1082')) { out({state:process.env.TEST_STATE||'open',labels:[{name:process.env.TEST_LANE||'lane:afk'}]}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
+  chmodSync(gh, 0o755);
+}
 
 async function supervisedRun(t, state, lane, selectLane = 'lane:afk', pr = false, foreign = false) {
   if (spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { stdio: 'ignore' }).status !== 0) { t.skip('watcher lock ownership requires process inspection'); return; }
   const f = fixture(t);
   const child = join(f.root, 'agent.mjs');
   writeFileSync(child, `import { spawnSync } from 'node:child_process';\nimport { existsSync, writeFileSync } from 'node:fs';\nconst begun = Date.now(), wait = () => existsSync(process.env.TEST_GO) || Date.now() - begun > 120000 ? finish() : setTimeout(wait, 50);\nconst finish = () => { const r = spawnSync(process.execPath, [process.env.TEST_CLI, 'afk', 'end', '--me', process.env.WORKFLOW_RUN_ID], { encoding: 'utf8' }); writeFileSync(process.env.TEST_RESULT, r.stdout + r.stderr); console.log(JSON.stringify({type:'result',result:'Summary: done',num_turns:3})); };\nwait();\n`);
-  const gh = join(f.root, 'bin', 'gh');
-  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a.includes('PATCH') || a.some(x=>x.startsWith('body=<!-- afk-issue-blocked'))) require('fs').appendFileSync(process.env.TEST_PATCHES, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr' || a[0]==='issue') { out(a[0]==='pr' && process.env.TEST_PR ? [{number:2000,title:'pr',body:'Closes #1082',headRefOid:'abc',labels:[],reviews:[],isDraft:false,statusCheckRollup:[],mergeable:'MERGEABLE'}] : []); process.exit(0); }\nif(a.some(x=>x.includes('pullRequests(states'))) { out({data:{repository:{pullRequests:{nodes:[]}}}}); process.exit(0); }\nif(a[0]==='project') { out({id:'P1',title:'Board'}); process.exit(0); }\nif(a.includes('number=2000')) { console.error('Could not resolve to an Issue with the number of 2000.'); process.exit(1); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[{project:{number:5,title:'Board',owner:{login:'acme'}}}]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,[process.env.TEST_SELECT_LANE||'lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"]}\\n\\u0060\\u0060\\u0060')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.some(x=>x.includes('/comments'))) { out({id:12}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app/pulls/2000')) { out({head:{sha:process.env.TEST_HEAD||'abc'}}); process.exit(0); }\nif(a.includes('repos/acme/app/issues/1082')) { out({state:process.env.TEST_STATE||'open',labels:[{name:process.env.TEST_LANE||'lane:afk'}]}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
-  chmodSync(gh, 0o755);
-  const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { startCommand: [process.execPath, child, '{runId}', '{prompt}'] } };
+  fakeGh(f);
+  const cfg ={ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { startCommand: [process.execPath, child, '{runId}', '{prompt}'] } };
   writeFileSync(join(f.repo, configPath), json(cfg));
   assert.equal(f.linkedGit('add', configPath).status, 0);
   commitFixture(f);
@@ -82,3 +86,25 @@ test('a run whose issue closed does not block it', t => supervisedRun(t, 'closed
 test('a run that reviews a PR starts without a card for the PR and never blocks it', t => supervisedRun(t, 'open', 'lane:afk', 'lane:afk', true));
 
 test('a foreign push on a held PR stops its run, releases the hold naming the new head and serves the PR again', t => supervisedRun(t, 'open', 'lane:afk', 'lane:afk', true, true));
+
+test('a run stopped at afk.maxRunMinutes releases its issue saying so, not that it left no summary', t => {
+  const f = fixture(t);
+  fakeGh(f);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { startCommand: ['true', '{runId}', '{prompt}'] } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  Object.assign(f.env, { TEST_STATE: 'open', TEST_LANE: 'lane:afk', TEST_PATCHES: join(f.root, 'patches.log') });
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  const runId = 'afk-20260101000000-1-1';
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ [runId]: [{ number: 1082, epic: 1, paths: ['docs/'], comment: 12 }] }));
+  mkdirSync(join(common, 'afk-runs'), { recursive: true });
+  const launch = { argv: [process.execPath, '-e', 'setTimeout(() => {}, 20000)'], replacements: {}, cwd: f.repo, runId, issue: 1082, timeoutMs: 300, graceMs: 200 };
+  writeFileSync(join(common, 'afk-runs', `${runId}.json`), JSON.stringify({ launch, held: true, root: f.repo }));
+  const supervised = spawnSync(process.execPath, [cli, 'afk', 'supervise', '--me', runId], { cwd: f.repo, env: f.env, encoding: 'utf8' });
+  assert.match(supervised.stderr, /stopped after/);
+  const patches = readFileSync(f.env.TEST_PATCHES, 'utf8');
+  assert.match(patches, new RegExp(`afk-issue-blocked session=${runId} -->\\n\\*\\*Blocked:\\*\\* run ${runId} ended without a PR\\.\\n\\nStopped after \\d+ minutes, the afk\\.maxRunMinutes limit\\.`));
+  assert.doesNotMatch(patches, /left no summary/);
+  assert.deepEqual(JSON.parse(readFileSync(join(common, 'afk-holds.json'), 'utf8')), {});
+});

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkSlots, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkSlices, afkStageFallback, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkSlots, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkSlices, afkStageFallback, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkReap, afkRunStarted,afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -882,4 +882,38 @@ test('a run past afk.maxRunMinutes is stopped so its hold is released', () => {
   assert.throws(() => afkLaunchAgent({ argv: [process.execPath, '-e', 'setTimeout(() => {}, 20000)'], replacements: {}, cwd: process.cwd(), timeoutMs: 300 }), /stopped after/);
   assert.ok(Date.now() - started < 10000, 'the agent did not run to its end');
   assert.equal(afkLaunchAgent({ argv: [process.execPath, '-e', 'console.log("done")'], replacements: {}, cwd: process.cwd(), timeoutMs: 10000 }), 'done');
+});
+
+test('a run past afk.maxRunMinutes is stopped with its whole process group, killing what ignores SIGTERM', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'afk-group-'));
+  const pidFile = join(dir, 'grandchild');
+  const agent = `const { spawn } = require('node:child_process'); const c = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'], { stdio: 'ignore' }); require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(c.pid)); setInterval(() => {}, 1000);`;
+  try {
+    assert.throws(() => afkLaunchAgent({ argv: [process.execPath, '-e', agent], replacements: {}, cwd: dir, timeoutMs: 1000, graceMs: 300 }), error => error.code === 'ETIMEDOUT' && /stopped after/.test(error.message));
+    const grandchild = Number(readFileSync(pidFile, 'utf8'));
+    const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    for (let i = 0; i < 50 && alive(grandchild); i++) spawnSync('sleep', ['0.1']);
+    assert.equal(alive(grandchild), false, 'the agent\'s grandchild is gone');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('with runsCommand, reap stops a watcher-launched run past afk.maxRunMinutes through stopCommand', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'afk-reap-'));
+  const stops = join(dir, 'stops');
+  const stamp = minutesAgo => new Date(Date.now() - minutesAgo * 60_000).toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const agents = [
+    { kind: 'background', name: `afk-${stamp(31)}-1-1`, id: 'old', state: 'working' },
+    { kind: 'background', name: `afk-${stamp(5)}-1-1`, id: 'young', state: 'working' },
+    { kind: 'background', name: `afk-${stamp(40)}-1-1`, id: 'gone', state: 'stopped' },
+    { kind: 'background', name: 'afk-owner', id: 'unstamped', state: 'working' },
+  ];
+  const cfg = { ...workflowDefaults.afk, runPrefix: 'afk-', maxRunMinutes: 30, waitTimeoutMinutes: 60, stateFile: join(dir, '{id}.json'),
+    runsCommand: [process.execPath, '-e', `console.log(${JSON.stringify(JSON.stringify(agents))})`],
+    stopCommand: [process.execPath, '-e', `require('fs').appendFileSync(${JSON.stringify(stops)}, process.argv[1] + '\\n')`, '{id}'] };
+  try {
+    afkReap(cfg, dir);
+    assert.equal(readFileSync(stops, 'utf8'), 'old\n');
+    assert.equal(afkRunStarted('20260101093000-42-1'), Date.UTC(2026, 0, 1, 9, 30, 0));
+    assert.equal(afkRunStarted('owner'), null, 'a run the watcher did not name is not timed');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -346,16 +346,18 @@ async function push(args) {
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   // Pushing over a PR that another live run works on strands that run's own push, so its hold never ends; only the holder pushes.
+  // A run id is public in its hold comment, so a caller is that run only from inside its process tree, and the refusal names no run.
   const live = afkLive({ ...workflowDefaults.afk, ...lanes });
+  const claimed = process.env.WORKFLOW_RUN_ID || '';
+  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+  const me = claimed && afkCallerInRun(common, claimed) ? claimed : '';
   for (const pr of pulls) for (const number of new Set([pr.number, ...prLinkedIssues(pr, repo)])) {
     const comments = jsonCommand('gh', ['api', '--paginate', '--slurp', `repos/${repo}/issues/${number}/comments`], { cwd: root, env: metadataEnv }).flat();
-    const holder = afkLiveHolds(comments, live, process.env.WORKFLOW_RUN_ID || '').find(hold => hold.run !== process.env.WORKFLOW_RUN_ID);
-    if (holder) throw new Error(`AFK run ${holder.run} holds #${number}; let it finish instead of pushing to PR #${pr.number}`);
+    if (afkLiveHolds(comments, live, me).some(hold => hold.run !== me)) throw new Error(`A live AFK run holds #${number}; let it finish instead of pushing to PR #${pr.number}`);
   }
   const head = git('rev-parse', 'HEAD');
   const helper = join(dirname(fileURLToPath(import.meta.url)), 'git-askpass.mjs');
   const hook = run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], { cwd: root, env });
-  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
   const temporary = mkdtempSync(join(tmpdir(), 'workflow-push-'));
   const pushEnv = { ...env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_ASKPASS: helper, GIT_TERMINAL_PROMPT: '0', WORKFLOW_IMPLEMENTER: actor, WORKFLOW_PRE_PUSH_HOOK: hook, WORKFLOW_PUSH_WORKTREE: root };
   if (env.GIT_CONFIG_GLOBAL !== undefined) pushEnv.WORKFLOW_HOOK_CONFIG_GLOBAL = env.GIT_CONFIG_GLOBAL;
@@ -1521,21 +1523,33 @@ function afkConfiguredCommand(argv, replacements = {}, options = {}) {
     return String(replacements[key]);
   }));
   const [program, ...args] = values;
-  const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, env: afkAgentEnvironment(), ...options });
-  if (result.error?.code === 'ETIMEDOUT') throw new Error(`${program} ${args[0] || ''} stopped after ${Math.round(options.timeout / 60_000)} minutes`);
+  const { graceMs, ...spawnOptions } = options;
+  const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, env: afkAgentEnvironment(), ...spawnOptions });
+  if (result.error?.code === 'ETIMEDOUT') {
+    if (options.detached) afkStopGroup(result.pid, graceMs);
+    throw Object.assign(new Error(`${program} ${args[0] || ''} stopped after ${Math.round(options.timeout / 60_000)} minutes`), { code: 'ETIMEDOUT' });
+  }
   if (result.error || result.status !== 0) throw new Error(`${program} ${args[0] || ''} failed`);
   return (result.stdout || '').trim();
 }
-// A run past afk.maxRunMinutes is stopped, so its supervisor releases the hold and the next tick serves the work again.
-export function afkLaunchAgent({ argv, replacements, cwd, runId, issue, timeoutMs, source = process.env }) {
+// Stops a whole process group: SIGTERM first, SIGKILL for whatever is left after the grace period.
+function afkStopGroup(pid, graceMs = 10_000) {
+  const signal = name => { try { process.kill(-pid, name); return true; } catch { return false; } };
+  if (!Number.isSafeInteger(pid) || !signal('SIGTERM')) return;
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (const end = Date.now() + graceMs; Date.now() < end && signal(0);) Atomics.wait(pause, 0, 0, 100);
+  signal('SIGKILL');
+}
+// A run past afk.maxRunMinutes is stopped with its whole process group, so its supervisor releases the hold and the next tick serves the work again.
+export function afkLaunchAgent({ argv, replacements, cwd, runId, issue, timeoutMs, graceMs, source = process.env }) {
   const env = afkAgentEnvironment(source);
   delete env.WORKFLOW_RUN_ID;
   delete env.WORKFLOW_ISSUE_NUMBER;
   if (runId) env.WORKFLOW_RUN_ID = runId;
   if (issue != null) env.WORKFLOW_ISSUE_NUMBER = String(issue);
-  return afkConfiguredCommand(argv, replacements, { cwd, env, ...(timeoutMs ? { timeout: timeoutMs, killSignal: 'SIGTERM' } : {}) });
+  return afkConfiguredCommand(argv, replacements, { cwd, env, ...(timeoutMs ? { timeout: timeoutMs, killSignal: 'SIGTERM', detached: true, graceMs } : {}) });
 }
-function afkReap(cfg, common) {
+export function afkReap(cfg, common) {
   if (!cfg.runsCommand) return;
   const file = join(common, 'afk-prompt-waits.json'); let previous = {};
   try { previous = JSON.parse(readFileSync(file, 'utf8')); } catch {}
@@ -1553,15 +1567,22 @@ function afkReap(cfg, common) {
     }
     const reason = agent.waitingFor || (ended ? 'finished turn' : null);
     if (reason) waiting[agent.id] = previous[agent.id] || now;
-    if (agent.state === 'done' || (agent.state === 'blocked' && !agent.waitingFor) || (reason && now - waiting[agent.id] >= cfg.waitTimeoutMinutes * 60_000)) stops.push(agent);
+    const started = afkRunStarted(agent.name.slice(cfg.runPrefix.length));
+    if (started !== null && !['done', 'stopped', 'failed'].includes(agent.state || agent.status) && now - started >= cfg.maxRunMinutes * 60_000) stops.push({ agent, why: `stopped after ${cfg.maxRunMinutes} minutes` });
+    else if (agent.state === 'done' || (agent.state === 'blocked' && !agent.waitingFor) || (reason && now - waiting[agent.id] >= cfg.waitTimeoutMinutes * 60_000)) stops.push({ agent, why: 'wait ended' });
   }
   mkdirSync(dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.tmp`;
   writeFileSync(temp, JSON.stringify(waiting)); renameSync(temp, file);
-  for (const agent of stops) {
+  for (const { agent, why } of stops) {
     afkConfiguredCommand(cfg.stopCommand, { runId: agent.name || agent.id, id: agent.id });
-    console.error(`stopped ${agent.name}: wait ended`);
+    console.error(`stopped ${agent.name}: ${why}`);
   }
+}
+// A launched agent cannot be timed while its launcher returns at once, so reap stops it by the UTC start its watcher-made name carries.
+export function afkRunStarted(suffix) {
+  const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})-/.exec(suffix);
+  return match ? Date.UTC(match[1], match[2] - 1, match[3], match[4], match[5], match[6]) : null;
 }
 // A held PR whose head moved to a commit its live run's checkout does not contain was pushed by someone else, so that run's work is stale.
 export function afkForeignHeads(ledger, live, headOf, ownsHead) {
@@ -1831,12 +1852,16 @@ function afkSpawnRun(common, runId, job) {
 function afkSupervise(common, runId) {
   const path = afkJobPath(common, runId);
   const job = JSON.parse(readFileSync(path, 'utf8'));
-  let output, usage = null;
+  let output, usage = null, why = null;
   try {
     output = afkLaunchAgent(job.launch);
     usage = afkRunUsage(output);
+    why = usage?.result?.trim() ? usage.result : null;
+  } catch (error) {
+    if (error.code === 'ETIMEDOUT') why = `Stopped after ${Math.round(job.launch.timeoutMs / 60_000)} minutes, the afk.maxRunMinutes limit.`;
+    throw error;
   } finally {
-    const finished = job.held ? spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'finish', '--me', runId, ...(usage?.result?.trim() ? ['--why', usage.result] : []), ...(usage ? ['--note', usage.line] : []), ...(usage?.ok ? ['--spent', 'yes'] : [])], { cwd: job.root, stdio: 'inherit', env: process.env }) : null;
+    const finished = job.held ? spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'finish', '--me', runId, ...(why ? ['--why', why] : []), ...(usage ? ['--note', usage.line] : []), ...(usage?.ok ? ['--spent', 'yes'] : [])], { cwd: job.root, stdio: 'inherit', env: process.env }) : null;
     if (finished && finished.status !== 0) console.error(`Blocked: run ${runId} still holds its issue; release it with afk end --me ${runId}.`);
     if (job.tree && !afkReleaseRunTree(job.tree, job.root)) console.log(`Kept: ${job.tree} holds work that is not on the remote; preserve it.`);
     rmSync(path, { force: true });
@@ -1950,6 +1975,22 @@ export function hasProcessAncestor(processes, pid, ownerPid, maxDepth = 16) {
   }
   return false;
 }
+function processTable() {
+  const result = spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' });
+  if (result.error || result.status !== 0) return null;
+  const processes = new Map();
+  for (const line of result.stdout.split('\n')) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
+    if (match) processes.set(Number(match[1]), { parent: Number(match[2]), command: match[3] });
+  }
+  return processes;
+}
+// A hold its watcher or supervisor records binds the run to that process tree; one without (a runsCommand agent, an owner's start) trusts WORKFLOW_RUN_ID.
+export function afkCallerInRun(common, id, processes = processTable()) {
+  const ownerPid = afkReadLedger(join(common, 'afk-holds.json'))[id]?.[0]?.watcherPid;
+  if (!Number.isSafeInteger(ownerPid)) return true;
+  return Boolean(processes && hasProcessAncestor(processes, process.ppid, ownerPid, 64));
+}
 function oneShotWatcherActive(id) {
   try {
     const { root } = config();
@@ -1957,14 +1998,8 @@ function oneShotWatcherActive(id) {
     const hold = afkReadLedger(join(common, 'afk-holds.json'))[id]?.[0];
     const ownerPid = hold?.watcherPid;
     if (!hold?.oneShot || !Number.isSafeInteger(ownerPid)) return false;
-    const result = spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' });
-    if (result.error || result.status !== 0) return false;
-    const processes = new Map();
-    for (const line of result.stdout.split('\n')) {
-      const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
-      if (match) processes.set(Number(match[1]), { parent: Number(match[2]), command: match[3] });
-    }
-    if (!processes.get(ownerPid)?.command.includes(fileURLToPath(import.meta.url))) return false;
+    const processes = processTable();
+    if (!processes?.get(ownerPid)?.command.includes(fileURLToPath(import.meta.url))) return false;
     if (!hasProcessAncestor(processes, process.ppid, ownerPid)) return false;
     if (processes.get(ownerPid).command.includes(' afk supervise ')) return true;
     const lockPath = join(common, 'workflow-locks', 'afk-start.lock');
