@@ -567,14 +567,21 @@ export const workflowLabels = {
   'type:task': ['c5def5', 'Work that ends in a finding or setting'],
 };
 function afkComments(cfg, issue) { return afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/issues/${issue}/comments`]).flat(); }
+// The issue's fenced `scope` JSON packet; an invalid packet is treated as absent.
+function afkScopePacket(body) {
+  const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
+  try { return scope ? JSON.parse(scope[1]) : null; } catch { return null; }
+}
 export function afkPathsFromIssueBody(body = '') {
   if (/\b(?:make\s+no|do\s+not\s+make(?:\s+any)?)\s+(?:repository|repo)\s+(?:changes|files|commits)\b/i.test(body)) return [];
-  const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
-  try {
-    const parsed = scope ? JSON.parse(scope[1]).paths : null;
-    if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) return parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
-  } catch { /* An invalid scope packet is treated as unscoped. */ }
+  const parsed = afkScopePacket(body)?.paths;
+  if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) return parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
   return null;
+}
+// The packet's dependencies as issue or PR numbers (`12` or `"#12"`); a missing or invalid packet has none.
+export function afkDependenciesFromIssueBody(body = '') {
+  const parsed = afkScopePacket(body)?.dependencies;
+  return Array.isArray(parsed) ? parsed.map(value => Number(String(value).trim().replace(/^#/, ''))).filter(Number.isInteger) : [];
 }
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
@@ -597,7 +604,7 @@ function afkIssues(cfg) {
       const ancestors = []; let parent = issue.parent;
       while (parent) { ancestors.push(parent.number); parent = parent.parent; }
       const paths = afkPathsFromIssueBody(issue.body || '');
-      return { ...issue, labels, priority, status, ancestors, paths, blocked: issue.blockedBy.nodes.some(dep => dep.state === 'OPEN') };
+      return { ...issue, labels, priority, status, ancestors, paths, dependencies: afkDependenciesFromIssueBody(issue.body || ''), blocked: issue.blockedBy.nodes.some(dep => dep.state === 'OPEN') };
     }));
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
   } while (after);
@@ -691,7 +698,14 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const latest = checked.at(-1);
     return !latest || issue.lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=|^<!-- afk-wait /.test(comment.body || ''));
   };
-  const now = data?.now ?? Date.now(), waits = [];
+  const now = data?.now ?? Date.now(), waits = [], blocks = [];
+  // A packet dependency on an open PR blocks the issue until that PR merges; the open-PR list already holds it.
+  const openPrs = new Set(prs.map(pr => pr.number));
+  const awaitsPr = issue => {
+    const pr = (issue.dependencies || []).find(number => openPrs.has(number));
+    if (pr) blocks.push({ issue: issue.number, pr });
+    return Boolean(pr);
+  };
   const waiting = number => {
     const wait = afkWait(threads(number), [cfg.implementer, cfg.reviewer, cfg.owner], now);
     if (wait) waits.push({ issue: number, ...wait });
@@ -702,7 +716,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (issue.labels.includes('type:epic') || (owner || firstEpic) !== epic.issue.number || inPr.has(issue.number)) continue;
     const suffix = owner ? '' : ' under no epic';
     if (issue.labels.includes('lane:proposed') && awaitsVerdict(issue, /<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)/) && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} awaits its AFK eligibility check${suffix}`, issue: issue.number, paths: [], check: true });
-    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked' && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
+    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked' && !awaitsPr(issue) && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
   }
   // An approved epic (no lane; a draft keeps lane:owner) with no slices gets one slicing run, and one whose slices all closed
   // gets one delivery check. An `epic-check` verdict holds the epic only for the same stage and sub-issue count, until it changes.
@@ -738,7 +752,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const parent = epics.find(epic => epic.issue.number === target);
     if (parent) parent.units.push({ ...unit, rank: review ? 1 : pr.broken ? 0 : 2 });
   }
-  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits };
+  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits, blocks };
 }
 export function* afkCandidates(epics, others, share, heldElsewhere) {
   const taken = new Set(others.map(hold => hold.number));
@@ -1232,7 +1246,8 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const output = afkMerge(cfg, afkPrs(cfg));
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { epics, heldOnEpic, waits, prs } = afkPlan(cfg, live, threads);
+  const { epics, heldOnEpic, waits, blocks, prs } = afkPlan(cfg, live, threads);
+  for (const block of blocks) output.push(`Wait: #${block.issue} is blocked until PR #${block.pr} merges`);
   for (const wait of waits) output.push(`Wait: #${wait.issue} until ${wait.until}: ${wait.cause}`);
   const ledgerPath = join(common, 'afk-holds.json');
   let start = withRepoLock('afk-start', () => {
