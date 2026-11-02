@@ -50,9 +50,15 @@ function run(program, args, options = {}) {
   if (result.error || result.status !== 0) {
     const scopeFailure = program === 'gh' ? githubScopeFailure(result.stderr || '') : null;
     const network = program === 'gh' && /error connecting|could not resolve host|failed to connect|connection (?:timed out|refused)|network is unreachable|no such host|dial tcp/i.test(result.stderr || '');
-    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? 'GitHub command failed; check network access and the configured account before reauthenticating.' : `${program} ${args[0]} failed`));
+    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? 'GitHub command failed; check network access and the configured account before reauthenticating.' : `${program} ${args[0]} failed${failureCause(result)}`));
   }
   return result.stdout.trim();
+}
+// Name the cause so an intermittent failure can be diagnosed instead of re-run blindly.
+function failureCause(result) {
+  if (result.error) return ` (${result.error.code || result.error.message})`;
+  const line = gitFailureLine(result.stderr || '', { last: true, max: 200 });
+  return ` (${result.signal ? `signal ${result.signal}` : `exit ${result.status}`})${line ? `: ${line}` : ''}`;
 }
 export function githubScopeFailure(stderr) {
   const direct = /missing required scopes?\s*\[([^\]]*)\]/i.exec(stderr);
@@ -215,10 +221,11 @@ function implementerCommitIdentity(root) {
   const email = `${id}+${login}@users.noreply.github.com`;
   return { GIT_AUTHOR_NAME: login, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: email };
 }
-// Git's first diagnostic line, with tokens and URL credentials removed.
-export function gitFailureLine(output) {
-  const line = String(output).split(/\r?\n/).map(text => text.trim()).find(Boolean) || '';
-  return line.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, '[redacted]').replace(/(\/\/)[^/@\s]+@/g, '$1[redacted]@').slice(0, 300);
+// Git's first (or last) diagnostic line, with tokens and URL credentials removed.
+export function gitFailureLine(output, { last = false, max = 300 } = {}) {
+  const lines = String(output).split(/\r?\n/).map(text => text.trim()).filter(Boolean);
+  const line = (last ? lines.at(-1) : lines[0]) || '';
+  return line.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, '[redacted]').replace(/(\/\/)[^/@\s]+@/g, '$1[redacted]@').slice(0, max);
 }
 function commit(args) {
   if (args[0] !== '--message' || !(args.length === 2 || (args.length >= 4 && args[2] === '--'))) throw new Error('Usage: commit --message MESSAGE [-- PATH...]');
@@ -668,10 +675,17 @@ function afkPrData(cfg) {
   return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files,closingIssuesReferences'])
     .map(pr => afkPrFiles(pr, number => afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/pulls/${number}/files`])));
 }
-// Decides on the newest marked Reviewer review; unmarked ones are thread replies.
+// A review carrying the `agent-review` marker is a verdict; an unmarked COMMENTED review from a workflow identity is a
+// thread reply; any other review is someone's input.
+export function afkReviewKind(review, cfg) {
+  if (/<!-- agent-review\b/.test(review.body || '')) return 'verdict';
+  return review.state === 'COMMENTED' && afkWorkflowLogins(cfg).has(review.author?.login?.toLowerCase()) ? 'reply' : 'other';
+}
+// Approves on the newest Reviewer verdict; thread replies never decide. A Reviewer change request at the head blocks
+// whether marked or not, so that check reads the review state rather than its kind.
 export function afkReviewerApproved(pr, cfg) {
   const mine = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === cfg.reviewer.toLowerCase());
-  const latest = mine.filter(review => /<!-- agent-review\b/.test(review.body || '')).at(-1); const head = pr.headRefOid;
+  const latest = mine.filter(review => afkReviewKind(review, cfg) === 'verdict').at(-1); const head = pr.headRefOid;
   const ownerLane = pr.labels?.some(label => label.name === 'review:owner');
   return Boolean(latest?.state === 'APPROVED' && latest.commit?.oid === head && latest.body.includes(`sha=${head}`) && latest.body.includes(`verdict=${ownerLane ? 'owner' : 'ready'}`) &&
     !mine.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head));
@@ -697,16 +711,19 @@ export function afkPrRecord(pr, cfg) {
   const broken = pr.mergeable === 'CONFLICTING' || failed;
   const awaitingReview = !reviewerReviewedHead;
   const needsWork = broken || awaitingReview || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
-  return { ...pr, issues, approved, ownerApproved, awaitingReview, broken, needsWork };
+  return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, needsWork };
 }
-// What a PR unit's run acts on: its head, its reviews, whether it is red, and the last comment from someone outside the workflow.
-// A run's own hold, release and notes never change it, so a run that changed nothing leaves the same state behind.
-export function afkPrState(pr, comments, cfg) {
-  return `${pr.headRefOid}:${(pr.reviews || []).length}:${pr.broken ? 'red' : 'green'}:${afkOutsideInput(comments, cfg)}`;
+// What a PR unit's run acts on: its head, its review decisions, its checks, its merge state, the base head and the last
+// comment from someone outside the workflow. A run's own hold, release, notes and thread replies never change it, so a run
+// that changed nothing leaves the same state behind; a run that waited on a red base or a conflict is served after the next merge.
+export function afkPrState(pr, comments, cfg, base = '') {
+  const reviews = (pr.reviews || []).filter(review => afkReviewKind(review, cfg) !== 'reply').length;
+  return `${pr.headRefOid}:${reviews}:${pr.failed ? 'red' : 'green'}:${(pr.mergeable || 'UNKNOWN').toLowerCase()}:${base}:${afkOutsideInput(comments, cfg)}`;
 }
+function afkWorkflowLogins(cfg) { return new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase())); }
 // The last comment from someone outside the workflow; the workflow's own markers and notes are never new input.
 function afkOutsideInput(comments, cfg) {
-  const workflow = new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase()));
+  const workflow = afkWorkflowLogins(cfg);
   return comments.filter(comment => !workflow.has(comment.user?.login?.toLowerCase()) && !/^<!-- afk-/.test(comment.body || '')).at(-1)?.id ?? '';
 }
 // What an issue unit's run acts on: its column, body, labels, open blockers and outside input, and an epic's slice counts.
@@ -782,7 +799,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const unit = review
       ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) awaits its review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
       : { column: 'Review', text: `PR #${pr.number} (${pr.title})${pr.broken ? ' has a red check or a conflict' : ' needs its review fixed'}`, issue: stories[0]?.number || pr.number, priority, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid };
-    offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg));
+    offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg, base));
   }
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
   return { units, prs, byNumber, threads, unchanged, orphans };
