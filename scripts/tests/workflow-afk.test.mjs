@@ -57,7 +57,8 @@ test('workflow label catalog is centralized in the CLI', () => {
 
 test('AFK and explore use conventional defaults with four concurrent runs', () => {
   assert.equal(workflowDefaults.afk.maxRuns, 4);
-  assert.match(workflowDefaults.afk.startCommand[0], /^pi$/);
+  assert.deepEqual(workflowDefaults.afk.startCommand, ['claude', '--print', '--name', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}']);
+  assert.equal(workflowDefaults.afk.permissionMode, 'auto');
   assert.equal(workflowDefaults.explore.personas, '.agents/personas.md');
 });
 
