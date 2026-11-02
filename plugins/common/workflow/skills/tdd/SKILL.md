@@ -12,7 +12,7 @@ Follow the project's test commands, pre-push checks and required CI gates. Name 
 
 For a new behavior or defect, write a focused test through the public interface with real domain objects. Derive expected outcomes from requirements, not the production algorithm. Run it first and confirm it fails for the intended reason; then implement and rerun it. Invoke `ddd` for domain models and `hexagonal-architecture` for ports.
 
-When an existing test already demonstrates the failure, use it as the red evidence. For a test-only, documentation or golden update, run the relevant checks; do not invent a failing test for unchanged behavior. Test risk-bearing outcomes and failure paths, including documented boundaries and data-corrupting mistakes. Run configured reproducible mutation, coverage and risk gates, stricter for changed and critical behavior. When no mutation tool is configured, record mutation-sampling evidence and propose concrete gates. Record revision, commands, toolchain, scope, seed and results; a timeout is incomplete evidence, never a pass.
+When an existing test already demonstrates the failure, use its failing run as the red run. For a test-only, documentation or golden update, run the relevant checks; do not invent a failing test for unchanged behavior. Test risk-bearing outcomes and failure paths, including documented boundaries and data-corrupting mistakes. Run configured reproducible mutation, coverage and risk gates, stricter for changed and critical behavior. When no mutation tool is configured, record mutation-sampling evidence and propose concrete gates. Record revision, commands, toolchain, scope, seed and results; a timeout is incomplete evidence, never a pass.
 
 **Exit gate:** relevant regression failed for the intended reason then passed, or evidence explains why no new behavior test was needed.
 
@@ -26,8 +26,8 @@ Run the project's specified pre-push checks once on the final changed revision. 
 
 ## 3. Report
 
-Return at most 8 lines: changed behavior and paths, focused red/green evidence or why it does not apply, checks and exits, configured confidence evidence, pending checks or failures, and the next action. Do not redispatch workers or perform orchestration.
+Return at most 8 lines: changed behavior and paths, `done` with each behavior step's red run (failing command and failure line, one line per step) captured before its fix, or `stuck: <step, evidence>` when a step's test was never seen failing. A fix written with its test leaves no red run: reverse-apply the fix, capture red, restore it; report `stuck` only when red still does not appear. Then name green evidence or why red does not apply, checks and exits, configured confidence evidence, pending checks or failures, and the next action. Do not redispatch workers or perform orchestration.
 
-**Exit gate:** evidence for the final revision or a named blocker and next action.
+**Exit gate:** `done` with a red run per behavior step and evidence for the final revision, or `stuck`, `replan` or a named blocker with the next action.
 
 Read [test-levels.md](references/test-levels.md) when choosing a test level, [mutation-testing.md](references/mutation-testing.md) when auditing a suite, [bug-fixes.md](references/bug-fixes.md) for a regression, and `references/languages/<language>.md` for the relevant supported language.
