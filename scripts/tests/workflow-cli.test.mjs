@@ -541,7 +541,7 @@ test('AFK push --to updates the held PR from a differently named branch and refu
   assert.ok(pushRecord(f).args.includes(`${head}:refs/heads/feature/held`));
 });
 
-test('AFK push --to accepts the PR that closes the held issue', t => {
+test('AFK push --to accepts the PR that closes or is part of the held issue', t => {
   const f = fixture(t);
   const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
   writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 261, paths: ['docs/'] }] }));
@@ -550,11 +550,23 @@ test('AFK push --to accepts the PR that closes the held issue', t => {
   f.env.OPEN_PRS = JSON.stringify([
     { number: 262, headRefName: 'fix/held', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: closes('Acme', 'App') },
     { number: 263, headRefName: 'fix/elsewhere', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: closes('other', 'repo') },
+    { number: 264, headRefName: 'fix/slice', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'Part of #261' },
+    { number: 265, headRefName: 'fix/mention', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'See #261 and #2610' },
+    { number: 266, headRefName: 'fix/longer', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'Part of #2610' },
   ]);
   const elsewhere = f.cliRun('push', '--to', 'fix/elsewhere');
   assert.notEqual(elsewhere.status, 0);
   assert.match(elsewhere.stderr, /not the head of the held PR/);
   assertNoPush(f);
+  const mention = f.cliRun('push', '--to', 'fix/mention');
+  assert.notEqual(mention.status, 0);
+  assertNoPush(f);
+  const longer = f.cliRun('push', '--to', 'fix/longer');
+  assert.notEqual(longer.status, 0);
+  assertNoPush(f);
+  const slice = f.cliRun('push', '--to', 'fix/slice');
+  assert.equal(slice.status, 0, slice.stderr);
+  assert.ok(pushRecord(f).args.some(arg => arg.endsWith(':refs/heads/fix/slice')));
   const result = f.cliRun('push', '--to', 'fix/held');
   assert.equal(result.status, 0, result.stderr);
   assert.ok(pushRecord(f).args.some(arg => arg.endsWith(':refs/heads/fix/held')));
@@ -882,4 +894,26 @@ test('an in-place tooling update keeps the version the running code loaded', asy
   const copy = await import(new URL(`file://${join(root, 'scripts', 'workflow.mjs')}`));
   writeFileSync(join(root, 'plugin.json'), JSON.stringify({ version: '2.0.0' }));
   assert.equal(copy.afkToolingVersion(), '1.0.0');
+});
+
+test('issue edit replaces an issue body from a worktree file and confirms it', t => {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nrequire('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a.includes('PATCH')) { const body=a.find(x=>x.startsWith('body=')).slice(5); out({number:4, body: process.env.TEST_DROP ? 'stale' : body}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nout({}); process.exit(0);\n`);
+  chmodSync(gh, 0o755);
+  const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] } };
+  writeFileSync(join(f.repo, configPath), json(cfg));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  writeFileSync(join(f.repo, 'body.md'), '## Outcome\nWaiting: #14 on the payment sandbox');
+  f.env.TEST_CALLS = join(f.root, 'calls.log');
+  const edited = f.cliRun('issue', 'edit', '--number', '4', '--body-file', 'body.md');
+  assert.equal(edited.status, 0, edited.stderr);
+  assert.match(edited.stdout, /Edited #4/);
+  assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /-X PATCH repos\/acme\/app\/issues\/4 -f body=## Outcome\nWaiting: #14 on the payment sandbox/);
+  f.env.TEST_DROP = '1';
+  const dropped = f.cliRun('issue', 'edit', '--number', '4', '--body-file', 'body.md');
+  assert.notEqual(dropped.status, 0);
+  assert.match(dropped.stderr, /did not confirm #4/);
 });

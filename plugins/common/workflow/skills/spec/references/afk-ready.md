@@ -34,7 +34,3 @@ Unattended, or for issues from `gh issue list --search "-label:lane:afk -label:l
   4. Append `<!-- refined base=<short sha> -->` to the body whatever the outcome, closure proposals included.
 - Nature determines lane: owner-held decisions, credentials, devices or reserved effects → `lane:owner`; otherwise a `type:bug` restoring specified behaviour, work keeping owner-requested behaviour, or work under approved milestone or direct owner authority → `lane:afk`; otherwise → `lane:proposed`, for automated Reviewer eligibility. Size never determines lane. Temporary blockers preserve lane; record readiness separately. No approval is not approval.
 - Comment once: each failing check and what would fix it.
-
-## Epic design changes
-
-When an epic gains or changes binding design (a mockup, a decision), re-run Decided on each open slice in the same session: amend criteria within approved intent; record substantive contradictions for replanning and notify claimed runs. Preserve lane authorization through temporary blockers; use `lane:owner` only for reserved owner participation. Each slice names the designs that bind it, or says none do.

@@ -14,7 +14,7 @@ const help = `Usage:
   node workflow.mjs commit --message MESSAGE -- PATH...
   node workflow.mjs push [--owner-bootstrap | --to BRANCH]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
-  node workflow.mjs issue claim|status|create|comment|close|reopen|queue ...
+  node workflow.mjs issue claim|status|create|comment|edit|close|reopen|queue ...
   node workflow.mjs labels ensure
   node workflow.mjs cache show|refresh
   node workflow.mjs cache refresh
@@ -309,9 +309,10 @@ async function push(args) {
   if (metadata.default_branch !== defaultBranch) throw new Error('Fetched origin/HEAD does not match GitHub default branch; refresh origin');
   const remoteBase = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/branches/${encodeURIComponent(defaultBranch)}`], { cwd: root, env: metadataEnv });
   if (!/^[0-9a-f]{40,64}$/i.test(remoteBase?.commit?.sha || '') || git('rev-parse', baseRef) !== remoteBase.commit.sha) throw new Error('Fetched base is stale or unverifiable; refresh origin before pushing');
-  const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest,headRefName,isCrossRepository,closingIssuesReferences'], { cwd: root, env: { ...env, GH_TOKEN: token } });
+  const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest,headRefName,isCrossRepository,closingIssuesReferences,body'], { cwd: root, env: { ...env, GH_TOKEN: token } });
   if (!Array.isArray(pulls)) throw new Error('Cannot determine open PR auto-merge state');
-  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || (pr.closingIssuesReferences || []).some(issue => issue.number === held && `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase())))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing held issue #${held}`);
+  // A slice PR says `Part of #N`: GitHub records no closing link, yet it delivers the held issue.
+  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || new RegExp(`^\\s*Part of #${held}\\b`, 'im').test(pr.body || '') || (pr.closingIssuesReferences || []).some(issue => issue.number === held && `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase())))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing or part of held issue #${held}`);
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const head = git('rev-parse', 'HEAD');
@@ -561,7 +562,7 @@ export function afkPathsFromIssueBody(body = '') {
 }
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
-  const fields = 'number title body lastEditedAt labels(first:30){nodes{name}} blockedBy(first:30){nodes{state}} milestone{number dueOn} parent{number parent{number parent{number parent{number}}}}';
+  const fields = 'number title body lastEditedAt labels(first:30){nodes{name}} blockedBy(first:30){nodes{state}} milestone{number dueOn} subIssuesSummary{total completed} parent{number parent{number parent{number parent{number}}}}';
   const query = withPriority => `query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{${fields}${withPriority ? ' projectItems(first:10){nodes{project{number} priority: fieldValueByName(name:"Priority"){... on ProjectV2ItemFieldSingleSelectValue{name}} status: fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}' : ''}}}}}`;
   const found = []; let after;
   do {
@@ -671,9 +672,9 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   // Runs post the eligibility verdict through `issue comment`, so the implementer's marked verdict counts as the Reviewer's;
   // the workflow's own hold and release markers are never new input, while an edit or any other comment re-queues the check.
   const verdictBy = new Set([cfg.reviewer, cfg.implementer].filter(Boolean).map(login => login.toLowerCase()));
-  const awaitsEligibility = issue => {
+  const awaitsVerdict = (issue, verdict) => {
     const comments = threads(issue.number);
-    const checked = comments.filter(comment => verdictBy.has(comment.user?.login?.toLowerCase()) && /<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)/.test(comment.body || '')).map(comment => comment.created_at);
+    const checked = comments.filter(comment => verdictBy.has(comment.user?.login?.toLowerCase()) && verdict.test(comment.body || '')).map(comment => comment.created_at);
     const latest = checked.at(-1);
     return !latest || issue.lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=|^<!-- afk-wait /.test(comment.body || ''));
   };
@@ -687,8 +688,17 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const owner = epicOf(issue.number);
     if (issue.labels.includes('type:epic') || (owner || firstEpic) !== epic.issue.number || inPr.has(issue.number)) continue;
     const suffix = owner ? '' : ' under no epic';
-    if (issue.labels.includes('lane:proposed') && awaitsEligibility(issue) && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} awaits its AFK eligibility check${suffix}`, issue: issue.number, paths: [], check: true });
+    if (issue.labels.includes('lane:proposed') && awaitsVerdict(issue, /<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)/) && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} awaits its AFK eligibility check${suffix}`, issue: issue.number, paths: [], check: true });
     else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked' && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
+  }
+  // An approved epic (no lane; a draft keeps lane:owner) with no slices gets one slicing run, and one whose slices all closed
+  // gets one delivery check. An `epic-check` verdict holds the epic only for the same stage and sub-issue count, until it changes.
+  for (const epic of epics) {
+    const { issue } = epic, slices = issue.subIssuesSummary;
+    if (!slices || inPr.has(issue.number) || issue.labels.some(label => label.startsWith('lane:'))) continue;
+    const stage = slices.total === 0 ? 'slice' : slices.completed === slices.total ? 'close' : null;
+    if (!stage || !awaitsVerdict(issue, new RegExp(`<!-- epic-check stage=${stage} slices=${afkSlices(slices)}\\b`)) || waiting(issue.number)) continue;
+    epic.units.push({ text: stage === 'slice' ? `epic #${issue.number} is approved and has no sub-issues; slice it` : `epic #${issue.number} has every sub-issue closed; verify its delivery and close it`, issue: issue.number, paths: [], stage });
   }
   const heldOnEpic = number => threads(number).some(comment => {
     const id = /<!-- afk-epic-hold session=(\S+) -->/.exec(comment.body || '')?.[1];
@@ -1005,6 +1015,19 @@ function issueComment(args) {
     console.log(`Commented on #${n} (${result.id})`);
   });
 }
+function issueEdit(args) {
+  const o = afkFlags(args, ['--number', '--body-file']);
+  const n = Number(o['--number']);
+  if (!Number.isInteger(n) || n < 1 || !o['--body-file']) throw new Error('Usage: issue edit --number N --body-file PATH');
+  const root = git('rev-parse', '--show-toplevel');
+  const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
+  const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg);
+  return withRepoLock(`issue-edit-${n}`, () => {
+    const result = afkGh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, '-f', `body=${body}`]);
+    if (result.body !== body) throw new Error(`GitHub did not confirm #${n} edited`);
+    console.log(`Edited #${n}`);
+  });
+}
 function issueClose(args) {
   const o = afkFlags(args, ['--number']);
   const n = Number(o['--number']);
@@ -1125,11 +1148,11 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       const type = candidate.paths === null ? 'epic' : 'issue';
       const comment = afkHold(cfg, live, id, candidate.number, type);
       if (!comment) continue;
-      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), ...(candidate.unit?.state ? { pr: candidate.unit.pr, state: candidate.unit.state } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
+      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), ...(candidate.unit?.stage ? { stage: candidate.unit.stage } : {}), ...(candidate.unit?.state ? { pr: candidate.unit.pr, state: candidate.unit.state } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
       ledger[id] = [...(ledger[id] || []), held];
       try {
         // A review hold names a PR, which has no card of its own; its issues stay in Review.
-        if (type === 'issue' && !held.review) afkStatus(cfg, held.number, 'PROGRESS', true);
+        if ((type === 'issue' && !held.review) || held.stage) afkStatus(cfg, held.number, 'PROGRESS', true);
         afkWriteLedger(ledgerPath, ledger);
       } catch (error) {
         spawnSync('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${comment}`, '-f', `body=${afkMarker(`${type}-released`, id)}\nStart failed; hold released.`], { stdio: 'ignore' });
@@ -1219,6 +1242,15 @@ function afkStillReady(cfg, number) {
   const issue = afkGh(['api', `repos/${cfg.repo}/issues/${number}`]);
   return issue.state === 'open' && (issue.labels || []).some(label => label.name === 'lane:afk');
 }
+export function afkSlices(summary) { return `${summary?.completed ?? 0}/${summary?.total ?? 0}`; }
+// A stage run that left neither a verdict nor a wait after its hold would be served again on every poll.
+export function afkStageUnrecorded(comments, holdComment) {
+  return !comments.some(comment => Number(comment.id) > Number(holdComment) && /<!-- (?:epic-check|afk-wait)\b/.test(comment.body || ''));
+}
+// A closed issue lands in Done whatever is passed; an epic left open after its slicing or delivery check stays In progress.
+export function afkEndStatus(held, named, blocked) {
+  return held.stage ? 'PROGRESS' : named ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO';
+}
 function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
   afkActor(cfg);
   return withRepoLock('afk-start', () => {
@@ -1230,9 +1262,13 @@ function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
       const kind = held.paths === null ? 'epic' : 'issue';
       run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${held.comment}`, '-f', `body=${afkMarker(`${kind}-released`, id)}${note ? `\n${note}` : ''}`]);
       console.log(`Released: ${kind} #${held.number}`);
-      const blocked = kind === 'issue' && !held.check && !held.review && why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
+      const blocked = kind === 'issue' && !held.check && !held.review && !held.stage && why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
       if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
-      if (kind === 'issue' && !held.review) afkStatus(cfg, held.number, named.has(held.number) ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO', true);
+      const epicNow = held.stage ? afkGh(['api', `repos/${cfg.repo}/issues/${held.number}`]) : null;
+      if (held.stage && epicNow.state === 'open' && afkStageUnrecorded(afkComments(cfg, held.number), held.comment)) {
+        run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=<!-- epic-check stage=${held.stage} slices=${afkSlices(epicNow.sub_issues_summary)} verdict=none session=${id} -->\nRun ${id} ended without a verdict; this epic waits for an edit or a new comment.`]);
+      }
+      if ((kind === 'issue' && !held.review) || held.stage) afkStatus(cfg, held.number, afkEndStatus(held, named.has(held.number), blocked), true);
     }
     const openEpics = afkIssues(cfg).filter(issue => issue.labels.includes('type:epic'));
     for (const epic of openEpics) for (const comment of afkComments(cfg, epic.number)) {
@@ -1657,7 +1693,7 @@ function requiredLocks(command, args) {
       const index = args.indexOf('--number');
       return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`claim-${args[index + 1]}`] : [];
     }
-    if (['comment', 'close', 'reopen'].includes(args[0])) {
+    if (['comment', 'edit', 'close', 'reopen'].includes(args[0])) {
       const index = args.indexOf('--number');
       return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`issue-${args[0]}-${args[index + 1]}`] : [];
     }
@@ -1791,6 +1827,7 @@ async function execute(command, args) {
   else if (command === 'issue' && args[0] === 'status') { const { lanes } = config(); issueStatus(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'create') { config(); issueCreate(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'comment') { config(); issueComment(args.slice(1)); }
+  else if (command === 'issue' && args[0] === 'edit') { config(); issueEdit(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'reopen') { config(); issueReopen(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'queue') { const { lanes } = config(); issueQueue(args.slice(1)); }
