@@ -1209,7 +1209,7 @@ export function afkRunUsage(output) {
   if (Number.isFinite(value.num_turns)) parts.push(`${value.num_turns} turns`);
   if (Number.isFinite(value.duration_ms)) parts.push(`${Math.max(1, Math.round(value.duration_ms / 60_000))} min`);
   parts.push(`tokens in ${count('input_tokens')}, out ${count('output_tokens')}, cache read ${count('cache_read_input_tokens')}, cache write ${count('cache_creation_input_tokens')}`);
-  return { result: typeof value.result === 'string' ? value.result : '', line: `Usage: ${parts.join(', ')}` };
+  return { result: typeof value.result === 'string' ? value.result : '', line: `Usage: ${parts.join(', ')}`, ok: value.is_error !== true };
 }
 // A run that ended without a PR naming its issue stopped on a blocker (`why` is its own summary): the card goes to Blocked
 // with a comment saying why, and the selector skips it until the orchestrator clears the blocker and moves it to Todo.
@@ -1219,7 +1219,7 @@ function afkStillReady(cfg, number) {
   const issue = afkGh(['api', `repos/${cfg.repo}/issues/${number}`]);
   return issue.state === 'open' && (issue.labels || []).some(label => label.name === 'lane:afk');
 }
-function afkEndRun(cfg, common, id, note = null, why = null) {
+function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
   afkActor(cfg);
   return withRepoLock('afk-start', () => {
     const path = join(common, 'afk-holds.json'); const ledger = afkReadLedger(path);
@@ -1242,8 +1242,8 @@ function afkEndRun(cfg, common, id, note = null, why = null) {
       }
     }
     afkWriteLedger(path, ledger);
-    // Only a run that finished (`why` is its summary) spends its PR's state; a failed start or a manual end leaves it offered.
-    if (why !== null && dropped.some(held => held.state)) {
+    // Only an agent that exited cleanly spends its PR's state; a crash, a failed start or a manual end leaves the PR offered.
+    if (spend && dropped.some(held => held.state)) {
       const spentPath = join(common, 'afk-spent.json'); const spent = afkReadLedger(spentPath);
       for (const held of dropped) if (held.state) spent[held.pr] = held.state;
       afkWriteLedger(spentPath, spent);
@@ -1582,7 +1582,7 @@ function afkSupervise(common, runId) {
     output = afkLaunchAgent(job.launch);
     usage = afkRunUsage(output);
   } finally {
-    const finished = job.held ? spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'finish', '--me', runId, ...(usage?.result?.trim() ? ['--why', usage.result] : []), ...(usage ? ['--note', usage.line] : [])], { cwd: job.root, stdio: 'inherit', env: process.env }) : null;
+    const finished = job.held ? spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'finish', '--me', runId, ...(usage?.result?.trim() ? ['--why', usage.result] : []), ...(usage ? ['--note', usage.line] : []), ...(usage?.ok ? ['--spent', 'yes'] : [])], { cwd: job.root, stdio: 'inherit', env: process.env }) : null;
     if (finished && finished.status !== 0) console.error(`Blocked: run ${runId} still holds its issue; release it with afk end --me ${runId}.`);
     if (job.tree && !afkReleaseRunTree(job.tree, job.root)) console.log(`Kept: ${job.tree} holds work that is not on the remote; preserve it.`);
     rmSync(path, { force: true });
@@ -1614,9 +1614,9 @@ function afkCommand(args) {
       return afkWatch(cfg, common, issue);
     }
     if (action === 'supervise' || action === 'finish') {
-      const flags = afkFlags(rest, ['--me', '--note', '--why']); const id = flags['--me'];
+      const flags = afkFlags(rest, ['--me', '--note', '--why', '--spent']); const id = flags['--me'];
       if (!/^[\w.-]+$/.test(id || '')) throw new Error(`Usage: afk ${action} --me RUN_ID`);
-      return action === 'supervise' ? afkSupervise(common, id) : afkEndRun(cfg, common, id, flags['--note'] || null, flags['--why'] ?? '');
+      return action === 'supervise' ? afkSupervise(common, id) : afkEndRun(cfg, common, id, flags['--note'] || null, flags['--why'] ?? '', flags['--spent'] === 'yes');
     }
     if (action === 'reap') { afkLoadEnvironment(cfg); afkReap(cfg, common); return 0; }
     if (action === 'runs') {

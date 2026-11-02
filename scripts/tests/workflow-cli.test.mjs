@@ -374,7 +374,7 @@ test('an idle AFK watcher logs that nothing has work and launches no agent', t =
   assert.equal(existsSync(f.env.TEST_RESULT), false, 'no agent ran');
 });
 
-test('a finished run on a PR spends its state; a manual end does not', t => {
+test('a run on a PR spends its state only when its agent exited cleanly', t => {
   const f = fixture(t);
   const gh = join(f.root, 'bin', 'gh');
   writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr' || a[0]==='issue') { out([]); process.exit(0); }\nif(a[0]==='project') { out({id:'P1',title:'Board'}); process.exit(0); }\nif(a.includes('graphql')) { out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[]}}}}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app/issues/2000')) { out({state:'open',labels:[]}); process.exit(0); }\nconsole.log('{}');\n`);
@@ -390,8 +390,12 @@ test('a finished run on a PR spends its state; a manual end does not', t => {
   const ended = f.cliRun('afk', 'end', '--me', 'afk-manual');
   assert.equal(ended.status, 0, `${ended.stdout}\n${ended.stderr}`);
   assert.equal(existsSync(spent), false, 'a manual end leaves the PR offered');
+  hold('afk-crashed');
+  const crashed = f.cliRun('afk', 'finish', '--me', 'afk-crashed');
+  assert.equal(crashed.status, 0, `${crashed.stdout}\n${crashed.stderr}`);
+  assert.equal(existsSync(spent), false, 'an agent that crashed leaves the PR offered');
   hold('afk-finished');
-  const finished = f.cliRun('afk', 'finish', '--me', 'afk-finished', '--why', 'Summary: nothing to change');
+  const finished = f.cliRun('afk', 'finish', '--me', 'afk-finished', '--why', 'Summary: nothing to change', '--spent', 'yes');
   assert.equal(finished.status, 0, `${finished.stdout}\n${finished.stderr}`);
   assert.deepEqual(JSON.parse(readFileSync(spent, 'utf8')), { 2000: 'abc:0:green:' });
 });

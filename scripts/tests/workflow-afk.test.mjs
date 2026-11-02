@@ -548,8 +548,9 @@ test('AFK keeps watcher and run worktrees out of the main checkout status once',
 
 test('AFK run usage summarizes a JSON runner result and ignores plain output', () => {
   const output = JSON.stringify({ type: 'result', result: 'Summary: done', total_cost_usd: 1.234, num_turns: 42, duration_ms: 754_000, usage: { input_tokens: 1200, output_tokens: 3400, cache_read_input_tokens: 560000, cache_creation_input_tokens: 78000 } });
-  assert.deepEqual(afkRunUsage(output), { result: 'Summary: done', line: 'Usage: $1.23, 42 turns, 13 min, tokens in 1200, out 3400, cache read 560000, cache write 78000' });
-  assert.deepEqual(afkRunUsage(JSON.stringify({ type: 'result', result: 'ok' })), { result: 'ok', line: 'Usage: tokens in 0, out 0, cache read 0, cache write 0' });
+  assert.deepEqual(afkRunUsage(output), { result: 'Summary: done', line: 'Usage: $1.23, 42 turns, 13 min, tokens in 1200, out 3400, cache read 560000, cache write 78000', ok: true });
+  assert.deepEqual(afkRunUsage(JSON.stringify({ type: 'result', result: 'ok' })), { result: 'ok', line: 'Usage: tokens in 0, out 0, cache read 0, cache write 0', ok: true });
+  assert.equal(afkRunUsage(JSON.stringify({ type: 'result', is_error: true, result: 'API error' })).ok, false, 'an error result spends no PR state');
   assert.equal(afkRunUsage('Summary: plain text'), null);
   assert.equal(afkRunUsage('{"other":1}'), null);
   assert.equal(afkRunUsage(undefined), null);
