@@ -492,7 +492,15 @@ test('AFK push --to accepts the PR that closes the held issue', t => {
   const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
   writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 261, paths: ['docs/'] }] }));
   f.env.WORKFLOW_RUN_ID = 'afk-test-run';
-  f.env.OPEN_PRS = JSON.stringify([{ number: 262, headRefName: 'fix/held', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [{ number: 261 }] }]);
+  const closes = (owner, name) => [{ number: 261, repository: { name, owner: { login: owner } } }];
+  f.env.OPEN_PRS = JSON.stringify([
+    { number: 262, headRefName: 'fix/held', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: closes('Acme', 'App') },
+    { number: 263, headRefName: 'fix/elsewhere', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: closes('other', 'repo') },
+  ]);
+  const elsewhere = f.cliRun('push', '--to', 'fix/elsewhere');
+  assert.notEqual(elsewhere.status, 0);
+  assert.match(elsewhere.stderr, /not the head of the held PR/);
+  assertNoPush(f);
   const result = f.cliRun('push', '--to', 'fix/held');
   assert.equal(result.status, 0, result.stderr);
   assert.ok(pushRecord(f).args.some(arg => arg.endsWith(':refs/heads/fix/held')));

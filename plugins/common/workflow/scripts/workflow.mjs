@@ -311,7 +311,7 @@ async function push(args) {
   if (!/^[0-9a-f]{40,64}$/i.test(remoteBase?.commit?.sha || '') || git('rev-parse', baseRef) !== remoteBase.commit.sha) throw new Error('Fetched base is stale or unverifiable; refresh origin before pushing');
   const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest,headRefName,isCrossRepository,closingIssuesReferences'], { cwd: root, env: { ...env, GH_TOKEN: token } });
   if (!Array.isArray(pulls)) throw new Error('Cannot determine open PR auto-merge state');
-  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || (pr.closingIssuesReferences || []).some(issue => issue.number === held)))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing held issue #${held}`);
+  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || (pr.closingIssuesReferences || []).some(issue => issue.number === held && `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase())))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing held issue #${held}`);
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const head = git('rev-parse', 'HEAD');
