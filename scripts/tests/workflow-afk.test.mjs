@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkPrFiles, afkEndStatus, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkPrFiles, afkEndStatus, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -41,7 +41,7 @@ test('AFK plan skips live claims and holds but lets a new run take a stale claim
 });
 
 test('AFK plan offers no review of a PR whose linked issue a live run holds', () => {
-  const pr = (number, linked) => ({ number, title: `PR ${number}`, body: `Closes #${linked}`, headRefOid: 'abc', labels: [], reviews: [], statusCheckRollup: [], mergeable: 'MERGEABLE' });
+  const pr = (number, linked) => ({ number, title: `PR ${number}`, body: `Closes #${linked}`, closingIssuesReferences: [{ number: linked, repository: { name: 'app', owner: { login: 'acme' } } }], headRefOid: 'abc', labels: [], reviews: [], statusCheckRollup: [], mergeable: 'MERGEABLE' });
   const loose = { ...issue(5, ['lane:afk']), ancestors: [] };
   const comments = new Map([[5, [{ body: '<!-- afk-issue-hold session=live-run -->' }]]]);
   const plan = afkPlan(cfg, ['live-run'], number => comments.get(number) || [], 'new-run', { issues: [epic, loose, issue(6, ['lane:afk'])], prs: [pr(10, 5), pr(11, 6)] });
@@ -182,6 +182,14 @@ test('AFK plan keeps unreviewed proposals in the eligibility queue', () => {
   assert.match(plan.epics[0].units[0].text, /awaits its AFK eligibility check/);
 });
 
+test('a PR links an issue only by a closing reference in its repository or a Part of line', () => {
+  const closes = (number, owner = 'acme') => ({ number, repository: { name: 'app', owner: { login: owner } } });
+  const pr = (body, refs = []) => ({ number: 7, title: 'Fix', body, closingIssuesReferences: refs, headRefOid: 'head', labels: [], statusCheckRollup: [], reviews: [] });
+  assert.deepEqual(afkPrRecord(pr('Refs #8\nSee #9, and part of #10'), cfg).issues, [], 'a mention links nothing');
+  assert.deepEqual(afkPrRecord(pr('Closes #8', [closes(8), closes(11, 'other')]), cfg).issues, [8], 'only a closing link in this repository counts');
+  assert.deepEqual(prLinkedIssues(pr('Summary\n  Part of #12\nPart of #13.'), 'Acme/App'), [12, 13]);
+});
+
 test('a Reviewer approval applies only to the exact head and verdict', () => {
   const pr = { number: 7, title: 'Update', body: 'Issue #8', headRefOid: 'head', labels: [], statusCheckRollup: [], reviews: [
     { author: { login: 'reviewer' }, state: 'APPROVED', commit: { oid: 'old' }, body: '<!-- agent-review sha=old verdict=ready -->' },
@@ -279,10 +287,10 @@ test('a red PR unit takes its scope from its packet, else its changed files', ()
   const paths = (pr, issues = [epic]) => afkPlan(cfg, [], () => [], 'new-run', { issues, prs: [pr] }).epics[0].units[0].paths;
   assert.deepEqual(paths(red('No linked issue.')), ['src/a.js', 'docs/b.md']);
   assert.deepEqual(paths(red('```scope\n{"paths":["src/"]}\n```')), ['src/'], 'the PR body packet wins');
-  assert.deepEqual(paths(red('Closes #2'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'the linked issue packet wins');
-  assert.deepEqual(paths(red('Closes #2\n```scope\n{"paths":["src/"]}\n```'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'a PR packet cannot widen its issue packet');
-  assert.deepEqual(paths(red('Closes #2'), [epic, issue(2, ['lane:afk'], { paths: [] })]), [], 'a linked empty scope stays empty');
-  assert.deepEqual(paths(red('Closes #2', { files: [{ path: 'src/new.js', previousPath: 'src/old.js' }] }), [epic, issue(2, ['lane:afk'], { paths: null })]), ['src/new.js', 'src/old.js'], 'a rename keeps its source');
+  assert.deepEqual(paths(red('Part of #2'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'the linked issue packet wins');
+  assert.deepEqual(paths(red('Part of #2\n```scope\n{"paths":["src/"]}\n```'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'a PR packet cannot widen its issue packet');
+  assert.deepEqual(paths(red('Part of #2'), [epic, issue(2, ['lane:afk'], { paths: [] })]), [], 'a linked empty scope stays empty');
+  assert.deepEqual(paths(red('Part of #2', { files: [{ path: 'src/new.js', previousPath: 'src/old.js' }] }), [epic, issue(2, ['lane:afk'], { paths: null })]), ['src/new.js', 'src/old.js'], 'a rename keeps its source');
 });
 
 test('a PR with a rename or 100 files re-reads every page of its files over REST', () => {

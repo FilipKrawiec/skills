@@ -11,7 +11,7 @@ import { safetyCommand } from './safety.mjs';
 import { runWithLocks } from './locks.mjs';
 
 const help = `Usage:
-  node workflow.mjs commit --message MESSAGE -- PATH...
+  node workflow.mjs commit --message MESSAGE [-- PATH...]
   node workflow.mjs push [--owner-bootstrap | --to BRANCH]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
   node workflow.mjs issue claim|status|create|comment|edit|close|reopen|queue ...
@@ -216,28 +216,44 @@ function implementerCommitIdentity(root) {
   return { GIT_AUTHOR_NAME: login, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: email };
 }
 function commit(args) {
-  if (args.length < 4 || args[0] !== '--message' || args[2] !== '--') throw new Error('Usage: commit --message MESSAGE -- PATH...');
+  if (args[0] !== '--message' || !(args.length === 2 || (args.length >= 4 && args[2] === '--'))) throw new Error('Usage: commit --message MESSAGE [-- PATH...]');
   const message = args[1];
   const paths = args.slice(3);
   if (!/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9._/-]+\))?!?: [^\r\n]+$/.test(message)) throw new Error('Commit message must be a single-line Conventional Commit');
   if (paths.some(path => !path || path === '.' || path.startsWith('/') || path.startsWith(':') || path.split('/').includes('..'))) throw new Error('Provide explicit repository-relative paths');
   const root = requireLinkedWorktree();
   if (realpathSync(process.cwd()) !== realpathSync(root)) throw new Error('Run commit from the repository root');
+  const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: root, env: cleanEnvironment() }).status === 0;
+  if (!merging && !paths.length) throw new Error('Usage: commit --message MESSAGE [-- PATH...]; paths are optional only while a merge is in progress');
   const runId = process.env.WORKFLOW_RUN_ID;
+  let scope = null;
   if (runId) {
     const hold = afkBoundHold(root, 'commit');
-    if (Array.isArray(hold.paths) && !afkPathsWithinScope(paths, hold.paths)) throw new Error('Commit paths exceed the assigned AFK scope');
+    if (Array.isArray(hold.paths)) scope = hold.paths;
+    if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error('Commit paths exceed the assigned AFK scope');
     const cfg = config().lanes;
     afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
     afkActor(cfg);
   }
   const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
   // A merge commit records the whole merged index; the listed paths are the resolved conflicts.
-  const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: root, env }).status === 0;
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
   if (!merging && (staged.error || staged.status !== 0)) throw new Error('Existing staged changes or an unreadable index; preserve them and commit separately');
-  const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });
-  if (add.error || add.status !== 0) throw new Error('Could not stage selected paths; inspect repository status');
+  if (paths.length) {
+    const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });
+    if (add.error || add.status !== 0) throw new Error('Could not stage selected paths; inspect repository status');
+  }
+  // Content taken unchanged from either parent is already base's or the branch's; only content new to the merge needs scope.
+  if (merging && scope) {
+    const changed = parent => {
+      const diff = spawnSync('git', ['diff', '--cached', '--name-only', '--no-renames', '-z', parent, '--'], { cwd: root, env, encoding: 'utf8' });
+      if (diff.error || diff.status !== 0) throw new Error('Cannot read the merge index; inspect repository status');
+      return diff.stdout.split('\0').filter(Boolean);
+    };
+    const fromBase = new Set(changed('MERGE_HEAD'));
+    const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
+    if (outside.length) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
+  }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error('Commit failed; selected paths remain staged for inspection');
   console.log(JSON.stringify({ result: 'committed', head: git('rev-parse', 'HEAD') }));
@@ -311,8 +327,7 @@ async function push(args) {
   if (!/^[0-9a-f]{40,64}$/i.test(remoteBase?.commit?.sha || '') || git('rev-parse', baseRef) !== remoteBase.commit.sha) throw new Error('Fetched base is stale or unverifiable; refresh origin before pushing');
   const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest,headRefName,isCrossRepository,closingIssuesReferences,body'], { cwd: root, env: { ...env, GH_TOKEN: token } });
   if (!Array.isArray(pulls)) throw new Error('Cannot determine open PR auto-merge state');
-  // A slice PR says `Part of #N`: GitHub records no closing link, yet it delivers the held issue.
-  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || new RegExp(`^\\s*Part of #${held}\\b`, 'im').test(pr.body || '') || (pr.closingIssuesReferences || []).some(issue => issue.number === held && `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase())))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing or part of held issue #${held}`);
+  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || prLinkedIssues(pr, repo).includes(held)))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing or part of held issue #${held}`);
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const head = git('rev-parse', 'HEAD');
@@ -612,7 +627,7 @@ export function afkPrFiles(pr, readPages) {
   }
 }
 function afkPrData(cfg) {
-  return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files'])
+  return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files,closingIssuesReferences'])
     .map(pr => afkPrFiles(pr, number => afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/pulls/${number}/files`])));
 }
 // Decides on the newest marked Reviewer review; unmarked ones are thread replies.
@@ -623,8 +638,15 @@ export function afkReviewerApproved(pr, cfg) {
   return Boolean(latest?.state === 'APPROVED' && latest.commit?.oid === head && latest.body.includes(`sha=${head}`) && latest.body.includes(`verdict=${ownerLane ? 'owner' : 'ready'}`) &&
     !mine.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head));
 }
+// A PR delivers the issues GitHub records it closing in this repository, and those a line starting `Part of #N` names:
+// a slice PR gets no closing link, yet it delivers its issue. A bare mention links nothing.
+export function prLinkedIssues(pr, repo) {
+  const closes = (pr.closingIssuesReferences || []).filter(issue => `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase()).map(issue => issue.number);
+  const parts = [...(pr.body || '').matchAll(/^\s*Part of #(\d+)\b/gim)].map(match => Number(match[1]));
+  return [...new Set([...closes, ...parts])];
+}
 export function afkPrRecord(pr, cfg) {
-  const issues = [...new Set([...(pr.body || '').matchAll(/(?<![\w/])#(\d+)\b/g)].map(match => Number(match[1])))];
+  const issues = prLinkedIssues(pr, cfg.repo);
   const reviews = pr.reviews || [];
   const mine = reviews.filter(review => review.author?.login?.toLowerCase() === cfg.reviewer.toLowerCase());
   const head = pr.headRefOid;
@@ -1776,7 +1798,8 @@ function validInheritedLockContext(names) {
       if (match) processes.set(Number(match[1]), { parent: Number(match[2]), command: match[3] });
     }
     const owner = processes.get(ownerPid);
-    if (!owner || !owner.command.includes(fileURLToPath(import.meta.url))) return false;
+    // The owner ran this argv, so its ps line matches ours even where ps escapes the path.
+    if (!owner || !(owner.command.includes(fileURLToPath(import.meta.url)) || owner.command.trim() === ownCommandLine())) return false;
     const ancestors = [];
     let pid = process.ppid;
     for (let depth = 0; pid && depth < 16; depth++) {
@@ -1837,10 +1860,25 @@ async function execute(command, args) {
   else if (command === 'safety') { const { lanes } = config(); process.exitCode = safetyCommand(args, lanes); }
   else throw new Error('Invalid command; use --help');
 }
-export function needsAbsoluteInvocation(argv1, self) { return argv1 !== self; }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && needsAbsoluteInvocation(process.argv[1], fileURLToPath(import.meta.url))) {
+export function needsAbsoluteInvocation(command, self) { return !command.includes(self); }
+function ownCommandLine() {
+  // Node makes process.argv[1] absolute, so only ps shows how this process was invoked.
+  const result = spawnSync('ps', ['-o', 'command=', '-p', String(process.pid)], { encoding: 'utf8' });
+  return result.error || result.status !== 0 ? null : result.stdout.trim();
+}
+const invokedLocked = () => {
+  // ps may escape or truncate a path it cannot show literally, so a re-exec'd child never re-execs again.
+  const reexecuted = process.env.WORKFLOW_ABSOLUTE_REEXEC === '1';
+  delete process.env.WORKFLOW_ABSOLUTE_REEXEC;
+  const [command, ...args] = process.argv.slice(2);
+  // A lock child already runs by the absolute path its owner chose.
+  if (reexecuted || process.env.WORKFLOW_LOCK_TOKEN || !requiredLocks(command, args).length) return false;
+  const line = ownCommandLine();
+  return line !== null && needsAbsoluteInvocation(line, fileURLToPath(import.meta.url));
+};
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && invokedLocked()) {
   // Lock inheritance matches the owner's command line by absolute path.
-  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
+  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, WORKFLOW_ABSOLUTE_REEXEC: '1' } });
   process.exit(result.error ? 1 : result.status ?? 1);
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
