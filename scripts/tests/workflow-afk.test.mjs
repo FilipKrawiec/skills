@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkPrFiles, afkEndStatus, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkSlots, afkPrFiles, afkEndStatus, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -178,6 +178,61 @@ test('candidate selection honors live holds and work sharing', () => {
   const held = [...afkCandidates(epics, [{ number: 2, epic: 1, paths: ['src/2.js'] }], true, () => false)];
   assert.deepEqual(held.map(item => item.number), [3]);
   assert.deepEqual([...afkCandidates(epics, [], true, () => true)], []);
+});
+
+test('free runs go to blockers, then reviews, then PRs in progress, then new issues, in any epic', () => {
+  const epics = [
+    { issue: { number: 1 }, units: [{ issue: 2, paths: ['src/2.js'] }, { issue: 6, paths: ['src/6.js'], rank: 2 }] },
+    { issue: { number: 4 }, units: [{ issue: 5, paths: ['src/5.js'] }, { issue: 9, paths: [], review: true, rank: 1 }, { issue: 7, paths: ['src/7.js'], rank: 0 }] },
+  ];
+  assert.deepEqual([...afkCandidates(epics, [], true, () => false)].map(item => item.number), [7, 9, 6, 2, 5]);
+  assert.deepEqual([...afkCandidates(epics, [{ number: 9, epic: 4, paths: [] }], true, () => false)].map(item => item.number), [7, 6, 2, 5]);
+  assert.deepEqual([...afkCandidates(epics, [], false, () => false)].map(item => item.number), [1, 4], 'without sharing, one run per epic');
+});
+
+test('reviews have their own run slots, so ticket runs never block them', () => {
+  const ledger = { a: [{ number: 1 }], b: [{ number: 2 }], r: [{ number: 3, review: true }] };
+  const review = { unit: { review: true } }, ticket = { unit: {} };
+  const slots = afkSlots({ maxRuns: 2, maxReviewRuns: 2 }, ledger, ['a', 'b', 'r']);
+  assert.equal(slots.full(), false);
+  assert.equal(slots.take(ticket), false, 'both work slots are busy');
+  assert.equal(slots.take(review), true, 'a review still starts');
+  assert.equal(slots.take(review), false, 'until its own slots are full');
+  assert.equal(slots.full(), true);
+  assert.equal(afkSlots({ maxRuns: 4 }, {}, []).take(review), true, 'two review slots by default');
+});
+
+test('a new ticket starts only while open PRs and ticket runs without a PR stay under afk.maxRuns', () => {
+  const ticket = { unit: {} }, fix = { unit: { rank: 2 } }, blocker = { unit: { rank: 0 } };
+  const prs = [{ number: 10, issues: [1] }, { number: 11, issues: [] }];
+  const ledger = { a: [{ number: 1 }], b: [{ number: 5 }] };
+  const slots = afkSlots({ maxRuns: 4 }, ledger, ['a', 'b'], '', prs);
+  assert.equal(slots.take(ticket), true, 'WIP is 2 PRs + 1 ticket run without a PR = 3');
+  assert.equal(slots.take(ticket), false, 'WIP reached 4; finish work before starting more');
+  assert.equal(slots.take(fix), true, 'work on an open PR uses the last run slot');
+  assert.equal(slots.take(blocker), false, 'all four run slots are busy');
+  const free = afkSlots({ maxRuns: 4 }, {}, [], '', [{ number: 10 }, { number: 11 }, { number: 12 }, { number: 13 }]);
+  assert.equal(free.take(ticket), false, 'four open PRs: no new ticket');
+  assert.equal(free.take(blocker), true, 'work on an open PR still starts');
+});
+
+test('eligibility checks and epic stages start and add no WIP when WIP is full; drafts are not WIP', () => {
+  const four = [{ number: 10 }, { number: 11 }, { number: 12 }, { number: 13 }];
+  const full = afkSlots({ maxRuns: 4 }, {}, [], '', four);
+  assert.equal(full.take({ unit: { check: true } }), true, 'WIP is 4, yet an eligibility check starts');
+  assert.equal(full.take({ unit: { stage: 'close' } }), true, 'and so does an epic stage');
+  assert.equal(full.take({ unit: {} }), false, 'a new ticket waits');
+  const checking = afkSlots({ maxRuns: 5 }, { c: [{ number: 7, check: true }], s: [{ number: 8, stage: 'slice' }] }, ['c', 's'], '', four.slice(0, 3));
+  assert.equal(checking.take({ unit: {} }), true, 'live checks and stages add no WIP');
+  assert.equal(afkSlots({ maxRuns: 4 }, {}, [], '', four.map(pr => ({ ...pr, isDraft: true }))).take({ unit: {} }), true);
+});
+
+test('the plan ranks a red PR, a PR awaiting review and a PR with requested changes for selection', () => {
+  const pr = (number, extra) => ({ number, title: `PR ${number}`, body: 'No linked issue.', headRefOid: 'abc', labels: [], files: [{ path: 'src/a.js' }], statusCheckRollup: [], mergeable: 'MERGEABLE', reviews: [{ author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'abc' }, body: '' }], ...extra });
+  const prs = [pr(20), pr(21, { reviews: [] }), pr(22, { statusCheckRollup: [{ conclusion: 'FAILURE' }] })];
+  const plan = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, issue(2, ['lane:afk'])], prs });
+  assert.deepEqual(Object.fromEntries(plan.epics[0].units.map(unit => [unit.issue, unit.rank])), { 2: undefined, 20: 2, 21: 1, 22: 0 });
+  assert.deepEqual([...afkCandidates(plan.epics, [], true, () => false)].map(item => item.number), [22, 21, 20, 2]);
 });
 
 test('epics are ordered by priority, milestone and number', () => {
