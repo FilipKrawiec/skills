@@ -8,9 +8,9 @@ allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,just:*)
 
 ## 1. Find the lesson
 
-For an owner-requested improvement, inspect the named event and relevant prior evidence; do not sweep unrelated issues. For a scheduled batch, inspect issues closed as completed in the last 30 days whose newest `## Shipped` comment is newer than any `## Lessons`. Find repeated failures, owner corrections, missing signals and rules that cost time without preventing failure.
+For an owner-requested improvement, inspect the named event and relevant prior evidence; do not sweep unrelated issues. For a scheduled batch, inspect issues closed as completed in the last 30 days whose newest `## Shipped` comment is newer than any `## Lessons`. Also read that window's AFK `## Run notes` comments and the `Usage:` lines the watcher adds to released holds. Find repeated failures, owner corrections, missing signals and rules that cost time or tokens without preventing failure; a run whose usage far exceeds comparable runs is an observation.
 
-A lesson needs two linked occurrences or the owner's request. A revert or fix-forward needs only one: name the earliest `spec`, `tdd`, `review` or CI signal that should have caught it. A single other occurrence is an observation.
+A lesson needs two linked occurrences (two runs noting the same friction count) or the owner's request. A revert or fix-forward needs only one: name the earliest `spec`, `tdd`, `review` or CI signal that should have caught it. A single other occurrence is an observation.
 
 **Exit gate:** scoped lessons and evidence, or observations only.
 
