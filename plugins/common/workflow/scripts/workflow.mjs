@@ -215,6 +215,11 @@ function implementerCommitIdentity(root) {
   const email = `${id}+${login}@users.noreply.github.com`;
   return { GIT_AUTHOR_NAME: login, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: email };
 }
+// Git's first diagnostic line, with tokens and URL credentials removed.
+export function gitFailureLine(output) {
+  const line = String(output).split(/\r?\n/).map(text => text.trim()).find(Boolean) || '';
+  return line.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, '[redacted]').replace(/(\/\/)[^/@\s]+@/g, '$1[redacted]@').slice(0, 300);
+}
 function commit(args) {
   if (args[0] !== '--message' || !(args.length === 2 || (args.length >= 4 && args[2] === '--'))) throw new Error('Usage: commit --message MESSAGE [-- PATH...]');
   const message = args[1];
@@ -236,6 +241,11 @@ function commit(args) {
     afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
     afkActor(cfg);
   }
+  if (merging) {
+    const unmerged = spawnSync('git', ['diff', '--name-only', '--diff-filter=U', '-z', '--'], { cwd: root, env: cleanEnvironment(), encoding: 'utf8' });
+    const conflicted = unmerged.status === 0 ? [...new Set(unmerged.stdout.split('\0').filter(Boolean))].filter(path => !paths.includes(path)) : [];
+    if (conflicted.length) throw new Error(`Unmerged paths remain: ${conflicted.join(', ')}; pass each resolved path after --`);
+  }
   const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
   // A merge commit records the whole merged index; the listed paths are the resolved conflicts.
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
@@ -256,7 +266,10 @@ function commit(args) {
     if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
   }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
-  if (result.error || result.status !== 0) throw new Error('Commit failed; selected paths remain staged for inspection');
+  if (result.error || result.status !== 0) {
+    const reason = gitFailureLine(result.stderr || result.stdout || result.error?.message || '');
+    throw new Error(`Commit failed${reason ? `: ${reason}` : ''}; selected paths remain staged for inspection`);
+  }
   console.log(JSON.stringify({ result: 'committed', head: git('rev-parse', 'HEAD') }));
 }
 export function githubPushRemoteMatches(remote, repo) {
