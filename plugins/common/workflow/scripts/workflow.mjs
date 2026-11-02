@@ -37,7 +37,7 @@ export const workflowDefaults = {
   github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
   afk: {
     runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
-    watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--output-format', 'json', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
+    watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--output-format', 'json', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--worktree', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
     permissionMode: 'auto', pluginUpdateCommands: [],
     toolingRepository: 'https://github.com/FilipKrawiec/skills.git', toolingRef: 'main', toolingDirectory: '~/.local/share/workflow-cli/skills',
   },
@@ -1217,6 +1217,7 @@ function afkWatchTree(cfg) {
   const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
   const watch = afkWatchPath(common);
   const marker = join(common, 'afk-watch-worktree.json');
+  afkExcludeWorktrees(common);
   run('git', ['fetch', '--quiet', 'origin', cfg.base], { cwd: root, env: cleanEnvironment() });
   mkdirSync(dirname(watch), { recursive: true });
   if (!existsSync(watch)) {
@@ -1256,20 +1257,49 @@ function afkWatchTree(cfg) {
   }
   return watch;
 }
+// Keeps the watcher's and runs' worktrees out of the main checkout's status, whatever the repository ignores.
+export function afkExcludeWorktrees(common) {
+  const file = join(common, 'info', 'exclude');
+  const current = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  const missing = ['/.worktrees/', '/.claude/worktrees/'].filter(entry => !current.split('\n').includes(entry));
+  if (!missing.length) return;
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, `${current}${current && !current.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
+}
 function afkWatchPath(common) { return join(dirname(common), '.worktrees', 'afk-watch'); }
-// Each launched run works in its own detached worktree, so work it leaves behind can never block the watcher's checkout.
+// Each launched run works in its own worktree, so work it leaves behind can never block the watcher's checkout.
+// A start command with --worktree lets Claude Code create it natively under .claude/worktrees/<run id>; otherwise the watcher creates one.
 function afkRunTree(cfg, common, runId) {
+  if (cfg.startCommand.includes('--worktree')) return { tree: join(dirname(common), '.claude', 'worktrees', runId), native: true };
   const tree = join(dirname(common), '.worktrees', runId);
   run('git', ['worktree', 'add', '--quiet', '--detach', tree, `origin/${cfg.base}`], { cwd: dirname(common), env: cleanEnvironment() });
-  return tree;
+  return { tree, native: false };
 }
-// Removes a run's worktree only when nothing in it is missing from the remote; returns whether it was removed.
+// Removes a run's worktree, and the branch Claude Code made for it, only when nothing in them is missing from the remote; returns whether it is gone.
 export function afkReleaseRunTree(tree, root) {
+  if (!existsSync(tree)) return true;
   const env = cleanEnvironment();
   const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: tree, encoding: 'utf8', env });
   const unpushed = spawnSync('git', ['log', '--oneline', 'HEAD', '--not', '--remotes'], { cwd: tree, encoding: 'utf8', env });
   if (status.error || status.status !== 0 || status.stdout.trim() || unpushed.error || unpushed.status !== 0 || unpushed.stdout.trim()) return false;
-  return spawnSync('git', ['worktree', 'remove', tree], { cwd: root, env }).status === 0;
+  spawnSync('git', ['worktree', 'unlock', tree], { cwd: root, env });
+  if (spawnSync('git', ['worktree', 'remove', tree], { cwd: root, env }).status !== 0) return false;
+  const branch = `worktree-${basename(tree)}`;
+  const own = spawnSync('git', ['log', '--oneline', `refs/heads/${branch}`, '--not', '--remotes'], { cwd: root, encoding: 'utf8', env });
+  if (own.status === 0 && !own.stdout.trim()) spawnSync('git', ['branch', '-D', branch], { cwd: root, env });
+  return true;
+}
+// Releases run worktrees whose watcher process has ended, so a crashed or killed run never leaves one behind unreported.
+export function afkSweepRunTrees(cfg, root, alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } }) {
+  const listed = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8', env: cleanEnvironment() });
+  if (listed.status !== 0) return;
+  for (const line of listed.stdout.split('\n')) {
+    if (!line.startsWith('worktree ')) continue;
+    const tree = line.slice(9), name = basename(tree);
+    const pid = Number(new RegExp(`^${cfg.runPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d{14}-(\\d+)-\\d+$`).exec(name)?.[1]);
+    if (!pid || alive(pid)) continue;
+    if (!afkReleaseRunTree(tree, root)) console.log(`Kept: ${tree} holds work that is not on the remote; preserve it.`);
+  }
 }
 function plistText(xml, key) {
   const match = new RegExp(`<key>${key}<\\/key>\\s*<string>([\\s\\S]*?)<\\/string>`).exec(xml);
@@ -1350,6 +1380,7 @@ function afkWatch(cfg, common, requestedIssue = null) {
     }
   }
   afkReap(cfg, common);
+  if (!cfg.runsCommand) afkSweepRunTrees(cfg, dirname(common));
   const result = {};
   const code = afkCheckRun(cfg, common, true, result, requestedIssue);
   for (let i = 1; i <= (result.start || 0); i++) {
@@ -1367,11 +1398,11 @@ function afkWatch(cfg, common, requestedIssue = null) {
     try {
       if (held && (holds.length !== 1 || !Number.isSafeInteger(holds[0].number) || holds[0].number < 1)) throw new Error('AFK watcher cannot bind the held issue');
       if (!cfg.runsCommand) runTree = afkRunTree(cfg, common, runId);
-      output = afkLaunchAgent({ argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: runTree || watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0].number : null });
+      output = afkLaunchAgent({ argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: runTree && !runTree.native ? runTree.tree : watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0].number : null });
       usage = afkRunUsage(output);
     } finally {
       if (held) afkEndRun(cfg, common, runId, usage?.line);
-      if (runTree && !afkReleaseRunTree(runTree, dirname(common))) console.log(`Kept: ${runTree} holds work that is not on the remote; preserve it.`);
+      if (runTree && !afkReleaseRunTree(runTree.tree, dirname(common))) console.log(`Kept: ${runTree.tree} holds work that is not on the remote; preserve it.`);
     }
     console.log(output ? `Completed: ${runId}\n${usage ? `${usage.result}\n${usage.line}` : output}` : `Started: ${runId}`);
   }
