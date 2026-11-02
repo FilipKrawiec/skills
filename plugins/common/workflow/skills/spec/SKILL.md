@@ -18,7 +18,7 @@ Each open issue has a native milestone, one type and one lane; an epic has none 
 
 ## 2. Transition
 
-Read [afk-ready.md](references/afk-ready.md) for AFK readiness. Before AFK assignment add `### Estimate` (S/M and main unknown) and a fenced `scope` JSON packet of paths and dependencies; attended work needs neither. Re-read before writing. Replace conflicting family labels; preserve other labels and explicit owner holds.
+Read [afk-ready.md](references/afk-ready.md) for AFK readiness. Before AFK assignment add `### Estimate` (S/M and main unknown) and a fenced `scope` JSON packet of paths and dependencies; attended work needs neither. A follow-up to an unmerged PR lands in that PR's next round or lists the PR in `dependencies`. Re-read before writing. Replace conflicting family labels; preserve other labels and explicit owner holds.
 
 | Actor | Transition | Condition and consequence |
 | --- | --- | --- |
