@@ -111,6 +111,7 @@ test('issue create lists open issues sharing a scope path before filing a follow
   assert.equal(filed.stdout.trim(), 'Overlaps: none\nCreated: #31');
   writeFileSync(f.env.TEST_CALLS, '');
   const task = f.cliRun('issue', 'create', '--title', 'task', '--body-file', 'match.md', '--labels', 'type:task');
+  assert.equal(task.status, 0, task.stderr);
   assert.equal(task.stdout.trim(), 'Created: #31');
   assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /issue list --repo acme\/app --state open --limit 1000/);
 });

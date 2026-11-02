@@ -1037,10 +1037,10 @@ function issueWriteRepo(cfg, requested) {
 export function oldestExactTitle(issues, title) {
   return issues.filter(issue => issue.title === title).map(issue => issue.number).sort((a, b) => a - b)[0] ?? null;
 }
-// Open issues whose scope packet shares a path with `paths`: equal, or one is a `/`-terminated prefix of the other.
+// Open issues whose scope packet shares a path with `paths`: equal, or one lies under the other as the scope rule reads it.
 export function scopeOverlaps(issues, paths) {
   if (!paths?.length) return [];
-  const overlap = (a, b) => a === b || (a.endsWith('/') && b.startsWith(a)) || (b.endsWith('/') && a.startsWith(b));
+  const overlap = (a, b) => afkPathsWithinScope([a], [b]) || afkPathsWithinScope([b], [a]);
   return issues.filter(issue => (afkPathsFromIssueBody(issue.body || '') || []).some(path => paths.some(other => overlap(path, other))));
 }
 function issueCreate(args) {

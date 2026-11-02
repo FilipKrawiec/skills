@@ -542,7 +542,7 @@ test('issue writes reach only the configured repository or the workflow tooling 
   assert.throws(() => issueTargetRepo(cfg, 'other/repo'), /only acme\/app or the workflow tooling repository acme\/skills/);
 });
 
-test('scope overlaps match equal paths and directory prefixes, skipping issues without a packet', () => {
+test('scope overlaps match equal paths and directories, skipping issues without a packet', () => {
   const packet = paths => `\u0060\u0060\u0060scope\n${JSON.stringify({ paths })}\n\u0060\u0060\u0060`;
   const issues = [
     { number: 1, title: 'same file', body: packet(['plugins/a/workflow.mjs']) },
@@ -550,7 +550,8 @@ test('scope overlaps match equal paths and directory prefixes, skipping issues w
     { number: 3, title: 'no packet', body: 'Edits scripts/tests/x.mjs' },
     { number: 4, title: 'sibling', body: packet(['scripts/testsuite.mjs', 'docs']) },
   ];
-  assert.deepEqual(scopeOverlaps(issues, ['plugins/a/workflow.mjs', 'scripts/tests/x.test.mjs', 'docs/a.md']).map(issue => issue.number), [1, 2]);
+  assert.deepEqual(scopeOverlaps(issues, ['plugins/a/workflow.mjs', 'scripts/tests/x.test.mjs', 'docs/a.md']).map(issue => issue.number), [1, 2, 4]);
+  assert.deepEqual(scopeOverlaps(issues, ['plugins/a/']).map(issue => issue.number), [1]);
   assert.deepEqual(scopeOverlaps(issues, ['scripts/']).map(issue => issue.number), [2, 4]);
   assert.deepEqual(scopeOverlaps(issues, null), []);
 });
