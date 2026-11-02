@@ -499,6 +499,9 @@ function afkActor(cfg) {
   const actor = afkGh(['api', 'user']).login;
   if (!cfg.implementer || actor?.toLowerCase() !== cfg.implementer.toLowerCase()) throw new Error(`Authenticated as ${actor || 'unknown'}; AFK writes require ${cfg.implementer || 'a configured implementer'}`);
 }
+export function afkCheckRunLimits(lanes) {
+  for (const key of ['maxRuns', 'maxReviewRuns']) if (!Number.isSafeInteger(lanes[key]) || lanes[key] < 1) throw new Error(`afk.${key} must be a positive integer`);
+}
 function afkConfig(refreshMetadata = false) {
   git('fetch', '--quiet', 'origin');
   const { lanes, baseRef } = config();
@@ -507,8 +510,7 @@ function afkConfig(refreshMetadata = false) {
   lanes.startCommand ??= afkDefaultStartCommand(lanes.model);
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
-  if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
-  if (!Number.isSafeInteger(lanes.maxReviewRuns) || lanes.maxReviewRuns < 1) throw new Error('afk.maxReviewRuns must be a positive integer');
+  afkCheckRunLimits(lanes);
   lanes.explore = { ...workflowDefaults.explore };
   if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
   requireTestStep(lanes.steps);
@@ -791,23 +793,28 @@ export function* afkCandidates(epics, others, share, heldElsewhere) {
   }
 }
 // Reviews have their own afk.maxReviewRuns slots, so runs busy on tickets never block a review; everything else shares afk.maxRuns.
-// WIP is every open PR plus every ticket run without one yet; a new ticket starts only while WIP stays under afk.maxRuns.
+// WIP is every open PR, drafts included, plus every ticket run without one yet; a new ticket starts only while WIP stays under afk.maxRuns.
+// A booting run (live, no hold yet) takes no slot: the start lock lets one run hold at a time, and afkStartCount subtracts booting runs from its start count.
+export function afkBooting(ledger, live) { return live.filter(id => !ledger[id]?.length); }
 export function afkSlots(cfg, ledger, live, me = '', prs = []) {
-  // Drafts are not WIP yet; eligibility checks and epic stages are no tickets, so they neither count nor wait for WIP.
-  const open = prs.filter(pr => !pr.isDraft), inPr = new Set(prs.flatMap(pr => [pr.number, ...(pr.issues || [])]));
-  const used = { review: 0, work: 0 }; let wip = open.length;
+  // Eligibility checks and epic stages are no tickets, so they neither count nor wait for WIP.
+  const inPr = new Set(prs.flatMap(pr => [pr.number, ...(pr.issues || [])]));
+  const used = { review: 0, work: 0 }; let wip = prs.length, waited = false;
   for (const id of live) {
-    if (id === me) continue;
-    const holds = ledger[id] || [];
+    if (id === me || !ledger[id]?.length) continue;
+    const holds = ledger[id];
     used[holds.some(hold => hold.review) ? 'review' : 'work']++;
-    if (holds.length && !holds.some(hold => hold.review || hold.check || hold.stage || inPr.has(hold.number))) wip++;
+    if (!holds.some(hold => hold.review || hold.check || hold.stage || inPr.has(hold.number))) wip++;
   }
   const cap = { review: Number(cfg.maxReviewRuns ?? 2), work: Number(cfg.maxRuns) || Infinity };
   return {
     full: () => used.review >= cap.review && used.work >= cap.work,
+    // Set once a free work slot refused a new ticket only because WIP is at afk.maxRuns.
+    waiting: () => waited ? `Waiting: WIP ${wip}/${cap.work}; no new ticket` : null,
     take: candidate => {
       const kind = candidate.unit?.review ? 'review' : 'work', unit = candidate.unit || {}, ticket = kind === 'work' && unit.rank === undefined && !unit.check && !unit.stage;
-      if (used[kind] >= cap[kind] || (ticket && wip >= cap.work)) return false;
+      if (used[kind] >= cap[kind]) return false;
+      if (ticket && wip >= cap.work) { waited = true; return false; }
       used[kind]++; if (ticket) wip++;
       return true;
     },
@@ -1265,6 +1272,13 @@ export function afkToolingVersion() { return loadedToolingVersion; }
 export function afkCheckQuiet(previous, signal, version, now = Date.now()) {
   return Boolean(version) && previous?.version === version && previous.signal === signal && now - previous.at < 1_800_000;
 }
+// A booting run takes the first free work itself, so each one covers a chosen ticket or PR task instead of a new run.
+export function afkStartCount(cfg, ledger, live, candidates, prs) {
+  const cap = Number(cfg.maxRuns) || 0, slots = afkSlots(cfg, ledger, live, '', prs);
+  const chosen = candidates.filter(candidate => !cap || slots.take(candidate));
+  const reviews = chosen.filter(candidate => candidate.unit?.review).length;
+  return { count: reviews + Math.max(0, chosen.length - reviews - afkBooting(ledger, live).length), waiting: slots.waiting() };
+}
 function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const live = afkLive(cfg); const statePath = quiet ? join(common, 'afk-check.json') : null;
   const signal = statePath ? afkSignal(cfg, live) : null; const version = afkToolingVersion();
@@ -1288,19 +1302,13 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const start = withRepoLock('afk-start', () => {
     const ledger = afkReadLedger(ledgerPath);
     const others = afkOtherHolds(ledger, live, '');
-    const booting = live.filter(id => !ledger[id]?.length);
     const cap = Number(cfg.maxRuns) || 0;
-    // A booting run (no hold yet) takes the first free work itself, so it counts against the work slots it will use.
-    const slots = afkSlots(cfg, ledger, live.filter(id => !booting.includes(id)), '', prs);
-    const chosen = [];
-    for (const candidate of afkCandidates(epics, others, Boolean(cap), heldOnEpic)) {
-      if (requestedIssue && candidate.number !== requestedIssue) continue;
-      if (!cap || slots.take(candidate)) chosen.push(candidate);
-    }
-    if (requestedIssue && !chosen.length) return 0;
+    const candidates = [...afkCandidates(epics, others, Boolean(cap), heldOnEpic)].filter(candidate => !requestedIssue || candidate.number === requestedIssue);
+    const { count, waiting } = afkStartCount(cfg, ledger, live, candidates, prs);
+    if (waiting) output.push(waiting);
+    if (requestedIssue && !count) return 0;
     afkWriteLedger(ledgerPath, ledger);
-    const reviews = chosen.filter(candidate => candidate.unit?.review).length;
-    return reviews + Math.max(0, chosen.length - reviews - booting.length);
+    return count;
   });
   result.start = start;
   if (statePath) { mkdirSync(dirname(statePath), { recursive: true }); writeFileSync(statePath, JSON.stringify({ signal, version, at: Date.now() })); }
