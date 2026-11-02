@@ -21,10 +21,10 @@ For each item, apply the first matching case:
 1. Active claim or linked PR: preserve execution state and tell its implementer about acceptance changes.
 2. Criteria already met: link evidence and use `spec` to close routine work within authority; deployment acceptance remains separate.
 3. Overlapping outcome: identify its canonical issue and preserve unique work; never close duplicates without owner authority.
-4. Owner decision supersedes the body: record the binding decision and update dependent slices and epic summaries.
+4. Owner decision supersedes the body: record the binding decision and update dependent slices; invoke `spec` to update the epic body.
 5. Unclear or oversized work: use `spec` to ground and split into independently verifiable outcomes. Decide the lane from the nature of the remaining change and required owner participation; line counts never determine authority.
 
-Give open issues a milestone, slices their epic's milestone, and epics no lane. Preserve required work and its lane when waiting. Trace outcome dependencies across open and closed items; record them as blocked-by links, detect cycles and missing prerequisites, and remove ordering links based solely on shared files or integration. Unattended, add links supported by the packet or dependency section; report removals instead. Check scope covers criteria, tests, locales and required docs, including project-wide allowances; record protected paths and owner actions.
+Give open issues a milestone, slices their epic's milestone, and approved epics no lane; a draft epic keeps `lane:owner` until the owner answers its open questions. Preserve required work and its lane when waiting. Trace outcome dependencies across open and closed items; record them as blocked-by links, detect cycles and missing prerequisites, and remove ordering links based solely on shared files or integration. Unattended, add links supported by the packet or dependency section; report removals instead. Check scope covers criteria, tests, locales and required docs, including project-wide allowances; record protected paths and owner actions.
 
 Delegate routine technical decisions; reserve product strategy, new costs, authority and quality-gate weakening for the owner. New interactions need owner prototype direction. Continue independent work while a reserved decision waits.
 

@@ -869,3 +869,25 @@ test('an in-place tooling update keeps the version the running code loaded', asy
   writeFileSync(join(root, 'plugin.json'), JSON.stringify({ version: '2.0.0' }));
   assert.equal(copy.afkToolingVersion(), '1.0.0');
 });
+
+test('issue edit replaces an issue body from a worktree file and confirms it', t => {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nrequire('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a.includes('PATCH')) { const body=a.find(x=>x.startsWith('body=')).slice(5); out({number:4, body: process.env.TEST_DROP ? 'stale' : body}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nout({}); process.exit(0);\n`);
+  chmodSync(gh, 0o755);
+  const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] } };
+  writeFileSync(join(f.repo, configPath), json(cfg));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  writeFileSync(join(f.repo, 'body.md'), '## Outcome\nWaiting: #14 on the payment sandbox');
+  f.env.TEST_CALLS = join(f.root, 'calls.log');
+  const edited = f.cliRun('issue', 'edit', '--number', '4', '--body-file', 'body.md');
+  assert.equal(edited.status, 0, edited.stderr);
+  assert.match(edited.stdout, /Edited #4/);
+  assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /-X PATCH repos\/acme\/app\/issues\/4 -f body=## Outcome\nWaiting: #14 on the payment sandbox/);
+  f.env.TEST_DROP = '1';
+  const dropped = f.cliRun('issue', 'edit', '--number', '4', '--body-file', 'body.md');
+  assert.notEqual(dropped.status, 0);
+  assert.match(dropped.stderr, /did not confirm #4/);
+});
