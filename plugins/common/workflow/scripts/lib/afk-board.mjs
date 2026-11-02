@@ -98,7 +98,8 @@ export function afkPrRecord(pr, cfg) {
   const approved = afkReviewerApproved(pr, cfg);
   const ownerMine = reviews.filter(review => review.author?.login?.toLowerCase() === cfg.owner?.toLowerCase()).at(-1);
   const ownerApproved = Boolean(cfg.owner && ownerMine?.state === 'APPROVED' && ownerMine.commit?.oid === head);
-  const reviewerReviewedHead = mine.some(review => review.commit?.oid === head);
+  // A dismissed review (say, after the merge base changed) no longer reviews the head, so the PR awaits a fresh verdict.
+  const reviewerReviewedHead = mine.some(review => review.commit?.oid === head && review.state !== 'DISMISSED');
   const checks = pr.statusCheckRollup || [];
   const failed = checks.some(check => ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes((check.conclusion || check.state || '').toUpperCase()));
   const broken = pr.mergeable === 'CONFLICTING' || failed;
@@ -106,11 +107,13 @@ export function afkPrRecord(pr, cfg) {
   const needsWork = broken || awaitingReview || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
   return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, needsWork };
 }
-// What a PR unit's run acts on: its head, its review decisions, its checks, its merge state, the base head and the last
-// comment from someone outside the workflow. A run's own hold, release, notes and thread replies never change it, so a run
-// that changed nothing leaves the same state behind; a run that waited on a red base or a conflict is served after the next merge.
+// What a PR unit's run acts on: its head, its review decisions (a dismissal counts), whether an approval stands at the head,
+// its checks, its merge state, the base head and the last comment from someone outside the workflow. A run's own hold,
+// release, notes and thread replies never change it, so a run that changed nothing leaves the same state behind; a run
+// that waited on a red base or a conflict is served after the next merge.
 export function afkPrState(pr, comments, cfg, base = '') {
-  const reviews = (pr.reviews || []).filter(review => afkReviewKind(review, cfg) !== 'reply').length;
+  const decisions = (pr.reviews || []).filter(review => afkReviewKind(review, cfg) !== 'reply');
+  const reviews = `${decisions.length}/${decisions.filter(review => review.state === 'DISMISSED').length}${pr.approved ? '+' : ''}`;
   return `${pr.headRefOid}:${reviews}:${pr.failed ? 'red' : 'green'}:${(pr.mergeable || 'UNKNOWN').toLowerCase()}:${base}:${afkOutsideInput(comments, cfg)}`;
 }
 function afkWorkflowLogins(cfg) { return new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase())); }

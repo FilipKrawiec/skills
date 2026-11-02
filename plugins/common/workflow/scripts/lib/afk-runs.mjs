@@ -470,11 +470,21 @@ function afkSubIssues(cfg, number) {
     return Array.isArray(pages) ? pages.flat().map(sub => sub?.number).filter(Number.isSafeInteger) : [];
   } catch { return []; }
 }
-export function afkEndStatus(named, blocked) { return named ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO'; }
-// A held issue the run split into sub-issues is their epic and stays In progress; each sub-issue a PR names goes to Review.
+// A run stays on its issue until the PR merges, so one that ends with the PR still open stopped short of delivery: the
+// card goes to Blocked with a note on the PR's state, not to Review, where nothing serves it.
+export function afkEndStatus(named, blocked) { return named || blocked ? 'BLOCKED' : 'TODO'; }
+// A held issue the run split into sub-issues is their epic and stays In progress; each sub-issue an open PR names goes to Blocked.
 export function afkEndCards(number, subIssues, named, blocked) {
   if (!subIssues.length) return [[number, afkEndStatus(named.has(number), blocked)]];
-  return [[number, 'PROGRESS'], ...subIssues.filter(sub => named.has(sub)).map(sub => [sub, 'REVIEW'])];
+  return [[number, 'PROGRESS'], ...subIssues.filter(sub => named.has(sub)).map(sub => [sub, 'BLOCKED'])];
+}
+// The Blocked note for an issue whose PR (an `afkPrRecord`) was still open when its run ended.
+export function afkOpenPrNote(id, pr, base) {
+  const dismissed = (pr.reviews || []).some(review => review.state === 'DISMISSED' && review.commit?.oid === pr.headRefOid);
+  const review = pr.approved ? 'approved at this head' : pr.awaitingReview ? `${dismissed ? 'approval dismissed; ' : ''}awaiting the Reviewer at this head` : 'fixes requested at this head';
+  const pending = (pr.statusCheckRollup || []).some(check => !(check.conclusion || check.state) || ['PENDING', 'EXPECTED', 'QUEUED', 'IN_PROGRESS'].includes((check.conclusion || check.state).toUpperCase()));
+  const checks = pr.failed ? 'red' : pending ? 'pending' : 'green';
+  return `**Blocked:** run ${id} ended with PR #${pr.number} open (head \`${pr.headRefOid}\`); review: ${review}; checks: ${checks}; merge state: ${(pr.mergeable || 'UNKNOWN').toLowerCase()}; base head \`${base || 'unknown'}\`.`;
 }
 export function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
   afkActor(cfg);
@@ -484,7 +494,9 @@ export function afkEndRun(cfg, common, id, note = null, why = null, spend = fals
     // Read the issue units' end states while this run's holds still stand, before the release below.
     const entries = afkSpentEntries(dropped, spend, () => afkPlan(cfg, afkLive(cfg), afkThreadReader(cfg), id).units);
     const implemented = dropped.filter(held => held.paths !== null && !held.refine && !held.review && !held.pr);
-    const named = new Set(implemented.length ? afkPrData(cfg).flatMap(pr => afkPrRecord(pr, cfg).issues) : []);
+    const open = implemented.length ? afkPrData(cfg).map(pr => afkPrRecord(pr, cfg)) : [];
+    const named = new Set(open.flatMap(pr => pr.issues));
+    let base = ''; try { base = git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { /* the note says unknown */ }
     for (const held of dropped) {
       const kind = held.paths === null ? 'epic' : 'issue';
       run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${held.comment}`, '-f', `body=${afkMarker(`${kind}-released`, id)}${note ? `\n${note}` : ''}`]);
@@ -493,7 +505,11 @@ export function afkEndRun(cfg, common, id, note = null, why = null, spend = fals
       const subIssues = afkSubIssues(cfg, held.number);
       const blocked = why !== null && !subIssues.length && !named.has(held.number) && afkStillReady(cfg, held.number);
       if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
-      for (const [number, status] of afkEndCards(held.number, subIssues, named, blocked)) afkStatus(cfg, number, status, true);
+      for (const [number, status] of afkEndCards(held.number, subIssues, named, blocked)) {
+        const pr = named.has(number) && open.find(record => record.issues.includes(number));
+        if (pr) run('gh', ['api', `repos/${cfg.repo}/issues/${number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n${afkOpenPrNote(id, pr, base)}`]);
+        afkStatus(cfg, number, status, true);
+      }
     }
     afkWriteLedger(path, ledger);
     // Only an agent that exited cleanly spends its unit's state; a crash, a failed start or a manual end leaves it offered.

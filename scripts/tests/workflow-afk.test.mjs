@@ -36,6 +36,7 @@ import {
   afkEndCards,
   afkEndStatus,
   afkLive,
+  afkOpenPrNote,
   afkLoadEnvironment,
   afkOneShotLive,
   afkOtherHolds,
@@ -333,7 +334,7 @@ test('a PR a finished run left unchanged gets no new run until its head, reviews
   assert.deepEqual(offered(pr({ reviews: [...pr().reviews, { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc round=2 verdict=fixes -->' }] })), [9], 'a marked Reviewer verdict is');
   assert.deepEqual(plan(pr(), [{ id: 7, user: { login: 'owner' }, body: 'Please also cover X' }]).units.map(unit => unit.issue), [9], 'an owner comment');
   const fresh = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr()], base: 'base1' }).units[0];
-  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:1:green:mergeable:base1:'], 'the unit carries the state its run will spend');
+  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:1/0:green:mergeable:base1:'], 'the unit carries the state its run will spend');
 });
 
 test('a red PR unit takes its scope from its packet, else its changed files', () => {
@@ -884,8 +885,35 @@ test('a sliced epic comes back for its close check once its slices close, and a 
   assert.deepEqual(commented.unchanged, [30], 'the run\'s own wait comment is not new input');
 });
 
-test('an implementation run ends in Review with a PR, Blocked without one, else Todo', () => {
-  assert.deepEqual([afkEndStatus(true, false), afkEndStatus(false, true), afkEndStatus(false, false)], ['REVIEW', 'BLOCKED', 'TODO']);
+test('an implementation run that ends with its PR open goes to Blocked, as does one without a PR; else Todo', () => {
+  assert.deepEqual([afkEndStatus(true, false), afkEndStatus(false, true), afkEndStatus(false, false)], ['BLOCKED', 'BLOCKED', 'TODO']);
+  const pr = extra => afkPrRecord({ number: 1095, title: 'Fix', body: 'Closes #8', headRefOid: 'head726', labels: [], statusCheckRollup: [], mergeable: 'MERGEABLE', reviews: [], ...extra }, cfg);
+  const note = afkOpenPrNote('afk-1', pr(), 'base123');
+  assert.match(note, /^\*\*Blocked:\*\* run afk-1 ended with PR #1095 open/);
+  assert.match(note, /head `head726`/);
+  assert.match(note, /review: awaiting the Reviewer at this head/);
+  assert.match(note, /checks: green/);
+  assert.match(note, /merge state: mergeable/);
+  assert.match(note, /base head `base123`/);
+  const approval = { author: { login: 'reviewer' }, state: 'APPROVED', commit: { oid: 'head726' }, body: '<!-- agent-review sha=head726 verdict=ready -->' };
+  assert.match(afkOpenPrNote('afk-1', pr({ reviews: [approval] }), 'b'), /review: approved at this head/);
+  assert.match(afkOpenPrNote('afk-1', pr({ reviews: [{ ...approval, state: 'DISMISSED' }] }), 'b'), /review: approval dismissed; awaiting the Reviewer at this head/);
+  assert.match(afkOpenPrNote('afk-1', pr({ statusCheckRollup: [{ status: 'IN_PROGRESS', conclusion: '' }], mergeable: 'CONFLICTING' }), 'b'), /checks: pending.*merge state: conflicting/);
+  assert.match(afkOpenPrNote('afk-1', pr({ statusCheckRollup: [{ conclusion: 'FAILURE' }] }), 'b'), /checks: red/);
+});
+
+test('a dismissed approval is not reported as Unchanged: the PR is served for a fresh review', () => {
+  const approval = { author: { login: 'reviewer' }, state: 'APPROVED', commit: { oid: 'head726' }, body: '<!-- agent-review sha=head726 verdict=ready -->' };
+  const pr = reviews => ({ number: 1095, title: 'Fix', body: 'No linked issue.', headRefOid: 'head726', labels: [], statusCheckRollup: [], mergeable: 'MERGEABLE', files: [{ path: 'src/a.js' }], reviews });
+  const dismissed = pr([{ ...approval, state: 'DISMISSED' }]);
+  const record = afkPrRecord(dismissed, cfg);
+  assert.equal(record.approved, false);
+  assert.equal(record.awaitingReview, true, 'a dismissed review does not count as reviewing the head');
+  const spent = { 1095: afkPrState(afkPrRecord(pr([approval]), cfg), [], cfg, 'base1') };
+  const plan = afkPlan(cfg, [], () => [], 'new-run', { issues: [], prs: [dismissed], spent, base: 'base1' });
+  assert.deepEqual(plan.unchanged, []);
+  assert.deepEqual(plan.units.map(unit => [unit.pr, Boolean(unit.review)]), [[1095, true]]);
+  assert.notEqual(afkPrState(afkPrRecord(pr([approval]), cfg), [], cfg, 'b'), afkPrState(record, [], cfg, 'b'), 'a dismissal changes the state key though the review count does not');
 });
 
 test('a run that splits its held issue builds the first sub-issue while its hold keeps the others and their PRs from other runs', () => {
@@ -901,9 +929,9 @@ test('a run that splits its held issue builds the first sub-issue while its hold
   const grand = { ...parent, number: 39, subIssuesSummary: { total: 1, completed: 0 } };
   const nested = afkPlan(cfg, ['elder'], number => (number === 39 ? [{ id: 2, body: '<!-- afk-issue-hold session=elder -->' }] : []), 'new-run', { issues: [grand, { ...parent, ancestors: [39] }, { ...third, ancestors: [40, 39] }], prs: [] }).units.map(unit => unit.issue);
   assert.deepEqual(nested, [43], 'a hold on a grandparent covers no grandchild');
-  assert.deepEqual(afkEndCards(40, [41, 42], new Set([41]), false), [[40, 'PROGRESS'], [41, 'REVIEW']], 'the parent epic stays In progress and the built sub-issue goes to Review');
+  assert.deepEqual(afkEndCards(40, [41, 42], new Set([41]), false), [[40, 'PROGRESS'], [41, 'BLOCKED']], 'the parent epic stays In progress and the built sub-issue, its PR still open, goes to Blocked');
   assert.deepEqual(afkEndCards(40, [41, 42], new Set(), true), [[40, 'PROGRESS']], 'without a PR the sub-issues stay Todo for the next run');
-  assert.deepEqual(afkEndCards(7, [], new Set([7]), false), [[7, 'REVIEW']], 'an issue that was not split ends as before');
+  assert.deepEqual(afkEndCards(7, [], new Set([7]), false), [[7, 'BLOCKED']], 'an issue that was not split goes to Blocked while its PR is open');
 });
 
 test('AFK eligibility records post as the configured Reviewer, not through the credential-stripping CLI', () => {
