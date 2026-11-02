@@ -9,10 +9,10 @@ import { blockedGitSubcommand } from '../../plugins/common/workflow/scripts/git-
 const guard = resolve(new URL('../../plugins/common/workflow/scripts/git-guard.mjs', import.meta.url).pathname);
 
 test('git guard finds plain commits and pushes in compound commands', () => {
-  for (const command of ['git commit -m x', 'git -C repo -c user.name=x commit -am y', 'cd a && git push -u origin b', 'GIT_AUTHOR_NAME=x git commit', 'env git push', '/usr/bin/git push --force-with-lease', 'git add . ; git commit -q -F - <<EOF']) {
+  for (const command of ['git commit -m x', 'git -C repo -c user.name=x commit -am y', 'cd a && git push -u origin b', 'GIT_AUTHOR_NAME=x git commit', 'env git push', '/usr/bin/git push --force-with-lease', 'git add . ; git commit -q -F - <<EOF', 'git merge origin/main', 'git merge --continue']) {
     assert.ok(blockedGitSubcommand(command), command);
   }
-  for (const command of ['git status', 'git log --grep commit', 'git merge origin/main', 'node workflow.mjs commit --message x -- a', 'echo git push', 'gh pr create']) {
+  for (const command of ['git status', 'git log --grep commit', 'git merge --no-commit origin/main', 'git merge --abort', 'node workflow.mjs commit --message x -- a', 'echo git push', 'gh pr create']) {
     assert.equal(blockedGitSubcommand(command), null, command);
   }
 });
@@ -32,4 +32,6 @@ test('git guard blocks plain commits only in repositories with workflow config',
   assert.match(blocked.stderr, /workflow\.mjs commit/);
   assert.equal(runGuard(join(root, 'governed'), 'git status').status, 0);
   assert.equal(runGuard(join(root, 'plain'), 'git push').status, 0);
+  assert.match(runGuard(join(root, 'governed'), 'git merge origin/main').stderr, /merge --no-commit/);
+  assert.equal(spawnSync(process.execPath, [guard], { input: 'null', encoding: 'utf8' }).status, 0);
 });

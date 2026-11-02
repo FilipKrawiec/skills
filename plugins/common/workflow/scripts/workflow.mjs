@@ -231,11 +231,13 @@ function commit(args) {
     afkActor(cfg);
   }
   const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
+  // A merge commit records the whole merged index; the listed paths are the resolved conflicts.
+  const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: root, env }).status === 0;
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
-  if (staged.error || staged.status !== 0) throw new Error('Existing staged changes or an unreadable index; preserve them and commit separately');
+  if (!merging && (staged.error || staged.status !== 0)) throw new Error('Existing staged changes or an unreadable index; preserve them and commit separately');
   const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (add.error || add.status !== 0) throw new Error('Could not stage selected paths; inspect repository status');
-  const result = spawnSync('git', ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
+  const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error('Commit failed; selected paths remain staged for inspection');
   console.log(JSON.stringify({ result: 'committed', head: git('rev-parse', 'HEAD') }));
 }
