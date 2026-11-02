@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { cpSync, readFileSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { codeownersRolesFrom } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { codeownersRolesFrom, gitFailureLine } from '../../plugins/common/workflow/scripts/workflow.mjs';
 import { cli, configPath, json, config, run, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, assertNoPush } from './support/workflow-cli-fixture.mjs';
 
 test('CODEOWNERS roles reject an organization slug when several path owners exist', () => {
@@ -161,6 +161,11 @@ test('a failed Git command names its exit status and stderr cause', t => {
   const result = f.cliRun('issue', 'close', '--number', '1');
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /git ls-tree failed \(exit 128\): fatal: Not a valid object name refs\/remotes\/origin\/missing/);
+});
+
+test('a failed command cause keeps the last stderr line, redacted and capped', () => {
+  assert.equal(gitFailureLine('hint: first\nfatal: https://x:ghp_abc123@github.com/a/b token github_pat_Z9\n\n', { last: true }), 'fatal: https://[redacted]@github.com/a/b token [redacted]');
+  assert.equal(gitFailureLine(`fatal: ${'x'.repeat(300)}`, { last: true, max: 200 }).length, 200);
 });
 
 test('failed Git push never reports success or exposes its token', t => {
