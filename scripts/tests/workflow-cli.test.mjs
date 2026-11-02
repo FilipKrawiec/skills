@@ -53,7 +53,7 @@ if (args[0] === 'auth' && args[1] === 'token') {
   }
 } else if (args[0] === 'pr' && args[1] === 'view') {
   out({ url: 'https://github.com/acme/app/pull/1', baseRefOid: process.env.BASE_SHA, headRefOid: process.env.HEAD_SHA, files: [], reviews: [], reviewDecision: 'REVIEW_REQUIRED', statusCheckRollup: [] });
-} else if (args[0] === 'pr' && args[1] === 'list') out(process.env.AUTO_MERGE ? [{ number: 4, autoMergeRequest: { enabledAt: 'now' } }] : []);
+} else if (args[0] === 'pr' && args[1] === 'list') out(process.env.AUTO_MERGE ? [{ number: 4, autoMergeRequest: { enabledAt: 'now' } }] : JSON.parse(process.env.OPEN_PRS || '[]').filter(pr => pr.headRefName === args[args.indexOf('--head') + 1]));
 else if (args[0] === 'issue' && args[1] === 'view') out({ url: 'https://github.com/acme/app/issues/1', body: 'Acceptance', comments: [{ url: 'https://example.test/1', body: 'Decision: reuse prior policy' }] });
 else process.exit(1);
 `;
@@ -131,6 +131,7 @@ function fixture(t) {
     GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
     GIT_CONFIG_NOSYSTEM: '1',
   };
+  delete env.WORKFLOW_RUN_ID; delete env.WORKFLOW_ISSUE_NUMBER;
   env.REMOTE_BASE_SHA = git('rev-parse', 'HEAD').stdout.trim();
   const cliRun = (...args) => run(process.execPath, [cli, ...args], { cwd: linked, env });
   const linkedGit = (...args) => run(realGit, args, { cwd: linked });
@@ -459,6 +460,50 @@ test('AFK push rejects raw commits outside the issue scope before authenticating
   const result = f.cliRun('push');
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Push paths exceed the assigned AFK scope/);
+  assertNoPush(f);
+});
+
+test('AFK push --to updates the held PR from a differently named branch and refuses other refs', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 259, paths: ['docs/'] }] }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '259';
+  f.env.OPEN_PRS = JSON.stringify([
+    { number: 259, headRefName: 'feature/held', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [] },
+    { number: 300, headRefName: 'feature/other', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [{ number: 12 }] },
+    { number: 301, headRefName: 'feature/fork', isCrossRepository: true, autoMergeRequest: null, closingIssuesReferences: [{ number: 259 }] },
+  ]);
+  for (const ref of ['feature/other', 'feature/fork', 'feature/absent', 'main']) {
+    const refused = f.cliRun('push', '--to', ref);
+    assert.notEqual(refused.status, 0, ref);
+    assert.match(refused.stderr, ref === 'main' ? /default branch/ : /not the head of the held PR/);
+    assertNoPush(f);
+  }
+  const head = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  const result = f.cliRun('push', '--to', 'feature/held');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).branch, 'feature/held');
+  assert.ok(pushRecord(f).args.includes(`${head}:refs/heads/feature/held`));
+});
+
+test('AFK push --to accepts the PR that closes the held issue', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 261, paths: ['docs/'] }] }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.OPEN_PRS = JSON.stringify([{ number: 262, headRefName: 'fix/held', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [{ number: 261 }] }]);
+  const result = f.cliRun('push', '--to', 'fix/held');
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(pushRecord(f).args.some(arg => arg.endsWith(':refs/heads/fix/held')));
+});
+
+test('push --to outside an AFK run is refused', t => {
+  const f = fixture(t);
+  f.env.OPEN_PRS = JSON.stringify([{ number: 259, headRefName: 'feature/held', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [] }]);
+  const result = f.cliRun('push', '--to', 'feature/held');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /requires an AFK run/);
   assertNoPush(f);
 });
 
