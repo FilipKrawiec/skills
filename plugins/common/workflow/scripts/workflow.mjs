@@ -241,11 +241,6 @@ function commit(args) {
     afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
     afkActor(cfg);
   }
-  if (merging) {
-    const unmerged = spawnSync('git', ['diff', '--name-only', '--diff-filter=U', '-z', '--'], { cwd: root, env: cleanEnvironment(), encoding: 'utf8' });
-    const conflicted = unmerged.status === 0 ? [...new Set(unmerged.stdout.split('\0').filter(Boolean))].filter(path => !paths.includes(path)) : [];
-    if (conflicted.length) throw new Error(`Unmerged paths remain: ${conflicted.join(', ')}; pass each resolved path after --`);
-  }
   const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
   // A merge commit records the whole merged index; the listed paths are the resolved conflicts.
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
@@ -253,6 +248,12 @@ function commit(args) {
   if (paths.length) {
     const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });
     if (add.error || add.status !== 0) throw new Error('Could not stage selected paths; inspect repository status');
+  }
+  // Conflicts the listed paths did not stage stay unmerged; git would refuse them with a message this command hides.
+  if (merging) {
+    const unmerged = spawnSync('git', ['diff', '--name-only', '--diff-filter=U', '-z', '--'], { cwd: root, env, encoding: 'utf8' });
+    const conflicted = unmerged.status === 0 ? [...new Set(unmerged.stdout.split('\0').filter(Boolean))] : [];
+    if (conflicted.length) throw new Error(`Unmerged paths remain: ${conflicted.join(', ')}; pass each resolved path after --`);
   }
   // Content taken unchanged from either parent is already base's or the branch's; only content new to the merge needs scope.
   if (merging && scope) {

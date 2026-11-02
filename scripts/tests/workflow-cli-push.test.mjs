@@ -238,7 +238,10 @@ test('commit names unmerged paths a merge commit leaves out', t => {
   const result = f.cliRun('commit', '--message', 'chore: merge other');
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Unmerged paths remain: song\.txt; pass each resolved path after --/);
-  assert.equal(f.cliRun('commit', '--message', 'chore: merge other', '--', 'song.txt').status, 0);
+  const resolved = f.cliRun('commit', '--message', 'chore: merge other', '--', './song.txt');
+  assert.equal(resolved.status, 0, resolved.stderr);
+  assert.equal(f.linkedGit('show', '-s', '--format=%p', 'HEAD').stdout.trim().split(' ').length, 2);
+  assert.notEqual(g('rev-parse', '-q', '--verify', 'MERGE_HEAD').status, 0);
 });
 
 test('a commit failure reports git\'s first line without credentials', () => {
