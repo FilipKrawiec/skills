@@ -227,9 +227,10 @@ function commit(args) {
   if (!merging && !paths.length) throw new Error('Usage: commit --message MESSAGE [-- PATH...]; paths are optional only while a merge is in progress');
   const runId = process.env.WORKFLOW_RUN_ID;
   let scope = null;
+  let hold = null;
   if (runId) {
-    const hold = afkBoundHold(root, 'commit');
-    if (Array.isArray(hold.paths)) scope = hold.paths;
+    hold = afkBoundHold(root, 'commit');
+    if (Array.isArray(hold.paths)) scope = merging ? hold.paths : afkHeldScope(hold, paths);
     if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error('Commit paths exceed the assigned AFK scope');
     const cfg = config().lanes;
     afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
@@ -252,7 +253,7 @@ function commit(args) {
     };
     const fromBase = new Set(changed('MERGE_HEAD'));
     const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
-    if (outside.length) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
+    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
   }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error('Commit failed; selected paths remain staged for inspection');
@@ -1123,9 +1124,20 @@ function afkAssertPushScope(root, baseRef) {
   if (!runId) return;
   const hold = afkBoundHold(root, 'push');
   if (Array.isArray(hold.paths)) {
-    const base = git('rev-parse', baseRef);
-    if (!afkPathsWithinScope(afkChangedPaths(root, base), hold.paths)) throw new Error('Push paths exceed the assigned AFK scope');
+    const changed = afkChangedPaths(root, git('rev-parse', baseRef));
+    if (!afkPathsWithinScope(changed, afkHeldScope(hold, changed))) throw new Error('Push paths exceed the assigned AFK scope');
   }
+}
+// The hold copies the scope packet at start; a packet corrected on the issue since then is rechecked before refusing.
+function afkHeldScope(hold, paths) {
+  if (!Array.isArray(hold.paths) || afkPathsWithinScope(paths, hold.paths) || hold.review || hold.check || hold.stage) return hold.paths;
+  try {
+    const cfg = { ...workflowDefaults.afk, ...config().lanes };
+    afkLoadEnvironment(cfg);
+    const current = afkPathsFromIssueBody(afkGh(['api', `repos/${cfg.repo}/issues/${hold.number}`]).body || '');
+    if (Array.isArray(current) && afkPathsWithinScope(paths, current)) return current;
+  } catch { /* An unreadable issue keeps the scope recorded in the hold. */ }
+  return hold.paths;
 }
 function afkBoundHold(root, action) {
   const runId = process.env.WORKFLOW_RUN_ID;

@@ -36,6 +36,7 @@ if (args[0] === 'auth' && args[1] === 'token') {
   else if (args.includes('repos/acme/app')) out({ default_branch: 'main', owner: { type: process.env.FAKE_OWNER_KIND || 'Organization', login: 'acme' } });
   else if (args.includes('repos/acme/app/branches/main')) out({ commit: { sha: process.env.REMOTE_BASE_SHA } });
   else if (args.some(arg => arg.startsWith('repos/acme/app/issues/') && /^\\d+$/.test(arg.split('/').at(-1))) && args.includes('state=open')) { fs.writeFileSync(process.env.ISSUE_STATE_RECORD, JSON.stringify(args)); out({ state: 'open' }); }
+  else if (process.env.FAKE_ISSUE_BODY && args.some(arg => /^repos\\/acme\\/app\\/issues\\/\\d+$/.test(arg))) out({ body: process.env.FAKE_ISSUE_BODY });
   else {
     const actor = process.env.FAKE_ACTOR || 'builder';
     process.stdout.write(args.includes('--jq') ? actor + '\\n' : JSON.stringify({ login: actor, id: 4242 }) + '\\n');
