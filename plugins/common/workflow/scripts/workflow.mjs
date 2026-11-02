@@ -227,9 +227,10 @@ function commit(args) {
   if (!merging && !paths.length) throw new Error('Usage: commit --message MESSAGE [-- PATH...]; paths are optional only while a merge is in progress');
   const runId = process.env.WORKFLOW_RUN_ID;
   let scope = null;
+  let hold = null;
   if (runId) {
-    const hold = afkBoundHold(root, 'commit');
-    if (Array.isArray(hold.paths)) scope = hold.paths;
+    hold = afkBoundHold(root, 'commit');
+    if (Array.isArray(hold.paths)) scope = merging ? hold.paths : afkHeldScope(hold, paths);
     if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error('Commit paths exceed the assigned AFK scope');
     const cfg = config().lanes;
     afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
@@ -252,7 +253,7 @@ function commit(args) {
     };
     const fromBase = new Set(changed('MERGE_HEAD'));
     const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
-    if (outside.length) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
+    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
   }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error('Commit failed; selected paths remain staged for inspection');
@@ -1135,9 +1136,20 @@ function afkAssertPushScope(root, baseRef) {
   if (!runId) return;
   const hold = afkBoundHold(root, 'push');
   if (Array.isArray(hold.paths)) {
-    const base = git('rev-parse', baseRef);
-    if (!afkPathsWithinScope(afkChangedPaths(root, base), hold.paths)) throw new Error('Push paths exceed the assigned AFK scope');
+    const changed = afkChangedPaths(root, git('rev-parse', baseRef));
+    if (!afkPathsWithinScope(changed, afkHeldScope(hold, changed))) throw new Error('Push paths exceed the assigned AFK scope');
   }
+}
+// The hold copies the scope packet at start; a packet corrected on the issue since then is rechecked before refusing.
+function afkHeldScope(hold, paths) {
+  if (!Array.isArray(hold.paths) || afkPathsWithinScope(paths, hold.paths) || hold.review || hold.check || hold.stage) return hold.paths;
+  try {
+    const cfg = { ...workflowDefaults.afk, ...config().lanes };
+    afkLoadEnvironment(cfg);
+    const current = afkPathsFromIssueBody(afkGh(['api', `repos/${cfg.repo}/issues/${hold.number}`]).body || '');
+    if (Array.isArray(current) && afkPathsWithinScope(paths, current)) return current;
+  } catch { /* An unreadable issue keeps the scope recorded in the hold. */ }
+  return hold.paths;
 }
 function afkBoundHold(root, action) {
   const runId = process.env.WORKFLOW_RUN_ID;
@@ -1305,10 +1317,21 @@ function afkStillReady(cfg, number) {
   const issue = afkGh(['api', `repos/${cfg.repo}/issues/${number}`]);
   return issue.state === 'open' && (issue.labels || []).some(label => label.name === 'lane:afk');
 }
-export function afkSlices(summary) { return `${summary?.completed ?? 0}/${summary?.total ?? 0}`; }
-// A stage run that left neither a verdict nor a wait after its hold would be served again on every poll.
-export function afkStageUnrecorded(comments, holdComment) {
-  return !comments.some(comment => Number(comment.id) > Number(holdComment) && /<!-- (?:epic-check|afk-wait)\b/.test(comment.body || ''));
+// A missing summary is no count: `0/0` would name a slicing stage the epic is not in.
+export function afkSlices(summary) { return summary ? `${summary.completed ?? 0}/${summary.total ?? 0}` : null; }
+export function afkStageMarker(stage, slices, id) {
+  return `<!-- epic-check stage=${stage} slices=${slices} verdict=none session=${id} -->\nRun ${id} ended without a verdict; this epic waits for an edit or a new comment.`;
+}
+// A stage run that left neither a wait nor a verdict `afkPlan` matches (its stage and current count) would be served again on every poll.
+export function afkStageUnrecorded(comments, holdComment, stage, slices) {
+  const verdict = new RegExp(`<!-- epic-check stage=${stage} slices=${slices}\\b`);
+  return !comments.some(comment => Number(comment.id) > Number(holdComment) && (verdict.test(comment.body || '') || /<!-- afk-wait\b/.test(comment.body || '')));
+}
+function afkEpicSlices(cfg, number, rest) {
+  if (rest) return afkSlices(rest);
+  const [owner, name] = cfg.repo.split('/');
+  const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){subIssuesSummary{total completed}}}}';
+  return afkSlices(afkGh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]).data?.repository?.issue?.subIssuesSummary);
 }
 // A closed issue lands in Done whatever is passed; an epic left open after its slicing or delivery check stays In progress.
 export function afkEndStatus(held, named, blocked) {
@@ -1328,8 +1351,10 @@ function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
       const blocked = kind === 'issue' && !held.check && !held.review && !held.stage && why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
       if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
       const epicNow = held.stage ? afkGh(['api', `repos/${cfg.repo}/issues/${held.number}`]) : null;
-      if (held.stage && epicNow.state === 'open' && afkStageUnrecorded(afkComments(cfg, held.number), held.comment)) {
-        run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=<!-- epic-check stage=${held.stage} slices=${afkSlices(epicNow.sub_issues_summary)} verdict=none session=${id} -->\nRun ${id} ended without a verdict; this epic waits for an edit or a new comment.`]);
+      const slices = held.stage && epicNow.state === 'open' ? afkEpicSlices(cfg, held.number, epicNow.sub_issues_summary) : null;
+      if (held.stage && epicNow.state === 'open' && !slices) console.log(`Skipped: epic #${held.number} stage marker, since GitHub returned no sub-issue count`);
+      if (slices && afkStageUnrecorded(afkComments(cfg, held.number), held.comment, held.stage, slices)) {
+        run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkStageMarker(held.stage, slices, id)}`]);
       }
       if ((kind === 'issue' && !held.review) || held.stage) afkStatus(cfg, held.number, afkEndStatus(held, named.has(held.number), blocked), true);
     }
