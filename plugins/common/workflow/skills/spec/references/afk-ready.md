@@ -23,7 +23,7 @@ New readiness requires every check or a recorded owner waiver; independent revie
 - `dependencies` lists issue or PR numbers (`12` or `"#12"`); `afk` skips an issue that depends on an open PR until it merges, and `afk check` reports it as blocked. A PR closed unmerged no longer blocks; drop or replace that dependency.
 - `afk` also holds an issue whose `paths` cover a file changed by an open PR that does not deliver it, and `afk check` names it `Held: #N overlaps open PR #M` until that PR merges or closes.
 - A trailing `/` allows a subtree. Include package and lock files when adding a needed library.
-- `afk` claims only issues with packets. Refine missing packets; owner participation is for reserved effects.
+- `afk` implements only issues with packets; it serves a packet-less `lane:afk` Todo issue as a refine unit, even while blocked. Owner participation is for reserved effects.
 
 ## Triage
 
