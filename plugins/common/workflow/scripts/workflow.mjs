@@ -1822,8 +1822,19 @@ async function execute(command, args) {
   else if (command === 'safety') { const { lanes } = config(); process.exitCode = safetyCommand(args, lanes); }
   else throw new Error('Invalid command; use --help');
 }
-export function needsAbsoluteInvocation(argv1, self) { return argv1 !== self; }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && needsAbsoluteInvocation(process.argv[1], fileURLToPath(import.meta.url))) {
+export function needsAbsoluteInvocation(command, self) { return !command.includes(self); }
+function ownCommandLine() {
+  // Node makes process.argv[1] absolute, so only ps shows how this process was invoked.
+  const result = spawnSync('ps', ['-o', 'command=', '-p', String(process.pid)], { encoding: 'utf8' });
+  return result.error || result.status !== 0 ? null : result.stdout.trim();
+}
+const invokedLocked = () => {
+  const [command, ...args] = process.argv.slice(2);
+  if (!requiredLocks(command, args).length) return false;
+  const line = ownCommandLine();
+  return line !== null && needsAbsoluteInvocation(line, fileURLToPath(import.meta.url));
+};
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && invokedLocked()) {
   // Lock inheritance matches the owner's command line by absolute path.
   const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
   process.exit(result.error ? 1 : result.status ?? 1);

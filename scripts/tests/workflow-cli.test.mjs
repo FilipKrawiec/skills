@@ -4,7 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync, openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afkCheckQuiet, afkToolingVersion, codeownersRolesFrom } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
@@ -87,8 +87,9 @@ function run(program, args, options = {}) {
   return spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, ...options });
 }
 function runCliAsync(f, ...args) {
+  const script = typeof args.at(-1) === 'object' ? args.pop().script : cli;
   return new Promise(resolve => {
-    const child = spawn(process.execPath, [cli, ...args], { cwd: f.repo, env: f.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const child = spawn(process.execPath, [script, ...args], { cwd: f.repo, env: f.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     let stdout = ''; let stderr = ''; let timedOut = false;
     child.stdout.setEncoding('utf8').on('data', value => { stdout += value; });
     child.stderr.setEncoding('utf8').on('data', value => { stderr += value; });
@@ -352,6 +353,29 @@ test('issue create reuses an open exact-title issue with --unique and creates ot
   assert.notEqual(leaked.status, 0);
   assert.match(leaked.stderr, /acme\/skills is public and acme\/app is private/);
   assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/skills\/issues /);
+});
+
+test('a locked issue command run by a relative path does not wait on its own lock', async t => {
+  if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='issue' && a[1]==='list') { out([{number:7,title:'Owner improvements'}]); process.exit(0); }\nif(a.some(x=>x.endsWith('/comments'))) { out({id:12}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('{}');\n`);
+  chmodSync(gh, 0o755);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { toolingRepository: 'https://github.com/acme/skills.git' } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  writeFileSync(join(f.repo, 'body.md'), 'Run evidence');
+  // A copy inside the worktree keeps the relative path from containing the absolute one.
+  cpSync(dirname(cli), join(f.repo, 'tools'), { recursive: true });
+  const script = join('tools', basename(cli));
+  for (const args of [['issue', 'comment', '--number', '7', '--body-file', 'body.md'], ['issue', 'create', '--title', 'Owner improvements', '--body-file', 'body.md', '--repo', 'acme/skills', '--unique']]) {
+    const began = Date.now();
+    const result = await runCliAsync(f, ...args, { script });
+    assert.equal(result.timedOut, false, `${args[1]} waited on its own lock`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(Date.now() - began < 15000);
+  }
 });
 
 test('AFK watcher hands an explore pass to the agent without a second afk start', t => {
