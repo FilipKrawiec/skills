@@ -263,7 +263,7 @@ test('AFK watcher records the run usage on the released hold', t => {
 test('issue create reuses an open exact-title issue with --unique and creates otherwise', t => {
   const f = fixture(t);
   const gh = join(f.root, 'bin', 'gh');
-  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nrequire('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='issue' && a[1]==='list') { out(process.env.TEST_EXISTING ? [{number:7,title:'Owner improvements'}] : []); process.exit(0); }\nif(a.includes('repos/acme/skills/issues')) { out({number:31}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('{}');\n`);
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nrequire('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='issue' && a[1]==='list') { if(a.includes('--search')) process.exit(9); const fs=require('fs'), n=Number(fs.existsSync(process.env.TEST_LISTS)?fs.readFileSync(process.env.TEST_LISTS,'utf8'):0)+1; fs.writeFileSync(process.env.TEST_LISTS,String(n)); out(process.env.TEST_EXISTING ? [{number:7,title:'Owner improvements'}] : process.env.TEST_RACE && n>1 ? [{number:5,title:'Owner improvements'},{number:31,title:'Owner improvements'}] : []); process.exit(0); }\nif(a.includes('repos/acme/app') && process.env.TEST_PRIVATE) { out({private:true}); process.exit(0); }\nif(a.includes('repos/acme/skills/issues')) { out({number:31}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('{}');\n`);
   chmodSync(gh, 0o755);
   const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { toolingRepository: 'https://github.com/acme/skills.git' } };
   writeFileSync(join(f.repo, configPath), json(cfg));
@@ -272,6 +272,7 @@ test('issue create reuses an open exact-title issue with --unique and creates ot
   writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
   writeFileSync(join(f.repo, 'body.md'), 'Run evidence');
   f.env.TEST_CALLS = join(f.root, 'calls.log');
+  f.env.TEST_LISTS = join(f.root, 'lists.count');
   f.env.TEST_EXISTING = '1';
   const reused = f.cliRun('issue', 'create', '--title', 'Owner improvements', '--body-file', 'body.md', '--labels', 'lane:owner', '--repo', 'acme/skills', '--unique');
   assert.equal(reused.status, 0, reused.stderr);
@@ -285,6 +286,19 @@ test('issue create reuses an open exact-title issue with --unique and creates ot
   const denied = f.cliRun('issue', 'create', '--title', 'x', '--body-file', 'body.md', '--repo', 'other/repo');
   assert.notEqual(denied.status, 0);
   assert.match(denied.stderr, /workflow tooling repository/);
+  rmSync(f.env.TEST_LISTS, { force: true });
+  f.env.TEST_RACE = '1';
+  const raced = f.cliRun('issue', 'create', '--title', 'Owner improvements', '--body-file', 'body.md', '--repo', 'acme/skills', '--unique');
+  assert.equal(raced.status, 0, raced.stderr);
+  assert.match(raced.stdout, /Exists: #5/);
+  assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /-X PATCH repos\/acme\/skills\/issues\/31 -f state=closed/);
+  delete f.env.TEST_RACE;
+  writeFileSync(f.env.TEST_CALLS, '');
+  f.env.TEST_PRIVATE = '1';
+  const leaked = f.cliRun('issue', 'create', '--title', 'y', '--body-file', 'body.md', '--repo', 'acme/skills');
+  assert.notEqual(leaked.status, 0);
+  assert.match(leaked.stderr, /acme\/skills is public and acme\/app is private/);
+  assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/skills\/issues /);
 });
 
 test('AFK watcher hands an explore pass to the agent without a second afk start', t => {

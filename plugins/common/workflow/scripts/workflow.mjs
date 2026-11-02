@@ -887,6 +887,14 @@ export function issueTargetRepo(cfg, requested) {
   if (requested === tooling) return tooling;
   throw new Error(`Issue writes reach only ${cfg.repo} or the workflow tooling repository ${tooling}`);
 }
+export function assertIssueVisibility(source, target) {
+  if (source.private && !target.private) throw new Error(`${target.name} is public and ${source.name} is private; file in ${source.name} and link it instead`);
+}
+function issueWriteRepo(cfg, requested) {
+  const repo = issueTargetRepo(cfg, requested);
+  if (repo !== cfg.repo) assertIssueVisibility({ name: cfg.repo, private: afkGh(['api', `repos/${cfg.repo}`]).private === true }, { name: repo, private: afkGh(['api', `repos/${repo}`]).private === true });
+  return repo;
+}
 export function oldestExactTitle(issues, title) {
   return issues.filter(issue => issue.title === title).map(issue => issue.number).sort((a, b) => a - b)[0] ?? null;
 }
@@ -898,10 +906,11 @@ function issueCreate(args) {
   const root = git('rev-parse', '--show-toplevel');
   const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
   const cfg = afkConfig(); afkLoadEnvironment(cfg);
-  const repo = issueTargetRepo(cfg, o['--repo']);
+  const repo = issueWriteRepo(cfg, o['--repo']);
   afkActor(cfg);
   const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
-  const open = () => afkGh(['issue', 'list', '--repo', repo, '--state', 'open', '--search', `in:title "${title.replaceAll('"', '')}"`, '--limit', '100', '--json', 'number,title']);
+  // List without --search: the search index lags new issues and would hide a concurrent duplicate.
+  const open = () => afkGh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', 'number,title']);
   return withRepoLock('issue-create', () => {
     const existing = unique ? oldestExactTitle(open(), title) : null;
     if (existing) { console.log(`Exists: #${existing}`); return; }
@@ -923,7 +932,7 @@ function issueComment(args) {
   const root = git('rev-parse', '--show-toplevel');
   const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
   const cfg = afkConfig(); afkLoadEnvironment(cfg);
-  const repo = issueTargetRepo(cfg, o['--repo']);
+  const repo = issueWriteRepo(cfg, o['--repo']);
   afkActor(cfg);
   return withRepoLock(`issue-comment-${n}`, () => {
     const result = afkGh(['api', `repos/${repo}/issues/${n}/comments`, '-f', `body=${body}`]);

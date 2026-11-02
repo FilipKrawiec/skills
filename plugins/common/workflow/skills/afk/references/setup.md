@@ -41,7 +41,7 @@ Config holds identities, step commands and optional `afk.model`. Set `steps.proc
 | Label | Meaning |
 | --- | --- |
 | `lane:afk` | Approved for AFK. |
-| `lane:proposed` | Changes owner-requested behaviour; awaits eligibility review. |
+| `lane:proposed` | Changes requested behaviour or lacks authority. |
 | `lane:owner` | Owner participation is required to implement. |
 | `state:claimed`, `state:started` | An AFK run, or another session, is on it. |
 | `review:owner` | PR for the owner; `agent-review` withholds approval. |
