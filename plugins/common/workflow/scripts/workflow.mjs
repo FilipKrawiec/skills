@@ -1028,11 +1028,18 @@ function issueWriteRepo(cfg, requested) {
 export function oldestExactTitle(issues, title) {
   return issues.filter(issue => issue.title === title).map(issue => issue.number).sort((a, b) => a - b)[0] ?? null;
 }
+// Open issues whose scope packet shares a path with `paths`: equal, or one is a `/`-terminated prefix of the other.
+export function scopeOverlaps(issues, paths) {
+  if (!paths?.length) return [];
+  const overlap = (a, b) => a === b || (a.endsWith('/') && b.startsWith(a)) || (b.endsWith('/') && a.startsWith(b));
+  return issues.filter(issue => (afkPathsFromIssueBody(issue.body || '') || []).some(path => paths.some(other => overlap(path, other))));
+}
 function issueCreate(args) {
   const unique = args.includes('--unique');
-  const o = afkFlags(args.filter(arg => arg !== '--unique'), ['--title', '--body-file', '--labels', '--repo']);
+  const check = args.includes('--check');
+  const o = afkFlags(args.filter(arg => arg !== '--unique' && arg !== '--check'), ['--title', '--body-file', '--labels', '--repo']);
   const title = (o['--title'] || '').trim();
-  if (!title || !o['--body-file']) throw new Error('Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--unique]');
+  if (!title || !o['--body-file']) throw new Error('Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--unique] [--check]');
   const root = git('rev-parse', '--show-toplevel');
   const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
   const cfg = afkConfig(); afkLoadEnvironment(cfg);
@@ -1040,10 +1047,18 @@ function issueCreate(args) {
   afkActor(cfg);
   const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
   // List without --search: the search index lags new issues and would hide a concurrent duplicate.
-  const open = () => afkGh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', 'number,title']);
+  const open = () => afkGh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body']);
+  const followUp = labels.includes('type:bug') || labels.includes('type:chore');
   return withRepoLock('issue-create', () => {
-    const existing = unique ? oldestExactTitle(open(), title) : null;
+    const issues = unique || followUp || check ? open() : [];
+    const existing = unique ? oldestExactTitle(issues, title) : null;
     if (existing) { console.log(`Exists: #${existing}`); return; }
+    // Advisory: a follow-up sharing a scope path with an open issue usually belongs on that issue as a comment.
+    if (followUp || check) {
+      const overlaps = scopeOverlaps(issues, afkPathsFromIssueBody(body));
+      console.log(overlaps.length ? overlaps.map(issue => `Overlaps: #${issue.number} ${issue.title}`).join('\n') : 'Overlaps: none');
+    }
+    if (check) return;
     const created = afkGh(['api', `repos/${repo}/issues`, '-f', `title=${title}`, '-f', `body=${body}`, ...labels.flatMap(label => ['-f', `labels[]=${label}`])]);
     if (!Number.isSafeInteger(created.number)) throw new Error(`GitHub did not confirm the issue in ${repo}`);
     // Runs on other hosts do not share this lock; the oldest exact-title issue wins and a newer duplicate closes.
