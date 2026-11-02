@@ -155,6 +155,14 @@ test('owner bootstrap uses configured Reviewer while Owner comes from branch COD
   assert.equal(existsSync(f.env.PUSH_RECORD), true);
 });
 
+test('a failed Git command names its exit status and stderr cause', t => {
+  const f = fixture(t);
+  f.linkedGit('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/missing');
+  const result = f.cliRun('issue', 'close', '--number', '1');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /git ls-tree failed \(exit 128\): fatal: Not a valid object name refs\/remotes\/origin\/missing/);
+});
+
 test('failed Git push never reports success or exposes its token', t => {
   const f = fixture(t); f.env.TEST_PUSH_FAILURE = '1';
   const result = f.cliRun('push');

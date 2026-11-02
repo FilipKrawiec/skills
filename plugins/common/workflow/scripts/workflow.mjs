@@ -50,9 +50,15 @@ function run(program, args, options = {}) {
   if (result.error || result.status !== 0) {
     const scopeFailure = program === 'gh' ? githubScopeFailure(result.stderr || '') : null;
     const network = program === 'gh' && /error connecting|could not resolve host|failed to connect|connection (?:timed out|refused)|network is unreachable|no such host|dial tcp/i.test(result.stderr || '');
-    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? 'GitHub command failed; check network access and the configured account before reauthenticating.' : `${program} ${args[0]} failed`));
+    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? 'GitHub command failed; check network access and the configured account before reauthenticating.' : `${program} ${args[0]} failed${failureCause(result)}`));
   }
   return result.stdout.trim();
+}
+// Name the cause so an intermittent failure can be diagnosed instead of re-run blindly.
+function failureCause(result) {
+  if (result.error) return ` (${result.error.code || result.error.message})`;
+  const line = (result.stderr || '').split('\n').map(text => text.trim()).filter(Boolean).at(-1);
+  return ` (exit ${result.status ?? result.signal})${line ? `: ${line.slice(0, 200)}` : ''}`;
 }
 export function githubScopeFailure(stderr) {
   const direct = /missing required scopes?\s*\[([^\]]*)\]/i.exec(stderr);
