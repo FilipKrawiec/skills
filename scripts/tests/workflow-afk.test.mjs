@@ -184,6 +184,22 @@ test('a checked proposed issue waits for a changed issue before rechecking', () 
   assert.deepEqual(plan.epics[0].units, []);
 });
 
+test('a proposed issue a run already checked waits for a change, whoever posted the verdict', () => {
+  const proposed = issue(6, ['lane:proposed'], { lastEditedAt: '2026-10-01T00:00:00Z' });
+  // A release edits the hold comment in place, so it keeps the hold's creation time.
+  const comments = [
+    { user: { login: 'builder' }, created_at: '2026-10-02T00:00:00Z', body: '<!-- afk-issue-released session=run-1 -->\nUsage: 3 turns' },
+    { user: { login: 'builder' }, created_at: '2026-10-02T00:01:00Z', body: '<!-- agent-review eligibility issue=6 verdict=REQUEST_CHANGES -->\nThe cause is not traced.' },
+    { user: { login: 'builder' }, created_at: '2026-10-02T00:03:00Z', body: '<!-- afk-issue-released session=run-2 -->\nStart failed; hold released.' },
+  ];
+  const plan = (list, edited = '2026-10-01T00:00:00Z') => afkPlan({ ...cfg, implementer: 'builder' }, [], number => number === 6 ? list : [], 'new-run', { issues: [epic, { ...proposed, lastEditedAt: edited }], prs: [] }).epics[0].units;
+  assert.deepEqual(plan(comments), []);
+  assert.equal(plan([...comments, { user: { login: 'owner' }, created_at: '2026-10-03T00:00:00Z', body: 'Traced the cause.' }]).length, 1);
+  assert.equal(plan(comments, '2026-10-03T00:00:00Z').length, 1);
+  assert.equal(plan([comments[0], comments[2]]).length, 1, 'a run that ended without a verdict leaves the issue queued');
+  assert.equal(plan(comments.map(comment => ({ ...comment, user: { login: 'stranger' } }))).length, 1, 'only the implementer or Reviewer records a verdict');
+});
+
 test('AFK imports the configured gh profile without importing git overrides', t => {
   const directory = mkdtempSync(join(tmpdir(), 'afk-env-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
