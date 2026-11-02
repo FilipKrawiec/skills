@@ -682,7 +682,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const suffix = owners.length ? '' : ' (under no epic)';
     const paths = stories.flatMap(issue => issue.paths || []);
     const unit = pr.awaitingReview && !pr.broken
-      ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [] }
+      ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true }
       : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths };
     const parent = epics.find(epic => epic.issue.number === target);
     if (parent) parent.units.push(unit);
@@ -1095,10 +1095,11 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       const type = candidate.paths === null ? 'epic' : 'issue';
       const comment = afkHold(cfg, live, id, candidate.number, type);
       if (!comment) continue;
-      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
+      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
       ledger[id] = [...(ledger[id] || []), held];
       try {
-        if (type === 'issue') afkStatus(cfg, held.number, 'PROGRESS', true);
+        // A review hold names a PR, which has no card of its own; its issues stay in Review.
+        if (type === 'issue' && !held.review) afkStatus(cfg, held.number, 'PROGRESS', true);
         afkWriteLedger(ledgerPath, ledger);
       } catch (error) {
         spawnSync('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${comment}`, '-f', `body=${afkMarker(`${type}-released`, id)}\nStart failed; hold released.`], { stdio: 'ignore' });
@@ -1198,9 +1199,9 @@ function afkEndRun(cfg, common, id, note = null, why = null) {
       const kind = held.paths === null ? 'epic' : 'issue';
       run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${held.comment}`, '-f', `body=${afkMarker(`${kind}-released`, id)}${note ? `\n${note}` : ''}`]);
       console.log(`Released: ${kind} #${held.number}`);
-      const blocked = kind === 'issue' && !held.check && why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
+      const blocked = kind === 'issue' && !held.check && !held.review && why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
       if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
-      if (kind === 'issue') afkStatus(cfg, held.number, named.has(held.number) ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO', true);
+      if (kind === 'issue' && !held.review) afkStatus(cfg, held.number, named.has(held.number) ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO', true);
     }
     const openEpics = afkIssues(cfg).filter(issue => issue.labels.includes('type:epic'));
     for (const epic of openEpics) for (const comment of afkComments(cfg, epic.number)) {
