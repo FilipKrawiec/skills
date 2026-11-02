@@ -5,7 +5,7 @@ import { cpSync, mkdtempSync, readFileSync, writeFileSync, chmodSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afkCheckQuiet, afkToolingVersion } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCheckQuiet, afkToolingVersion, gitFailureLine } from '../../plugins/common/workflow/scripts/workflow.mjs';
 import { configPath, json, config, run, runCliAsync, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, hookPath, assertNoPush } from './support/workflow-cli-fixture.mjs';
 
 test('push ignores uncommitted identity configuration', t => {
@@ -222,4 +222,29 @@ test('an in-place tooling update keeps the version the running code loaded', asy
   const copy = await import(new URL(`file://${join(root, 'scripts', 'workflow.mjs')}`));
   writeFileSync(join(root, 'plugin.json'), JSON.stringify({ version: '2.0.0' }));
   assert.equal(copy.afkToolingVersion(), '1.0.0');
+});
+
+test('commit names unmerged paths a merge commit leaves out', t => {
+  const f = fixture(t);
+  const g = (...args) => run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.repo });
+  writeFileSync(join(f.repo, 'song.txt'), 'base');
+  assert.equal(g('add', 'song.txt').status, 0); assert.equal(g('commit', '-qm', 'base').status, 0);
+  assert.equal(g('checkout', '-qb', 'other').status, 0);
+  writeFileSync(join(f.repo, 'song.txt'), 'theirs'); assert.equal(g('commit', '-qam', 'theirs').status, 0);
+  assert.equal(g('checkout', '-q', 'feature/test').status, 0);
+  writeFileSync(join(f.repo, 'song.txt'), 'ours'); assert.equal(g('commit', '-qam', 'ours').status, 0);
+  assert.notEqual(g('merge', '--no-commit', 'other').status, 0);
+  writeFileSync(join(f.repo, 'song.txt'), 'resolved');
+  const result = f.cliRun('commit', '--message', 'chore: merge other');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Unmerged paths remain: song\.txt; pass each resolved path after --/);
+  const resolved = f.cliRun('commit', '--message', 'chore: merge other', '--', './song.txt');
+  assert.equal(resolved.status, 0, resolved.stderr);
+  assert.equal(f.linkedGit('show', '-s', '--format=%p', 'HEAD').stdout.trim().split(' ').length, 2);
+  assert.notEqual(g('rev-parse', '-q', '--verify', 'MERGE_HEAD').status, 0);
+});
+
+test('a commit failure reports git\'s first line without credentials', () => {
+  assert.equal(gitFailureLine('\nerror: cannot push https://x:ghp_abc123@github.com/a/b token github_pat_Z9_y\nhint: more'), 'error: cannot push https://[redacted]@github.com/a/b token [redacted]');
+  assert.equal(gitFailureLine(''), '');
 });
