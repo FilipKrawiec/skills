@@ -5,7 +5,87 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkEndCards, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkMergeThenPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkReviewKind, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, scopeOverlaps, assertIssueVisibility, afkReap, afkRunStarted, afkDuration, afkStartRefusal } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import {
+  afkCandidates,
+  afkColumn,
+  afkDependenciesFromIssueBody,
+  afkFree,
+  afkHeldLines,
+  afkIssueState,
+  afkLiveHolds,
+  afkMergeThenPlan,
+  afkPathsFromIssueBody,
+  afkPathsWithinScope,
+  afkPlan,
+  afkPrFiles,
+  afkPrRecord,
+  afkPrState,
+  afkPriority,
+  afkSpentEntries,
+  afkSpentState,
+  afkStartRefusal,
+  afkReviewKind,
+  afkReviewerApproved,
+  prLinkedIssues,
+} from '../../plugins/common/workflow/scripts/lib/afk-board.mjs';
+import {
+  afkAgentEnvironment,
+  afkCheckRunLimits,
+  afkDefaultStartCommand,
+  afkEndCards,
+  afkEndStatus,
+  afkLive,
+  afkLoadEnvironment,
+  afkOneShotLive,
+  afkOtherHolds,
+  afkRunUsage,
+  afkShow,
+  afkStartCount,
+  hasProcessAncestor,
+} from '../../plugins/common/workflow/scripts/lib/afk-runs.mjs';
+import {
+  afkDuration,
+  afkEnsureTooling,
+  afkExcludeWorktrees,
+  afkForeignHeads,
+  afkLaunchAgent,
+  afkLauncherSource,
+  afkOwnsHead,
+  afkPlistBelongsToWorkflow,
+  afkPluginDir,
+  afkReap,
+  afkReleaseRunTree,
+  afkRunAlive,
+  afkRunStarted,
+  afkStopSupervisedAgent,
+  afkSweepRunTrees,
+  afkWorkflowCliPath,
+} from '../../plugins/common/workflow/scripts/lib/afk-watch.mjs';
+import {
+  applyGithubMetadata,
+  assertDistinctPushRoles,
+  githubPushRemoteMatches,
+  githubRepoFromRemote,
+  githubScopeFailure,
+  missingProjectScope,
+  readThroughLocalCache,
+  workflowDefaults,
+  workflowLabels,
+  workflowMetadataCachePath,
+} from '../../plugins/common/workflow/scripts/lib/core.mjs';
+import {
+  hasLockfAncestor,
+  needsAbsoluteInvocation,
+  oneShotRunId,
+} from '../../plugins/common/workflow/scripts/workflow.mjs';
+import {
+  assertIssueVisibility,
+  issueTargetRepo,
+  oldestExactTitle,
+  scopeOverlaps,
+  validateIssueCommentBody,
+  workspaceFilePath,
+} from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -827,4 +907,47 @@ test('AFK eligibility records post as the configured Reviewer, not through the c
   const skill = name => readFileSync(new URL(`../../plugins/common/workflow/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
   assert.match(skill('agent-review'), /eligibility issue=<N> -->` with `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh issue comment`; `workflow.mjs` strips `GH_TOKEN`/);
   assert.match(skill('afk'), /Write implementer records through the workflow CLI/);
+});
+
+test('afk check and afk start name each build held behind an overlapping open PR', () => {
+  assert.deepEqual(afkHeldLines([{ issue: 345, pr: 354 }, { issue: 351, pr: 354 }]), [
+    'Held: #345 overlaps open PR #354; no build until it merges or closes',
+    'Held: #351 overlaps open PR #354; no build until it merges or closes',
+  ]);
+});
+
+test('a clean run spends its issue unit\'s end state, so its own edits do not re-offer it; outside input and a new column or kind do', () => {
+  const workflowCfg = { ...cfg, implementer: 'builder' };
+  const before = board(6, 'Backlog', ['type:bug'], { lastEditedAt: '2026-10-01T00:00:00Z' });
+  const owner = [{ id: 9, user: { login: 'owner' }, body: 'AFK ok' }];
+  const plan = (record, spent = {}, comments = []) => afkPlan(workflowCfg, [], () => comments, 'run', { issues: [epic, record], prs: [], spent, base: 'base1' });
+  const holdOf = unit => ({ number: unit.issue, column: unit.column, state: unit.state, input: unit.input, ...(unit.refine ? { refine: true } : {}) });
+  const held = holdOf(plan(before).units[0]);
+  const refined = { ...before, labels: ['type:bug', 'lane:proposed'], lastEditedAt: '2026-10-02T00:00:00Z' };
+  const spent = { 6: afkSpentState(held, plan(refined).units) };
+  assert.deepEqual([plan(refined, spent).units, plan(refined, spent).unchanged], [[], [6]], 'the run\'s own body and label edits');
+  assert.equal(plan(refined, spent, owner).units.length, 1, 'an outside comment after the run');
+  assert.equal(afkSpentState(held, plan(refined, {}, owner).units), held.state, 'an outside comment during the run is not spent');
+  assert.equal(plan(refined, { 6: afkSpentState(held, plan(refined, {}, owner).units) }, owner).units.length, 1, 'so it is offered again');
+  const ready = { ...refined, status: 'Todo', labels: ['type:bug', 'lane:afk'], paths: ['docs/'] };
+  assert.equal(afkSpentState(held, plan(ready).units), held.state, 'a refine that moved it keeps the start state');
+  assert.equal(plan(ready, { 6: afkSpentState(held, plan(ready).units) }).units.length, 1, 'so the build is offered next');
+  const packetless = board(7, 'Todo', ['lane:afk'], { paths: null });
+  const refine = holdOf(plan(packetless).units.find(unit => unit.issue === 7));
+  const packeted = { ...packetless, paths: ['docs/'], lastEditedAt: '2026-10-03T00:00:00Z' };
+  const build = plan(packeted, { 7: afkSpentState(refine, plan(packeted).units) }).units.find(unit => unit.issue === 7);
+  assert.ok(build && !build.refine, 'a refine that added the packet in Todo leaves the build offered');
+  const fix = { number: 6, pr: 12, column: 'Review', state: 'start' };
+  assert.equal(afkSpentState(fix, [{ issue: 6, pr: 12, column: 'Review', state: 'now' }]), 'start', 'a PR unit keeps its start state');
+});
+
+test('a run\'s end spends nothing after a crash and falls back to start states when end states are unreadable', () => {
+  const held = { number: 6, column: 'Backlog', refine: true, state: 'start', input: '' };
+  const now = [{ issue: 6, column: 'Backlog', refine: true, state: 'end', input: '' }];
+  let reads = 0;
+  assert.deepEqual(afkSpentEntries([held], false, () => { reads++; return now; }), {}, 'a crashed or manual end');
+  assert.equal(reads, 0);
+  assert.deepEqual(afkSpentEntries([held], true, () => now), { 6: 'end' });
+  assert.deepEqual(afkSpentEntries([held], true, () => { throw new Error('GraphQL down'); }), { 6: 'start' });
+  assert.deepEqual(afkSpentEntries([{ number: 6, pr: 12, column: 'Review', state: 'head1' }], true, () => { throw new Error('unused'); }), { 12: 'head1' });
 });

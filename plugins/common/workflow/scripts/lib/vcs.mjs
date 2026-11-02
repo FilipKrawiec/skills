@@ -1,0 +1,289 @@
+import { spawn, spawnSync } from 'node:child_process';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import {
+  afkLiveHolds,
+  afkPathsWithinScope,
+  prLinkedIssues,
+} from './afk-board.mjs';
+import {
+  afkActor,
+  afkAssertPushScope,
+  afkBoundHold,
+  afkCallerInRun,
+  afkEnvironmentOnce,
+  afkHeldScope,
+  afkLive,
+  afkLoadEnvironment,
+  afkScopeHint,
+} from './afk-runs.mjs';
+import {
+  assertDistinctPushRoles,
+  cleanEnvironment,
+  config,
+  git,
+  gitFailureLine,
+  githubPushRemoteMatches,
+  jsonCommand,
+  parseRepo,
+  requireLinkedWorktree,
+  run,
+  workflowDefaults,
+} from './core.mjs';
+
+// Commits carry the implementer's GitHub identity, never the machine's Git user, so the owner can approve them.
+function implementerCommitIdentity(root) {
+  const login = config().lanes.implementer;
+  if (typeof login !== 'string' || !/^[A-Za-z0-9-]+$/.test(login)) throw new Error('Configure identities.implementer before committing');
+  const env = cleanEnvironment();
+  const token = run('gh', ['auth', 'token', '--hostname', 'github.com', '--user', login], { cwd: root, env });
+  if (!token || /\s/.test(token)) throw new Error('No usable implementer credential');
+  const id = jsonCommand('gh', ['api', '--hostname', 'github.com', `users/${login}`], { cwd: root, env: { ...env, GH_TOKEN: token } }).id;
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error('Cannot resolve the implementer GitHub account');
+  const email = `${id}+${login}@users.noreply.github.com`;
+  return { GIT_AUTHOR_NAME: login, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: email };
+}
+export function commit(args) {
+  if (args[0] !== '--message' || !(args.length === 2 || (args.length >= 4 && args[2] === '--'))) throw new Error('Usage: commit --message MESSAGE [-- PATH...]');
+  const message = args[1];
+  const paths = args.slice(3);
+  if (!/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9._/-]+\))?!?: [^\r\n]+$/.test(message)) throw new Error('Commit message must be a single-line Conventional Commit');
+  if (paths.some(path => !path || path === '.' || path.startsWith('/') || path.startsWith(':') || path.split('/').includes('..'))) throw new Error('Provide explicit repository-relative paths');
+  const root = requireLinkedWorktree();
+  if (realpathSync(process.cwd()) !== realpathSync(root)) throw new Error('Run commit from the repository root');
+  const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: root, env: cleanEnvironment() }).status === 0;
+  if (!merging && !paths.length) throw new Error('Usage: commit --message MESSAGE [-- PATH...]; paths are optional only while a merge is in progress');
+  const runId = process.env.WORKFLOW_RUN_ID;
+  let scope = null;
+  let hold = null;
+  let environment = null;
+  if (runId) {
+    hold = afkBoundHold(root, 'commit');
+    environment = afkEnvironmentOnce();
+    if (Array.isArray(hold.paths)) scope = merging ? hold.paths : afkHeldScope(hold, paths, environment);
+    if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error(`Commit paths exceed the assigned AFK scope${afkScopeHint(hold)}`);
+    afkActor(environment());
+  }
+  const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
+  // A merge commit records the whole merged index; the listed paths are the resolved conflicts.
+  const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
+  if (!merging && (staged.error || staged.status !== 0)) throw new Error('Existing staged changes or an unreadable index; preserve them and commit separately');
+  if (paths.length) {
+    const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });
+    if (add.error || add.status !== 0) throw new Error('Could not stage selected paths; inspect repository status');
+  }
+  // Conflicts the listed paths did not stage stay unmerged; git would refuse them with a message this command hides.
+  if (merging) {
+    const unmerged = spawnSync('git', ['diff', '--name-only', '--diff-filter=U', '-z', '--'], { cwd: root, env, encoding: 'utf8' });
+    const conflicted = unmerged.status === 0 ? [...new Set(unmerged.stdout.split('\0').filter(Boolean))] : [];
+    if (conflicted.length) throw new Error(`Unmerged paths remain: ${conflicted.join(', ')}; pass each resolved path after --`);
+  }
+  // Content taken unchanged from either parent is already base's or the branch's; only content new to the merge needs scope.
+  if (merging && scope) {
+    const changed = parent => {
+      const diff = spawnSync('git', ['diff', '--cached', '--name-only', '--no-renames', '-z', parent, '--'], { cwd: root, env, encoding: 'utf8' });
+      if (diff.error || diff.status !== 0) throw new Error('Cannot read the merge index; inspect repository status');
+      return diff.stdout.split('\0').filter(Boolean);
+    };
+    const fromBase = new Set(changed('MERGE_HEAD'));
+    const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
+    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside, environment))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents${afkScopeHint(hold)}`);
+  }
+  const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
+  if (result.error || result.status !== 0) {
+    const reason = gitFailureLine(result.stderr || result.stdout || result.error?.message || '');
+    throw new Error(`Commit failed${reason ? `: ${reason}` : ''}; selected paths remain staged for inspection`);
+  }
+  console.log(JSON.stringify({ result: 'committed', head: git('rev-parse', 'HEAD') }));
+}
+// The fetched branch tip was once in this checkout's history but the pushed head dropped it: a rebase or amend, not a moved remote.
+// Reads only local refs and the HEAD reflog, so diagnosing needs no credentialed remote call.
+function pushRewroteHistory(branch, head) {
+  const local = (...args) => spawnSync('git', args, { encoding: 'utf8', env: cleanEnvironment() });
+  const tracked = local('rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}^{commit}`);
+  if (tracked.status !== 0) return false;
+  const tip = tracked.stdout.trim();
+  if (local('merge-base', '--is-ancestor', tip, head).status === 0) return false;
+  const reflog = local('reflog', 'show', '--format=%H', 'HEAD');
+  if (reflog.status !== 0) return false;
+  return [...new Set(reflog.stdout.split('\n').filter(Boolean))].slice(0, 200).some(entry => local('merge-base', '--is-ancestor', tip, entry).status === 0);
+}
+export async function push(args) {
+  const ownerBootstrap = args.length === 1 && args[0] === '--owner-bootstrap';
+  const target = args.length === 2 && args[0] === '--to' ? args[1] : null;
+  if (args.length && !ownerBootstrap && target === null) throw new Error('Usage: push [--owner-bootstrap | --to BRANCH]');
+  const { root, lanes, baseRef, configSource } = config(true, true, ownerBootstrap);
+  if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
+  requireLinkedWorktree();
+  afkAssertPushScope(root, baseRef);
+  if (target !== null && !process.env.WORKFLOW_RUN_ID) throw new Error('push --to requires an AFK run holding the PR');
+  const held = target === null ? null : afkBoundHold(root, 'push --to').number;
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from origin and Owner from CODEOWNERS');
+  const repo = parseRepo(lanes.repo);
+  const user = lanes.implementer;
+  const reviewer = lanes.reviewer;
+  let owner = lanes.owner;
+  if (owner == null) {
+    if (![user, reviewer].every(value => typeof value === 'string' && /^[A-Za-z0-9-]+$/.test(value)) || user.toLowerCase() === reviewer.toLowerCase()) throw new Error('Configure distinct implementer, reviewer and owner accounts in trusted roles');
+  } else assertDistinctPushRoles({ owner, implementer: user, reviewer });
+  if (user.toLowerCase() === repo.split('/')[0].toLowerCase()) throw new Error('Implementer cannot be the repository owner');
+  const branch = target ?? git('symbolic-ref', '--quiet', '--short', 'HEAD');
+  git('check-ref-format', '--branch', branch);
+  const defaultBranch = baseRef.slice('refs/remotes/origin/'.length);
+  if (lanes.base != null && lanes.base !== defaultBranch) throw new Error('Configured base differs from the verified default branch; role authority is unavailable');
+  if (branch === defaultBranch || branch === (lanes.base || 'main') || branch === 'master') throw new Error('Refusing to push a default branch');
+  const remote = git('remote', 'get-url', '--push', 'origin');
+  if (!githubPushRemoteMatches(remote, repo)) throw new Error('origin push URL must match lanes.repo on github.com');
+  // Git runs in the actual worktree. Refuse configuration that could redirect
+  // the explicit destination or add an unverified authorization header.
+  const configArgs = { cwd: root, encoding: 'utf8', env: cleanEnvironment() };
+  const headers = spawnSync('git', ['config', '--get-regexp', '^(http\\..*extraheader|http\\.extraheader)$'], configArgs);
+  if (headers.error || ![0, 1].includes(headers.status) || headers.status === 0) throw new Error('Git authorization header may change the verified push');
+  const rewrites = spawnSync('git', ['config', '--null', '--get-regexp', '^url\\..*\\.(insteadof|pushinsteadof)$'], configArgs);
+  if (rewrites.error || ![0, 1].includes(rewrites.status)) throw new Error('Cannot inspect Git URL rewrites');
+  const destination = `https://github.com/${repo}.git`;
+  for (const entry of rewrites.stdout.split('\0').filter(Boolean)) {
+    const separator = entry.indexOf('\n');
+    if (separator < 0) throw new Error('Cannot inspect Git URL rewrites');
+    const prefix = entry.slice(separator + 1);
+    if (prefix && destination.startsWith(prefix)) throw new Error('Git URL rewrite may change the verified push');
+  }
+  if (process.env.WORKFLOW_RUN_ID) afkLoadEnvironment({ ...workflowDefaults.afk, ...lanes, repo });
+  const env = cleanEnvironment();
+  if (ownerBootstrap && !owner) throw new Error('The trusted base CODEOWNERS must identify the owner for first-config bootstrap');
+  const token = run('gh', ['auth', 'token', '--hostname', 'github.com', '--user', ownerBootstrap ? owner : user], { cwd: root, env });
+  if (!token || /\s/.test(token)) throw new Error(`No usable ${ownerBootstrap ? 'configured owner' : 'implementer'} credential`);
+  const actor = jsonCommand('gh', ['api', '--hostname', 'github.com', 'user'], { cwd: root, env: { ...env, GH_TOKEN: token } }).login;
+  const expectedActor = ownerBootstrap ? owner : user;
+  if (typeof actor !== 'string' || actor.toLowerCase() !== expectedActor.toLowerCase() || (!ownerBootstrap && actor.toLowerCase() === reviewer.toLowerCase())) throw new Error(`Authenticated actor does not match the authorized ${ownerBootstrap ? 'owner' : 'implementer'}`);
+  const metadataEnv = { ...env, GH_TOKEN: token };
+  const metadata = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}`], { cwd: root, env: metadataEnv });
+  if (owner == null) {
+    if (metadata.owner?.type !== 'User' || typeof metadata.owner?.login !== 'string' || metadata.owner.login.toLowerCase() !== repo.split('/')[0].toLowerCase()) throw new Error('Organization repositories require an explicit trusted owner');
+    owner = metadata.owner.login;
+  }
+  assertDistinctPushRoles({ owner, implementer: user, reviewer });
+  if (ownerBootstrap) {
+    const permission = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/collaborators/${encodeURIComponent(actor)}/permission`], { cwd: root, env: metadataEnv }).role_name;
+    if (permission !== 'admin') throw new Error('Owner bootstrap requires an authenticated repository admin');
+  }
+  if (user.toLowerCase() === owner.toLowerCase()) throw new Error('Implementer cannot be the owner');
+  if (metadata.default_branch !== defaultBranch) throw new Error('Fetched origin/HEAD does not match GitHub default branch; refresh origin');
+  const remoteBase = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/branches/${encodeURIComponent(defaultBranch)}`], { cwd: root, env: metadataEnv });
+  if (!/^[0-9a-f]{40,64}$/i.test(remoteBase?.commit?.sha || '') || git('rev-parse', baseRef) !== remoteBase.commit.sha) throw new Error('Fetched base is stale or unverifiable; refresh origin before pushing');
+  const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest,headRefName,isCrossRepository,closingIssuesReferences,body'], { cwd: root, env: { ...env, GH_TOKEN: token } });
+  if (!Array.isArray(pulls)) throw new Error('Cannot determine open PR auto-merge state');
+  if (held !== null) {
+    // A run that split its held issue builds the first sub-issue under the parent's hold, so that sub-issue's PR is the run's too.
+    const subIssues = () => jsonCommand('gh', ['api', '--paginate', '--slurp', `repos/${repo}/issues/${held}/sub_issues`], { cwd: root, env: metadataEnv }).flat().map(issue => issue.number);
+    if (!pushTargetAllowed(pulls, branch, repo, held, subIssues)) throw new Error(`push --to ${branch} is not the head of the held PR, of a PR closing or part of held issue #${held}, or of a PR closing one of its direct sub-issues`);
+  }
+  if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
+  if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
+  // Pushing over a PR that another live run works on strands that run's own push, so its hold never ends; only the holder pushes.
+  // A run id is public in its hold comment, so a caller is that run only from inside its process tree, and the refusal names no run.
+  const live = afkLive({ ...workflowDefaults.afk, ...lanes });
+  const claimed = process.env.WORKFLOW_RUN_ID || '';
+  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+  const me = claimed && afkCallerInRun(common, claimed) ? claimed : '';
+  for (const pr of pulls) for (const number of new Set([pr.number, ...prLinkedIssues(pr, repo)])) {
+    const comments = jsonCommand('gh', ['api', '--paginate', '--slurp', `repos/${repo}/issues/${number}/comments`], { cwd: root, env: metadataEnv }).flat();
+    if (afkLiveHolds(comments, live, me).some(hold => hold.run !== me)) throw new Error(`A live AFK run holds #${number}; let it finish instead of pushing to PR #${pr.number}`);
+  }
+  const head = git('rev-parse', 'HEAD');
+  const helper = fileURLToPath(new URL('../git-askpass.mjs', import.meta.url));
+  const hook = run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], { cwd: root, env });
+  const temporary = mkdtempSync(join(tmpdir(), 'workflow-push-'));
+  const pushEnv = { ...env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_ASKPASS: helper, GIT_TERMINAL_PROMPT: '0', WORKFLOW_IMPLEMENTER: actor, WORKFLOW_PRE_PUSH_HOOK: hook, WORKFLOW_PUSH_WORKTREE: root };
+  if (env.GIT_CONFIG_GLOBAL !== undefined) pushEnv.WORKFLOW_HOOK_CONFIG_GLOBAL = env.GIT_CONFIG_GLOBAL;
+  if (env.GIT_CONFIG_NOSYSTEM !== undefined) pushEnv.WORKFLOW_HOOK_CONFIG_NOSYSTEM = env.GIT_CONFIG_NOSYSTEM;
+  try {
+    run('git', ['init', '--bare', '--quiet', temporary], { cwd: root, env: pushEnv });
+    writeFileSync(join(temporary, 'objects', 'info', 'alternates'), `${join(common, 'objects')}\n`);
+    if (existsSync(join(common, 'shallow'))) copyFileSync(join(common, 'shallow'), join(temporary, 'shallow'));
+    const wrapper = join(temporary, 'hooks', 'pre-push');
+    copyFileSync(fileURLToPath(new URL('../push-hook.mjs', import.meta.url)), wrapper);
+    chmodSync(wrapper, 0o755);
+    const result = await new Promise((resolve, reject) => {
+      let stderr = '';
+      const child = spawn('git', [`--git-dir=${temporary}`, `--work-tree=${root}`, '-c', 'credential.helper=', '-c', 'http.extraHeader=', '-c', 'push.pushOption=', 'push', '--no-follow-tags', '--recurse-submodules=no', `https://github.com/${repo}.git`, `${head}:refs/heads/${branch}`], { cwd: root, env: pushEnv, stdio: ['ignore', 'ignore', 'pipe'] });
+      child.stderr.on('data', chunk => { if (stderr.length < 65536) stderr += chunk.toString().slice(0, 65536 - stderr.length); });
+      child.on('error', reject);
+      child.on('close', status => resolve({ status, stderr }));
+    });
+    if (result.status !== 0) {
+      // `fetch first` means the remote tip is absent locally, so the remote moved whatever the stale tracking ref says.
+      const rewritten = /non-fast-forward/i.test(result.stderr) && !/fetch first|stale info/i.test(result.stderr) && pushRewroteHistory(branch, head);
+      const reason = rewritten ? `local history was rewritten over the fetched branch; restore its head from origin/${branch}, then merge base with \`git merge --no-ff --no-commit origin/${defaultBranch}\` instead of rebasing`
+        : /non-fast-forward|fetch first|stale info/i.test(result.stderr) ? 'remote branch changed or is ahead'
+        : /authentication failed|could not read (username|password)|invalid username or token|access denied/i.test(result.stderr) ? 'authentication failed'
+        : /permission denied|protected branch|rule violations?|GH006|GH013/i.test(result.stderr) ? 'remote permissions or branch rules rejected the push'
+        : /could not resolve host|failed to connect|connection (timed out|refused)|unable to access/i.test(result.stderr) ? 'network or remote connection failed'
+        : 'unclassified Git failure';
+      throw new Error(`Push failed (exit ${result.status ?? 'unknown'}): ${reason}; Git output withheld to protect credentials`);
+    }
+    console.log(JSON.stringify({ result: 'pushed', actor, repository: repo, branch, head, configSource }));
+  } finally { rmSync(temporary, { recursive: true, force: true }); }
+}
+// push --to may update a same-repository PR head that is the held PR, links the held issue or closes a direct sub-issue of it.
+export function pushTargetAllowed(pulls, branch, repo, held, subIssues) {
+  const heads = pulls.filter(pr => pr.headRefName === branch && pr.isCrossRepository === false);
+  if (heads.some(pr => pr.number === held || prLinkedIssues(pr, repo).includes(held))) return true;
+  if (!heads.length) return false;
+  const children = new Set(subIssues());
+  return heads.some(pr => prLinkedIssues(pr, repo).some(number => children.has(number)));
+}
+function parseOptions(args) {
+  const options = {};
+  while (args.length) {
+    const key = args.shift();
+    if (!['--pr', '--previous', '--previous-base', '--issue'].includes(key) || !args.length || Object.hasOwn(options, key)) throw new Error('Invalid review-context arguments');
+    options[key] = args.shift();
+  }
+  if (!/^[1-9]\d*$/.test(options['--pr'] || '')) throw new Error('--pr requires a pull request number');
+  if (options['--issue'] && !/^[1-9]\d*$/.test(options['--issue'])) throw new Error('--issue requires an issue number');
+  if (options['--previous'] && !/^[0-9a-f]{7,64}$/i.test(options['--previous'])) throw new Error('--previous requires a commit SHA');
+  if (options['--previous-base'] && (!options['--previous'] || !/^[0-9a-f]{7,64}$/i.test(options['--previous-base']))) throw new Error('--previous-base requires a commit SHA and --previous');
+  return options;
+}
+export function reviewContext(args) {
+  const options = parseOptions(args);
+  const { root, lanes, configAvailable } = config(false);
+  let repo = lanes.repo;
+  if (!repo) {
+    const remote = git('remote', 'get-url', 'origin');
+    const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remote);
+    if (!match) throw new Error('Cannot infer a github.com repository from origin');
+    repo = match[1];
+  }
+  repo = parseRepo(repo);
+  const pr = jsonCommand('gh', ['pr', 'view', options['--pr'], '--repo', `github.com/${repo}`, '--json', 'url,title,baseRefOid,headRefOid,files,reviews,reviewDecision,statusCheckRollup'], { cwd: root });
+  const [owner, name] = repo.split('/');
+  const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){pageInfo{hasNextPage} nodes{isResolved isOutdated comments(first:1){nodes{url}}}}}}}';
+  const threadData = jsonCommand('gh', ['api', 'graphql', '--hostname', 'github.com', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${options['--pr']}`], { cwd: root });
+  const threads = threadData?.data?.repository?.pullRequest?.reviewThreads;
+  if (!threads || !Array.isArray(threads.nodes) || typeof threads.pageInfo?.hasNextPage !== 'boolean') throw new Error('Cannot read review threads');
+  const output = { untrustedGithubData: true, ...pr, baseConfigurationAvailable: configAvailable, filesMayBeIncomplete: true, reviewThreads: threads.nodes, threadsTruncated: threads.pageInfo.hasNextPage };
+  if (options['--previous']) {
+    const previous = options['--previous'];
+    const head = pr.headRefOid;
+    if (!/^[0-9a-f]{40,64}$/i.test(head || '')) throw new Error('GitHub returned an invalid head SHA');
+    try {
+      const oldTree = git('rev-parse', `${previous}^{tree}`);
+      const newTree = git('rev-parse', `${head}^{tree}`);
+      const priorBase = options['--previous-base'];
+      const currentBase = pr.baseRefOid;
+      if (!/^[0-9a-f]{40,64}$/i.test(currentBase || '')) throw new Error('Invalid base SHA');
+      const identicalBaseTree = priorBase ? git('rev-parse', `${priorBase}^{tree}`) === git('rev-parse', `${currentBase}^{tree}`) : null;
+      output.comparison = { previous, head, previousBase: priorBase || null, currentBase, identicalTree: oldTree === newTree, identicalBaseTree, treesUnchanged: oldTree === newTree && identicalBaseTree === true, changedFiles: oldTree === newTree ? [] : git('diff', '--name-only', previous, head).split('\n').filter(Boolean), evidenceRequiresJudgment: true };
+    } catch { output.comparison = { previous, head, available: false, reason: 'Commits not present locally; fetch before comparing' }; }
+  }
+  if (options['--issue']) {
+    const issue = jsonCommand('gh', ['issue', 'view', options['--issue'], '--repo', `github.com/${repo}`, '--json', 'url,body,comments'], { cwd: root });
+    const comments = (issue.comments || []).filter(comment => /\b(decision|adjudicat|criteria|acceptance)\b/i.test(comment.body || '')).map(comment => ({ url: comment.url, body: (comment.body || '').slice(0, 4000), bodyTruncated: (comment.body || '').length > 4000 }));
+    output.issue = { url: issue.url, body: (issue.body || '').slice(0, 8000), bodyTruncated: (issue.body || '').length > 8000, decisions: comments.slice(-20), decisionsMayBeIncomplete: true };
+  }
+  console.log(JSON.stringify(output));
+}

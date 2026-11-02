@@ -57,3 +57,15 @@ test('OS releases a workflow lock when its command group is killed', async t => 
   const recovered = runWithLocks(directory, ['serial'], process.execPath, ['-e', "console.log('recovered')"], { timeoutSeconds: 5, stdio: 'inherit' });
   assert.equal(recovered.status, 0);
 });
+
+test('a lock timeout exits 75 so callers can tell it from a command failure', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'workflow-locks-timeout-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const holder = launch(directory, `console.log('holding'); setInterval(()=>{},1000)`);
+  t.after(() => { try { process.kill(-holder.pid, 'SIGKILL'); } catch {} });
+  await waitFor(holder.stdout, 'holding');
+  const timedOut = runWithLocks(directory, ['serial'], process.execPath, ['-e', 'process.exit(0)'], { timeoutSeconds: 0 });
+  assert.equal(timedOut.status, 75);
+  const failed = runWithLocks(join(directory, 'other'), ['serial'], process.execPath, ['-e', 'process.exit(1)'], { timeoutSeconds: 0 });
+  assert.equal(failed.status, 1);
+});

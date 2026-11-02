@@ -3,6 +3,8 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+// Both lockf (EX_TEMPFAIL) and flock -E report a lock timeout as 75, so it never reads as a command failure.
+export const lockTimeoutStatus = 75;
 export function runWithLocks(directory, names, command, args, { timeoutSeconds = 300, env = process.env, cwd = process.cwd() } = {}) {
   if (!Array.isArray(names) || names.some(name => !/^[a-z0-9-]+$/.test(name))) throw new Error('Invalid workflow lock name');
   const ordered = [...new Set(names)].sort();
@@ -19,7 +21,7 @@ export function runWithLocks(directory, names, command, args, { timeoutSeconds =
       const path = join(directory, `${name}.lock`);
       writeFileSync(path, '', { flag: 'a' });
       if (process.platform === 'darwin') argv = ['lockf', '-t', String(timeoutSeconds), path, ...argv];
-      else argv = ['flock', '-F', '-w', String(timeoutSeconds), path, ...argv];
+      else argv = ['flock', '-F', '-E', String(lockTimeoutStatus), '-w', String(timeoutSeconds), path, ...argv];
     }
     const result = spawnSync(argv[0], argv.slice(1), { cwd, env: lockEnv, stdio: 'inherit' });
     if (result.error) throw new Error(`Cannot start workflow lock command: ${result.error.message}`);

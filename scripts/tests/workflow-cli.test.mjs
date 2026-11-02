@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { cpSync, readFileSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { codeownersRolesFrom, gitFailureLine } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import {
+  codeownersRolesFrom,
+  gitFailureLine,
+} from '../../plugins/common/workflow/scripts/lib/core.mjs';
 import { cli, configPath, json, config, run, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, assertNoPush } from './support/workflow-cli-fixture.mjs';
 
 test('CODEOWNERS roles reject an organization slug when several path owners exist', () => {
@@ -297,4 +300,12 @@ test('afk check reads the on-disk spent ledger and serves a PR again once its ba
   const moved = f.cliRun('afk', 'check');
   assert.doesNotMatch(moved.stdout, /Unchanged:/, moved.stderr);
   assert.match(moved.stdout, /Next: Review: PR #2000 \(Fix\) needs its review fixed/);
+});
+
+test('a usage error on a locked command reports only the usage message', t => {
+  const f = fixture(t);
+  const result = f.cliRun('issue', 'edit', '--number', '304', '--body-file', 'F', '--milestone', '12.0.0');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Expected --number --body-file/);
+  assert.doesNotMatch(result.stderr, /lock/);
 });

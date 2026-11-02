@@ -177,6 +177,29 @@ test('AFK push --to accepts the PR that closes or is part of the held issue', t 
   assert.ok(pushRecord(f).args.some(arg => arg.endsWith(':refs/heads/fix/held')));
 });
 
+test('AFK push --to accepts the PR of a direct sub-issue of the held issue and refuses unrelated PRs', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 332, paths: ['docs/'] }] }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.SUB_ISSUES = JSON.stringify([{ number: 340 }]);
+  const closes = number => [{ number, repository: { name: 'app', owner: { login: 'acme' } } }];
+  f.env.OPEN_PRS = JSON.stringify([
+    { number: 348, headRefName: 'fix/sub', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: closes(340) },
+    { number: 349, headRefName: 'fix/unrelated', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: closes(341) },
+    { number: 350, headRefName: 'fix/fork', isCrossRepository: true, autoMergeRequest: null, closingIssuesReferences: closes(340) },
+  ]);
+  for (const ref of ['fix/unrelated', 'fix/fork']) {
+    const refused = f.cliRun('push', '--to', ref);
+    assert.notEqual(refused.status, 0, ref);
+    assert.match(refused.stderr, /not the head of the held PR/);
+    assertNoPush(f);
+  }
+  const result = f.cliRun('push', '--to', 'fix/sub');
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(pushRecord(f).args.some(arg => arg.endsWith(':refs/heads/fix/sub')));
+});
+
 test('AFK commit records a base merge that brings in files outside the scope', t => {
   const f = fixture(t);
   const g = (...args) => run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.repo });
