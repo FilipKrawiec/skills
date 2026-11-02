@@ -765,8 +765,8 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (column === 'Todo' && !epic && !issue.labels.includes('lane:afk')) column = 'Backlog';
     if (column === 'Todo') {
       if (epic && !(slices && (slices.total === 0 || slices.completed === slices.total))) continue;
-      // A ready issue waits for its open blockers and for an open PR its packet depends on.
-      if (issue.blocked || (issue.dependencies || []).some(number => openPrs.has(number))) continue;
+      // A ready issue waits for its open blockers and for an open PR its packet depends on; a packet-less story is refined meanwhile.
+      if ((epic || issue.paths !== null) && (issue.blocked || (issue.dependencies || []).some(number => openPrs.has(number)))) continue;
     }
     const write = column === 'Todo' && !epic && issue.paths !== null;
     offer({ column, text: afkUnitText(column, issue), issue: issue.number, priority: issue.priority, paths: write ? issue.paths : [], ...(write ? {} : { refine: true }) }, issue.number, afkIssueState(issue, column, threads(issue.number), cfg, base));
@@ -790,6 +790,11 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   }
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
   return { units, prs, byNumber, threads, unchanged, orphans };
+}
+// Why `afk start --issue` could not hold an issue; a packet-less issue names its missing packet, which a refine run adds.
+export function afkStartRefusal(number, issue) {
+  const packetless = issue && issue.paths === null && issue.labels.includes('lane:afk') && !issue.labels.includes('type:epic');
+  return new Error(`#${number} is not an eligible AFK candidate${packetless ? ': it has no valid scope packet, and its refine unit is held, unchanged or not in Todo' : ''}`);
 }
 // The units no other live run holds, in board order.
 export function* afkCandidates(units, others) {
@@ -1223,7 +1228,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       output.forEach(line => console.log(line)); return 3;
     }
     const threads = afkThreadReader(cfg);
-    const { units } = afkPlan(cfg, live, threads, id);
+    const { units, byNumber } = afkPlan(cfg, live, threads, id);
     const othersHolds = afkOtherHolds(ledger, live, id);
     afkWriteLedger(ledgerPath, ledger);
     for (const candidate of afkCandidates(units, othersHolds)) {
@@ -1243,7 +1248,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       }
       return afkShow(held, units, output, quiet);
     }
-    if (requestedIssue) throw new Error(`#${requestedIssue} is not an eligible AFK candidate`);
+    if (requestedIssue) throw afkStartRefusal(requestedIssue, byNumber.get(requestedIssue));
     // The watcher (prepared) never starts an agent without work; an idle `explore` pass is only for a run that asked.
     if (!prepared && afkExploreDue(cfg, live, id)) {
       const explorePath = join(common, 'afk-idle-explore.json');

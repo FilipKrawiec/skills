@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkReviewKind, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkReviewKind, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration, afkStartRefusal } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -696,6 +696,21 @@ test('a Todo issue waits for its open blockers and an open PR its packet depends
   assert.deepEqual(units([board(6, 'Todo', ['lane:afk'], { dependencies: [285] })], [open]), []);
   assert.deepEqual(units([board(6, 'Todo', ['lane:afk'], { dependencies: [285] })]), [6]);
   assert.deepEqual(units([board(6, 'Todo', ['lane:afk'], { blocked: true })]), []);
+});
+
+test('a blocked or dependent Todo issue without a scope packet still gets its refine run', () => {
+  const open = reviewPr(285, { reviews: [{ author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '' }], labels: [{ name: 'review:owner' }] });
+  const plan = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, board(6, 'Todo', ['lane:afk'], { paths: null, blocked: true }), board(7, 'Todo', ['lane:afk'], { paths: null, dependencies: [285] })], prs: [open] });
+  assert.deepEqual(plan.units.filter(unit => !unit.pr).map(unit => [unit.issue, unit.column, Boolean(unit.refine), unit.paths]), [[6, 'Todo', true, []], [7, 'Todo', true, []]]);
+  assert.match(plan.units.find(unit => unit.issue === 6).text, /#6 is in Todo without a valid scope packet: invoke `refine`/);
+  const blockedEpic = { number: 30, labels: ['type:epic'], ancestors: [], status: 'Todo', priority: 'P1', paths: null, subIssuesSummary: { total: 0, completed: 0 }, blocked: true };
+  assert.deepEqual(afkPlan(cfg, [], () => [], 'new-run', { issues: [blockedEpic], prs: [] }).units, [], 'a blocked epic still waits');
+});
+
+test('afk start --issue names a missing scope packet when it cannot serve the issue', () => {
+  assert.match(afkStartRefusal(6, board(6, 'Todo', ['lane:afk'], { paths: null })).message, /^#6 is not an eligible AFK candidate: it has no valid scope packet/);
+  assert.equal(afkStartRefusal(6, board(6, 'Todo')).message, '#6 is not an eligible AFK candidate');
+  assert.equal(afkStartRefusal(6, undefined).message, '#6 is not an eligible AFK candidate');
 });
 
 test('a Todo story without lane:afk or a scope packet gets a refine run, never an implementation', () => {
