@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { cpSync, readFileSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { codeownersRolesFrom } from '../../plugins/common/workflow/scripts/workflow.mjs';
 import { cli, configPath, json, config, run, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, assertNoPush } from './support/workflow-cli-fixture.mjs';
 
@@ -199,4 +200,54 @@ test('issue edit replaces an issue body from a worktree file and confirms it', t
   const dropped = f.cliRun('issue', 'edit', '--number', '4', '--body-file', 'body.md');
   assert.notEqual(dropped.status, 0);
   assert.match(dropped.stderr, /did not confirm #4/);
+});
+function runScriptAsync(f, script, args, timeout) {
+  return new Promise(resolve => {
+    const child = spawn(process.execPath, [script, ...args], { cwd: f.repo, env: f.env, stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+    let stderr = ''; let timedOut = false;
+    child.stderr.setEncoding('utf8').on('data', value => { stderr += value; });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+    }, timeout);
+    child.on('close', status => { clearTimeout(timer); resolve({ status, stderr, timedOut }); });
+  });
+}
+function lockedIssueFixture(t) {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='issue' && a[1]==='list') { out([{number:7,title:'Owner improvements'}]); process.exit(0); }\nif(a.some(x=>x.endsWith('/comments'))) { require('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n'); out({id:12}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('{}');\n`);
+  chmodSync(gh, 0o755);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { toolingRepository: 'https://github.com/acme/skills.git' } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  writeFileSync(join(f.repo, 'body.md'), 'Run evidence');
+  f.env.TEST_CALLS = join(f.root, 'calls.log');
+  return f;
+}
+test('a locked issue command run by a relative path does not wait on its own lock', async t => {
+  if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
+  const f = lockedIssueFixture(t);
+  // A copy inside the worktree keeps the relative path from containing the absolute one.
+  cpSync(dirname(cli), join(f.repo, 'tools'), { recursive: true });
+  const script = join('tools', basename(cli));
+  for (const args of [['issue', 'comment', '--number', '7', '--body-file', 'body.md'], ['issue', 'create', '--title', 'Owner improvements', '--body-file', 'body.md', '--repo', 'acme/skills', '--unique']]) {
+    const began = Date.now();
+    const result = await runScriptAsync(f, script, args, 30000);
+    assert.equal(result.timedOut, false, `${args[1]} waited on its own lock`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(Date.now() - began < 30000);
+  }
+  assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/app\/issues\/7\/comments -f body=Run evidence/);
+});
+
+test('a locked issue command completes from a path ps cannot show literally', async t => {
+  if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
+  const f = lockedIssueFixture(t);
+  cpSync(dirname(cli), join(f.repo, 'tóols'), { recursive: true });
+  const result = await runScriptAsync(f, join('tóols', basename(cli)), ['issue', 'comment', '--number', '7', '--body-file', 'body.md'], 30000);
+  assert.equal(result.timedOut, false, 'the command waited on its own lock or kept re-executing');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/app\/issues\/7\/comments -f body=Run evidence/);
 });

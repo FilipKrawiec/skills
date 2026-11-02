@@ -1783,7 +1783,8 @@ function validInheritedLockContext(names) {
       if (match) processes.set(Number(match[1]), { parent: Number(match[2]), command: match[3] });
     }
     const owner = processes.get(ownerPid);
-    if (!owner || !owner.command.includes(fileURLToPath(import.meta.url))) return false;
+    // The owner ran this argv, so its ps line matches ours even where ps escapes the path.
+    if (!owner || !(owner.command.includes(fileURLToPath(import.meta.url)) || owner.command.trim() === ownCommandLine())) return false;
     const ancestors = [];
     let pid = process.ppid;
     for (let depth = 0; pid && depth < 16; depth++) {
@@ -1844,10 +1845,25 @@ async function execute(command, args) {
   else if (command === 'safety') { const { lanes } = config(); process.exitCode = safetyCommand(args, lanes); }
   else throw new Error('Invalid command; use --help');
 }
-export function needsAbsoluteInvocation(argv1, self) { return argv1 !== self; }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && needsAbsoluteInvocation(process.argv[1], fileURLToPath(import.meta.url))) {
+export function needsAbsoluteInvocation(command, self) { return !command.includes(self); }
+function ownCommandLine() {
+  // Node makes process.argv[1] absolute, so only ps shows how this process was invoked.
+  const result = spawnSync('ps', ['-o', 'command=', '-p', String(process.pid)], { encoding: 'utf8' });
+  return result.error || result.status !== 0 ? null : result.stdout.trim();
+}
+const invokedLocked = () => {
+  // ps may escape or truncate a path it cannot show literally, so a re-exec'd child never re-execs again.
+  const reexecuted = process.env.WORKFLOW_ABSOLUTE_REEXEC === '1';
+  delete process.env.WORKFLOW_ABSOLUTE_REEXEC;
+  const [command, ...args] = process.argv.slice(2);
+  // A lock child already runs by the absolute path its owner chose.
+  if (reexecuted || process.env.WORKFLOW_LOCK_TOKEN || !requiredLocks(command, args).length) return false;
+  const line = ownCommandLine();
+  return line !== null && needsAbsoluteInvocation(line, fileURLToPath(import.meta.url));
+};
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && invokedLocked()) {
   // Lock inheritance matches the owner's command line by absolute path.
-  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
+  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, WORKFLOW_ABSOLUTE_REEXEC: '1' } });
   process.exit(result.error ? 1 : result.status ?? 1);
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
