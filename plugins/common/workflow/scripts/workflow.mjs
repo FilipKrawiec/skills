@@ -454,6 +454,11 @@ function afkFlags(args, allowed) {
   }
   return result;
 }
+// A configured model alone reaches the default runner command.
+export function afkDefaultStartCommand(model) {
+  const argv = workflowDefaults.afk.startCommand;
+  return model === undefined ? argv : argv.flatMap(value => value === '--print' ? [value, '--model', '{model}'] : [value]);
+}
 function afkActor(cfg) {
   const actor = afkGh(['api', 'user']).login;
   if (!cfg.implementer || actor?.toLowerCase() !== cfg.implementer.toLowerCase()) throw new Error(`Authenticated as ${actor || 'unknown'}; AFK writes require ${cfg.implementer || 'a configured implementer'}`);
@@ -463,6 +468,7 @@ function afkConfig(refreshMetadata = false) {
   const { lanes, baseRef } = config();
   if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from Git and Owner from CODEOWNERS');
   assertDistinctPushRoles({ owner: lanes.owner, implementer: lanes.implementer, reviewer: lanes.reviewer });
+  lanes.startCommand ??= afkDefaultStartCommand(lanes.model);
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
   if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
