@@ -169,7 +169,8 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const epic = issue.labels.includes('type:epic'), slices = issue.subIssuesSummary;
     if (epic && column === 'In progress' && slices && slices.completed === slices.total) column = 'Todo';
     else if (!epic && ['In progress', 'Review'].includes(column) && !inPr.has(issue.number)) { orphans.push(issue.number); column = 'Todo'; }
-    if (!['Blocked', 'Todo', 'Backlog'].includes(column) || (column !== 'Blocked' && inPr.has(issue.number))) continue;
+    // An issue an open PR names is served through that PR's unit; a refine run cannot clear an open PR, and its hold would keep the PR unit back.
+    if (!['Blocked', 'Todo', 'Backlog'].includes(column) || inPr.has(issue.number)) continue;
     // The board grants no authority: a Todo story without `lane:afk` is refined like Backlog.
     if (column === 'Todo' && !epic && !issue.labels.includes('lane:afk')) column = 'Backlog';
     if (column === 'Todo') {

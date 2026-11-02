@@ -767,6 +767,9 @@ test('every ping serves Blocked, then Review, then Todo, then Backlog, by Priori
   assert.deepEqual(plan.units.map(unit => [unit.column, unit.pr ?? unit.issue]), [['Blocked', 6], ['Review', 20], ['Todo', 7], ['Todo', 8], ['Backlog', 9]]);
   assert.deepEqual(plan.units.map(unit => Boolean(unit.refine)), [true, false, false, false, true], 'Blocked and Backlog get refine runs that change no files');
   assert.match(plan.units[0].text, /#6 is Blocked: invoke `refine` on it alone to clear its blocker and move it to Todo/);
+  const named = reviewPr(21, { body: 'Closes #6', closingIssuesReferences: [{ number: 6, repository: { name: 'app', owner: { login: 'acme' } } }] });
+  const open = afkPlan(cfg, [], () => [], 'new-run', { issues, prs: [named] });
+  assert.deepEqual(open.units.filter(unit => unit.column !== 'Todo' && unit.column !== 'Backlog').map(unit => [unit.column, unit.pr ?? unit.issue, Boolean(unit.refine)]), [['Review', 21, false]], 'a Blocked card its open PR names gets no refine run; the PR unit serves it');
   assert.match(plan.units[4].text, /#9 is in Backlog: invoke `refine` on it alone, with `agent-review` eligibility/);
   assert.deepEqual([...afkCandidates(plan.units, [{ number: 6 }, { number: 20, pr: 20 }])].map(item => item.number), [7, 8, 9], 'held units are skipped');
 });
