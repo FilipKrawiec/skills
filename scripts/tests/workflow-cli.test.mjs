@@ -217,6 +217,42 @@ test('issue edit replaces an issue body from a worktree file and confirms it', t
   assert.notEqual(dropped.status, 0);
   assert.match(dropped.stderr, /did not confirm #4/);
 });
+test('issue status reports a repository without a board, and errors for tied boards, failed discovery or an unknown value', t => {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nrequire('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nout({}); process.exit(0);\n`);
+  chmodSync(gh, 0o755);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.TEST_CALLS = join(f.root, 'calls.log');
+  const seed = fields => writeFileSync(join(f.main, '.git', 'workflow-metadata-cache.json'), JSON.stringify({ 'acme/app': { fields: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, { at: Date.now(), value }])) } }));
+  const status = value => f.cliRun('issue', 'status', '--number', '4', '--value', value);
+
+  seed({ project: false, reviewQueue: null });
+  const none = status('Todo');
+  assert.equal(none.status, 0, none.stderr);
+  assert.match(none.stdout, /no GitHub Project board; status skipped \(use priority labels\)/);
+  assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /project|graphql/);
+
+  seed({ project: { ambiguous: [5, 6] }, reviewQueue: null });
+  const tied = status('Todo');
+  assert.notEqual(tied.status, 0);
+  assert.match(tied.stderr, /board is ambiguous: boards #5, #6 tie/);
+  assert.doesNotMatch(tied.stderr, /scopes/);
+
+  seed({ project: null, reviewQueue: null });
+  const unknown = status('Todo');
+  assert.notEqual(unknown.status, 0);
+  assert.match(unknown.stderr, /check scopes or run `workflow\.mjs cache refresh`/);
+
+  seed({ project: false, reviewQueue: null });
+  const badValue = status('Sideways');
+  assert.notEqual(badValue.status, 0);
+  assert.match(badValue.stderr, /Unknown status SIDEWAYS; use one of: BACKLOG, TODO, PROGRESS, BLOCKED, REVIEW, DONE/);
+  assert.doesNotMatch(badValue.stderr, /scopes/);
+});
 function runScriptAsync(f, script, args, timeout) {
   return new Promise(resolve => {
     const child = spawn(process.execPath, [script, ...args], { cwd: f.repo, env: f.env, stdio: ['ignore', 'ignore', 'pipe'], detached: true });

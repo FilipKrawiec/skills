@@ -221,6 +221,9 @@ export function afkStatus(cfg, issue, value, silent = false) {
   const project = cfg.project;
   if (!target || !project?.number) {
     if (silent) return false;
+    if (!target) throw new Error(`Unknown status ${value || '(none)'}; use one of: ${Object.keys(statusNames).join(', ')}`);
+    if (project === false) { console.log('Repository has no GitHub Project board; status skipped (use priority labels).'); return false; }
+    if (Array.isArray(project?.ambiguous)) throw new Error(`GitHub Project board is ambiguous: boards ${project.ambiguous.map(n => `#${n}`).join(', ')} tie for this repository's open issues; put more issues on one board, then run \`workflow.mjs cache refresh\``);
     throw new Error('No GitHub Project was discovered; check scopes or run `workflow.mjs cache refresh`');
   }
   try {
