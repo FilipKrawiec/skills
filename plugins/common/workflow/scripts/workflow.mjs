@@ -557,7 +557,7 @@ export function afkPathsFromIssueBody(body = '') {
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
   const fields = 'number title body lastEditedAt labels(first:30){nodes{name}} blockedBy(first:30){nodes{state}} milestone{number dueOn} parent{number parent{number parent{number parent{number}}}}';
-  const query = withPriority => `query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{${fields}${withPriority ? ' projectItems(first:10){nodes{project{number} priority: fieldValueByName(name:"Priority"){... on ProjectV2ItemFieldSingleSelectValue{name}} status: fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}' : ''}}}}}`;
+  const query = withPriority => `query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{${fields}${withPriority ? ' projectItems(first:10){nodes{project{number} fieldValueByName(name:"Priority"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}' : ''}}}}}`;
   const found = []; let after;
   do {
     const args = ['api', 'graphql', '-f', `query=${query(Boolean(cfg.project?.number))}`, '-F', `owner=${owner}`, '-F', `name=${name}`];
@@ -570,12 +570,11 @@ function afkIssues(cfg) {
     }
     found.push(...page.nodes.map(issue => {
       const labels = issue.labels.nodes.map(label => label.name);
-      const card = issue.projectItems?.nodes.find(item => item.project.number === cfg.project?.number);
-      const priority = card?.priority?.name || 'P9', status = card?.status?.name || null;
+      const priority = issue.projectItems?.nodes.find(card => card.project.number === cfg.project?.number)?.fieldValueByName?.name || 'P9';
       const ancestors = []; let parent = issue.parent;
       while (parent) { ancestors.push(parent.number); parent = parent.parent; }
       const paths = afkPathsFromIssueBody(issue.body || '');
-      return { ...issue, labels, priority, status, ancestors, paths, blocked: issue.blockedBy.nodes.some(dep => dep.state === 'OPEN') };
+      return { ...issue, labels, priority, ancestors, paths, blocked: issue.blockedBy.nodes.some(dep => dep.state === 'OPEN') };
     }));
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
   } while (after);
@@ -634,7 +633,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (issue.labels.includes('type:epic') || (owner || firstEpic) !== epic.issue.number || inPr.has(issue.number)) continue;
     const suffix = owner ? '' : ' under no epic';
     if (issue.labels.includes('lane:proposed') && awaitsEligibility(issue)) epic.units.push({ text: `#${issue.number} awaits its AFK eligibility check${suffix}`, issue: issue.number, paths: [] });
-    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked') epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
+    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
   }
   const heldOnEpic = number => threads(number).some(comment => {
     const id = /<!-- afk-epic-hold session=(\S+) -->/.exec(comment.body || '')?.[1];
@@ -799,7 +798,7 @@ function afkExploreDue(cfg, live, currentRun = null) {
   catch { return true; }
 }
 function afkStatus(cfg, issue, value, silent = false) {
-  const statusNames = { BACKLOG: 'Backlog', TODO: 'Todo', PROGRESS: 'In progress', BLOCKED: 'Blocked', REVIEW: 'Review', DONE: 'Done' };
+  const statusNames = { BACKLOG: 'Backlog', TODO: 'Todo', PROGRESS: 'In progress', REVIEW: 'Review', DONE: 'Done' };
   const target = statusNames[value];
   const project = cfg.project;
   if (!target || !project?.number) {
@@ -1142,9 +1141,7 @@ export function afkRunUsage(output) {
   parts.push(`tokens in ${count('input_tokens')}, out ${count('output_tokens')}, cache read ${count('cache_read_input_tokens')}, cache write ${count('cache_creation_input_tokens')}`);
   return { result: typeof value.result === 'string' ? value.result : '', line: `Usage: ${parts.join(', ')}` };
 }
-// A run that ended without a PR naming its issue stopped on a blocker (`why` is its own summary): the card goes to Blocked
-// with a comment saying why, and the selector skips it until the orchestrator clears the blocker and moves it to Todo.
-function afkEndRun(cfg, common, id, note = null, why = null) {
+function afkEndRun(cfg, common, id, note = null) {
   afkActor(cfg);
   return withRepoLock('afk-start', () => {
     const path = join(common, 'afk-holds.json'); const ledger = afkReadLedger(path);
@@ -1155,9 +1152,7 @@ function afkEndRun(cfg, common, id, note = null, why = null) {
       const kind = held.paths === null ? 'epic' : 'issue';
       run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${held.comment}`, '-f', `body=${afkMarker(`${kind}-released`, id)}${note ? `\n${note}` : ''}`]);
       console.log(`Released: ${kind} #${held.number}`);
-      const blocked = kind === 'issue' && why !== null && !named.has(held.number);
-      if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
-      if (kind === 'issue') afkStatus(cfg, held.number, named.has(held.number) ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO', true);
+      if (kind === 'issue') afkStatus(cfg, held.number, named.has(held.number) ? 'REVIEW' : 'TODO', true);
     }
     const openEpics = afkIssues(cfg).filter(issue => issue.labels.includes('type:epic'));
     for (const epic of openEpics) for (const comment of afkComments(cfg, epic.number)) {
@@ -1502,7 +1497,7 @@ function afkSupervise(common, runId) {
     output = afkLaunchAgent(job.launch);
     usage = afkRunUsage(output);
   } finally {
-    const finished = job.held ? spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'finish', '--me', runId, ...(usage?.result?.trim() ? ['--why', usage.result] : []), ...(usage ? ['--note', usage.line] : [])], { cwd: job.root, stdio: 'inherit', env: process.env }) : null;
+    const finished = job.held ? spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'finish', '--me', runId, ...(usage ? ['--note', usage.line] : [])], { cwd: job.root, stdio: 'inherit', env: process.env }) : null;
     if (finished && finished.status !== 0) console.error(`Blocked: run ${runId} still holds its issue; release it with afk end --me ${runId}.`);
     if (job.tree && !afkReleaseRunTree(job.tree, job.root)) console.log(`Kept: ${job.tree} holds work that is not on the remote; preserve it.`);
     rmSync(path, { force: true });
@@ -1534,9 +1529,9 @@ function afkCommand(args) {
       return afkWatch(cfg, common, issue);
     }
     if (action === 'supervise' || action === 'finish') {
-      const flags = afkFlags(rest, ['--me', '--note', '--why']); const id = flags['--me'];
+      const flags = afkFlags(rest, ['--me', '--note']); const id = flags['--me'];
       if (!/^[\w.-]+$/.test(id || '')) throw new Error(`Usage: afk ${action} --me RUN_ID`);
-      return action === 'supervise' ? afkSupervise(common, id) : afkEndRun(cfg, common, id, flags['--note'] || null, flags['--why'] ?? '');
+      return action === 'supervise' ? afkSupervise(common, id) : afkEndRun(cfg, common, id, flags['--note'] || null);
     }
     if (action === 'reap') { afkLoadEnvironment(cfg); afkReap(cfg, common); return 0; }
     if (action === 'runs') {

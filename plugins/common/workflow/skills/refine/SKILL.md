@@ -28,8 +28,6 @@ Give open issues a milestone, slices their epic's milestone, and epics no lane. 
 
 Delegate routine technical decisions; reserve product strategy, new costs, authority and quality-gate weakening for the owner. New interactions need owner prototype direction. Continue independent work while a reserved decision waits.
 
-Clear Blocked cards first: an AFK run stopped there and its `afk-issue-blocked` comment says why. Remove the blocker (packet, dependency, decision or owner question), then move the card to Todo.
-
 **Exit gate:** each item has a disposition and unresolved conflicts have an owner and wait.
 
 ## 3. Apply and verify
