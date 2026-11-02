@@ -215,3 +215,28 @@ test('commit without paths requires a merge in progress', t => {
   assert.match(result.stderr, /only while a merge is in progress/);
 });
 
+test('AFK commit and push follow a scope packet corrected on the held issue', t => {
+  const f = fixture(t);
+  f.env.REMOTE_BASE_SHA = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/old.md'] }] }));
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  Object.assign(f.env, { WORKFLOW_RUN_ID: 'afk-test-run', WORKFLOW_ISSUE_NUMBER: '1082', GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.test', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.test' });
+  mkdirSync(join(f.repo, 'docs'));
+  writeFileSync(join(f.repo, 'docs', 'moved.md'), 'moved target');
+  f.env.FAKE_ISSUE_BODY = 'Scope\n```scope\n{"paths":["docs/old.md"]}\n```';
+  const stale = f.cliRun('commit', '--message', 'docs: moved target', '--', 'docs/moved.md');
+  assert.notEqual(stale.status, 0);
+  assert.match(stale.stderr, /assigned AFK scope/);
+  f.env.FAKE_ISSUE_BODY = 'Scope\n```scope\n{"paths":["docs/moved.md"]}\n```';
+  const corrected = f.cliRun('commit', '--message', 'docs: moved target', '--', 'docs/moved.md');
+  assert.equal(corrected.status, 0, corrected.stderr);
+  assert.deepEqual(f.linkedGit('show', '--format=', '--name-only', 'HEAD').stdout.trim().split('\n'), ['docs/moved.md']);
+  const pushed = f.cliRun('push');
+  assert.equal(pushed.status, 0, pushed.stderr);
+  f.env.FAKE_ISSUE_BODY = 'Scope\n```scope\n{"paths":["docs/old.md"]}\n```';
+  const reverted = f.cliRun('push');
+  assert.notEqual(reverted.status, 0);
+  assert.match(reverted.stderr, /Push paths exceed the assigned AFK scope/);
+});
+
