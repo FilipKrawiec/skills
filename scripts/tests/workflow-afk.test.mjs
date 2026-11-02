@@ -39,6 +39,14 @@ test('AFK plan skips live claims but lets a new run take a stale claim', () => {
   assert.deepEqual(plan.epics[0].units.map(unit => unit.issue), [2, 4]);
 });
 
+test('AFK plan offers no review of a PR whose linked issue a live run holds', () => {
+  const pr = (number, linked) => ({ number, title: `PR ${number}`, body: `Closes #${linked}`, headRefOid: 'abc', labels: [], reviews: [], statusCheckRollup: [], mergeable: 'MERGEABLE' });
+  const loose = { ...issue(5, ['lane:afk']), ancestors: [] };
+  const comments = new Map([[5, [{ body: '<!-- afk-issue-hold session=live-run -->' }]]]);
+  const plan = afkPlan(cfg, ['live-run'], number => comments.get(number) || [], 'new-run', { issues: [epic, loose, issue(6, ['lane:afk'])], prs: [pr(10, 5), pr(11, 6)] });
+  assert.deepEqual(plan.epics[0].units.map(unit => unit.text), ['PR #11 (PR 11) awaits its review']);
+});
+
 test('one-shot AFK runs are counted from live watcher PIDs', t => {
   const outside = mkdtempSync(join(tmpdir(), 'afk-live-'));
   const previous = process.cwd();

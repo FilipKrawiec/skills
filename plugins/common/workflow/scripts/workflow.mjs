@@ -648,7 +648,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   const firstEpic = epics[0]?.issue.number;
   const inPr = new Set(prs.flatMap(pr => pr.issues));
   const claimedElsewhere = number => {
-    const claim = (threads(number).map(comment => /<!-- afk-claim session=(\S+) -->/.exec(comment.body || '')?.[1]).filter(Boolean).at(-1));
+    const claim = (threads(number).map(comment => /<!-- afk-(?:claim|issue-hold) session=(\S+) -->/.exec(comment.body || '')?.[1]).filter(Boolean).at(-1));
     return Boolean(claim && claim !== me && live.includes(claim));
   };
   // Runs post the eligibility verdict through `issue comment`, so the implementer's marked verdict counts as the Reviewer's;
@@ -683,7 +683,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const parked = !pr.awaitingReview && !pr.broken && stories.length > 0 && stories.every(issue => issue.labels.includes('lane:owner'));
     if (parked) continue;
     const owners = pr.issues.map(epicOf).filter(Boolean);
-    if (owners.length && pr.issues.some(number => epicOf(number) && claimedElsewhere(number))) continue;
+    if (pr.issues.some(claimedElsewhere)) continue;
     const target = owners[0] || firstEpic;
     const suffix = owners.length ? '' : ' (under no epic)';
     // Its issues' packets, then the PR's own packet, then the files it already changes.
