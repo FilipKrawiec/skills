@@ -196,6 +196,14 @@ export function readThroughLocalCache(path, key, load, { ttlMs = 86_400_000, now
 }
 export function workflowMetadataCachePath(commonDir) { return join(commonDir, 'workflow-metadata-cache.json'); }
 export function githubMetadataPath() { return workflowMetadataCachePath(git('rev-parse', '--path-format=absolute', '--git-common-dir')); }
+// Discovered board states: a project, `false` for no board, or `{ ambiguous }` for tied boards.
+// `null` (written before this encoding) and an absent field both mean discovery is unknown.
+export function discoveredProject(projects) {
+  if (!projects.length) return false;
+  const [top, next] = projects;
+  if (next && next.count === top.count) return { ambiguous: projects.filter(item => item.count === top.count).map(item => item.number) };
+  return { number: top.number, title: top.title, ...(top.owner ? { owner: top.owner } : {}) };
+}
 export function discoverGithubMetadata(repo) {
   const [owner, name] = repo.split('/');
   const counts = new Map(); let after; let project; let reviewQueue;
@@ -213,9 +221,7 @@ export function discoverGithubMetadata(repo) {
       after = issues.pageInfo.hasNextPage ? issues.pageInfo.endCursor : null;
     } while (after);
     const projects = [...counts.values()].sort((a, b) => b.count - a.count);
-    project = projects.length && (projects.length === 1 || projects[0].count > projects[1].count)
-      ? { number: projects[0].number, title: projects[0].title, ...(projects[0].owner ? { owner: projects[0].owner } : {}) }
-      : null;
+    project = discoveredProject(projects);
   } catch { /* Project scope or API access can be unavailable; AFK remains usable without board priority. */ }
   try {
     const matches = afkGh(['issue', 'list', '--repo', repo, '--state', 'open', '--search', 'in:title "Review queue"', '--limit', '100', '--json', 'number,title'])

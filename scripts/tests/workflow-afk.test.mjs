@@ -41,6 +41,7 @@ import {
   afkOtherHolds,
   afkRunUsage,
   afkShow,
+  afkStatus,
   afkStartCount,
   afkStartIdleLines,
   hasProcessAncestor,
@@ -71,6 +72,7 @@ import {
   githubScopeFailure,
   missingProjectScope,
   readThroughLocalCache,
+  discoveredProject,
   workflowDefaults,
   workflowLabels,
   workflowMetadataCachePath,
@@ -204,6 +206,23 @@ test('GitHub metadata cache is shared by a caller-supplied common git directory'
   assert.deepEqual(readThroughLocalCache(path, 'acme/stage', () => ({ reviewQueue: 481 }), { ...options, now: 100_000, ttlMs: 10 }), { reviewQueue: 481 });
   assert.deepEqual(readThroughLocalCache(path, 'acme/stage', () => ({ project: null }), { ...options, now: 100_001, ttlMs: 10 }), { project: null, reviewQueue: 481 });
   assert.deepEqual(readThroughLocalCache(path, 'acme/stage', () => ({ reviewQueue: 482 }), { ...options, now: 200_000, ttlMs: 10 }), { reviewQueue: 482 });
+});
+
+test('board discovery tells no board, one board and tied boards apart', () => {
+  assert.equal(discoveredProject([]), false);
+  assert.deepEqual(discoveredProject([{ number: 5, title: 'Pro', owner: 'acme', count: 3 }, { number: 6, title: 'Old', count: 1 }]), { number: 5, title: 'Pro', owner: 'acme' });
+  assert.deepEqual(discoveredProject([{ number: 5, title: 'Pro', count: 2 }, { number: 6, title: 'Old', count: 2 }, { number: 7, title: 'X', count: 1 }]), { ambiguous: [5, 6] });
+});
+
+test('silent board status callers return false quietly for every unusable board state', t => {
+  const logged = [];
+  t.mock.method(console, 'log', (...args) => logged.push(args));
+  t.mock.method(console, 'error', (...args) => logged.push(args));
+  for (const project of [false, { ambiguous: [5, 6] }, null, undefined]) {
+    assert.equal(afkStatus({ repo: 'acme/app', project }, 4, 'TODO', true), false);
+    assert.equal(afkStatus({ repo: 'acme/app', project }, 4, 'NOPE', true), false);
+  }
+  assert.deepEqual(logged, []);
 });
 
 test('cached GitHub facts fill optional workflow settings without overriding explicit policy', () => {
