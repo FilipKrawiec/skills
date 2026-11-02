@@ -753,7 +753,13 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   const spent = data?.issues ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [], orphans = [], units = [], held = [];
   const base = data?.issues ? data.base || '' : (() => { try { return git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { return ''; } })();
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
-  const heldElsewhere = number => afkLiveHolds(threads(number), live, me).some(hold => hold.run !== me);
+  // A run that split its held issue builds the first sub-issue under that hold, so a hold on a parent In progress (or with
+  // no card) also covers its direct sub-issues; a refine hold on a Blocked or Backlog epic, or one on a grandparent, does not.
+  const holdsOf = number => afkLiveHolds(threads(number), live, me).some(hold => hold.run !== me);
+  const heldElsewhere = number => {
+    const parent = byNumber.get(byNumber.get(number)?.ancestors?.[0]);
+    return holdsOf(number) || Boolean(parent && [null, undefined, 'In progress'].includes(parent.status) && holdsOf(parent.number));
+  };
   const inPr = new Set(prs.flatMap(pr => pr.issues)), openPrs = new Set(prs.map(pr => pr.number));
   const offer = (unit, key, state) => {
     if (spent[key] === state) { unchanged.push(key); return; }
@@ -1337,7 +1343,19 @@ function afkStillReady(cfg, number) {
   const issue = afkGh(['api', `repos/${cfg.repo}/issues/${number}`]);
   return issue.state === 'open' && (issue.labels || []).some(label => label.name === 'lane:afk');
 }
+// An unreadable list counts as none, so the issue ends as an unsplit one and the hold is still released.
+function afkSubIssues(cfg, number) {
+  try {
+    const pages = afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/issues/${number}/sub_issues`]);
+    return Array.isArray(pages) ? pages.flat().map(sub => sub?.number).filter(Number.isSafeInteger) : [];
+  } catch { return []; }
+}
 export function afkEndStatus(named, blocked) { return named ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO'; }
+// A held issue the run split into sub-issues is their epic and stays In progress; each sub-issue a PR names goes to Review.
+export function afkEndCards(number, subIssues, named, blocked) {
+  if (!subIssues.length) return [[number, afkEndStatus(named.has(number), blocked)]];
+  return [[number, 'PROGRESS'], ...subIssues.filter(sub => named.has(sub)).map(sub => [sub, 'REVIEW'])];
+}
 function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
   afkActor(cfg);
   return withRepoLock('afk-start', () => {
@@ -1350,9 +1368,10 @@ function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
       run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${held.comment}`, '-f', `body=${afkMarker(`${kind}-released`, id)}${note ? `\n${note}` : ''}`]);
       console.log(`Released: ${kind} #${held.number}`);
       if (!implemented.includes(held)) continue;
-      const blocked = why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
+      const subIssues = afkSubIssues(cfg, held.number);
+      const blocked = why !== null && !subIssues.length && !named.has(held.number) && afkStillReady(cfg, held.number);
       if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
-      afkStatus(cfg, held.number, afkEndStatus(named.has(held.number), blocked), true);
+      for (const [number, status] of afkEndCards(held.number, subIssues, named, blocked)) afkStatus(cfg, number, status, true);
     }
     afkWriteLedger(path, ledger);
     // Only an agent that exited cleanly spends its unit's state; a crash, a failed start or a manual end leaves it offered.
