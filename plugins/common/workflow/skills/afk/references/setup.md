@@ -49,7 +49,7 @@ Keep only identities and project step commands in config. Set `steps.process` to
 
 ## Unattended runs
 
-Install the host watcher with `node <this-skill-directory>/../../scripts/workflow.mjs afk install`. The CLI installs launchd from config and maintains a dedicated worktree. Remove the job with `afk uninstall`; the worktree is preserved.
+Install the host watcher with `node <this-skill-directory>/../../scripts/workflow.mjs afk install`; it starts at login. Each 60-second poll moves `.worktrees/afk-watch` to base and updates the CLI-owned tooling checkout (`afk.toolingDirectory`), whose CLI and skills runs use. Never edit that checkout. `afk uninstall` removes the job.
 
 Run `node <this-skill-directory>/../../scripts/workflow.mjs afk start --me <run id>`: exit 3 ends, 2 reports `Blocked:`, 4 starts an `explore` pass. Exit 0 holds one eligible issue; invoke `afk` on it in an isolated worktree and never change the main checkout. End with `node <this-skill-directory>/../../scripts/workflow.mjs afk end --me <run id>`.
 
