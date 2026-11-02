@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkEndCards, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -727,4 +727,17 @@ test('a sliced epic comes back for its close check once its slices close, and a 
 
 test('an implementation run ends in Review with a PR, Blocked without one, else Todo', () => {
   assert.deepEqual([afkEndStatus(true, false), afkEndStatus(false, true), afkEndStatus(false, false)], ['REVIEW', 'BLOCKED', 'TODO']);
+});
+
+test('a run that splits its held issue builds the first sub-issue while its hold keeps the others and their PRs from other runs', () => {
+  const parent = { number: 40, labels: ['type:epic'], ancestors: [], status: 'In progress', priority: 'P1', paths: null, subIssuesSummary: { total: 2, completed: 0 } };
+  const first = board(41, 'Todo', ['lane:afk'], { ancestors: [40] }), second = board(42, 'Todo', ['lane:afk'], { ancestors: [40], blocked: true });
+  const pr = reviewPr(50, { body: 'Closes #41', closingIssuesReferences: [{ number: 41, repository: { name: 'app', owner: { login: 'acme' } } }] });
+  const comments = new Map([[40, [{ id: 1, body: '<!-- afk-issue-hold session=splitter -->' }]]]);
+  const plan = live => afkPlan(cfg, live, number => comments.get(number) || [], 'new-run', { issues: [parent, first, second], prs: [pr] }).units.map(unit => unit.pr ?? unit.issue);
+  assert.deepEqual(plan(['splitter']), [], 'neither a sub-issue nor its PR goes to another run');
+  assert.deepEqual(plan([]), [50], 'once the hold ends, the PR is served; the next sub-issue waits on its blocker');
+  assert.deepEqual(afkEndCards(40, [41, 42], new Set([41]), false), [[40, 'PROGRESS'], [41, 'REVIEW']], 'the parent epic stays In progress and the built sub-issue goes to Review');
+  assert.deepEqual(afkEndCards(40, [41, 42], new Set(), true), [[40, 'PROGRESS']], 'without a PR the sub-issues stay Todo for the next run');
+  assert.deepEqual(afkEndCards(7, [], new Set([7]), false), [[7, 'REVIEW']], 'an issue that was not split ends as before');
 });
