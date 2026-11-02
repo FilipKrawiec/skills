@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkSlots, afkPrFiles, afkEndStatus, afkSlices, afkStageFallback, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkSlots, afkPrFiles, afkEndStatus, afkSlices, afkStageFallback, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -337,6 +337,27 @@ test('a Blocked card stays out of selection until it moves back to Todo', () => 
   assert.equal(ready(null).length, 1);
 });
 
+test('a PR a finished run left unchanged gets no new run until its head, reviews, checks or an outside comment change', () => {
+  const pr = extra => ({ number: 9, title: 'Fix', body: 'No linked issue.', headRefOid: 'abc', labels: [], reviews: [{ author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'abc' }, body: '' }], statusCheckRollup: [], mergeable: 'MERGEABLE', files: [{ path: 'src/a.js' }], ...extra });
+  const workflowCfg = { ...cfg, implementer: 'builder' };
+  const plan = (record, comments = [], spentComments = []) => {
+    const spent = { 9: afkPrState(afkPrRecord(pr(), workflowCfg), spentComments, workflowCfg) };
+    return afkPlan(workflowCfg, [], number => number === 9 ? comments : [], 'new-run', { issues: [epic], prs: [record], spent });
+  };
+  const unchanged = plan(pr());
+  assert.deepEqual(unchanged.epics[0].units, []);
+  assert.deepEqual(unchanged.unchanged, [9]);
+  const runNotes = [{ id: 5, user: { login: 'builder' }, body: 'Round-2 notes' }, { id: 6, user: { login: 'builder' }, body: '<!-- afk-issue-released session=afk-1 -->' }];
+  assert.deepEqual(plan(pr(), runNotes).epics[0].units, [], 'the workflow\'s own comments are not new input');
+  const offered = record => plan(record).epics[0].units.map(unit => unit.issue);
+  assert.deepEqual(offered(pr({ headRefOid: 'def' })), [9], 'a new head is reviewed');
+  assert.deepEqual(offered(pr({ reviews: [...pr().reviews, { author: { login: 'owner' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '' }] })), [9], 'a new review');
+  assert.deepEqual(offered(pr({ statusCheckRollup: [{ conclusion: 'FAILURE' }] })), [9], 'a red check');
+  assert.deepEqual(plan(pr(), [{ id: 7, user: { login: 'owner' }, body: 'Please also cover X' }]).epics[0].units.map(unit => unit.issue), [9], 'an owner comment');
+  const fresh = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr()] }).epics[0].units[0];
+  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:1:green:'], 'the unit carries the state its run will spend');
+});
+
 test('a red PR unit takes its scope from its packet, else its changed files', () => {
   const red = (body, extra = {}) => ({ number: 9, title: 'Fix', body, headRefOid: 'abc', labels: [], isDraft: false, mergeable: 'CONFLICTING', reviews: [{ author: { login: cfg.reviewer }, commit: { oid: 'abc' }, state: 'COMMENTED' }], files: [{ path: 'src/a.js' }, { path: 'docs/b.md' }], ...extra });
   const paths = (pr, issues = [epic]) => afkPlan(cfg, [], () => [], 'new-run', { issues, prs: [pr] }).epics[0].units[0].paths;
@@ -631,8 +652,9 @@ test('AFK keeps watcher and run worktrees out of the main checkout status once',
 
 test('AFK run usage summarizes a JSON runner result and ignores plain output', () => {
   const output = JSON.stringify({ type: 'result', result: 'Summary: done', total_cost_usd: 1.234, num_turns: 42, duration_ms: 754_000, usage: { input_tokens: 1200, output_tokens: 3400, cache_read_input_tokens: 560000, cache_creation_input_tokens: 78000 } });
-  assert.deepEqual(afkRunUsage(output), { result: 'Summary: done', line: 'Usage: $1.23, 42 turns, 13 min, tokens in 1200, out 3400, cache read 560000, cache write 78000' });
-  assert.deepEqual(afkRunUsage(JSON.stringify({ type: 'result', result: 'ok' })), { result: 'ok', line: 'Usage: tokens in 0, out 0, cache read 0, cache write 0' });
+  assert.deepEqual(afkRunUsage(output), { result: 'Summary: done', line: 'Usage: $1.23, 42 turns, 13 min, tokens in 1200, out 3400, cache read 560000, cache write 78000', ok: true });
+  assert.deepEqual(afkRunUsage(JSON.stringify({ type: 'result', result: 'ok' })), { result: 'ok', line: 'Usage: tokens in 0, out 0, cache read 0, cache write 0', ok: true });
+  assert.equal(afkRunUsage(JSON.stringify({ type: 'result', is_error: true, result: 'API error' })).ok, false, 'an error result spends no PR state');
   assert.equal(afkRunUsage('Summary: plain text'), null);
   assert.equal(afkRunUsage('{"other":1}'), null);
   assert.equal(afkRunUsage(undefined), null);
