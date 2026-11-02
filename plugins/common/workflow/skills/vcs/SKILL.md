@@ -6,7 +6,7 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*,lsof:*)
 
 # Version Control
 
-Follow the repository's branch, scope, verification and review rules. Preserve the main checkout and unrelated work. Use an isolated worktree; reuse the assignment's branch when suitable. Read `.agents/config.json` for implementer and Reviewer identities; derive repository/base from `origin` and Owner from base CODEOWNERS; get board settings from `workflow.mjs cache show`. AFK branches use the provider-neutral form `afk/<issue>-<slug>`; attended branches use `<issue>-<slug>`. `spec` defines transitions; only the designated actor applies each one.
+Follow the repository's branch, scope, verification and review rules. Preserve the main checkout and unrelated work. Work in an isolated worktree, created with the agent harness's native worktree tool where it has one; reuse the assignment's branch when suitable. Read `.agents/config.json` for implementer and Reviewer identities; derive repository/base from `origin` and Owner from base CODEOWNERS; get board settings from `workflow.mjs cache show`. AFK branches use the provider-neutral form `afk/<issue>-<slug>`; attended branches use `<issue>-<slug>`. `spec` defines transitions; only the designated actor applies each one.
 
 ## 1. Start
 
@@ -34,6 +34,6 @@ Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr 
 
 ## 4. Tidy and report
 
-Remove only this assignment's clean, unused worktrees and branches; preserve unrelated sessions. Return at most 5 lines: PR/head, checks, review and merge state; next actor or reserved decision. Do not change settings, secrets or releases.
+Once merged or handed off, remove this assignment's worktree when clean and pushed, through that harness tool where it created it, and its merged branches; preserve unrelated sessions and anything unpushed. Return at most 5 lines: PR/head, checks, review and merge state; next actor or reserved decision. Do not change settings, secrets or releases.
 
 **Exit gate:** safe cleanup or a reason to defer it.

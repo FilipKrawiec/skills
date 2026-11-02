@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
+import { existsSync, readFileSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, issueTargetRepo, oldestExactTitle } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -58,7 +58,7 @@ test('workflow label catalog is centralized in the CLI', () => {
 
 test('AFK and explore use conventional defaults with four concurrent runs', () => {
   assert.equal(workflowDefaults.afk.maxRuns, 4);
-  assert.deepEqual(workflowDefaults.afk.startCommand, ['claude', '--print', '--output-format', 'json', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}']);
+  assert.deepEqual(workflowDefaults.afk.startCommand, ['claude', '--print', '--output-format', 'json', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--worktree', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}']);
   assert.equal(workflowDefaults.afk.toolingRepository, 'https://github.com/FilipKrawiec/skills.git');
   assert.equal(workflowDefaults.afk.toolingRef, 'main');
   assert.equal(workflowDefaults.afk.toolingDirectory, '~/.local/share/workflow-cli/skills');
@@ -349,6 +349,47 @@ test('AFK keeps a run worktree only while it holds work missing from the remote'
   const committed = tree('committed');
   assert.equal(git(committed, 'commit', '-q', '--allow-empty', '-m', 'local only').status, 0);
   assert.equal(afkReleaseRunTree(committed, repo), false);
+});
+
+test('AFK removes a finished run worktree and the branch Claude Code made for it, and sweeps those of ended runs', t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'afk-native-tree-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const repo = join(root, 'repo');
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd, env, encoding: 'utf8' });
+  assert.equal(git(root, 'init', '-q', '-b', 'main', repo).status, 0);
+  assert.equal(git(repo, 'commit', '-q', '--allow-empty', '-m', 'base').status, 0);
+  assert.equal(git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD').status, 0);
+  const native = name => {
+    const path = join(repo, '.claude', 'worktrees', name);
+    assert.equal(git(repo, 'worktree', 'add', '-q', '--lock', '-b', `worktree-${name}`, path, 'origin/main').status, 0);
+    return path;
+  };
+  const finished = native('afk-20261102101500-111-1');
+  assert.equal(afkReleaseRunTree(finished, repo), true);
+  assert.equal(existsSync(finished), false);
+  assert.equal(git(repo, 'rev-parse', '--verify', '-q', 'refs/heads/worktree-afk-20261102101500-111-1').status, 1);
+  const ended = native('afk-20261102101600-222-1');
+  const running = native('afk-20261102101600-333-1');
+  const stranded = native('afk-20261102101600-444-1');
+  writeFileSync(join(stranded, 'work.txt'), 'unsaved');
+  const logs = [];
+  t.mock.method(console, 'log', message => logs.push(message));
+  afkSweepRunTrees({ runPrefix: 'afk-' }, repo, pid => pid === 333);
+  assert.equal(existsSync(ended), false);
+  assert.equal(existsSync(running), true);
+  assert.equal(existsSync(stranded), true);
+  assert.deepEqual(logs, [`Kept: ${stranded} holds work that is not on the remote; preserve it.`]);
+});
+
+test('AFK keeps watcher and run worktrees out of the main checkout status once', t => {
+  const common = mkdtempSync(join(tmpdir(), 'afk-exclude-'));
+  t.after(() => rmSync(common, { recursive: true, force: true }));
+  mkdirSync(join(common, 'info'));
+  writeFileSync(join(common, 'info', 'exclude'), '*.log');
+  afkExcludeWorktrees(common);
+  afkExcludeWorktrees(common);
+  assert.equal(readFileSync(join(common, 'info', 'exclude'), 'utf8'), '*.log\n/.worktrees/\n/.claude/worktrees/\n');
 });
 
 test('AFK run usage summarizes a JSON runner result and ignores plain output', () => {
