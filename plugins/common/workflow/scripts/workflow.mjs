@@ -794,7 +794,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
 // Why `afk start --issue` could not hold an issue; a packet-less issue names its missing packet, which a refine run adds.
 export function afkStartRefusal(number, issue) {
   const packetless = issue && issue.paths === null && issue.labels.includes('lane:afk') && !issue.labels.includes('type:epic');
-  return new Error(`#${number} is not an eligible AFK candidate${packetless ? ': it has no valid scope packet, and its refine unit is held, unchanged or not in Todo' : ''}`);
+  return new Error(`#${number} is not an eligible AFK candidate${packetless ? ': it has no valid scope packet, and no refine unit for it is offered now' : ''}`);
 }
 // The units no other live run holds, in board order.
 export function* afkCandidates(units, others) {
