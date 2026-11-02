@@ -628,12 +628,20 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const latest = checked.at(-1);
     return !latest || issue.lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=/.test(comment.body || ''));
   };
+  // A run that released a ready issue without a PR stopped on a blocker, so the issue waits until it is edited,
+  // someone other than the implementer comments, or a day passes; a hold released before its run started does not count.
+  const waitsForChange = issue => {
+    const comments = threads(issue.number);
+    const released = comments.filter(comment => /^<!-- afk-issue-released session=/.test(comment.body || '') && !/Start failed/.test(comment.body || '')).at(-1)?.created_at;
+    if (!released || Date.now() - Date.parse(released) >= 86_400_000 || issue.lastEditedAt > released) return false;
+    return !comments.some(comment => comment.created_at > released && comment.user?.login?.toLowerCase() !== cfg.implementer?.toLowerCase());
+  };
   for (const epic of epics) for (const issue of issues) {
     const owner = epicOf(issue.number);
     if (issue.labels.includes('type:epic') || (owner || firstEpic) !== epic.issue.number || inPr.has(issue.number)) continue;
     const suffix = owner ? '' : ' under no epic';
     if (issue.labels.includes('lane:proposed') && awaitsEligibility(issue)) epic.units.push({ text: `#${issue.number} awaits its AFK eligibility check${suffix}`, issue: issue.number, paths: [] });
-    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
+    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && !waitsForChange(issue)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
   }
   const heldOnEpic = number => threads(number).some(comment => {
     const id = /<!-- afk-epic-hold session=(\S+) -->/.exec(comment.body || '')?.[1];
