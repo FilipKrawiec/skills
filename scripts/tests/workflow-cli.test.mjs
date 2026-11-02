@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, existsS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codeownersRolesFrom } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCheckQuiet, afkToolingVersion, codeownersRolesFrom } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const cli = join(root, 'plugins/common/workflow/scripts/workflow.mjs');
@@ -756,4 +756,14 @@ test('push failure reports a safe class and exit', t => {
 test('remote destination mismatch is rejected', t => {
   const f = fixture(t); f.linkedGit('remote', 'set-url', 'origin', 'https://github.com/other/project.git');
   assert.notEqual(f.cliRun('push').status, 0); assertNoPush(f);
+});
+
+test('a tooling update ends the quiet check window', () => {
+  const version = afkToolingVersion(), now = 1_000_000;
+  assert.equal(version, JSON.parse(readFileSync(new URL('../../plugins/common/workflow/plugin.json', import.meta.url), 'utf8')).version);
+  assert.equal(afkCheckQuiet({ signal: 's', at: now, version }, 's', version, now), true);
+  assert.equal(afkCheckQuiet({ signal: 's', at: now, version: '0.0.1' }, 's', version, now), false);
+  assert.equal(afkCheckQuiet({ signal: 's', at: now }, 's', version, now), false);
+  assert.equal(afkCheckQuiet({ signal: 'other', at: now, version }, 's', version, now), false);
+  assert.equal(afkCheckQuiet({ signal: 's', at: now - 1_800_000, version }, 's', version, now), false);
 });

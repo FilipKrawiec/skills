@@ -1096,13 +1096,20 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
     output.forEach(line => console.log(line)); return 3;
   });
 }
+export function afkToolingVersion() {
+  try { return JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'plugin.json'), 'utf8')).version || ''; } catch { return ''; }
+}
+// A tooling update can free work no repository event shows, so a changed or missing version ends the quiet window.
+export function afkCheckQuiet(previous, signal, version, now = Date.now()) {
+  return Boolean(version) && previous?.version === version && previous.signal === signal && now - previous.at < 1_800_000;
+}
 function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const live = afkLive(cfg); const statePath = quiet ? join(common, 'afk-check.json') : null;
-  const signal = statePath ? afkSignal(cfg, live) : null;
+  const signal = statePath ? afkSignal(cfg, live) : null; const version = afkToolingVersion();
   if (statePath) {
     try {
       const previous = JSON.parse(readFileSync(statePath, 'utf8'));
-      if (previous.signal === signal && Date.now() - previous.at < 1_800_000) { result.start = 0; console.log('Quiet: nothing changed since the last check.'); return 3; }
+      if (afkCheckQuiet(previous, signal, version)) { result.start = 0; console.log('Quiet: nothing changed since the last check.'); return 3; }
     } catch {}
   }
   const budget = afkBudget();
@@ -1131,7 +1138,7 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   });
   if (!requestedIssue && !start && !live.length && afkExploreDue(cfg, live)) start = 1;
   result.start = start;
-  if (statePath) { mkdirSync(dirname(statePath), { recursive: true }); writeFileSync(statePath, JSON.stringify({ signal, at: Date.now() })); }
+  if (statePath) { mkdirSync(dirname(statePath), { recursive: true }); writeFileSync(statePath, JSON.stringify({ signal, version, at: Date.now() })); }
   console.log(start ? `Start: ${start}` : requestedIssue ? `Done: #${requestedIssue} has no free AFK assignment.` : `Done: no new run has work (${live.length} live).`);
   output.forEach(line => console.log(line));
   return start ? 0 : 3;
