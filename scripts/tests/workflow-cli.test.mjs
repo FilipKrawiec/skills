@@ -207,6 +207,7 @@ test('AFK commit enforces the issue scope recorded in the hold', t => {
   assert.notEqual(denied.status, 0);
   assert.match(denied.stderr, /assigned AFK scope/);
   assert.equal(f.linkedGit('diff', '--cached', '--name-only').stdout.trim(), '');
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
   mkdirSync(join(f.repo, 'docs'));
   writeFileSync(join(f.repo, 'docs', 'report.md'), 'in scope');
   const allowed = f.cliRun('commit', '--message', 'docs: in scope', '--', 'docs/report.md');
@@ -219,6 +220,24 @@ test('AFK commit enforces the issue scope recorded in the hold', t => {
   assert.notEqual(readOnly.status, 0);
   assert.match(readOnly.stderr, /assigned AFK scope/);
   assert.equal(f.linkedGit('rev-parse', 'HEAD').stdout.trim(), committed);
+});
+
+test('AFK commit rejects an unauthenticated actor before staging', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/'] }] }));
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  f.env.FAKE_ACTOR = 'reviewer';
+  mkdirSync(join(f.repo, 'docs'));
+  writeFileSync(join(f.repo, 'docs', 'report.md'), 'in scope');
+  const before = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  const result = f.cliRun('commit', '--message', 'docs: in scope', '--', 'docs/report.md');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /AFK writes require builder/);
+  assert.equal(f.linkedGit('rev-parse', 'HEAD').stdout.trim(), before);
+  assert.equal(f.linkedGit('diff', '--cached', '--name-only').stdout.trim(), '');
 });
 
 test('AFK push rejects raw commits outside the issue scope before authenticating', t => {

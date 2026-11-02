@@ -228,6 +228,9 @@ function commit(args) {
     const hold = afkReadLedger(join(common, 'afk-holds.json'))[runId]?.find(item => item.number === issue);
     if (!Number.isSafeInteger(issue) || !hold) throw new Error('AFK commit requires the current run to hold its bound issue');
     if (Array.isArray(hold.paths) && !afkPathsWithinScope(paths, hold.paths)) throw new Error('Commit paths exceed the assigned AFK scope');
+    const cfg = config().lanes;
+    afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
+    afkActor(cfg);
   }
   const env = cleanEnvironment();
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
