@@ -93,6 +93,11 @@ function role(repo, login) {
   return 'none';
 }
 function protectionStatus(repo, base) { return optionalApi(repo, `branches/${encodeURIComponent(base)}/protection`); }
+// A branch ruleset may be bypassed only by repository admins (role 5) or organization admins.
+export function branchRulesetBypassOkay(ruleset) {
+  if (!Array.isArray(ruleset?.bypass_actors)) return null; // hidden from non-admin readers
+  return ruleset.bypass_actors.every(actor => (actor.actor_type === 'RepositoryRole' && actor.actor_id === 5) || actor.actor_type === 'OrganizationAdmin');
+}
 // Combines classic branch protection with active rulesets (rules/branches); either source may enforce a rule.
 export function effectiveBranchPolicy(protection, rules) {
   rules = Array.isArray(rules) ? rules : [];
@@ -106,7 +111,6 @@ export function effectiveBranchPolicy(protection, rules) {
   for (const rule of rules) if (rule.type === 'required_status_checks') for (const item of rule.parameters?.required_status_checks || []) checks.add(item.context);
   const has = type => rules.some(rule => rule.type === type);
   return {
-    source: protection ? 'protection' : 'ruleset',
     reviews: hasReviews ? [count, any(classicReviews?.require_code_owner_reviews, 'require_code_owner_review'), any(classicReviews?.require_last_push_approval, 'require_last_push_approval'), any(classicReviews?.dismiss_stale_reviews, 'dismiss_stale_reviews_on_push')] : null,
     checks: [...checks].sort(),
     linearHistory: Boolean(protection?.required_linear_history?.enabled) || has('required_linear_history'),
@@ -129,7 +133,12 @@ function check(cfg, base) {
   try { ownerRole = api(repo, `collaborators/${cfg.owner}/permission`).role_name; } catch {}
   compare(`${cfg.owner} role`, ownerRole, 'admin', drift);
   for (const login of [cfg.implementer, cfg.reviewer]) compare(`${login} role`, role(repo, login), 'write', drift);
-  const policy = effectiveBranchPolicy(protectionStatus(repo, base), optionalApi(repo, `rules/branches/${encodeURIComponent(base)}`));
+  const branchRules = optionalApi(repo, `rules/branches/${encodeURIComponent(base)}?per_page=100`) || [];
+  const policy = effectiveBranchPolicy(protectionStatus(repo, base), branchRules);
+  for (const id of new Set(branchRules.map(rule => rule.ruleset_id).filter(Number.isSafeInteger))) {
+    const ruleset = optionalApi(repo, `rulesets/${id}`);
+    compare(`${base} ruleset ${ruleset?.name || id} bypass`, ({ true: 'admins only', false: 'non-admin bypass', null: 'unknown' })[branchRulesetBypassOkay(ruleset)], 'admins only', drift);
+  }
   compare(`${base} reviews`, policy?.reviews ? csv(policy.reviews) : 'missing', '1,true,true,true', drift);
   compare(`${base} status checks`, (policy?.checks || []).join(','), [...cfg.requiredChecks].sort().join(','), drift);
   compare(`${base} history and threads`, policy ? csv([policy.linearHistory, policy.conversationResolution]) : 'missing', 'true,true', drift);

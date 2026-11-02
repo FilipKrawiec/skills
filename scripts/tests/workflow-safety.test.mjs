@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { effectiveBranchPolicy, rulesetOkay, validateCodeowners } from '../../plugins/common/workflow/scripts/safety.mjs';
+import { branchRulesetBypassOkay, effectiveBranchPolicy, rulesetOkay, validateCodeowners } from '../../plugins/common/workflow/scripts/safety.mjs';
 
 const roles = { owner: 'alice', reviewer: 'reviewer' };
 const validRuleset = {
@@ -32,7 +32,7 @@ test('branch policy reads rulesets as well as classic protection', () => {
     { type: 'required_linear_history' }, { type: 'non_fast_forward' }, { type: 'deletion' },
   ];
   assert.deepEqual(effectiveBranchPolicy(null, rules), {
-    source: 'ruleset', reviews: [1, true, true, true], checks: ['verify'], linearHistory: true, conversationResolution: true, forcePushesBlocked: true, deletionsBlocked: true, enforceAdmins: null,
+    reviews: [1, true, true, true], checks: ['verify'], linearHistory: true, conversationResolution: true, forcePushesBlocked: true, deletionsBlocked: true, enforceAdmins: null,
   });
   const classic = {
     required_pull_request_reviews: { required_approving_review_count: 1, require_code_owner_reviews: true, require_last_push_approval: true, dismiss_stale_reviews: true },
@@ -40,7 +40,31 @@ test('branch policy reads rulesets as well as classic protection', () => {
     allow_force_pushes: { enabled: false }, allow_deletions: { enabled: false }, enforce_admins: { enabled: false },
   };
   assert.deepEqual(effectiveBranchPolicy(classic, []), {
-    source: 'protection', reviews: [1, true, true, true], checks: ['verify'], linearHistory: true, conversationResolution: true, forcePushesBlocked: true, deletionsBlocked: true, enforceAdmins: false,
+    reviews: [1, true, true, true], checks: ['verify'], linearHistory: true, conversationResolution: true, forcePushesBlocked: true, deletionsBlocked: true, enforceAdmins: false,
   });
   assert.equal(effectiveBranchPolicy(null, []), null);
+});
+
+test('branch policy merges classic protection with rulesets', () => {
+  const classic = { required_status_checks: { contexts: ['lint'] }, allow_force_pushes: { enabled: true }, allow_deletions: { enabled: false }, enforce_admins: { enabled: false } };
+  const rules = [
+    { type: 'pull_request', parameters: { required_approving_review_count: 1, require_code_owner_review: false, require_last_push_approval: true, dismiss_stale_reviews_on_push: true } },
+    { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'verify' }] } },
+    { type: 'non_fast_forward' },
+  ];
+  const policy = effectiveBranchPolicy(classic, rules);
+  assert.deepEqual(policy.reviews, [1, false, true, true]);
+  assert.deepEqual(policy.checks, ['lint', 'verify']);
+  assert.equal(policy.forcePushesBlocked, true);
+  assert.equal(policy.deletionsBlocked, true);
+  assert.equal(policy.linearHistory, false);
+});
+
+test('branch rulesets may be bypassed by admins only', () => {
+  assert.equal(branchRulesetBypassOkay({ bypass_actors: [] }), true);
+  assert.equal(branchRulesetBypassOkay({ bypass_actors: [{ actor_type: 'RepositoryRole', actor_id: 5 }, { actor_type: 'OrganizationAdmin', actor_id: 1 }] }), true);
+  assert.equal(branchRulesetBypassOkay({ bypass_actors: [{ actor_type: 'RepositoryRole', actor_id: 4 }] }), false);
+  assert.equal(branchRulesetBypassOkay({ bypass_actors: [{ actor_type: 'Integration', actor_id: 99 }] }), false);
+  assert.equal(branchRulesetBypassOkay({}), null);
+  assert.equal(branchRulesetBypassOkay(null), null);
 });
