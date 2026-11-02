@@ -592,10 +592,16 @@ export function afkEpicOrder(a, b) {
   const bm = b.milestone ? [0, b.milestone.dueOn || '9999', b.milestone.number] : [1, '', 0];
   return afkPriority(a.priority) - afkPriority(b.priority) || am[0] - bm[0] || String(am[1]).localeCompare(String(bm[1])) || Number(am[2]) - Number(bm[2]) || a.number - b.number;
 }
-// The list names only a renamed file's new path and stops at 100 files, so those PRs re-read their files over REST.
+// The list names only a renamed file's new path, may omit changeType and stops at 100 files, so those PRs re-read their files over REST;
+// a failed read marks only that PR's files unread.
 export function afkPrFiles(pr, readPages) {
-  if (!pr.files?.some(file => file.changeType === 'RENAMED') && (pr.files?.length || 0) < 100) return pr;
-  return { ...pr, files: readPages(pr.number).flat().map(file => ({ path: file.filename, previousPath: file.previous_filename })) };
+  if (!pr.files?.some(file => !file.changeType || file.changeType === 'RENAMED') && (pr.files?.length || 0) < 100) return pr;
+  try {
+    return { ...pr, files: readPages(pr.number).flat().map(file => ({ path: file.filename, previousPath: file.previous_filename })) };
+  } catch (error) {
+    console.error(`PR #${pr.number}: its files could not be read, so its fix waits for a later plan (${error.message})`);
+    return { ...pr, filesUnread: true };
+  }
 }
 function afkPrData(cfg) {
   return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files'])
@@ -688,8 +694,11 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const suffix = owners.length ? '' : ' (under no epic)';
     // Its issues' packets, then the PR's own packet, then the files it already changes.
     const paths = stories.some(issue => Array.isArray(issue.paths)) ? stories.flatMap(issue => issue.paths || [])
-      : afkPathsFromIssueBody(pr.body || '') ?? (pr.files || []).flatMap(file => [file.path, file.previousPath].filter(Boolean));
-    const unit = pr.awaitingReview && !pr.broken
+      : afkPathsFromIssueBody(pr.body || '') ?? (pr.filesUnread ? null : (pr.files || []).flatMap(file => [file.path, file.previousPath].filter(Boolean)));
+    const review = pr.awaitingReview && !pr.broken;
+    // A fix scoped by files that could not be read waits for a later plan rather than holding an incomplete scope.
+    if (!review && paths === null) continue;
+    const unit = review
       ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true }
       : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths };
     const parent = epics.find(epic => epic.issue.number === target);
