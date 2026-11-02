@@ -1394,6 +1394,11 @@ function afkStopGroup(pid, graceMs = 10_000) {
   for (const end = Date.now() + graceMs; Date.now() < end && signal(0);) Atomics.wait(pause, 0, 0, 100);
   signal('SIGKILL');
 }
+// A supervisor's agent leads its own process group (afkLaunchAgent runs it detached), so each child's group is stopped whole; a child that leads no group is left alone.
+export function afkStopSupervisedAgent(supervisorPid, graceMs) {
+  const children = spawnSync('pgrep', ['-P', String(supervisorPid)], { encoding: 'utf8' }).stdout || '';
+  for (const pid of children.split('\n').map(Number).filter(pid => pid > 0)) afkStopGroup(pid, graceMs);
+}
 // A run past afk.maxRunMinutes is stopped with its whole process group, so its supervisor releases the hold and the next tick serves the work again.
 export function afkLaunchAgent({ argv, replacements, cwd, runId, issue, timeoutMs, graceMs, source = process.env }) {
   const env = afkAgentEnvironment(source);
@@ -1470,7 +1475,7 @@ function afkReleaseForeignHeads(cfg, common) {
     } else {
       // Ending the supervisor's agent lets the supervisor release the run's worktree as usual.
       let job = {}; try { job = JSON.parse(readFileSync(afkJobPath(common, id), 'utf8')); } catch {}
-      if (Number.isSafeInteger(job.pid)) spawnSync('pkill', ['-TERM', '-P', String(job.pid)], { stdio: 'ignore' });
+      if (Number.isSafeInteger(job.pid)) afkStopSupervisedAgent(job.pid);
     }
     console.error(`stopped ${id}: PR #${pr}'s head moved from ${from.slice(0, 7)} to ${to.slice(0, 7)}, a push it did not make`);
     afkEndRun(cfg, common, id, `Stopped: PR #${pr}'s head moved to ${to}, a push this run did not make; the PR is served again.`);
