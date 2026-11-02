@@ -236,7 +236,7 @@ function commit(args) {
   if (runId) {
     hold = afkBoundHold(root, 'commit');
     if (Array.isArray(hold.paths)) scope = merging ? hold.paths : afkHeldScope(hold, paths);
-    if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error('Commit paths exceed the assigned AFK scope');
+    if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error(`Commit paths exceed the assigned AFK scope${afkScopeHint(hold)}`);
     const cfg = config().lanes;
     afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
     afkActor(cfg);
@@ -264,7 +264,7 @@ function commit(args) {
     };
     const fromBase = new Set(changed('MERGE_HEAD'));
     const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
-    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
+    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents${afkScopeHint(hold)}`);
   }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) {
@@ -1167,12 +1167,31 @@ function afkAssertPushScope(root, baseRef) {
   const hold = afkBoundHold(root, 'push');
   if (Array.isArray(hold.paths)) {
     const changed = afkChangedPaths(root, git('rev-parse', baseRef));
-    if (!afkPathsWithinScope(changed, afkHeldScope(hold, changed))) throw new Error('Push paths exceed the assigned AFK scope');
+    if (!afkPathsWithinScope(changed, afkHeldScope(hold, changed))) throw new Error(`Push paths exceed the assigned AFK scope${afkScopeHint(hold)}`);
   }
 }
+// A PR's scope follows its paths into the files the base renamed them to since the held head; the branch's own renames widen nothing.
+function afkBaseRenamedScope(hold) {
+  if (!hold.pr) return hold.paths;
+  const base = 'refs/remotes/origin/HEAD';
+  const env = cleanEnvironment();
+  const from = hold.head || spawnSync('git', ['merge-base', 'HEAD', base], { env, encoding: 'utf8' }).stdout?.trim();
+  if (!from) return hold.paths;
+  const log = spawnSync('git', ['log', '--reverse', '--format=', '--name-status', '-M', '--diff-filter=R', '-z', `${from}..${base}`, '--'], { env, encoding: 'utf8' });
+  if (log.error || log.status !== 0) return hold.paths;
+  const scope = [...hold.paths];
+  const fields = log.stdout.split('\0').map(field => field.replace(/^\n+/, '')).filter(Boolean);
+  for (let i = 0; i + 2 < fields.length && fields[i].startsWith('R'); i += 3) {
+    if (afkPathsWithinScope([fields[i + 1]], scope)) scope.push(fields[i + 2]);
+  }
+  return scope;
+}
+function afkScopeHint(hold) { return `; add a \`scope\` packet listing them to #${hold.number}'s body`; }
 // The hold copies the scope packet at start; a packet corrected on the issue since then is rechecked before refusing.
 function afkHeldScope(hold, paths) {
   if (!Array.isArray(hold.paths) || afkPathsWithinScope(paths, hold.paths) || hold.review || hold.check || hold.stage) return hold.paths;
+  const followed = afkBaseRenamedScope(hold);
+  if (afkPathsWithinScope(paths, followed)) return followed;
   try {
     const cfg = { ...workflowDefaults.afk, ...config().lanes };
     afkLoadEnvironment(cfg);

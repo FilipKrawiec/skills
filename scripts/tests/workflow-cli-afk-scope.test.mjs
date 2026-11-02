@@ -268,3 +268,38 @@ test('AFK merge commit follows a scope packet corrected on the held issue', t =>
   assert.equal(f.linkedGit('show', 'HEAD:docs/moved.md').stdout, 'resolved');
 });
 
+test('AFK commit and push let a PR scoped by its files follow paths the base renamed', t => {
+  const f = fixture(t);
+  const g = (...args) => run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.repo });
+  mkdirSync(join(f.repo, 'tests'));
+  writeFileSync(join(f.repo, 'tests', 'old.test.mjs'), 'shared test body\n'.repeat(20));
+  writeFileSync(join(f.repo, 'tests', 'kept.test.mjs'), 'kept test body\n'.repeat(20));
+  assert.equal(g('add', 'tests').status, 0); assert.equal(g('commit', '-qm', 'base').status, 0);
+  assert.equal(g('checkout', '-qb', 'other').status, 0);
+  assert.equal(g('mv', 'tests/old.test.mjs', 'tests/new.test.mjs').status, 0); assert.equal(g('commit', '-qm', 'move tests').status, 0);
+  assert.equal(g('update-ref', 'refs/remotes/origin/main', 'other').status, 0);
+  assert.equal(g('checkout', '-q', 'feature/test').status, 0);
+  const head = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 295, pr: 295, head, paths: ['tests/old.test.mjs'] }] }));
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  Object.assign(f.env, { WORKFLOW_RUN_ID: 'afk-test-run', WORKFLOW_ISSUE_NUMBER: '295', FAKE_ISSUE_BODY: 'No packet', REMOTE_BASE_SHA: f.linkedGit('rev-parse', 'other').stdout.trim(), GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.test', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.test' });
+  assert.equal(g('merge', '-q', '--no-ff', '-m', 'merge base', 'other').status, 0);
+  writeFileSync(join(f.repo, 'tests', 'new.test.mjs'), 'edited after the move\n');
+  const moved = f.cliRun('commit', '--message', 'test: edit moved test', '--', 'tests/new.test.mjs');
+  assert.equal(moved.status, 0, moved.stderr);
+  const pushed = f.cliRun('push');
+  assert.equal(pushed.status, 0, pushed.stderr);
+  // Only the base's renames widen the scope; unrelated base files and the branch's own renames stay outside.
+  writeFileSync(join(f.repo, 'tests', 'kept.test.mjs'), 'edited\n');
+  const unrelated = f.cliRun('commit', '--message', 'test: edit unrelated test', '--', 'tests/kept.test.mjs');
+  assert.notEqual(unrelated.status, 0);
+  assert.match(unrelated.stderr, /assigned AFK scope.*add a `scope` packet listing them to #295/);
+  assert.equal(g('checkout', '--', 'tests/kept.test.mjs').status, 0);
+  assert.equal(g('mv', 'tests/new.test.mjs', 'tests/elsewhere.test.mjs').status, 0);
+  assert.equal(g('commit', '-qm', 'rename on the branch').status, 0);
+  const branchRename = f.cliRun('push');
+  assert.notEqual(branchRename.status, 0);
+  assert.match(branchRename.stderr, /Push paths exceed the assigned AFK scope/);
+});
+
