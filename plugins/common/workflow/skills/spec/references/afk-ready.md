@@ -7,7 +7,7 @@ New readiness requires every check or a recorded owner waiver; independent revie
 | Single | A story, chore, bug or bounded investigation (not `type:epic`); no open PR, `state:claimed` or `state:started`. |
 | Independent | No other open issue must merge with it; dependencies do not depend back on it. |
 | Valuable | Merged alone, it gives a user behaviour or the owner a named benefit. |
-| Small | Estimate is S or M, with its main unknown. Split L work into vertical slices under approved milestone intent. Size guides slicing, never authority. |
+| Small | Estimate is S (up to about 5 changed files) or M (up to about 20), with its main unknown. A diff past twice its estimate splits before review. Split L work into vertical slices under approved milestone intent. Size guides slicing, never authority. |
 | Bounded | The packet lists changed paths and dependencies. For each criterion, trace the call path from the code that observes the effect to the code that causes it, and put every file on that path, shared components included, in the packet. Confirm bug causes at `file:line` with a reproducing test or traced call. Resolve input or code uncertainties with a real sample or inspection. |
 | Decided | Outcomes and constraints are clear; routine choices remain delegated. New interactions follow owner prototype direction or an approved pattern. Resolve reserved decisions. |
 | Unprivileged | Implementation and review need no production credentials. Separate owner actions; do not weaken authority, credentials, release or quality gates. CODEOWNERS review alone does not require owner delivery. |
