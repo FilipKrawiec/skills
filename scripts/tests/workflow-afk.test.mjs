@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -311,4 +311,16 @@ test('the watcher launcher keeps its own tooling checkout on the latest release'
   const stranger = join(root, 'stranger'); mkdirSync(stranger);
   writeFileSync(join(stranger, 'file'), 'x');
   assert.throws(() => afkEnsureTooling(stranger, origin, 'main'), /not a Git checkout/);
+});
+
+test('AFK accepts the same HTTPS or SSH GitHub push remotes as push', () => {
+  assert.equal(githubPushRemoteMatches('https://github.com/Acme/App.git', 'acme/app'), true);
+  assert.equal(githubPushRemoteMatches('git@github.com:acme/app.git', 'acme/app'), true);
+  assert.equal(githubPushRemoteMatches('git@github.com:acme/other.git', 'acme/app'), false);
+  assert.equal(githubPushRemoteMatches('https://example.com/acme/app.git', 'acme/app'), false);
+});
+
+test('a relative CLI invocation re-executes by absolute path so lock owners match', () => {
+  assert.equal(needsAbsoluteInvocation('plugins/common/workflow/scripts/workflow.mjs', '/r/plugins/common/workflow/scripts/workflow.mjs'), true);
+  assert.equal(needsAbsoluteInvocation('/r/plugins/common/workflow/scripts/workflow.mjs', '/r/plugins/common/workflow/scripts/workflow.mjs'), false);
 });
