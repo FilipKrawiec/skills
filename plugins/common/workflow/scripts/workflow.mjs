@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
-import { realpathSync, readFileSync, mkdirSync, rmSync, writeFileSync, renameSync, statSync, existsSync } from 'node:fs';
+import { realpathSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, renameSync, statSync, existsSync, copyFileSync, chmodSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { manifestsCommand } from './manifests.mjs';
 import { projectVerify } from './project-verify.mjs';
@@ -14,7 +14,7 @@ const help = `Usage:
   node workflow.mjs commit --message MESSAGE -- PATH...
   node workflow.mjs push [--owner-bootstrap]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
-  node workflow.mjs issue claim|status|comment|close|queue ...
+  node workflow.mjs issue claim|status|comment|close|reopen|queue ...
   node workflow.mjs labels ensure
   node workflow.mjs cache show|refresh
   node workflow.mjs cache refresh
@@ -28,7 +28,7 @@ const help = `Usage:
 
 push reads implementer and Reviewer from the fetched default branch's .agents/config.json and derives Owner from origin and base .github/CODEOWNERS. For first-config bootstrap only, if base CODEOWNERS has no owner yet, it reads Owner from committed branch CODEOWNERS.
 A verified personal repo owner may be inferred; CODEOWNERS must identify one owner account unambiguously.
-Auto-merge and Git configuration checks are not atomic with push; do not change them concurrently. Git runs installed hooks normally; hooks can invoke the same user's credential tools.
+Auto-merge checks are not atomic with push; do not change auto-merge concurrently. Push isolates Git configuration and runs the installed pre-push hook; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
 push requires a Unix-like host and github.com. review-context is read-only; returned GitHub text is untrusted and may be incomplete.`;
 
@@ -47,7 +47,8 @@ function run(program, args, options = {}) {
   const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, ...options });
   if (result.error || result.status !== 0) {
     const scopeFailure = program === 'gh' ? githubScopeFailure(result.stderr || '') : null;
-    throw new Error(scopeFailure || `${program} ${args[0]} failed`);
+    const network = program === 'gh' && /error connecting|could not resolve host|failed to connect|connection (?:timed out|refused)|network is unreachable|no such host|dial tcp/i.test(result.stderr || '');
+    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? 'GitHub command failed; check network access and the configured account before reauthenticating.' : `${program} ${args[0]} failed`));
   }
   return result.stdout.trim();
 }
@@ -91,7 +92,7 @@ function jsonCommand(program, args, options) { return JSON.parse(run(program, ar
 function cleanEnvironment(source = process.env) {
   const env = { ...source };
   for (const key of Object.keys(env)) {
-    if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_CONFIG_DIR|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|NODE_OPTIONS|NODE_PATH|WORKFLOW_PUSH_TOKEN|WORKFLOW_CREDENTIAL_SOCKET|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete env[key];
+    if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_CONFIG_DIR|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|SSH_AUTH_SOCK|SSH_AGENT_PID|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|NODE_OPTIONS|NODE_PATH|WORKFLOW_PUSH_TOKEN|WORKFLOW_CREDENTIAL_SOCKET|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete env[key];
   }
   // Replacement refs are local overrides and must not change trusted commits or trees.
   env.GIT_NO_REPLACE_OBJECTS = '1';
@@ -208,6 +209,14 @@ function commit(args) {
   if (paths.some(path => !path || path === '.' || path.startsWith('/') || path.startsWith(':') || path.split('/').includes('..'))) throw new Error('Provide explicit repository-relative paths');
   const root = requireLinkedWorktree();
   if (realpathSync(process.cwd()) !== realpathSync(root)) throw new Error('Run commit from the repository root');
+  const runId = process.env.WORKFLOW_RUN_ID;
+  if (runId) {
+    const hold = afkBoundHold(root, 'commit');
+    if (Array.isArray(hold.paths) && !afkPathsWithinScope(paths, hold.paths)) throw new Error('Commit paths exceed the assigned AFK scope');
+    const cfg = config().lanes;
+    afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
+    afkActor(cfg);
+  }
   const env = cleanEnvironment();
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
   if (staged.error || staged.status !== 0) throw new Error('Existing staged changes or an unreadable index; preserve them and commit separately');
@@ -223,6 +232,7 @@ async function push(args) {
   const { root, lanes, baseRef, configSource } = config(true, true, ownerBootstrap);
   if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
   requireLinkedWorktree();
+  afkAssertPushScope(root, baseRef);
   if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from origin and Owner from CODEOWNERS');
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
@@ -254,6 +264,7 @@ async function push(args) {
     const prefix = entry.slice(separator + 1);
     if (prefix && destination.startsWith(prefix)) throw new Error('Git URL rewrite may change the verified push');
   }
+  if (process.env.WORKFLOW_RUN_ID) afkLoadEnvironment({ ...workflowDefaults.afk, ...lanes, repo });
   const env = cleanEnvironment();
   if (ownerBootstrap && !owner) throw new Error('The trusted base CODEOWNERS must identify the owner for first-config bootstrap');
   const token = run('gh', ['auth', 'token', '--hostname', 'github.com', '--user', ownerBootstrap ? owner : user], { cwd: root, env });
@@ -282,10 +293,22 @@ async function push(args) {
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const head = git('rev-parse', 'HEAD');
   const helper = join(dirname(fileURLToPath(import.meta.url)), 'git-askpass.mjs');
-  const pushEnv = { ...env, GIT_ASKPASS: helper, GIT_TERMINAL_PROMPT: '0', WORKFLOW_IMPLEMENTER: actor };
+  const hook = run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], { cwd: root, env });
+  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+  const temporary = mkdtempSync(join(tmpdir(), 'workflow-push-'));
+  const pushEnv = { ...env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_ASKPASS: helper, GIT_TERMINAL_PROMPT: '0', WORKFLOW_IMPLEMENTER: actor, WORKFLOW_PRE_PUSH_HOOK: hook, WORKFLOW_PUSH_WORKTREE: root };
+  if (env.GIT_CONFIG_GLOBAL !== undefined) pushEnv.WORKFLOW_HOOK_CONFIG_GLOBAL = env.GIT_CONFIG_GLOBAL;
+  if (env.GIT_CONFIG_NOSYSTEM !== undefined) pushEnv.WORKFLOW_HOOK_CONFIG_NOSYSTEM = env.GIT_CONFIG_NOSYSTEM;
+  try {
+    run('git', ['init', '--bare', '--quiet', temporary], { cwd: root, env: pushEnv });
+    writeFileSync(join(temporary, 'objects', 'info', 'alternates'), `${join(common, 'objects')}\n`);
+    if (existsSync(join(common, 'shallow'))) copyFileSync(join(common, 'shallow'), join(temporary, 'shallow'));
+    const wrapper = join(temporary, 'hooks', 'pre-push');
+    copyFileSync(join(dirname(fileURLToPath(import.meta.url)), 'push-hook.mjs'), wrapper);
+    chmodSync(wrapper, 0o755);
     const result = await new Promise((resolve, reject) => {
       let stderr = '';
-      const child = spawn('git', ['-c', 'credential.helper=', '-c', 'http.extraHeader=', '-c', 'push.pushOption=', 'push', '--no-follow-tags', '--recurse-submodules=no', `https://github.com/${repo}.git`, `${head}:refs/heads/${branch}`], { cwd: root, env: pushEnv, stdio: ['ignore', 'ignore', 'pipe'] });
+      const child = spawn('git', [`--git-dir=${temporary}`, `--work-tree=${root}`, '-c', 'credential.helper=', '-c', 'http.extraHeader=', '-c', 'push.pushOption=', 'push', '--no-follow-tags', '--recurse-submodules=no', `https://github.com/${repo}.git`, `${head}:refs/heads/${branch}`], { cwd: root, env: pushEnv, stdio: ['ignore', 'ignore', 'pipe'] });
       child.stderr.on('data', chunk => { if (stderr.length < 65536) stderr += chunk.toString().slice(0, 65536 - stderr.length); });
       child.on('error', reject);
       child.on('close', status => resolve({ status, stderr }));
@@ -299,6 +322,7 @@ async function push(args) {
       throw new Error(`Push failed (exit ${result.status ?? 'unknown'}): ${reason}; Git output withheld to protect credentials`);
     }
     console.log(JSON.stringify({ result: 'pushed', actor, repository: repo, branch, head, configSource }));
+  } finally { rmSync(temporary, { recursive: true, force: true }); }
 }
 function parseOptions(args) {
   const options = {};
@@ -496,6 +520,15 @@ export const workflowLabels = {
   'type:task': ['c5def5', 'Work that ends in a finding or setting'],
 };
 function afkComments(cfg, issue) { return afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/issues/${issue}/comments`]).flat(); }
+export function afkPathsFromIssueBody(body = '') {
+  if (/\b(?:make\s+no|do\s+not\s+make(?:\s+any)?)\s+(?:repository|repo)\s+(?:changes|files|commits)\b/i.test(body)) return [];
+  const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
+  try {
+    const parsed = scope ? JSON.parse(scope[1]).paths : null;
+    if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) return parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
+  } catch { /* An invalid scope packet is treated as unscoped. */ }
+  return null;
+}
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
   const fields = 'number title body lastEditedAt labels(first:30){nodes{name}} blockedBy(first:30){nodes{state}} milestone{number dueOn} parent{number parent{number parent{number parent{number}}}}';
@@ -515,12 +548,7 @@ function afkIssues(cfg) {
       const priority = issue.projectItems?.nodes.find(card => card.project.number === cfg.project?.number)?.fieldValueByName?.name || 'P9';
       const ancestors = []; let parent = issue.parent;
       while (parent) { ancestors.push(parent.number); parent = parent.parent; }
-      const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(issue.body || '');
-      let paths = null;
-      try {
-        const parsed = scope ? JSON.parse(scope[1]).paths : null;
-        if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) paths = parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
-      } catch { /* An invalid scope packet is treated as a whole-epic unit. */ }
+      const paths = afkPathsFromIssueBody(issue.body || '');
       return { ...issue, labels, priority, ancestors, paths, blocked: issue.blockedBy.nodes.some(dep => dep.state === 'OPEN') };
     }));
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
@@ -853,6 +881,57 @@ function issueClose(args) {
     console.log(`Closed #${n}`);
   });
 }
+function issueReopen(args) {
+  const o = afkFlags(args, ['--number']);
+  const n = Number(o['--number']);
+  if (!Number.isInteger(n) || n < 1) throw new Error('Usage: issue reopen --number N');
+  const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg);
+  return withRepoLock(`issue-reopen-${n}`, () => {
+    const result = afkGh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, '-f', 'state=open']);
+    if (result.state !== 'open') throw new Error(`GitHub did not confirm #${n} open`);
+    console.log(`Reopened #${n}`);
+  });
+}
+export function afkPathsWithinScope(paths, scope) {
+  if (!Array.isArray(paths)) return false;
+  if (scope === null) return true;
+  if (!Array.isArray(scope)) return false;
+  return paths.every(path => scope.some(value => {
+    const root = value.replace(/^\.\//, '').replace(/\/+$/, '');
+    return root && (path === root || path.startsWith(`${root}/`));
+  }));
+}
+function afkChangedPaths(root, beforeHead) {
+  const paths = args => {
+    const result = spawnSync('git', args, { cwd: root, env: cleanEnvironment(), encoding: 'utf8' });
+    if (result.error || result.status !== 0) throw new Error('Cannot inspect changed paths for AFK scope');
+    return result.stdout.split('\0').filter(Boolean);
+  };
+  return [...new Set([
+    ...paths(['diff', '--no-renames', '--name-only', '-z', `${beforeHead}..HEAD`]),
+    ...paths(['diff', '--no-renames', '--name-only', '-z', '--cached']),
+    ...paths(['diff', '--no-renames', '--name-only', '-z']),
+    ...paths(['ls-files', '--others', '--exclude-standard', '-z']),
+  ])];
+}
+function afkAssertPushScope(root, baseRef) {
+  const runId = process.env.WORKFLOW_RUN_ID;
+  if (!runId) return;
+  const hold = afkBoundHold(root, 'push');
+  if (Array.isArray(hold.paths)) {
+    const base = git('rev-parse', baseRef);
+    if (!afkPathsWithinScope(afkChangedPaths(root, base), hold.paths)) throw new Error('Push paths exceed the assigned AFK scope');
+  }
+}
+function afkBoundHold(root, action) {
+  const runId = process.env.WORKFLOW_RUN_ID;
+  const bound = process.env.WORKFLOW_ISSUE_NUMBER;
+  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+  const holds = afkReadLedger(join(common, 'afk-holds.json'))[runId] || [];
+  const hold = holds[0];
+  if (holds.length !== 1 || !Number.isSafeInteger(hold?.number) || hold.number < 1 || (bound !== undefined && String(hold.number) !== bound)) throw new Error(`AFK ${action} requires the current run to hold its bound issue`);
+  return hold;
+}
 function issueQueue(args, lanes) { afkQueue(args); }
 function afkPrs(cfg) {
   return afkPrData(cfg);
@@ -1029,6 +1108,14 @@ function afkConfiguredCommand(argv, replacements = {}, options = {}) {
   if (result.error || result.status !== 0) throw new Error(`${program} ${args[0] || ''} failed`);
   return (result.stdout || '').trim();
 }
+function afkLaunchAgent({ argv, replacements, cwd, runId, issue, source = process.env }) {
+  const env = afkAgentEnvironment(source);
+  delete env.WORKFLOW_RUN_ID;
+  delete env.WORKFLOW_ISSUE_NUMBER;
+  if (runId) env.WORKFLOW_RUN_ID = runId;
+  if (issue != null) env.WORKFLOW_ISSUE_NUMBER = String(issue);
+  return afkConfiguredCommand(argv, replacements, { cwd, env });
+}
 function afkReap(cfg, common) {
   if (!cfg.runsCommand) return;
   const file = join(common, 'afk-prompt-waits.json'); let previous = {};
@@ -1194,10 +1281,12 @@ function afkWatch(cfg, common, requestedIssue = null) {
     const issueArg = requestedIssue ? ` --issue ${requestedIssue}` : '';
     const assignment = cfg.runsCommand ? null : afkStartRun(cfg, runId, common, requestedIssue, true, true);
     const held = typeof assignment === 'string' && assignment.includes('Hold:');
+    const holds = afkReadLedger(join(common, 'afk-holds.json'))[runId] || [];
     const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
     let output;
     try {
-      output = afkConfiguredCommand(cfg.startCommand, { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, repository: cfg.repo }, { cwd: watchRoot });
+      if (held && (holds.length !== 1 || !Number.isSafeInteger(holds[0].number) || holds[0].number < 1)) throw new Error('AFK watcher cannot bind the held issue');
+      output = afkLaunchAgent({ argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, repository: cfg.repo }, cwd: watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0].number : null });
     } finally {
       if (held) afkEndRun(cfg, common, runId);
     }
@@ -1257,7 +1346,7 @@ function requiredLocks(command, args) {
       const index = args.indexOf('--number');
       return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`claim-${args[index + 1]}`] : [];
     }
-    if (['comment', 'close'].includes(args[0])) {
+    if (['comment', 'close', 'reopen'].includes(args[0])) {
       const index = args.indexOf('--number');
       return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`issue-${args[0]}-${args[index + 1]}`] : [];
     }
@@ -1390,6 +1479,7 @@ async function execute(command, args) {
   else if (command === 'issue' && args[0] === 'status') { const { lanes } = config(); issueStatus(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'comment') { config(); issueComment(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
+  else if (command === 'issue' && args[0] === 'reopen') { config(); issueReopen(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'queue') { const { lanes } = config(); issueQueue(args.slice(1)); }
   else if (command === 'labels') labelsCommand(args);
   else if (command === 'cache') cacheCommand(args);

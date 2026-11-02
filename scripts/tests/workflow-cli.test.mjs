@@ -29,6 +29,7 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 const out = value => process.stdout.write(JSON.stringify(value) + '\\n');
 if (args[0] === 'auth' && args[1] === 'token') {
+  if (process.env.FAIL_GH_NETWORK) { process.stderr.write('error connecting to github.com SECRET_TOKEN'); process.exit(1); }
   if (process.env.GH_TOKEN || process.env.GH_HOST) process.exit(1);
   if (process.env.AUTH_USERS_FILE) fs.appendFileSync(process.env.AUTH_USERS_FILE, (args.includes('--user') ? args[args.indexOf('--user') + 1] : 'ACTIVE') + '\\n');
   process.stdout.write('SECRET_TOKEN\\n');
@@ -41,9 +42,11 @@ if (args[0] === 'auth' && args[1] === 'token') {
   } else out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [{ isResolved: false, isOutdated: false }] } } } } });
 } else if (args[0] === 'api') {
   if (process.env.GH_TOKEN !== 'SECRET_TOKEN') process.exit(1);
+  if (args.includes('user') && process.env.RACE_URL_TARGET) require('node:child_process').spawnSync(process.env.REAL_GIT, ['config', 'url.' + process.env.RACE_URL_TARGET + '.insteadOf', process.env.TEST_NATIVE_REMOTE], { cwd: process.cwd() });
   if (args.some(arg => arg.includes('collaborators/') && arg.includes('/permission'))) out({ role_name: 'admin' });
   else if (args.includes('repos/acme/app')) out({ default_branch: 'main', owner: { type: process.env.FAKE_OWNER_KIND || 'Organization', login: 'acme' } });
   else if (args.includes('repos/acme/app/branches/main')) out({ commit: { sha: process.env.REMOTE_BASE_SHA } });
+  else if (args.some(arg => arg.startsWith('repos/acme/app/issues/') && /^\\d+$/.test(arg.split('/').at(-1))) && args.includes('state=open')) { fs.writeFileSync(process.env.ISSUE_STATE_RECORD, JSON.stringify(args)); out({ state: 'open' }); }
   else {
     const actor = process.env.FAKE_ACTOR || 'builder';
     process.stdout.write(args.includes('--jq') ? actor + '\\n' : JSON.stringify({ login: actor }) + '\\n');
@@ -60,6 +63,7 @@ const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 const real = process.env.REAL_GIT;
+if (args[0] === 'fetch') process.exit(0);
 if (args.includes('commit') && process.env.TEST_CONCURRENT_STAGE) spawnSync(real, ['add', 'unrelated.txt'], { stdio: 'inherit' });
 if (!args.includes('push')) {
   const result = spawnSync(real, args, { stdio: 'inherit' });
@@ -99,6 +103,9 @@ function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'workflow-cli-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const bin = join(directory, 'bin'); mkdirSync(bin);
+  const home = join(directory, 'home');
+  mkdirSync(join(home, '.config', 'gh-agents'), { recursive: true });
+  writeFileSync(join(home, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: {} }));
   const main = join(directory, 'repo'); mkdirSync(join(main, '.agents'), { recursive: true }); mkdirSync(join(main, '.github'), { recursive: true });
   const linked = join(directory, 'linked');
   const realGit = run('which', ['git']).stdout.trim();
@@ -118,6 +125,7 @@ function fixture(t) {
   const env = {
     ...process.env,
     PATH: `${bin}:${process.env.PATH}`,
+    HOME: home,
     REAL_GIT: realGit,
     PUSH_RECORD: join(directory, 'push.json'),
     GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
@@ -149,6 +157,18 @@ function hookPath(f) {
   return result.stdout.trim().startsWith('/') ? result.stdout.trim() : join(f.repo, result.stdout.trim());
 }
 function assertNoPush(f) { assert.equal(existsSync(f.env.PUSH_RECORD), false); }
+
+test('push ignores repository URL rewrites added after validation', t => {
+  const f = fixture(t);
+  const good = nativeRemote(f);
+  const evil = join(f.root, 'other.git');
+  assert.equal(run(f.env.REAL_GIT, ['init', '--bare', '-q', evil]).status, 0);
+  f.env.RACE_URL_TARGET = evil;
+  const result = f.cliRun('push');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(run(f.env.REAL_GIT, ['--git-dir', good, 'rev-parse', '--verify', 'refs/heads/feature/test']).status, 0);
+  assert.notEqual(run(f.env.REAL_GIT, ['--git-dir', evil, 'rev-parse', '--verify', 'refs/heads/feature/test']).status, 0);
+});
 
 test('push reads workflow config from the base branch', t => {
   const f = fixture(t);
@@ -183,6 +203,132 @@ test('commit includes only assigned paths', t => {
   assert.deepEqual(f.linkedGit('show', '--format=', '--name-only', 'HEAD').stdout.trim().split('\\n'), ['assigned.txt']);
   assert.equal(existsSync(join(f.repo, 'unrelated.txt')), true);
   assert.equal(JSON.parse(result.stdout).result, 'committed');
+});
+
+test('push reports GitHub network failure without exposing diagnostics', t => {
+  const f = fixture(t);
+  f.env.FAIL_GH_NETWORK = '1';
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Cannot reach GitHub; check network or sandbox access and retry/);
+  assert.doesNotMatch(result.stderr, /SECRET_TOKEN/);
+  assertNoPush(f);
+});
+
+test('AFK watcher binds its held issue to the launched agent', t => {
+  if (spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { stdio: 'ignore' }).status !== 0) { t.skip('watcher lock ownership requires process inspection'); return; }
+  const f = fixture(t);
+  const child = join(f.root, 'agent.mjs');
+  writeFileSync(child, `import { spawnSync } from 'node:child_process';\nimport { writeFileSync } from 'node:fs';\nwriteFileSync('outside.txt', 'outside');\nconst r = spawnSync(process.execPath, [process.env.TEST_CLI, 'commit', '--message', 'fix: outside', '--', 'outside.txt'], { encoding: 'utf8' });\nwriteFileSync(process.env.TEST_RESULT, JSON.stringify({status:r.status, stderr:r.stderr, run:process.env.WORKFLOW_RUN_ID, issue:process.env.WORKFLOW_ISSUE_NUMBER}));\n`);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr' || a[0]==='issue') { out([]); process.exit(0); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,['lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"]}\\n\\u0060\\u0060\\u0060')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.some(x=>x.includes('/comments'))) { out({id:12}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
+  chmodSync(gh, 0o755);
+  const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { startCommand: [process.execPath, child, '{runId}', '{prompt}'] } };
+  writeFileSync(join(f.repo, configPath), json(cfg));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.TEST_CLI = cli;
+  f.env.TEST_RESULT = join(f.root, 'agent-result.json');
+  const watch = f.cliRun('afk', 'watch', '--issue', '1082');
+  assert.equal(watch.status, 0, `${watch.stdout}\n${watch.stderr}`);
+  const result = JSON.parse(readFileSync(f.env.TEST_RESULT, 'utf8'));
+  assert.match(result.run, /^afk-/);
+  assert.equal(result.issue, '1082');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /assigned AFK scope/);
+});
+
+test('AFK commit enforces the issue scope recorded in the hold', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/'] }] }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  f.env.GIT_AUTHOR_NAME = 'Test';
+  f.env.GIT_AUTHOR_EMAIL = 'test@example.test';
+  f.env.GIT_COMMITTER_NAME = 'Test';
+  f.env.GIT_COMMITTER_EMAIL = 'test@example.test';
+  mkdirSync(join(f.repo, '.captures-886'));
+  writeFileSync(join(f.repo, '.captures-886', 'after.jpeg'), 'capture');
+  const denied = f.cliRun('commit', '--message', 'chore: out of scope', '--', '.captures-886/after.jpeg');
+  assert.notEqual(denied.status, 0);
+  assert.match(denied.stderr, /assigned AFK scope/);
+  assert.equal(f.linkedGit('diff', '--cached', '--name-only').stdout.trim(), '');
+  delete f.env.WORKFLOW_ISSUE_NUMBER;
+  const selfClaim = f.cliRun('commit', '--message', 'chore: out of scope', '--', '.captures-886/after.jpeg');
+  assert.notEqual(selfClaim.status, 0);
+  assert.match(selfClaim.stderr, /assigned AFK scope/);
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  mkdirSync(join(f.repo, 'docs'));
+  writeFileSync(join(f.repo, 'docs', 'report.md'), 'in scope');
+  const allowed = f.cliRun('commit', '--message', 'docs: in scope', '--', 'docs/report.md');
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.deepEqual(f.linkedGit('show', '--format=', '--name-only', 'HEAD').stdout.trim().split('\n'), ['docs/report.md']);
+  const committed = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: [] }] }));
+  writeFileSync(join(f.repo, 'docs', 'read-only.md'), 'must stay uncommitted');
+  const readOnly = f.cliRun('commit', '--message', 'docs: violate read-only task', '--', 'docs/read-only.md');
+  assert.notEqual(readOnly.status, 0);
+  assert.match(readOnly.stderr, /assigned AFK scope/);
+  assert.equal(f.linkedGit('rev-parse', 'HEAD').stdout.trim(), committed);
+});
+
+test('AFK commit rejects an unauthenticated actor before staging', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/'] }] }));
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  f.env.FAKE_ACTOR = 'reviewer';
+  mkdirSync(join(f.repo, 'docs'));
+  writeFileSync(join(f.repo, 'docs', 'report.md'), 'in scope');
+  const before = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  const result = f.cliRun('commit', '--message', 'docs: in scope', '--', 'docs/report.md');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /AFK writes require builder/);
+  assert.equal(f.linkedGit('rev-parse', 'HEAD').stdout.trim(), before);
+  assert.equal(f.linkedGit('diff', '--cached', '--name-only').stdout.trim(), '');
+});
+
+test('AFK push rejects staged and committed renames from outside scope', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.repo, 'outside.txt'), 'outside');
+  assert.equal(f.linkedGit('add', 'outside.txt').status, 0);
+  commitFixture(f);
+  f.env.REMOTE_BASE_SHA = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/'] }] }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  mkdirSync(join(f.repo, 'docs'));
+  assert.equal(f.linkedGit('mv', 'outside.txt', 'docs/inside.txt').status, 0);
+  const staged = f.cliRun('push');
+  assert.notEqual(staged.status, 0);
+  assert.match(staged.stderr, /Push paths exceed the assigned AFK scope/);
+  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'move').status, 0);
+  const committed = f.cliRun('push');
+  assert.notEqual(committed.status, 0);
+  assert.match(committed.stderr, /Push paths exceed the assigned AFK scope/);
+  assertNoPush(f);
+});
+
+test('AFK push rejects raw commits outside the issue scope before authenticating', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/'] }] }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  mkdirSync(join(f.repo, '.captures-886'));
+  writeFileSync(join(f.repo, '.captures-886', 'after.jpeg'), 'capture');
+  assert.equal(run(f.env.REAL_GIT, ['add', '.captures-886/after.jpeg'], { cwd: f.repo }).status, 0);
+  assert.equal(run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-m', 'chore: bypass cli commit'], { cwd: f.repo }).status, 0);
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Push paths exceed the assigned AFK scope/);
+  assertNoPush(f);
 });
 
 test('commit excludes a path staged concurrently', t => {

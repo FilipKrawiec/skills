@@ -4,9 +4,25 @@ import { linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkWorkflowCliPath, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkPlistBelongsToWorkflow } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
+
+test('AFK close denies changed paths outside the assigned scope', () => {
+  assert.equal(afkPathsWithinScope(['docs/a.md'], ['docs/']), true);
+  assert.equal(afkPathsWithinScope(['.captures-886/a.jpeg'], ['docs/']), false);
+  assert.equal(afkPathsWithinScope(['docs/read-only.md'], []), false);
+  assert.equal(afkPathsWithinScope([], []), true);
+  assert.equal(afkPathsWithinScope([], null), true);
+  assert.equal(afkPathsWithinScope(['src/app.dart'], null), true);
+});
+
+test('AFK scope makes explicit no-repository-change constraints read-only', () => {
+  assert.deepEqual(afkPathsFromIssueBody('Make no repository changes, commits, PRs, deployments.'), []);
+  assert.deepEqual(afkPathsFromIssueBody('```scope\n{"paths":["docs/"]}\n```'), ['docs/']);
+  assert.equal(afkPathsFromIssueBody('no valid packet'), null);
+});
+
 const epic = { number: 1, labels: ['type:epic'], ancestors: [], priority: 1 };
 function issue(number, labels, extra = {}) {
   return { number, labels, ancestors: [1], blocked: false, paths: [`src/${number}.js`], priority: 2, ...extra };
@@ -217,10 +233,12 @@ test('issue comment body files stay inside the worktree, including canonical sym
 });
 
 test('AFK runner does not inherit GitHub credentials or account selection', () => {
-  const env = afkAgentEnvironment({ GH_TOKEN: 'secret', GITHUB_TOKEN: 'also-secret', GH_CONFIG_DIR: '/private/gh-agents', OLLAMA_HOST: 'http://localhost:11434', PATH: '/bin' });
+  const env = afkAgentEnvironment({ GH_TOKEN: 'secret', GITHUB_TOKEN: 'also-secret', GH_CONFIG_DIR: '/private/gh-agents', SSH_AUTH_SOCK: '/private/ssh-agent', SSH_AGENT_PID: '1234', OLLAMA_HOST: 'http://localhost:11434', PATH: '/bin' });
   assert.equal(env.GH_TOKEN, undefined);
   assert.equal(env.GITHUB_TOKEN, undefined);
   assert.equal(env.GH_CONFIG_DIR, undefined);
+  assert.equal(env.SSH_AUTH_SOCK, undefined);
+  assert.equal(env.SSH_AGENT_PID, undefined);
   assert.equal(env.OLLAMA_HOST, 'http://localhost:11434');
   assert.equal(env.PATH, '/bin');
 });
