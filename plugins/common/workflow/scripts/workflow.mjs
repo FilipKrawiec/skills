@@ -1378,9 +1378,12 @@ export function afkForeignHeads(ledger, live, headOf, ownsHead) {
     .map(hold => ({ id, pr: hold.pr, from: hold.head, to: headOf(hold.pr) }))
     .filter(moved => moved.to && moved.to !== moved.from && !ownsHead(id, moved.to)));
 }
-// A run pushed a head its checkout's HEAD contains; a head the checkout never fetched is someone else's.
+// A run pushed a head its checkout's HEAD contains or once pointed at (it may rebase after pushing); a head the checkout never fetched is someone else's.
 export function afkOwnsHead(tree, head) {
-  return spawnSync('git', ['merge-base', '--is-ancestor', head, 'HEAD'], { cwd: tree, stdio: 'ignore', env: cleanEnvironment() }).status === 0;
+  const env = cleanEnvironment();
+  if (spawnSync('git', ['merge-base', '--is-ancestor', head, 'HEAD'], { cwd: tree, stdio: 'ignore', env }).status === 0) return true;
+  const visited = spawnSync('git', ['log', '-g', '--format=%H', 'HEAD'], { cwd: tree, encoding: 'utf8', env });
+  return visited.status === 0 && visited.stdout.split('\n').includes(head);
 }
 // Stops each run whose held PR someone else pushed, as reap does, and releases its hold so the next check serves the PR again.
 function afkReleaseForeignHeads(cfg, common) {
@@ -1390,7 +1393,10 @@ function afkReleaseForeignHeads(cfg, common) {
   // A run whose checkout cannot be found cannot be told from a foreign pusher, so it keeps its hold.
   const owns = (id, head) => { const tree = treeOf(id); return !tree || !existsSync(tree) || afkOwnsHead(tree, head); };
   const headOf = number => { try { return afkGh(['api', `repos/${cfg.repo}/pulls/${number}`]).head?.sha; } catch { return null; } };
-  for (const { id, pr, from, to } of afkForeignHeads(ledger, live, headOf, owns)) {
+  const moved = afkForeignHeads(ledger, live, headOf, owns);
+  // The released PR is served by this tick's check, never skipped as quiet.
+  if (moved.length) rmSync(join(common, 'afk-check.json'), { force: true });
+  for (const { id, pr, from, to } of moved) {
     if (cfg.runsCommand) {
       const agent = JSON.parse(run(cfg.runsCommand[0], cfg.runsCommand.slice(1)) || '[]').find(item => item.name === id && typeof item.id === 'string' && /^[A-Za-z0-9._-]+$/.test(item.id));
       if (agent) afkConfiguredCommand(cfg.stopCommand, { runId: id, id: agent.id });

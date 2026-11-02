@@ -637,6 +637,9 @@ test('a foreign push on a held PR releases its run, and the PR is served again a
   assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => taken, owns), [], 'an unchanged head keeps the run');
   assert.equal(git(tree, 'commit', '-q', '--allow-empty', '-m', 'own fix').status, 0);
   assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => head(tree), owns), [], 'a head the run pushed keeps the run');
+  const pushed = head(tree);
+  assert.equal(git(tree, 'commit', '-q', '--amend', '--allow-empty', '-m', 'own fix, amended').status, 0);
+  assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => pushed, owns), [], 'a head the run pushed and then rewrote keeps the run');
   assert.equal(git(repo, 'commit', '-q', '--allow-empty', '-m', 'foreign fix').status, 0);
   const foreign = head(repo);
   assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => foreign, owns), [{ id: 'run-1', pr: 9, from: taken, to: foreign }]);
