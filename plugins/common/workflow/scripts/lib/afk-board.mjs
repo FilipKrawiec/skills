@@ -151,16 +151,17 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
   // A run that split its held issue builds the first sub-issue under that hold, so a hold on a parent In progress (or with
   // no card) also covers its direct sub-issues; a refine hold on a Blocked or Backlog epic, or one on a grandparent, does not.
-  const holdsOf = (number, anyone) => afkLiveHolds(threads(number), live, me).some(hold => anyone || hold.run !== me);
-  const heldBy = (number, anyone = false) => {
+  // `except` is the run whose holds do not count: this run for heldElsewhere, none for whether anyone works on a PR.
+  const holdsOf = (number, except) => afkLiveHolds(threads(number), live, me).some(hold => hold.run !== except);
+  const heldBy = (number, except) => {
     const parent = byNumber.get(byNumber.get(number)?.ancestors?.[0]);
-    return holdsOf(number, anyone) || Boolean(parent && [null, undefined, 'In progress'].includes(parent.status) && holdsOf(parent.number, anyone));
+    return holdsOf(number, except) || Boolean(parent && [null, undefined, 'In progress'].includes(parent.status) && holdsOf(parent.number, except));
   };
-  const heldElsewhere = number => heldBy(number);
+  const heldElsewhere = number => heldBy(number, me);
   // An open PR holds overlapping builds only while someone works on it: a live run holds it or an issue it delivers, or that
   // issue went Blocked at the current base head. A PR nobody works on holds nothing, so a stalled PR cannot stop the repository.
   const blockedAtBase = number => Boolean(base) && byNumber.get(number)?.status === 'Blocked' && afkBlockedBase(threads(number)) === base;
-  const worked = pr => [pr.number, ...pr.issues].some(number => heldBy(number, true)) || pr.issues.some(blockedAtBase);
+  const worked = pr => [pr.number, ...pr.issues].some(number => heldBy(number, null)) || pr.issues.some(blockedAtBase);
   // Shared files every change touches (`afk.alwaysInScope`) never overlap.
   const shared = Array.isArray(cfg.alwaysInScope) ? cfg.alwaysInScope : [];
   const overlaps = (pr, scope) => (pr.files || []).some(file => [file.path, file.previousPath].some(path => path && !afkPathsWithinScope([path], shared) && afkPathsWithinScope([path], scope)));

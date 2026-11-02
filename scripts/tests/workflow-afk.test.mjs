@@ -857,6 +857,7 @@ test('shared alwaysInScope paths never overlap, and a PR nobody works on holds n
   assert.deepEqual(plan(shared, [...open.files, { path: 'src/7.js' }]).held, [{ issue: 7, pr: 20 }], 'a file outside the shared paths still overlaps');
   const at = (threads, column, base) => afkPlan(cfg, ['live-run'], number => threads[number] || [], 'new-run', { issues: [epic, todo[0], board(9, column)], prs: [{ ...open, files: [{ path: 'src/6.js' }] }], base }).held;
   assert.deepEqual(at({}, 'Review', 'ba5e111'), [], 'a PR nobody works on holds nothing');
+  assert.deepEqual(at({ 20: [{ id: 3, body: '<!-- afk-issue-hold session=dead-run -->' }] }, 'Review', 'ba5e111'), [], "a dead run's hold marker holds nothing");
   assert.deepEqual(at({ 9: hold }, 'In progress', 'ba5e111'), [{ issue: 6, pr: 20 }], "a live hold on the PR's issue holds");
   const blocked = [{ id: 2, body: '<!-- afk-issue-blocked session=old-run -->\n**Blocked:** run old-run ended with PR #20 open (head `abc`); base head `ba5e111`.' }];
   assert.deepEqual(at({ 9: blocked }, 'Blocked', 'ba5e111'), [{ issue: 6, pr: 20 }], 'Blocked at the current base head holds');
