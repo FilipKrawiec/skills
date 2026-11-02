@@ -39,7 +39,7 @@ export const workflowDefaults = {
   afk: {
     runPrefix: 'afk-', maxRuns: 4, maxReviewRuns: 2, environmentFile: '~/.config/gh-agents/workflow-env.json',
     watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--output-format', 'json', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--worktree', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
-    permissionMode: 'auto', pluginUpdateCommands: [],
+    permissionMode: 'auto', pluginUpdateCommands: [], maxRunMinutes: 30,
     toolingRepository: 'https://github.com/FilipKrawiec/skills.git', toolingRef: 'main', toolingDirectory: '~/.local/share/workflow-cli/skills',
   },
   explore: { personas: '.agents/personas.md', maxIssues: 3, idleHours: 24, capturesBranch: 'explore-captures' },
@@ -345,6 +345,13 @@ async function push(args) {
   if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || prLinkedIssues(pr, repo).includes(held)))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing or part of held issue #${held}`);
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
+  // Pushing over a PR that another live run works on strands that run's own push, so its hold never ends; only the holder pushes.
+  const live = afkLive({ ...workflowDefaults.afk, ...lanes });
+  for (const pr of pulls) for (const number of new Set([pr.number, ...prLinkedIssues(pr, repo)])) {
+    const comments = jsonCommand('gh', ['api', '--paginate', '--slurp', `repos/${repo}/issues/${number}/comments`], { cwd: root, env: metadataEnv }).flat();
+    const holder = afkLiveHolds(comments, live, process.env.WORKFLOW_RUN_ID || '').find(hold => hold.run !== process.env.WORKFLOW_RUN_ID);
+    if (holder) throw new Error(`AFK run ${holder.run} holds #${number}; let it finish instead of pushing to PR #${pr.number}`);
+  }
   const head = git('rev-parse', 'HEAD');
   const helper = join(dirname(fileURLToPath(import.meta.url)), 'git-askpass.mjs');
   const hook = run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], { cwd: root, env });
@@ -540,6 +547,7 @@ function afkConfig(refreshMetadata = false) {
   if (lanes.startCommand.some(value => value.includes('{model}')) && (typeof lanes.model !== 'string' || !lanes.model.trim())) throw new Error('Configure afk.model because startCommand uses {model}');
   if (lanes.startCommand.some(value => value.includes('{permissionMode}')) && (typeof lanes.permissionMode !== 'string' || !lanes.permissionMode.trim())) throw new Error('Configure afk.permissionMode because startCommand uses {permissionMode}');
   if (lanes.promptPrefix !== undefined && typeof lanes.promptPrefix !== 'string') throw new Error('Configure afk.promptPrefix as a string');
+  if (!Number.isSafeInteger(lanes.maxRunMinutes) || lanes.maxRunMinutes < 1) throw new Error('Configure afk.maxRunMinutes as a positive integer');
   if (!Number.isSafeInteger(lanes.watchIntervalSeconds) || lanes.watchIntervalSeconds < 15) throw new Error('Configure afk.watchIntervalSeconds as an integer of at least 15');
   if (lanes.runsCommand && (!Number.isSafeInteger(lanes.waitTimeoutMinutes) || lanes.waitTimeoutMinutes < 1)) throw new Error('Configure afk.waitTimeoutMinutes as a positive integer when afk.runsCommand is set');
   if (lanes.runsCommand && (!lanes.stopCommand || typeof lanes.stateFile !== 'string' || !lanes.stateFile.includes('{id}'))) throw new Error('Configure afk.stopCommand and afk.stateFile with {id} when afk.runsCommand is set');
@@ -1503,16 +1511,18 @@ function afkConfiguredCommand(argv, replacements = {}, options = {}) {
   }));
   const [program, ...args] = values;
   const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, env: afkAgentEnvironment(), ...options });
+  if (result.error?.code === 'ETIMEDOUT') throw new Error(`${program} ${args[0] || ''} stopped after ${Math.round(options.timeout / 60_000)} minutes`);
   if (result.error || result.status !== 0) throw new Error(`${program} ${args[0] || ''} failed`);
   return (result.stdout || '').trim();
 }
-function afkLaunchAgent({ argv, replacements, cwd, runId, issue, source = process.env }) {
+// A run past afk.maxRunMinutes is stopped, so its supervisor releases the hold and the next tick serves the work again.
+export function afkLaunchAgent({ argv, replacements, cwd, runId, issue, timeoutMs, source = process.env }) {
   const env = afkAgentEnvironment(source);
   delete env.WORKFLOW_RUN_ID;
   delete env.WORKFLOW_ISSUE_NUMBER;
   if (runId) env.WORKFLOW_RUN_ID = runId;
   if (issue != null) env.WORKFLOW_ISSUE_NUMBER = String(issue);
-  return afkConfiguredCommand(argv, replacements, { cwd, env });
+  return afkConfiguredCommand(argv, replacements, { cwd, env, ...(timeoutMs ? { timeout: timeoutMs, killSignal: 'SIGTERM' } : {}) });
 }
 function afkReap(cfg, common) {
   if (!cfg.runsCommand) return;
@@ -1762,7 +1772,7 @@ function afkWatch(cfg, common, requestedIssue = null) {
     if (!cfg.runsCommand && !held) continue;
     const holds = afkReadLedger(join(common, 'afk-holds.json'))[runId] || [];
     const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
-    const launch = { argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0]?.number : null };
+    const launch = { argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0]?.number : null, timeoutMs: cfg.maxRunMinutes * 60_000 };
     if (cfg.runsCommand) { console.log(afkRunReport(runId, afkLaunchAgent(launch))); continue; }
     let runTree = null;
     try {

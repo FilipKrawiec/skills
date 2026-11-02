@@ -36,6 +36,44 @@ test('repo, base, owner and reviewer are derived from origin and CODEOWNERS', t 
   assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).repository, 'acme/app');
 });
 
+function holdLedger(f, run, number, watcherPid = process.pid) {
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ [run]: [{ number, paths: null, oneShot: true, watcherPid }] }));
+}
+
+test('push refuses a PR another live AFK run holds, and lets the holder push', t => {
+  const f = fixture(t); holdLedger(f, 'afk-holder', 4);
+  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [] }]);
+  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
+  const refused = f.cliRun('push');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /AFK run afk-holder holds #4/);
+  assertNoPush(f);
+  f.env.WORKFLOW_RUN_ID = 'afk-holder';
+  const own = f.cliRun('push');
+  assert.equal(own.status, 0, own.stderr); assert.equal(existsSync(f.env.PUSH_RECORD), true);
+});
+
+test('push refuses a Part of slice PR whose issue another live AFK run holds', t => {
+  const f = fixture(t); holdLedger(f, 'afk-holder', 7);
+  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'Part of #7' }]);
+  f.env.HOLD_COMMENTS_ISSUE = '7';
+  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
+  const refused = f.cliRun('push');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /AFK run afk-holder holds #7/);
+  assertNoPush(f);
+});
+
+test('push goes through a hold whose run has ended', t => {
+  const f = fixture(t);
+  holdLedger(f, 'afk-holder', 4, Number(run(process.execPath, ['-e', 'console.log(process.pid)']).stdout.trim()));
+  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [] }]);
+  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
+  const stale = f.cliRun('push');
+  assert.equal(stale.status, 0, stale.stderr); assert.equal(existsSync(f.env.PUSH_RECORD), true);
+});
+
 test('push refuses when auto-merge is enabled', t => {
   const f = fixture(t); f.env.AUTO_MERGE = '1';
   assert.notEqual(f.cliRun('push').status, 0); assertNoPush(f);
