@@ -6,15 +6,15 @@ allowed-tools: Skill Read Edit Write Bash(git:*,gh:*,node:*,just:*,lsof:*)
 
 # AFK
 
-Deliver the requested authorized slice, or one unattended slice per run. Read `.agents/config.json` from fetched `origin/HEAD` for identities and step scripts. Never change the main checkout. When invoked interactively by the owner, work only on their requested items.
+Deliver the requested authorized slice, or one unattended slice per run. Read `.agents/config.json` from fetched `origin/HEAD` for identities and step scripts. Never change the main checkout. Invoked by the owner, work only on their requested items.
 
 Read [setup.md](references/setup.md) only for scheduling, and [github-safety.md](references/github-safety.md) only for GitHub protection. Use `safety check` for inspection; run `safety apply` only on explicit owner instruction.
 
 ## 1. Establish work
 
-Check base head and required checks once. Invoke `ship` for a failed base or merged work needing follow-up; never rescan a healthy unchanged head. Until base is green, deliver no new work; record the wait and next actor. Read the issue's authority, criteria, scope, dependencies, decisions and milestone; reuse decisions unless evidence or intent changed.
+Check base head and required checks once. Invoke `ship` for a failed base or merged work needing follow-up; never rescan a healthy head. Until base is green, deliver no new work; record the wait and next actor. Read the issue's authority, criteria, scope, dependencies, decisions and milestone; reuse decisions unless evidence or intent changed.
 
-Delegate routine work within scope. New product direction, paid services, increased budgets, authority changes and production approval remain with the owner. Board status grants no authority. Preserve existing work; never hold an issue twice.
+Delegate routine work within scope; product direction, paid services, budgets, authority and production approval stay with the owner. Board status grants no authority. Preserve existing work; never hold an issue twice.
 
 **Exit gate:** authorized slice and green base, or a recorded wait and next actor.
 
@@ -22,13 +22,13 @@ Delegate routine work within scope. New product direction, paid services, increa
 
 For AFK, the CLI's `Hold:`/`Work:` output is the assignment; take no second item. Owner requests use `afk start --me ID --issue NUMBER`.
 
-Use the workflow CLI for assignments and issue writes. Post via `issue comment --number N --body-file PATH`, using a single-link file inside the worktree. Close passing issues with `issue close --number N`; invoke `spec` for transitions.
+Write issues through the workflow CLI: `issue comment` or `issue edit --number N --body-file PATH` (a single-link worktree file) and `issue close --number N`; invoke `spec` for transitions, and to slice or close the epic a `Work: epic #N` line names.
 
 **Exit gate:** resumed PR, exclusive assignment, or queue empty/wait reason.
 
 ## 3. Deliver
 
-Invoke the skills for implementation, review, VCS and binding GitHub approval. When the host supports it, run review, and fixes after a `round=2`-or-later `verdict=fixes`, on its strongest model at high effort, since cheaper fixes reintroduced blockers; run other agents on its standard model. Respect the pre-push gate and required checks. Run the verify gate once per head, after its last fix; targeted tests between fixes. Every changed or untracked path belongs in the scope packet. Before the first review, compare the diff's changed files with `### Estimate` (S about 5, M about 20); past twice that, or on `verdict=split`, invoke `spec` to split the issue instead of reviewing. File the Reviewer's follow-ups via `spec`. Verify criteria, scope, owner decisions and prior findings against authoritative records, not generated review context. Keep GitHub approval bound to the actual head, while reusing unchanged evidence or reviewing only the delta as `review` permits. Pending CI blocks merge, not a clean review.
+Invoke the skills for implementation, review, VCS and binding GitHub approval. When the host supports it, run review, and fixes after a `round=2`-or-later `verdict=fixes`, on its strongest model at high effort, since cheaper fixes reintroduced blockers; run other agents on its standard model. Respect the pre-push gate and required checks. Run `steps.test` once per head, after its last fix; targeted tests between fixes. Every changed or untracked path belongs in the scope packet. Before the first review, compare the diff's changed files with `### Estimate` (S about 5, M about 20); past twice that, or on `verdict=split`, invoke `spec` to split the issue instead of reviewing. File the Reviewer's follow-ups via `spec`. Verify criteria, scope, owner decisions and prior findings against authoritative records, not generated review context. Keep GitHub approval bound to the actual head, while reusing unchanged evidence or reviewing only the delta as `review` permits. Pending CI blocks merge, not a clean review.
 
 Follow **Process → Assemble → Test**. Process the issue and plan with the invoked skills (`steps.process` is `null`). Assemble the authorized change; run `steps.assemble` with `{platform}` when previewing the app (`null`: no assembly command). Run `steps.test` as configured, substituting only placeholders in its argv. For an explicitly read-only workflow check, test its criteria with CLI evidence, skipping assembly and code tests unless the issue asks. Run argv arrays directly, preserving each argument; stop and report if a required script is absent.
 

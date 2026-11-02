@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkPrFiles, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkPrFiles, afkEndStatus, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -552,4 +552,58 @@ test('issue writes never carry private repository evidence into a public one', (
   assert.throws(() => assertIssueVisibility({ name: 'acme/app', private: true }, { name: 'acme/skills', private: false }), /acme\/skills is public and acme\/app is private; file in acme\/app/);
   assert.doesNotThrow(() => assertIssueVisibility({ name: 'acme/app', private: false }, { name: 'acme/skills', private: false }));
   assert.doesNotThrow(() => assertIssueVisibility({ name: 'acme/app', private: true }, { name: 'acme/skills', private: true }));
+});
+
+test('an epic whose sub-issues all closed queues one delivery check until it records a verdict or changes', () => {
+  const done = (extra = {}) => ({ ...epic, lastEditedAt: '2026-10-01T00:00:00Z', subIssuesSummary: { total: 2, completed: 2 }, ...extra });
+  const units = (target, comments = [], prs = []) => afkPlan({ ...cfg, implementer: 'builder' }, [], number => number === 1 ? comments : [], 'new-run', { issues: [target], prs }).epics[0].units;
+  const [unit] = units(done());
+  assert.deepEqual({ issue: unit.issue, paths: unit.paths, stage: unit.stage }, { issue: 1, paths: [], stage: 'close' });
+  assert.match(unit.text, /^epic #1 has every sub-issue closed/);
+  assert.deepEqual(units(done({ subIssuesSummary: { total: 2, completed: 1 } })), [], 'open slices remain');
+  assert.deepEqual(units(done(), [], [{ number: 9, title: 'x', body: 'Part of #1', headRefOid: 'a', labels: [], reviews: [] }]).filter(item => item.stage), [], 'an open PR still works on it');
+  const verdict = { user: { login: 'builder' }, created_at: '2026-10-02T00:00:00Z', body: '<!-- epic-check stage=close slices=2/2 verdict=owner -->\nCriterion 2 needs the owner.' };
+  assert.deepEqual(units(done(), [verdict]), [], 'a recorded verdict waits for a change');
+  assert.equal(units(done(), [verdict, { user: { login: 'owner' }, created_at: '2026-10-03T00:00:00Z', body: 'Evidence is in #12.' }]).length, 1);
+  assert.equal(units(done({ lastEditedAt: '2026-10-03T00:00:00Z' }), [verdict]).length, 1);
+  assert.equal(units(done(), [{ ...verdict, user: { login: 'stranger' } }]).length, 1, 'only a workflow identity records a verdict');
+  const [candidate] = afkCandidates([{ issue: done(), units: units(done()) }], [], true, () => false);
+  assert.deepEqual({ number: candidate.number, epic: candidate.epic, paths: candidate.paths }, { number: 1, epic: 1, paths: [] });
+});
+
+test('a delivery check that leaves its epic open returns it to In progress, never Blocked or Todo', () => {
+  assert.equal(afkEndStatus({ stage: 'close' }, false, false), 'PROGRESS');
+  assert.equal(afkEndStatus({ stage: 'slice' }, false, false), 'PROGRESS');
+  assert.equal(afkEndStatus({}, true, false), 'REVIEW');
+  assert.equal(afkEndStatus({}, false, true), 'BLOCKED');
+  assert.equal(afkEndStatus({}, false, false), 'TODO');
+});
+
+test('an approved epic without sub-issues queues one slicing run, while a draft waits for the owner', () => {
+  const empty = labels => ({ ...epic, labels: ['type:epic', ...labels], lastEditedAt: '2026-10-01T00:00:00Z', subIssuesSummary: { total: 0, completed: 0 } });
+  const units = (target, comments = []) => afkPlan({ ...cfg, implementer: 'builder' }, [], () => comments, 'new-run', { issues: [target], prs: [] }).epics[0].units;
+  const [unit] = units(empty([]));
+  assert.deepEqual({ issue: unit.issue, paths: unit.paths, stage: unit.stage }, { issue: 1, paths: [], stage: 'slice' });
+  assert.match(unit.text, /^epic #1 is approved and has no sub-issues; slice it/);
+  assert.deepEqual(units(empty(['lane:owner'])), [], 'a draft epic awaits the owner');
+  assert.deepEqual(units(empty([]), [{ user: { login: 'builder' }, created_at: '2026-10-02T00:00:00Z', body: '<!-- epic-check stage=slice slices=0/0 verdict=owner -->' }]), [], 'a recorded verdict waits for a change');
+  assert.deepEqual(units(epic), [], 'an epic without sub-issue data is never staged');
+});
+
+test('a stage run that ended without a verdict or wait after its hold is recorded so the epic is not served again', () => {
+  const hold = { id: 10, body: '<!-- afk-issue-released session=run-1 -->' };
+  assert.equal(afkStageUnrecorded([hold], 10), true);
+  assert.equal(afkStageUnrecorded([{ id: 9, body: '<!-- epic-check stage=close verdict=owner -->' }, hold], 10), true, 'an older verdict does not count');
+  assert.equal(afkStageUnrecorded([hold, { id: 11, body: '<!-- epic-check stage=close verdict=owner -->' }], 10), false);
+  assert.equal(afkStageUnrecorded([hold, { id: 12, body: '<!-- afk-wait until=2026-11-02T16:00:00Z cause=test deployment -->' }], 10), false);
+});
+
+test('an epic-check verdict holds only its own stage and sub-issue count, so a sliced epic is served for close later', () => {
+  const at = (completed, total) => ({ ...epic, lastEditedAt: '2026-10-01T00:00:00Z', subIssuesSummary: { total, completed } });
+  const verdict = (stage, slices) => ({ user: { login: 'builder' }, created_at: '2026-10-02T00:00:00Z', body: `<!-- epic-check stage=${stage} slices=${slices} verdict=none session=run-1 -->` });
+  const stages = (target, comments) => afkPlan({ ...cfg, implementer: 'builder' }, [], () => comments, 'new-run', { issues: [target], prs: [] }).epics[0].units.map(unit => unit.stage);
+  assert.deepEqual(stages(at(3, 3), [verdict('slice', '0/0')]), ['close'], 'slicing then closing every slice serves the close check');
+  assert.deepEqual(stages(at(3, 3), [verdict('close', '2/2')]), ['close'], 'a slice added by the close check and then closed serves it again');
+  assert.deepEqual(stages(at(3, 3), [verdict('close', '3/3')]), [], 'an unchanged count stays held');
+  assert.deepEqual(stages({ ...at(3, 3), labels: ['type:epic', 'lane:owner'] }, []), [], 'an epic waiting on the owner is never staged');
 });
