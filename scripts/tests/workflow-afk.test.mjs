@@ -904,6 +904,7 @@ test('with runsCommand, reap stops a watcher-launched run past afk.maxRunMinutes
   const agents = [
     { kind: 'background', name: `afk-${stamp(31)}-1-1`, id: 'old', state: 'working' },
     { kind: 'background', name: `afk-${stamp(5)}-1-1`, id: 'young', state: 'working' },
+    { kind: 'background', name: `afk-${stamp(40)}-1-1`, id: 'gone', state: 'stopped' },
     { kind: 'background', name: 'afk-owner', id: 'unstamped', state: 'working' },
   ];
   const cfg = { ...workflowDefaults.afk, runPrefix: 'afk-', maxRunMinutes: 30, waitTimeoutMinutes: 60, stateFile: join(dir, '{id}.json'),

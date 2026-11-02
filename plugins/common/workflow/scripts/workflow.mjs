@@ -349,7 +349,8 @@ async function push(args) {
   // A run id is public in its hold comment, so a caller is that run only from inside its process tree, and the refusal names no run.
   const live = afkLive({ ...workflowDefaults.afk, ...lanes });
   const claimed = process.env.WORKFLOW_RUN_ID || '';
-  const me = claimed && afkCallerInRun(realpathSync(resolve(root, git('rev-parse', '--git-common-dir'))), claimed) ? claimed : '';
+  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+  const me = claimed && afkCallerInRun(common, claimed) ? claimed : '';
   for (const pr of pulls) for (const number of new Set([pr.number, ...prLinkedIssues(pr, repo)])) {
     const comments = jsonCommand('gh', ['api', '--paginate', '--slurp', `repos/${repo}/issues/${number}/comments`], { cwd: root, env: metadataEnv }).flat();
     if (afkLiveHolds(comments, live, me).some(hold => hold.run !== me)) throw new Error(`A live AFK run holds #${number}; let it finish instead of pushing to PR #${pr.number}`);
@@ -357,7 +358,6 @@ async function push(args) {
   const head = git('rev-parse', 'HEAD');
   const helper = join(dirname(fileURLToPath(import.meta.url)), 'git-askpass.mjs');
   const hook = run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], { cwd: root, env });
-  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
   const temporary = mkdtempSync(join(tmpdir(), 'workflow-push-'));
   const pushEnv = { ...env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_ASKPASS: helper, GIT_TERMINAL_PROMPT: '0', WORKFLOW_IMPLEMENTER: actor, WORKFLOW_PRE_PUSH_HOOK: hook, WORKFLOW_PUSH_WORKTREE: root };
   if (env.GIT_CONFIG_GLOBAL !== undefined) pushEnv.WORKFLOW_HOOK_CONFIG_GLOBAL = env.GIT_CONFIG_GLOBAL;
@@ -1568,7 +1568,7 @@ export function afkReap(cfg, common) {
     const reason = agent.waitingFor || (ended ? 'finished turn' : null);
     if (reason) waiting[agent.id] = previous[agent.id] || now;
     const started = afkRunStarted(agent.name.slice(cfg.runPrefix.length));
-    if (started !== null && now - started >= cfg.maxRunMinutes * 60_000) stops.push({ agent, why: `stopped after ${cfg.maxRunMinutes} minutes` });
+    if (started !== null && !['done', 'stopped', 'failed'].includes(agent.state || agent.status) && now - started >= cfg.maxRunMinutes * 60_000) stops.push({ agent, why: `stopped after ${cfg.maxRunMinutes} minutes` });
     else if (agent.state === 'done' || (agent.state === 'blocked' && !agent.waitingFor) || (reason && now - waiting[agent.id] >= cfg.waitTimeoutMinutes * 60_000)) stops.push({ agent, why: 'wait ended' });
   }
   mkdirSync(dirname(file), { recursive: true });
