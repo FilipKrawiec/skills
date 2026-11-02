@@ -240,6 +240,26 @@ test('AFK watcher binds its held issue to the launched agent', t => {
   assert.match(result.stderr, /assigned AFK scope/);
 });
 
+test('AFK watcher records the run usage on the released hold', t => {
+  if (spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { stdio: 'ignore' }).status !== 0) { t.skip('watcher lock ownership requires process inspection'); return; }
+  const f = fixture(t);
+  const child = join(f.root, 'agent.mjs');
+  writeFileSync(child, `console.log(JSON.stringify({type:'result',result:'Summary: done',total_cost_usd:0.5,num_turns:7,duration_ms:120000,usage:{input_tokens:10,output_tokens:20,cache_read_input_tokens:30,cache_creation_input_tokens:40}}));\n`);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a.includes('PATCH')) require('fs').appendFileSync(process.env.TEST_PATCHES, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr' || a[0]==='issue') { out([]); process.exit(0); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,['lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"]}\\n\\u0060\\u0060\\u0060')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.some(x=>x.includes('/comments'))) { out({id:12}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
+  chmodSync(gh, 0o755);
+  const cfg = { ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { startCommand: [process.execPath, child, '{runId}', '{prompt}'] } };
+  writeFileSync(join(f.repo, configPath), json(cfg));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.TEST_PATCHES = join(f.root, 'patches.log');
+  const watch = f.cliRun('afk', 'watch', '--issue', '1082');
+  assert.equal(watch.status, 0, `${watch.stdout}\n${watch.stderr}`);
+  assert.match(watch.stdout, /Summary: done\nUsage: \$0\.50, 7 turns, 2 min/);
+  assert.match(readFileSync(f.env.TEST_PATCHES, 'utf8'), /issues\/comments\/12 -f body=<!-- afk-issue-released session=afk-\S+ -->\nUsage: \$0\.50, 7 turns, 2 min, tokens in 10, out 20, cache read 30, cache write 40/);
+});
+
 test('AFK watcher hands an explore pass to the agent without a second afk start', t => {
   const f = fixture(t);
   const child = join(f.root, 'agent.mjs');
