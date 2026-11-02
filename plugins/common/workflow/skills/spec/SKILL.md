@@ -22,8 +22,8 @@ Read [afk-ready.md](references/afk-ready.md) for AFK readiness. Before AFK assig
 
 | Actor | Transition | Condition and consequence |
 | --- | --- | --- |
-| Orchestrator | `lane:proposed` | AFK recommended but authorization absent; request it. |
-| Orchestrator | `lane:afk` | Direct/milestone authority or configured issue-level Reviewer approval; when ready and unblocked, select for Todo. |
+| Orchestrator | `lane:proposed` | Work changes owner-requested behaviour or lacks recorded authority; request eligibility review. |
+| Orchestrator | `lane:afk` | A bug restoring specified behaviour, work keeping owner-requested behaviour, direct/milestone authority or Reviewer approval; when ready and unblocked, select for Todo. |
 | Orchestrator | `lane:owner` | Owner participation required; record preparation agents can continue. |
 | Orchestrator | owner lane to `lane:afk` | Participation resolved and recorded authority covers remaining work; recheck readiness. |
 | Product partner | one `type:*` | Actual outcome changes type; epics lose lanes and cannot be claimed. |

@@ -8,7 +8,7 @@ allowed-tools: Skill Read Edit Write Bash(git:*,gh:*,node:*,just:*,lsof:*)
 
 Deliver the requested authorized slice, or one unattended slice per run. Read `.agents/config.json` from fetched `origin/HEAD` for identities and step scripts. Never change the main checkout. When invoked interactively by the owner, work only on their requested items.
 
-Read [setup.md](references/setup.md) only for scheduling, and [github-safety.md](references/github-safety.md) only for GitHub protection. Use `safety check` for inspection; run `safety apply` only on explicit owner instruction. Git and base CODEOWNERS supply repository, base and roles; CLI defaults supply required checks.
+Read [setup.md](references/setup.md) only for scheduling, and [github-safety.md](references/github-safety.md) only for GitHub protection. Use `safety check` for inspection; run `safety apply` only on explicit owner instruction.
 
 ## 1. Establish work
 
@@ -20,7 +20,7 @@ Delegate routine work within scope. New product direction, paid services, increa
 
 ## 2. Select or resume
 
-For AFK, the CLI's `Hold:`/`Work:` output is the assignment; take no second item. A foreground one-shot watcher owns holds; background hosts manage them. Owner requests use `afk start --me ID --issue NUMBER`.
+For AFK, the CLI's `Hold:`/`Work:` output is the assignment; take no second item. Owner requests use `afk start --me ID --issue NUMBER`.
 
 Use the workflow CLI for assignments and issue writes; it validates actors and serializes claims. Post via `issue comment --number N --body-file PATH`, using a single-link file inside the worktree. Close passing issues with `issue close --number N`; invoke `spec` for transitions.
 
@@ -28,7 +28,7 @@ Use the workflow CLI for assignments and issue writes; it validates actors and s
 
 ## 3. Deliver
 
-Invoke the skills for implementation, review, VCS and binding GitHub approval. When the host supports it, run review, and fixes after a `round=2`-or-later `verdict=fixes`, on its strongest model at high effort, since cheaper fixes reintroduced blockers; run other agents on its standard model. Respect the repository's pre-push gate and required hosted checks; do not duplicate a full suite locally unless required or needed to diagnose a failure. Every changed or untracked path must be in the scope packet. The author cannot approve their own work. Verify criteria, scope, owner decisions and prior findings against authoritative records, not generated review context. Keep GitHub approval bound to the actual head, while reusing unchanged evidence or reviewing only the delta as `review` permits. Pending CI blocks merge, not a clean review.
+Invoke the skills for implementation, review, VCS and binding GitHub approval. When the host supports it, run review, and fixes after a `round=2`-or-later `verdict=fixes`, on its strongest model at high effort, since cheaper fixes reintroduced blockers; run other agents on its standard model. Respect the pre-push gate and required hosted checks; run a full suite locally only when required or diagnosing a failure. Every changed or untracked path must be in the scope packet. Verify criteria, scope, owner decisions and prior findings against authoritative records, not generated review context. Keep GitHub approval bound to the actual head, while reusing unchanged evidence or reviewing only the delta as `review` permits. Pending CI blocks merge, not a clean review.
 
 Follow **Process → Assemble → Test**. Process the issue and plan with the invoked skills; `steps.process` is `null` because the workflow owns this phase. Assemble the authorized change; run `steps.assemble` with `{platform}` when previewing the app (`null` means no project assembly command applies). Run `steps.test` as configured; substitute only placeholders present in its argv, since a project script may discover changed tests itself. For an explicitly read-only workflow check, use CLI evidence to test its acceptance criteria; skip project assembly and code tests unless the issue asks for them. Run argv arrays directly, preserving each argument; stop and report if a required script is absent.
 
@@ -50,9 +50,9 @@ commands/exits, findings, exit gate and decisions in at most 8 lines.
 
 Trace a failure and attempt at most two evidence-led fixes, then replan or wait with cause, responsible actor and retry condition. Retain the lane; technical difficulty alone is not an owner decision. Request technical adjudication only for an unresolved conflict or changed evidence. Only an owner-reserved decision waits on the owner. Invoke the owning skills for safe cleanup. At a bounded health stop, retain unfinished required migrations as prerequisites.
 
-Before ending, post `## Run notes` on the held issue (explore passes skip this): at most three one-line observations of avoidable cost or flow friction (rereads, repeated suites, extra review rounds, retries, waits, missing signals, unclear rules), each with evidence and owning skill or rule; else `no notes`. Never edit skills or rules in the run; `improve` acts on repeats.
+Before ending a held run, file at most two evidenced improvements that would have made it cheaper (rereads, repeated suites, retries, waits), or none. Write here for project rules; for skills add `--repo` with the loaded skills' origin, and treat a CLI refusal as owner-reserved, with its link. Comment new evidence on an open match; otherwise invoke `spec` and `issue create` a routine fix as `type:bug` or `type:chore` with criteria, packet and lane. Comment owner-reserved ones on the issue `issue create --unique --title "Owner improvements" --labels type:task,lane:owner --body-file PATH` returns. Never edit skills or rules here.
 
-**Exit gate:** delivery or recorded replan/wait, plus run notes; lane retained unless authority changed.
+**Exit gate:** delivery or recorded replan/wait, plus filed improvements; lane retained unless authority changed.
 
 ## Output
 
