@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkEndCards, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkMergeThenPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkReviewKind, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkEndCards, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkMergeThenPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkReviewKind, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, scopeOverlaps, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -540,6 +540,20 @@ test('issue writes reach only the configured repository or the workflow tooling 
   assert.equal(issueTargetRepo(cfg, 'acme/app'), 'acme/app');
   assert.equal(issueTargetRepo(cfg, 'acme/skills'), 'acme/skills');
   assert.throws(() => issueTargetRepo(cfg, 'other/repo'), /only acme\/app or the workflow tooling repository acme\/skills/);
+});
+
+test('scope overlaps match equal paths and directories, skipping issues without a packet', () => {
+  const packet = paths => `\u0060\u0060\u0060scope\n${JSON.stringify({ paths })}\n\u0060\u0060\u0060`;
+  const issues = [
+    { number: 1, title: 'same file', body: packet(['plugins/a/workflow.mjs']) },
+    { number: 2, title: 'parent dir', body: packet(['scripts/tests/']) },
+    { number: 3, title: 'no packet', body: 'Edits scripts/tests/x.mjs' },
+    { number: 4, title: 'sibling', body: packet(['scripts/testsuite.mjs', 'docs']) },
+  ];
+  assert.deepEqual(scopeOverlaps(issues, ['plugins/a/workflow.mjs', 'scripts/tests/x.test.mjs', 'docs/a.md']).map(issue => issue.number), [1, 2, 4]);
+  assert.deepEqual(scopeOverlaps(issues, ['plugins/a/']).map(issue => issue.number), [1]);
+  assert.deepEqual(scopeOverlaps(issues, ['scripts/']).map(issue => issue.number), [2, 4]);
+  assert.deepEqual(scopeOverlaps(issues, null), []);
 });
 
 test('a unique issue title resolves to the oldest open exact match', () => {
