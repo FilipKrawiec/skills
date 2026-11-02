@@ -1207,6 +1207,7 @@ function afkWatchTree(cfg) {
   const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
   const watch = afkWatchPath(common);
   const marker = join(common, 'afk-watch-worktree.json');
+  afkExcludeWorktrees(common);
   run('git', ['fetch', '--quiet', 'origin', cfg.base], { cwd: root, env: cleanEnvironment() });
   mkdirSync(dirname(watch), { recursive: true });
   if (!existsSync(watch)) {
@@ -1245,6 +1246,15 @@ function afkWatchTree(cfg) {
     run('git', ['checkout', '--quiet', '--no-overwrite-ignore', '--detach', `origin/${cfg.base}`], { cwd: watch, env: cleanEnvironment() });
   }
   return watch;
+}
+// Keeps the watcher's and runs' worktrees out of the main checkout's status, whatever the repository ignores.
+export function afkExcludeWorktrees(common) {
+  const file = join(common, 'info', 'exclude');
+  const current = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  const missing = ['/.worktrees/', '/.claude/worktrees/'].filter(entry => !current.split('\n').includes(entry));
+  if (!missing.length) return;
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, `${current}${current && !current.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
 }
 function afkWatchPath(common) { return join(dirname(common), '.worktrees', 'afk-watch'); }
 // Each launched run works in its own worktree, so work it leaves behind can never block the watcher's checkout.

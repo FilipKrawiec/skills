@@ -2,7 +2,7 @@
 // PreToolUse guard: in a repository with .agents/config.json, commits and pushes go through the workflow CLI,
 // which authors as the implementer and checks scope; plain git would act as the host's Git user.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -10,13 +10,21 @@ import { fileURLToPath } from 'node:url';
 const GLOBAL_OPTIONS_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--config-env']);
 
 // With a cwd, follows `cd <dir>` and `git -C <dir>` and blocks only where the target checkout is governed;
-// a target it cannot resolve (a shell variable) is judged by the directory it last knew.
+// a target it cannot resolve (a shell variable, `-`, a directory that does not exist) is judged by the directory it last knew.
 export function blockedGitSubcommand(command, cwd = null, isGoverned = governed) {
   let dir = cwd;
-  const target = (from, path) => path.includes('$') ? from : resolve(from, path.replace(/^~(?=\/|$)/, homedir()).replace(/^(['"])(.*)\1$/, '$2'));
+  const target = (from, path) => {
+    if (path.includes('$') || path === '-') return from;
+    const next = resolve(from, path.replace(/^~(?=\/|$)/, homedir()));
+    return existsSync(next) && statSync(next).isDirectory() ? next : from;
+  };
   for (const segment of String(command).split(/&&|\|\||[;|\n&()]/)) {
-    const words = segment.trim().split(/\s+/).filter(Boolean);
-    if (dir && words[0] === 'cd') { dir = words[1] ? target(dir, words[1]) : homedir(); continue; }
+    const words = [...segment.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map(match => match[1] ?? match[2] ?? match[3]);
+    if (dir && words[0] === 'cd') {
+      const path = words.slice(1).find(word => !['-P', '-L', '-e', '-@', '--'].includes(word));
+      dir = path === undefined ? homedir() : target(dir, path);
+      continue;
+    }
     let i = 0;
     while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i])) i++;
     if (['env', 'command', 'exec', 'sudo'].includes(words[i])) i++;

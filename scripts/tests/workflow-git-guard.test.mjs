@@ -39,4 +39,12 @@ test('git guard blocks plain commits only in repositories with workflow config',
   assert.equal(runGuard(join(root, 'plain'), 'cd ../governed && git commit -m x').status, 2);
   assert.equal(runGuard(join(root, 'plain'), `git -C ${join(root, 'governed')} push`).status, 2);
   assert.equal(runGuard(join(root, 'plain'), 'cd "$TARGET" && git push').status, 0);
+  const spaced = join(root, 'governed repo');
+  assert.equal(spawnSync('git', ['init', '-q', spaced]).status, 0);
+  mkdirSync(join(spaced, '.agents'));
+  writeFileSync(join(spaced, '.agents', 'config.json'), '{}');
+  for (const command of [`cd "${spaced}" && git commit -m x`, `git -C '${spaced}' commit -m x`, 'cd /nonexistent; git commit -m x', 'cd -P . && git commit -m x', 'cd - && git push']) {
+    assert.equal(runGuard(spaced, command).status, 2, command);
+  }
+  assert.equal(runGuard(join(root, 'plain'), `cd "${spaced}" && git commit -m x`).status, 2);
 });
