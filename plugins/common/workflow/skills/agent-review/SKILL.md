@@ -6,13 +6,13 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 
 # Agent Review
 
-Read base `.agents/config.json` for implementer and Reviewer identities; use `workflow.mjs cache show` for the discovered Review queue, and read base CODEOWNERS for path ownership. Be independent of the implementer: never implement, commit, push, use the owner's credential as fallback or claim secret isolation from a shared store. Post only authorized review and queue actions. Missing posting or protection capability blocks merge, not analysis. If this session committed or pushed the PR head, refuse that PR before collecting context; a fresh session reviews it.
+Read base `.agents/config.json` for implementer and Reviewer identities; use `workflow.mjs cache show` for the discovered Review queue, and read base CODEOWNERS for path ownership. Be independent of the implementer: never implement, commit, push, use the owner's credential as fallback or claim secret isolation from a shared store. Post only authorized review and queue actions. Missing posting or protection capability blocks merge, not analysis. If this session committed or pushed the PR head, refuse that PR before collecting context; a fresh session or a fresh-context subagent reviews it.
 
 ## 1. Decide the assignment
 
 For a technical fork, reuse an applicable recorded decision; otherwise decide routine engineering inside approved intent and record choice, reason and packet correction. Never reverse owner decisions or change product strategy, budget, authority or quality gates. Return reserved questions with options; `spec` defines lane transitions; the named actor applies them.
 
-Automated AFK eligibility review always runs for `lane:proposed` items. Evaluate using `spec`, record `APPROVED AFK` or `REQUEST_CHANGES` on the issue under `<!-- agent-review eligibility issue=<N> -->`, and return the result for the designated actor to transition. For a queue, select at most four ready PRs, oldest first, skipping drafts; use [queue.md](references/queue.md) for queue operations.
+For a `lane:proposed` Backlog item, evaluate AFK eligibility using `spec`, and record `APPROVED AFK` or `REQUEST_CHANGES` under `<!-- agent-review eligibility issue=<N> -->`; the Backlog `refine` run applies the lane and board move. For a queue, select at most four ready PRs, oldest first, skipping drafts; use [queue.md](references/queue.md) for queue operations.
 
 **Exit gate:** recorded decision, reserved question, or PR selected.
 
