@@ -902,9 +902,17 @@ export function afkPathsWithinScope(paths, scope) {
   }));
 }
 function afkChangedPaths(root, beforeHead) {
-  const committed = run('git', ['diff', '--name-only', `${beforeHead}..HEAD`], { cwd: root }).split('\n').filter(Boolean);
-  const working = run('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { cwd: root }).split('\0').filter(Boolean).map(row => row.slice(3).split(' -> ').at(-1));
-  return [...new Set([...committed, ...working])];
+  const paths = args => {
+    const result = spawnSync('git', args, { cwd: root, env: cleanEnvironment(), encoding: 'utf8' });
+    if (result.error || result.status !== 0) throw new Error('Cannot inspect changed paths for AFK scope');
+    return result.stdout.split('\0').filter(Boolean);
+  };
+  return [...new Set([
+    ...paths(['diff', '--no-renames', '--name-only', '-z', `${beforeHead}..HEAD`]),
+    ...paths(['diff', '--no-renames', '--name-only', '-z', '--cached']),
+    ...paths(['diff', '--no-renames', '--name-only', '-z']),
+    ...paths(['ls-files', '--others', '--exclude-standard', '-z']),
+  ])];
 }
 function afkAssertPushScope(root, baseRef) {
   const runId = process.env.WORKFLOW_RUN_ID;

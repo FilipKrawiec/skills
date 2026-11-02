@@ -293,6 +293,28 @@ test('AFK commit rejects an unauthenticated actor before staging', t => {
   assert.equal(f.linkedGit('diff', '--cached', '--name-only').stdout.trim(), '');
 });
 
+test('AFK push rejects staged and committed renames from outside scope', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.repo, 'outside.txt'), 'outside');
+  assert.equal(f.linkedGit('add', 'outside.txt').status, 0);
+  commitFixture(f);
+  f.env.REMOTE_BASE_SHA = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: ['docs/'] }] }));
+  f.env.WORKFLOW_RUN_ID = 'afk-test-run';
+  f.env.WORKFLOW_ISSUE_NUMBER = '1082';
+  mkdirSync(join(f.repo, 'docs'));
+  assert.equal(f.linkedGit('mv', 'outside.txt', 'docs/inside.txt').status, 0);
+  const staged = f.cliRun('push');
+  assert.notEqual(staged.status, 0);
+  assert.match(staged.stderr, /Push paths exceed the assigned AFK scope/);
+  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'move').status, 0);
+  const committed = f.cliRun('push');
+  assert.notEqual(committed.status, 0);
+  assert.match(committed.stderr, /Push paths exceed the assigned AFK scope/);
+  assertNoPush(f);
+});
+
 test('AFK push rejects raw commits outside the issue scope before authenticating', t => {
   const f = fixture(t);
   const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
