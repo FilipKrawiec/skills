@@ -243,6 +243,22 @@ test('a PR with a rename or 100 files re-reads every page of its files over REST
   assert.equal(files({ number: 10, files: Array.from({ length: 100 }, (_, n) => ({ path: `f${n}`, changeType: 'MODIFIED' })) }).length, 2);
   assert.equal(files({ number: 11, files: Array.from({ length: 99 }, (_, n) => ({ path: `f${n}`, changeType: 'MODIFIED' })) }).length, 99);
   assert.deepEqual(read, [9, 10]);
+  assert.equal(files({ number: 12, files: [{ path: 'src/new.js' }] }).length, 2, 'files without changeType are re-read');
+  assert.deepEqual(read, [9, 10, 12]);
+});
+
+test('a PR whose files cannot be read leaves only its own fix unit out of the plan', () => {
+  const failing = number => { if (number === 9) throw new Error('HTTP 502'); return [[{ filename: 'src/b.js' }]]; };
+  const readOf = pr => afkPrFiles(pr, failing);
+  const unread = readOf({ number: 9, files: [{ path: 'src/new.js', changeType: 'RENAMED' }] });
+  assert.equal(unread.filesUnread, true);
+  const pr = (number, extra) => ({ number, title: `PR ${number}`, body: 'No linked issue.', headRefOid: 'abc', labels: [], reviews: [{ author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '' }], statusCheckRollup: [{ conclusion: 'FAILURE' }], mergeable: 'MERGEABLE', ...extra });
+  const units = prs => afkPlan(cfg, [], () => [], 'new-run', { issues: [epic], prs }).epics[0].units;
+  const fixes = units([pr(9, unread), pr(10, readOf({ number: 10, files: [{ path: 'src/b.js' }] }))]);
+  assert.deepEqual(fixes.map(unit => [unit.issue, unit.paths]), [[10, ['src/b.js']]]);
+  assert.deepEqual(units([pr(9, { ...unread, body: '```scope\n{"paths":["src/"]}\n```' })]).map(unit => unit.paths), [['src/']], 'a PR packet still scopes it');
+  const awaiting = units([pr(9, { ...unread, reviews: [], statusCheckRollup: [] })]);
+  assert.deepEqual(awaiting.map(unit => [unit.issue, unit.review]), [[9, true]], 'its review still runs');
 });
 
 test('an issue waiting for its retry time stays out of selection until that time', () => {
