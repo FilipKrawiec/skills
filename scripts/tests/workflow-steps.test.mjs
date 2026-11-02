@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { requireTestStep } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import {
+  requireTestStep,
+} from '../../plugins/common/workflow/scripts/lib/core.mjs';
 
 test('AFK requires a non-empty configured Test command', () => {
   for (const steps of [{}, { test: null }, { test: [] }]) {

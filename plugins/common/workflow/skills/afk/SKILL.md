@@ -8,11 +8,11 @@ allowed-tools: Skill Read Edit Write Bash(git:*,gh:*,node:*,just:*,lsof:*)
 
 Deliver the requested authorized slice, or one unattended slice per run. Read `.agents/config.json` from fetched `origin/HEAD` for identities and step scripts. Never change the main checkout. Invoked by the owner, work only on their requested items.
 
-Read [setup.md](references/setup.md) only for scheduling, [github-safety.md](references/github-safety.md) only for GitHub protection. Use `safety check` for inspection; run `safety apply` only on explicit owner instruction.
+Read [setup.md](references/setup.md) only for scheduling and [github-safety.md](references/github-safety.md) only for GitHub protection; `safety check` inspects, `safety apply` needs explicit owner instruction.
 
 ## 1. Establish work
 
-Check base head and required checks once; invoke `ship` for a failed base or merged work needing follow-up. Until base is green, deliver no new work; record the wait and next actor. Read the issue's authority, criteria, scope, dependencies and decisions; reuse decisions unless evidence or intent changed.
+Check base head and required checks once; invoke `ship` for a failed base or merged work needing follow-up. Until base is green, deliver no new work; record the wait and next actor. Check the issue's authority, criteria, scope, dependencies, decisions and findings against authoritative records; reuse decisions unless evidence or intent changed.
 
 Delegate routine work; product direction, paid services, budgets, authority and production approval stay with the owner. Board status grants no authority. Preserve existing work; never hold an issue twice.
 
@@ -28,21 +28,11 @@ Write implementer records through the workflow CLI: `issue comment` or `issue ed
 
 ## 3. Deliver
 
-Invoke the skills for implementation, review and VCS. After each push, a fresh subagent loading `agent-review` posts the binding verdict, given the Reviewer brief below without your reasoning. Fix its findings here; a new one reviews each delta. Load `agent-review` itself only for a held review unit. Stay on the issue until its PR merges, then invoke `ship`. Run review, and fixes after a `round=2`-or-later `verdict=fixes`, on the host's strongest model at high effort (cheaper fixes reintroduced blockers); others on its standard model. Run `steps.test` once per head, after its last fix; targeted tests between fixes. Every changed or untracked path belongs in the scope packet. Before the first review, compare changed files with `### Estimate` (S ~5, M ~20); past twice that, on `verdict=split` or needing several PRs, invoke `spec` to split it and build its first sub-issue. File the Reviewer's follow-ups via `spec`. Check criteria, scope, decisions and findings against authoritative records.
+Invoke the skills for implementation, review and VCS. After each push, a fresh subagent loading `agent-review` posts the binding verdict, given the Reviewer brief below without your reasoning. Fix its findings here; a new one reviews each delta. Load `agent-review` itself only for a held review unit. Stay on the issue until its PR merges, then invoke `ship`. Run review, and fixes from a `round=2` `verdict=fixes` on, on the host's strongest model at high effort (cheaper fixes reintroduced blockers); other work on its standard model. Run `steps.test` once per head, after its last fix; targeted tests between fixes. Every changed or untracked path belongs in the scope packet. Before the first review, compare changed files with `### Estimate` (S ~5, M ~20); past twice that, on `verdict=split` or needing several PRs, invoke `spec` to split it and build its first sub-issue. File the Reviewer's follow-ups via `spec`.
 
 Process the issue and plan with the invoked skills; run `steps.assemble` with `{platform}` only when previewing the app (`null`: none). Test an explicitly read-only workflow check with CLI evidence alone unless the issue asks. Run argv arrays directly, substituting only placeholders; stop and report a missing required script.
 
-Delegate only for independence or parallelism. Brief every other worker in full:
-
-```text
-Intent: <issue, approved outcome and assigned phase>.
-Criteria and scope: <acceptance, paths, exclusions, dependencies, claim>.
-Checkout: <worktree, base/head SHAs, last reviewed SHA>.
-Decisions and evidence: <applicable choices, prior findings, checks and captures>.
-Load <skill>; do only the assigned phase. Preserve edits; do not dispatch,
-approve your own work, promote or expose credentials. Return paths, head,
-commands/exits, findings, exit gate and decisions in at most 8 lines.
-```
+Delegate only for independence or parallelism; brief each other worker with [worker-brief.md](references/worker-brief.md).
 
 The Reviewer's brief:
 

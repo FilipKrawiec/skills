@@ -28,6 +28,8 @@ just sync-manifests
 
 Run `just verify` once on completed changes. CI runs the same unit fixtures and plugin validation once, checks tracked/untracked hygiene, then scans secrets. Use `node plugins/common/workflow/scripts/workflow.mjs project status` to inspect the nearest `AGENTS.md` when needed.
 
+The workflow CLI entry `plugins/common/workflow/scripts/workflow.mjs` only parses commands and takes locks. Its modules in `scripts/lib/` import downward only: `core` (process, Git, config, GitHub metadata) ← `afk-board` (issues, PRs, the board-order plan, merges) ← `afk-runs` (holds, start/check/end, scope) ← `afk-watch` (launchd watcher, supervisor, tooling); `vcs` (commit, push, review context) and `issues` build on `afk-runs`. Tests import each name on its own line from the module that defines it.
+
 Every package's `package-metadata.json` owns its identity/version. `just sync-manifests` generates common host manifests and marketplace catalogs. Keep versions unified; do not hand-edit generated manifests.
 
 Before opening a ready PR, obtain fresh independent review on both axes, fix blockers and include verdicts, commands and exit codes. Optional suggestions may remain follow-ups. Request required owner review and enable squash auto-merge bound to the reviewed head; merge approval is not production approval.

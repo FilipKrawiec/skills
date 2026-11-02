@@ -6,7 +6,13 @@ import { cpSync, mkdtempSync, readFileSync, writeFileSync, chmodSync, existsSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afkCheckQuiet, afkToolingVersion, gitFailureLine } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import {
+  afkCheckQuiet,
+  afkToolingVersion,
+} from '../../plugins/common/workflow/scripts/lib/afk-runs.mjs';
+import {
+  gitFailureLine,
+} from '../../plugins/common/workflow/scripts/lib/core.mjs';
 import { configPath, json, config, run, runCliAsync, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, hookPath, assertNoPush } from './support/workflow-cli-fixture.mjs';
 
 test('push ignores uncommitted identity configuration', t => {
@@ -322,7 +328,7 @@ test('an in-place tooling update keeps the version the running code loaded', asy
   const root = mkdtempSync(join(tmpdir(), 'workflow-version-')); t.after(() => rmSync(root, { recursive: true, force: true }));
   cpSync(fileURLToPath(new URL('../../plugins/common/workflow/scripts', import.meta.url)), join(root, 'scripts'), { recursive: true });
   writeFileSync(join(root, 'plugin.json'), JSON.stringify({ version: '1.0.0' }));
-  const copy = await import(new URL(`file://${join(root, 'scripts', 'workflow.mjs')}`));
+  const copy = await import(new URL(`file://${join(root, 'scripts', 'lib', 'afk-runs.mjs')}`));
   writeFileSync(join(root, 'plugin.json'), JSON.stringify({ version: '2.0.0' }));
   assert.equal(copy.afkToolingVersion(), '1.0.0');
 });
