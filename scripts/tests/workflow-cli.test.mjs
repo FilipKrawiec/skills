@@ -526,6 +526,7 @@ test('AFK push --to accepts the PR that closes or is part of the held issue', t 
     { number: 263, headRefName: 'fix/elsewhere', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: closes('other', 'repo') },
     { number: 264, headRefName: 'fix/slice', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'Part of #261' },
     { number: 265, headRefName: 'fix/mention', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'See #261 and #2610' },
+    { number: 266, headRefName: 'fix/longer', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'Part of #2610' },
   ]);
   const elsewhere = f.cliRun('push', '--to', 'fix/elsewhere');
   assert.notEqual(elsewhere.status, 0);
@@ -533,6 +534,9 @@ test('AFK push --to accepts the PR that closes or is part of the held issue', t 
   assertNoPush(f);
   const mention = f.cliRun('push', '--to', 'fix/mention');
   assert.notEqual(mention.status, 0);
+  assertNoPush(f);
+  const longer = f.cliRun('push', '--to', 'fix/longer');
+  assert.notEqual(longer.status, 0);
   assertNoPush(f);
   const slice = f.cliRun('push', '--to', 'fix/slice');
   assert.equal(slice.status, 0, slice.stderr);
