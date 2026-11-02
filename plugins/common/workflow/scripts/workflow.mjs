@@ -697,16 +697,20 @@ export function afkPrRecord(pr, cfg) {
   const broken = pr.mergeable === 'CONFLICTING' || failed;
   const awaitingReview = !reviewerReviewedHead;
   const needsWork = broken || awaitingReview || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
-  return { ...pr, issues, approved, ownerApproved, awaitingReview, broken, needsWork };
+  return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, needsWork };
 }
-// What a PR unit's run acts on: its head, its reviews, whether it is red, and the last comment from someone outside the workflow.
-// A run's own hold, release and notes never change it, so a run that changed nothing leaves the same state behind.
-export function afkPrState(pr, comments, cfg) {
-  return `${pr.headRefOid}:${(pr.reviews || []).length}:${pr.broken ? 'red' : 'green'}:${afkOutsideInput(comments, cfg)}`;
+// What a PR unit's run acts on: its head, its review decisions, its checks, its merge state, the base head and the last
+// comment from someone outside the workflow. A run's own hold, release, notes and thread replies never change it, so a run
+// that changed nothing leaves the same state behind; a run that waited on a red base or a conflict is served after the next merge.
+export function afkPrState(pr, comments, cfg, base = '') {
+  const workflow = afkWorkflowLogins(cfg);
+  const reviews = (pr.reviews || []).filter(review => !workflow.has(review.author?.login?.toLowerCase()) || review.state !== 'COMMENTED' || /<!-- agent-review\b/.test(review.body || '')).length;
+  return `${pr.headRefOid}:${reviews}:${pr.failed ? 'red' : 'green'}:${(pr.mergeable || 'UNKNOWN').toLowerCase()}:${base}:${afkOutsideInput(comments, cfg)}`;
 }
+function afkWorkflowLogins(cfg) { return new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase())); }
 // The last comment from someone outside the workflow; the workflow's own markers and notes are never new input.
 function afkOutsideInput(comments, cfg) {
-  const workflow = new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase()));
+  const workflow = afkWorkflowLogins(cfg);
   return comments.filter(comment => !workflow.has(comment.user?.login?.toLowerCase()) && !/^<!-- afk-/.test(comment.body || '')).at(-1)?.id ?? '';
 }
 // What an issue unit's run acts on: its column, body, labels, open blockers and outside input, and an epic's slice counts.
@@ -776,7 +780,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const unit = review
       ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) awaits its review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
       : { column: 'Review', text: `PR #${pr.number} (${pr.title})${pr.broken ? ' has a red check or a conflict' : ' needs its review fixed'}`, issue: stories[0]?.number || pr.number, priority, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid };
-    offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg));
+    offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg, base));
   }
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
   return { units, prs, byNumber, threads, unchanged, orphans };
