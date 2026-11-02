@@ -1761,7 +1761,8 @@ function validInheritedLockContext(names) {
       if (match) processes.set(Number(match[1]), { parent: Number(match[2]), command: match[3] });
     }
     const owner = processes.get(ownerPid);
-    if (!owner || !owner.command.includes(fileURLToPath(import.meta.url))) return false;
+    // The owner ran this argv, so its ps line matches ours even where ps escapes the path.
+    if (!owner || !(owner.command.includes(fileURLToPath(import.meta.url)) || owner.command.trim() === ownCommandLine())) return false;
     const ancestors = [];
     let pid = process.ppid;
     for (let depth = 0; pid && depth < 16; depth++) {
@@ -1833,7 +1834,8 @@ const invokedLocked = () => {
   const reexecuted = process.env.WORKFLOW_ABSOLUTE_REEXEC === '1';
   delete process.env.WORKFLOW_ABSOLUTE_REEXEC;
   const [command, ...args] = process.argv.slice(2);
-  if (reexecuted || !requiredLocks(command, args).length) return false;
+  // A lock child already runs by the absolute path its owner chose.
+  if (reexecuted || process.env.WORKFLOW_LOCK_TOKEN || !requiredLocks(command, args).length) return false;
   const line = ownCommandLine();
   return line !== null && needsAbsoluteInvocation(line, fileURLToPath(import.meta.url));
 };

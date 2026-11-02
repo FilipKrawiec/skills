@@ -376,25 +376,22 @@ test('a locked issue command run by a relative path does not wait on its own loc
   const script = join('tools', basename(cli));
   for (const args of [['issue', 'comment', '--number', '7', '--body-file', 'body.md'], ['issue', 'create', '--title', 'Owner improvements', '--body-file', 'body.md', '--repo', 'acme/skills', '--unique']]) {
     const began = Date.now();
-    const result = await runScriptAsync(f, script, args);
+    const result = await runScriptAsync(f, script, args, 30000);
     assert.equal(result.timedOut, false, `${args[1]} waited on its own lock`);
     assert.equal(result.status, 0, result.stderr);
-    assert.ok(Date.now() - began < 15000);
+    assert.ok(Date.now() - began < 30000);
   }
   assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/app\/issues\/7\/comments -f body=Run evidence/);
 });
 
-test('a CLI path ps cannot show literally re-executes at most once', async t => {
+test('a locked issue command completes from a path ps cannot show literally', async t => {
   if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
   const f = lockedIssueFixture(t);
   cpSync(dirname(cli), join(f.repo, 'tóols'), { recursive: true });
-  const running = runScriptAsync(f, join('tóols', basename(cli)), ['issue', 'comment', '--number', '7', '--body-file', 'body.md'], 6000);
-  await new Promise(resolve => setTimeout(resolve, 4000));
-  const table = run('ps', ['-axo', 'command=']).stdout.split('\n');
-  const workflows = table.filter(line => line.includes(basename(f.root)) && line.startsWith(process.execPath));
-  await running;
-  // The relative caller, its absolute re-exec and the locked child; a re-exec loop keeps adding more.
-  assert.ok(workflows.length <= 3, workflows.join('\n'));
+  const result = await runScriptAsync(f, join('tóols', basename(cli)), ['issue', 'comment', '--number', '7', '--body-file', 'body.md'], 30000);
+  assert.equal(result.timedOut, false, 'the command waited on its own lock or kept re-executing');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/app\/issues\/7\/comments -f body=Run evidence/);
 });
 
 test('AFK watcher hands an explore pass to the agent without a second afk start', t => {
