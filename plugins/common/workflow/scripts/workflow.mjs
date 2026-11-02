@@ -12,7 +12,7 @@ import { runWithLocks } from './locks.mjs';
 
 const help = `Usage:
   node workflow.mjs commit --message MESSAGE -- PATH...
-  node workflow.mjs push [--owner-bootstrap]
+  node workflow.mjs push [--owner-bootstrap | --to BRANCH]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
   node workflow.mjs issue claim|status|create|comment|close|reopen|queue ...
   node workflow.mjs labels ensure
@@ -27,6 +27,7 @@ const help = `Usage:
   node workflow.mjs safety check|apply
 
 push reads implementer and Reviewer from the fetched default branch's .agents/config.json and derives Owner from origin and base .github/CODEOWNERS. For first-config bootstrap only, if base CODEOWNERS has no owner yet, it reads Owner from committed branch CODEOWNERS.
+push --to BRANCH pushes HEAD to BRANCH instead of the current branch; it requires an AFK run whose held number is an open same-repository PR with that head, or an issue that PR closes.
 A verified personal repo owner may be inferred; CODEOWNERS must identify one owner account unambiguously.
 Auto-merge checks are not atomic with push; do not change auto-merge concurrently. Push isolates Git configuration and runs the installed pre-push hook; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
@@ -247,11 +248,14 @@ export function githubPushRemoteMatches(remote, repo) {
 }
 async function push(args) {
   const ownerBootstrap = args.length === 1 && args[0] === '--owner-bootstrap';
-  if (args.length && !ownerBootstrap) throw new Error('Usage: push [--owner-bootstrap]');
+  const target = args.length === 2 && args[0] === '--to' ? args[1] : null;
+  if (args.length && !ownerBootstrap && target === null) throw new Error('Usage: push [--owner-bootstrap | --to BRANCH]');
   const { root, lanes, baseRef, configSource } = config(true, true, ownerBootstrap);
   if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
   requireLinkedWorktree();
   afkAssertPushScope(root, baseRef);
+  if (target !== null && !process.env.WORKFLOW_RUN_ID) throw new Error('push --to requires an AFK run holding the PR');
+  const held = target === null ? null : afkBoundHold(root, 'push --to').number;
   if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from origin and Owner from CODEOWNERS');
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
@@ -261,7 +265,7 @@ async function push(args) {
     if (![user, reviewer].every(value => typeof value === 'string' && /^[A-Za-z0-9-]+$/.test(value)) || user.toLowerCase() === reviewer.toLowerCase()) throw new Error('Configure distinct implementer, reviewer and owner accounts in trusted roles');
   } else assertDistinctPushRoles({ owner, implementer: user, reviewer });
   if (user.toLowerCase() === repo.split('/')[0].toLowerCase()) throw new Error('Implementer cannot be the repository owner');
-  const branch = git('symbolic-ref', '--quiet', '--short', 'HEAD');
+  const branch = target ?? git('symbolic-ref', '--quiet', '--short', 'HEAD');
   git('check-ref-format', '--branch', branch);
   const defaultBranch = baseRef.slice('refs/remotes/origin/'.length);
   if (lanes.base != null && lanes.base !== defaultBranch) throw new Error('Configured base differs from the verified default branch; role authority is unavailable');
@@ -305,8 +309,9 @@ async function push(args) {
   if (metadata.default_branch !== defaultBranch) throw new Error('Fetched origin/HEAD does not match GitHub default branch; refresh origin');
   const remoteBase = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/branches/${encodeURIComponent(defaultBranch)}`], { cwd: root, env: metadataEnv });
   if (!/^[0-9a-f]{40,64}$/i.test(remoteBase?.commit?.sha || '') || git('rev-parse', baseRef) !== remoteBase.commit.sha) throw new Error('Fetched base is stale or unverifiable; refresh origin before pushing');
-  const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest'], { cwd: root, env: { ...env, GH_TOKEN: token } });
+  const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest,headRefName,isCrossRepository,closingIssuesReferences'], { cwd: root, env: { ...env, GH_TOKEN: token } });
   if (!Array.isArray(pulls)) throw new Error('Cannot determine open PR auto-merge state');
+  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || (pr.closingIssuesReferences || []).some(issue => issue.number === held && `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase())))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing held issue #${held}`);
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const head = git('rev-parse', 'HEAD');
