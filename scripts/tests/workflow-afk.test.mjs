@@ -947,6 +947,11 @@ test('an implementation run that ends with its PR open goes to Blocked, as does 
   assert.match(note, /base head `base123`/);
   const approval = { author: { login: 'reviewer' }, state: 'APPROVED', commit: { oid: 'head726' }, body: '<!-- agent-review sha=head726 verdict=ready -->' };
   assert.match(afkOpenPrNote('afk-1', pr({ reviews: [approval] }), 'b'), /review: approved at this head/);
+  const ownerApproval = { ...approval, body: '<!-- agent-review sha=head726 verdict=owner -->' }, ownerLane = [{ name: 'review:owner' }];
+  assert.match(afkOpenPrNote('afk-1', pr({ reviews: [ownerApproval], labels: ownerLane }), 'b'), /review: approved at this head; waiting for the owner's approval \(`review:owner`\);/);
+  const ownerSigned = { author: { login: cfg.owner }, state: 'APPROVED', commit: { oid: 'head726' }, body: '' };
+  assert.doesNotMatch(afkOpenPrNote('afk-1', pr({ reviews: [ownerApproval, ownerSigned], labels: ownerLane }), 'b'), /waiting for the owner/);
+  assert.doesNotMatch(afkOpenPrNote('afk-1', pr({ reviews: [approval] }), 'b'), /waiting for the owner/);
   assert.match(afkOpenPrNote('afk-1', pr({ reviews: [{ ...approval, state: 'DISMISSED' }] }), 'b'), /review: approval dismissed; awaiting the Reviewer at this head/);
   assert.match(afkOpenPrNote('afk-1', pr({ statusCheckRollup: [{ status: 'IN_PROGRESS', conclusion: '' }], mergeable: 'CONFLICTING' }), 'b'), /checks: pending.*merge state: conflicting/);
   assert.match(afkOpenPrNote('afk-1', pr({ statusCheckRollup: [{ conclusion: 'FAILURE' }] }), 'b'), /checks: red/);
