@@ -775,3 +775,9 @@ test('a sliced epic comes back for its close check once its slices close, and a 
 test('an implementation run ends in Review with a PR, Blocked without one, else Todo', () => {
   assert.deepEqual([afkEndStatus(true, false), afkEndStatus(false, true), afkEndStatus(false, false)], ['REVIEW', 'BLOCKED', 'TODO']);
 });
+
+test('AFK eligibility records post as the configured Reviewer, not through the credential-stripping CLI', () => {
+  const skill = name => readFileSync(new URL(`../../plugins/common/workflow/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
+  assert.match(skill('agent-review'), /eligibility issue=<N> -->` with `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh issue comment`; `workflow.mjs` strips `GH_TOKEN`/);
+  assert.match(skill('afk'), /Write implementer records through the workflow CLI/);
+});
