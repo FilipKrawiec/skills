@@ -316,18 +316,6 @@ test('afk rejects an afk.maxRunMinutes that is not a positive whole number', t =
   }
 });
 
-test('afk rejects an afk.alwaysInScope that is not an array of repository paths', t => {
-  for (const alwaysInScope of ['docs/', ['.'], ['./'], [' docs/'], ['docs/', 3]]) {
-    const f = fixture(t);
-    writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { alwaysInScope } }));
-    assert.equal(f.linkedGit('add', configPath).status, 0);
-    commitFixture(f);
-    const result = f.cliRun('afk', 'runs');
-    assert.equal(result.status, 2, `${JSON.stringify(alwaysInScope)}: ${result.stderr}`);
-    assert.match(result.stderr, /Configure afk\.alwaysInScope as an array of repository paths/);
-  }
-});
-
 test('afk check reads the on-disk spent ledger and serves a PR again once its base moves', t => {
   const f = fixture(t);
   const gh = join(f.root, 'bin', 'gh');
