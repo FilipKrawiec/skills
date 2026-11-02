@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync, openSync, closeSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync, openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codeownersRolesFrom } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCheckQuiet, afkToolingVersion, codeownersRolesFrom } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 const cli = join(root, 'plugins/common/workflow/scripts/workflow.mjs');
@@ -756,4 +756,23 @@ test('push failure reports a safe class and exit', t => {
 test('remote destination mismatch is rejected', t => {
   const f = fixture(t); f.linkedGit('remote', 'set-url', 'origin', 'https://github.com/other/project.git');
   assert.notEqual(f.cliRun('push').status, 0); assertNoPush(f);
+});
+
+test('a tooling update ends the quiet check window', () => {
+  const version = afkToolingVersion(), now = 1_000_000;
+  assert.equal(version, JSON.parse(readFileSync(new URL('../../plugins/common/workflow/plugin.json', import.meta.url), 'utf8')).version);
+  assert.equal(afkCheckQuiet({ signal: 's', at: now, version }, 's', version, now), true);
+  assert.equal(afkCheckQuiet({ signal: 's', at: now, version: '0.0.1' }, 's', version, now), false);
+  assert.equal(afkCheckQuiet({ signal: 's', at: now }, 's', version, now), false);
+  assert.equal(afkCheckQuiet({ signal: 'other', at: now, version }, 's', version, now), false);
+  assert.equal(afkCheckQuiet({ signal: 's', at: now - 1_800_000, version }, 's', version, now), false);
+});
+
+test('an in-place tooling update keeps the version the running code loaded', async t => {
+  const root = mkdtempSync(join(tmpdir(), 'workflow-version-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  cpSync(fileURLToPath(new URL('../../plugins/common/workflow/scripts', import.meta.url)), join(root, 'scripts'), { recursive: true });
+  writeFileSync(join(root, 'plugin.json'), JSON.stringify({ version: '1.0.0' }));
+  const copy = await import(new URL(`file://${join(root, 'scripts', 'workflow.mjs')}`));
+  writeFileSync(join(root, 'plugin.json'), JSON.stringify({ version: '2.0.0' }));
+  assert.equal(copy.afkToolingVersion(), '1.0.0');
 });
