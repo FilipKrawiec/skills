@@ -37,7 +37,7 @@ export const workflowDefaults = {
   github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
   afk: {
     runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
-    watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--worktree', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
+    watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--output-format', 'json', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--worktree', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
     permissionMode: 'auto', pluginUpdateCommands: [],
     toolingRepository: 'https://github.com/FilipKrawiec/skills.git', toolingRef: 'main', toolingDirectory: '~/.local/share/workflow-cli/skills',
   },
@@ -1081,7 +1081,17 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   output.forEach(line => console.log(line));
   return start ? 0 : 3;
 }
-function afkEndRun(cfg, common, id) {
+export function afkRunUsage(output) {
+  let value; try { value = JSON.parse(output); } catch { return null; }
+  if (value?.type !== 'result') return null;
+  const usage = value.usage || {}, count = key => Number.isFinite(usage[key]) ? usage[key] : 0, parts = [];
+  if (Number.isFinite(value.total_cost_usd)) parts.push(`$${value.total_cost_usd.toFixed(2)}`);
+  if (Number.isFinite(value.num_turns)) parts.push(`${value.num_turns} turns`);
+  if (Number.isFinite(value.duration_ms)) parts.push(`${Math.max(1, Math.round(value.duration_ms / 60_000))} min`);
+  parts.push(`tokens in ${count('input_tokens')}, out ${count('output_tokens')}, cache read ${count('cache_read_input_tokens')}, cache write ${count('cache_creation_input_tokens')}`);
+  return { result: typeof value.result === 'string' ? value.result : '', line: `Usage: ${parts.join(', ')}` };
+}
+function afkEndRun(cfg, common, id, note = null) {
   afkActor(cfg);
   return withRepoLock('afk-start', () => {
     const path = join(common, 'afk-holds.json'); const ledger = afkReadLedger(path);
@@ -1090,7 +1100,7 @@ function afkEndRun(cfg, common, id) {
     const named = new Set(prs.flatMap(pr => pr.issues));
     for (const held of dropped) {
       const kind = held.paths === null ? 'epic' : 'issue';
-      run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${held.comment}`, '-f', `body=${afkMarker(`${kind}-released`, id)}`]);
+      run('gh', ['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/comments/${held.comment}`, '-f', `body=${afkMarker(`${kind}-released`, id)}${note ? `\n${note}` : ''}`]);
       console.log(`Released: ${kind} #${held.number}`);
       if (kind === 'issue') afkStatus(cfg, held.number, named.has(held.number) ? 'REVIEW' : 'TODO', true);
     }
@@ -1384,16 +1394,17 @@ function afkWatch(cfg, common, requestedIssue = null) {
     if (!cfg.runsCommand && !held && !explore) continue;
     const holds = afkReadLedger(join(common, 'afk-holds.json'))[runId] || [];
     const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : explore ? ' The workflow CLI assigned an unattended `explore` pass: no work is free. Play `explore`; do not call afk start or afk end.' : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
-    let output, runTree = null;
+    let output, runTree = null, usage = null;
     try {
       if (held && (holds.length !== 1 || !Number.isSafeInteger(holds[0].number) || holds[0].number < 1)) throw new Error('AFK watcher cannot bind the held issue');
       if (!cfg.runsCommand) runTree = afkRunTree(cfg, common, runId);
       output = afkLaunchAgent({ argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: runTree && !runTree.native ? runTree.tree : watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0].number : null });
+      usage = afkRunUsage(output);
     } finally {
-      if (held) afkEndRun(cfg, common, runId);
+      if (held) afkEndRun(cfg, common, runId, usage?.line);
       if (runTree && !afkReleaseRunTree(runTree.tree, dirname(common))) console.log(`Kept: ${runTree.tree} holds work that is not on the remote; preserve it.`);
     }
-    console.log(output ? `Completed: ${runId}\n${output}` : `Started: ${runId}`);
+    console.log(output ? `Completed: ${runId}\n${usage ? `${usage.result}\n${usage.line}` : output}` : `Started: ${runId}`);
   }
   return code === 2 ? 2 : 0;
 }
