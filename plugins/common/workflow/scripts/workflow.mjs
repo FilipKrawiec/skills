@@ -645,8 +645,18 @@ export function afkWait(comments, authors, now = Date.now()) {
   }
   return wait && wait.at > now ? { until: wait.until, cause: wait.cause } : null;
 }
+// What a PR unit's run acts on: its head, its reviews, whether it is red, and the last comment from someone outside the workflow.
+// A run's own hold, release and notes never change it, so a run that changed nothing leaves the same state behind.
+export function afkPrState(pr, comments, cfg) {
+  const workflow = new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase()));
+  const input = comments.filter(comment => !workflow.has(comment.user?.login?.toLowerCase()) && !/^<!-- afk-/.test(comment.body || '')).at(-1);
+  return `${pr.headRefOid}:${(pr.reviews || []).length}:${pr.broken ? 'red' : 'green'}:${input?.id ?? ''}`;
+}
+function afkSpentPath() { return join(git('rev-parse', '--path-format=absolute', '--git-common-dir'), 'afk-spent.json'); }
 export function afkPlan(cfg, live, threads, me = '', data = null) {
   const issues = data?.issues || afkIssues(cfg); const prs = (data?.prs || afkPrData(cfg)).map(pr => afkPrRecord(pr, cfg));
+  // A PR a finished run left unchanged gets no new run until something about it changes.
+  const spent = data ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [];
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
   const epics = issues.filter(issue => issue.labels.includes('type:epic')).sort(afkEpicOrder).map(issue => ({ issue, units: [] }));
   const epicNumbers = new Set(epics.map(epic => epic.issue.number));
@@ -699,13 +709,15 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const review = pr.awaitingReview && !pr.broken;
     // A fix scoped by files that could not be read waits for a later plan rather than holding an incomplete scope.
     if (!review && paths === null) continue;
+    const state = afkPrState(pr, threads(pr.number), cfg);
+    if (spent[pr.number] === state) { unchanged.push(pr.number); continue; }
     const unit = review
-      ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true }
-      : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths };
+      ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true, pr: pr.number, state }
+      : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths, pr: pr.number, state };
     const parent = epics.find(epic => epic.issue.number === target);
     if (parent) parent.units.push(unit);
   }
-  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits };
+  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits, unchanged };
 }
 export function* afkCandidates(epics, others, share, heldElsewhere) {
   const taken = new Set(others.map(hold => hold.number));
@@ -1113,7 +1125,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       const type = candidate.paths === null ? 'epic' : 'issue';
       const comment = afkHold(cfg, live, id, candidate.number, type);
       if (!comment) continue;
-      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
+      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), ...(candidate.unit?.state ? { pr: candidate.unit.pr, state: candidate.unit.state } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
       ledger[id] = [...(ledger[id] || []), held];
       try {
         // A review hold names a PR, which has no card of its own; its issues stay in Review.
@@ -1126,7 +1138,8 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       return afkShow(held, epics, output, quiet);
     }
     if (requestedIssue) throw new Error(`#${requestedIssue} is not an eligible AFK candidate`);
-    if (afkExploreDue(cfg, live, id)) {
+    // The watcher (prepared) never starts an agent without work; an idle `explore` pass is only for a run that asked.
+    if (!prepared && afkExploreDue(cfg, live, id)) {
       const explorePath = join(common, 'afk-idle-explore.json');
       const previous = (() => { try { return JSON.parse(readFileSync(explorePath, 'utf8')); } catch { return {}; } })();
       if (!previous.session || previous.session === id || !live.includes(previous.session)) {
@@ -1162,10 +1175,11 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const output = afkMerge(cfg, afkPrs(cfg));
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { epics, heldOnEpic, waits } = afkPlan(cfg, live, threads);
+  const { epics, heldOnEpic, waits, unchanged } = afkPlan(cfg, live, threads);
   for (const wait of waits) output.push(`Wait: #${wait.issue} until ${wait.until}: ${wait.cause}`);
+  for (const number of unchanged) output.push(`Unchanged: PR #${number} since its last run; no new run until it changes`);
   const ledgerPath = join(common, 'afk-holds.json');
-  let start = withRepoLock('afk-start', () => {
+  const start = withRepoLock('afk-start', () => {
     const ledger = afkReadLedger(ledgerPath);
     const others = afkOtherHolds(ledger, live, '');
     const booting = live.filter(id => !ledger[id]?.length);
@@ -1181,7 +1195,6 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
     afkWriteLedger(ledgerPath, ledger);
     return Math.max(0, Math.min(slots, chosen.length - booting.length));
   });
-  if (!requestedIssue && !start && !live.length && afkExploreDue(cfg, live)) start = 1;
   result.start = start;
   if (statePath) { mkdirSync(dirname(statePath), { recursive: true }); writeFileSync(statePath, JSON.stringify({ signal, version, at: Date.now() })); }
   console.log(start ? `Start: ${start}` : requestedIssue ? `Done: #${requestedIssue} has no free AFK assignment.` : `Done: no new run has work (${live.length} live).`);
@@ -1229,6 +1242,12 @@ function afkEndRun(cfg, common, id, note = null, why = null) {
       }
     }
     afkWriteLedger(path, ledger);
+    // Only a run that finished (`why` is its summary) spends its PR's state; a failed start or a manual end leaves it offered.
+    if (why !== null && dropped.some(held => held.state)) {
+      const spentPath = join(common, 'afk-spent.json'); const spent = afkReadLedger(spentPath);
+      for (const held of dropped) if (held.state) spent[held.pr] = held.state;
+      afkWriteLedger(spentPath, spent);
+    }
     if (!dropped.length) console.log('Released: no issue hold');
     return 0;
   });
@@ -1506,11 +1525,10 @@ function afkWatch(cfg, common, requestedIssue = null) {
     const issueArg = requestedIssue ? ` --issue ${requestedIssue}` : '';
     const assignment = cfg.runsCommand ? null : afkStartRun(cfg, runId, common, requestedIssue, true, true);
     const held = typeof assignment === 'string' && assignment.includes('Hold:');
-    // The watcher holds the start lock, so a launched agent can never run afk start itself.
-    const explore = assignment === 4;
-    if (!cfg.runsCommand && !held && !explore) continue;
+    // The watcher holds the start lock, so a launched agent can never run afk start itself; without a hold it launches nothing.
+    if (!cfg.runsCommand && !held) continue;
     const holds = afkReadLedger(join(common, 'afk-holds.json'))[runId] || [];
-    const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : explore ? ' The workflow CLI assigned an unattended `explore` pass: no work is free. Play `explore`; do not call afk start or afk end.' : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
+    const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
     const launch = { argv: cfg.startCommand, replacements: { runId, prompt, model: cfg.model, permissionMode: cfg.permissionMode, cliPath, pluginDir: afkPluginDir(cliPath), repository: cfg.repo }, cwd: watchRoot, runId: held || cfg.runsCommand ? runId : null, issue: held ? holds[0]?.number : null };
     if (cfg.runsCommand) { console.log(afkRunReport(runId, afkLaunchAgent(launch))); continue; }
     let runTree = null;

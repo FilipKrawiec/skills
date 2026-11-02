@@ -354,7 +354,7 @@ test('issue create reuses an open exact-title issue with --unique and creates ot
   assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/skills\/issues /);
 });
 
-test('AFK watcher hands an explore pass to the agent without a second afk start', t => {
+test('an idle AFK watcher logs that nothing has work and launches no agent', t => {
   const f = fixture(t);
   const child = join(f.root, 'agent.mjs');
   writeFileSync(child, `import { writeFileSync } from 'node:fs';\nwriteFileSync(process.env.TEST_RESULT, process.argv[3]);\n`);
@@ -369,9 +369,31 @@ test('AFK watcher hands an explore pass to the agent without a second afk start'
   f.env.TEST_RESULT = join(f.root, 'agent-prompt.txt');
   const watch = f.cliRun('afk', 'watch');
   assert.equal(watch.status, 0, `${watch.stdout}\n${watch.stderr}`);
-  const prompt = readFileSync(f.env.TEST_RESULT, 'utf8');
-  assert.match(prompt, /explore/);
-  assert.doesNotMatch(prompt, /afk start --me/);
+  assert.match(watch.stdout, /Done: no new run has work \(0 live\)/);
+  assert.doesNotMatch(watch.stdout, /Launched:|Explore:/);
+  assert.equal(existsSync(f.env.TEST_RESULT), false, 'no agent ran');
+});
+
+test('a finished run on a PR spends its state; a manual end does not', t => {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr' || a[0]==='issue') { out([]); process.exit(0); }\nif(a[0]==='project') { out({id:'P1',title:'Board'}); process.exit(0); }\nif(a.includes('graphql')) { out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[]}}}}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app/issues/2000')) { out({state:'open',labels:[]}); process.exit(0); }\nconsole.log('{}');\n`);
+  chmodSync(gh, 0o755);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  const spent = join(common, 'afk-spent.json');
+  const hold = id => writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ [id]: [{ number: 2000, epic: 1, paths: [], review: true, pr: 2000, state: 'abc:0:green:', comment: 12 }] }));
+  hold('afk-manual');
+  const ended = f.cliRun('afk', 'end', '--me', 'afk-manual');
+  assert.equal(ended.status, 0, `${ended.stdout}\n${ended.stderr}`);
+  assert.equal(existsSync(spent), false, 'a manual end leaves the PR offered');
+  hold('afk-finished');
+  const finished = f.cliRun('afk', 'finish', '--me', 'afk-finished', '--why', 'Summary: nothing to change');
+  assert.equal(finished.status, 0, `${finished.stdout}\n${finished.stderr}`);
+  assert.deepEqual(JSON.parse(readFileSync(spent, 'utf8')), { 2000: 'abc:0:green:' });
 });
 
 test('AFK commit enforces the issue scope recorded in the hold', t => {
