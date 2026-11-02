@@ -556,7 +556,7 @@ function afkConfig(refreshMetadata = false) {
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
   afkCheckRunLimits(lanes);
-  if (lanes.retros !== undefined && !afkRetroModes.includes(lanes.retros)) throw new Error(`afk.retros must be one of ${afkRetroModes.join(', ')}`);
+  afkCheckRetroMode(lanes.retros);
   lanes.explore = { ...workflowDefaults.explore };
   if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
   requireTestStep(lanes.steps);
@@ -1058,11 +1058,25 @@ export function afkRetroRefusal(mode, open, labels, held) {
   if (work.length) return `Retro filing is paused until the backlog is empty (${work.length} open issues); file nothing`;
   return labels.includes('type:bug') ? null : 'Retro filing takes only type:bug while the backlog is empty; file nothing else';
 }
-// Another repository's own setting governs retros filed into it; an unreadable one keeps the default.
+export function afkCheckRetroMode(mode) {
+  if (mode !== undefined && !afkRetroModes.includes(mode)) throw new Error(`afk.retros must be one of ${afkRetroModes.join(', ')}`);
+  return mode;
+}
+// Another repository's own setting governs retros filed into it; only a missing config keeps the default, any other failure files nothing.
 function afkRetroMode(cfg, repo) {
   if (repo === cfg.repo) return cfg.retros;
-  try { return JSON.parse(Buffer.from(afkGh(['api', `repos/${repo}/contents/.agents/config.json`]).content, 'base64').toString('utf8')).afk?.retros; }
-  catch { return undefined; }
+  const result = spawnSync('gh', ['api', `repos/${repo}/contents/.agents/config.json`], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+  if (!result.error && result.status !== 0 && /HTTP 404/.test(result.stderr || '')) return undefined;
+  if (result.error || result.status !== 0) throw new Error(`Cannot read ${repo} afk.retros; file no retro until it is readable`);
+  return afkCheckRetroMode(JSON.parse(Buffer.from(JSON.parse(result.stdout).content, 'base64').toString('utf8')).afk?.retros);
+}
+// The run's own issue: the watcher binds it in WORKFLOW_ISSUE_NUMBER; a self-started run records it only in its hold.
+function afkRetroHeld(root) {
+  if (process.env.WORKFLOW_ISSUE_NUMBER) return Number(process.env.WORKFLOW_ISSUE_NUMBER);
+  const runId = process.env.WORKFLOW_RUN_ID;
+  if (!runId) return null;
+  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+  return afkReadLedger(join(common, 'afk-holds.json'))[runId]?.[0]?.number ?? null;
 }
 // Open issues whose scope packet shares a path with `paths`: equal, or one lies under the other as the scope rule reads it.
 export function scopeOverlaps(issues, paths) {
@@ -1088,7 +1102,7 @@ function issueCreate(args) {
   return withRepoLock('issue-create', () => {
     const issues = unique || followUp || check || retro ? open() : [];
     if (retro) {
-      const held = repo === cfg.repo ? Number(process.env.WORKFLOW_ISSUE_NUMBER) : null;
+      const held = repo === cfg.repo ? afkRetroHeld(root) : null;
       const refusal = afkRetroRefusal(afkRetroMode(cfg, repo), issues, labels, held);
       if (refusal) { console.log(`Skipped: ${refusal}`); return; }
     }
