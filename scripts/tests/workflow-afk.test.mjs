@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkSlots, afkPrFiles, afkEndStatus, afkSlices, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkSlots, afkPrFiles, afkEndStatus, afkSlices, afkStageFallback, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -695,16 +695,41 @@ test('an approved epic without sub-issues queues one slicing run, while a draft 
 });
 
 test('a stage run that ended without a verdict or wait after its hold is recorded so the epic is not served again', () => {
-  const hold = { id: 10, body: '<!-- afk-issue-released session=run-1 -->' };
-  const unrecorded = comments => afkStageUnrecorded(comments, 10, 'close', '2/2');
+  const hold = { id: 10, user: { login: 'builder' }, body: '<!-- afk-issue-released session=run-1 -->' };
+  const now = Date.parse('2026-11-02T12:00:00Z');
+  const unrecorded = comments => afkStageUnrecorded({ ...cfg, implementer: 'builder' }, comments, 10, 'close', '2/2', now);
+  const by = (id, body, login = 'builder') => ({ id, user: { login }, body });
   assert.equal(unrecorded([hold]), true);
-  assert.equal(unrecorded([{ id: 9, body: '<!-- epic-check stage=close slices=2/2 verdict=owner -->' }, hold]), true, 'an older verdict does not count');
-  assert.equal(unrecorded([hold, { id: 11, body: '<!-- epic-check stage=close slices=2/2 verdict=owner -->' }]), false);
-  assert.equal(unrecorded([hold, { id: 11, body: '<!-- epic-check stage=close verdict=owner -->' }]), true, 'a verdict without the count does not count');
-  assert.equal(unrecorded([hold, { id: 11, body: '<!-- epic-check stage=close slices=1/2 verdict=owner -->' }]), true, 'a wrong count does not count');
-  assert.equal(unrecorded([hold, { id: 11, body: '<!-- epic-check stage=close slices=2/20 verdict=owner -->' }]), true, 'a longer count does not count');
-  assert.equal(unrecorded([hold, { id: 11, body: '<!-- epic-check stage=slice slices=2/2 verdict=owner -->' }]), true, 'another stage does not count');
-  assert.equal(unrecorded([hold, { id: 12, body: '<!-- afk-wait until=2026-11-02T16:00:00Z cause=test deployment -->' }]), false);
+  assert.equal(unrecorded([by(9, '<!-- epic-check stage=close slices=2/2 verdict=owner -->'), hold]), true, 'an older verdict does not count');
+  assert.equal(unrecorded([hold, by(11, '<!-- epic-check stage=close slices=2/2 verdict=owner -->')]), false);
+  assert.equal(unrecorded([hold, by(11, '<!-- epic-check stage=close slices=2/2 verdict=owner -->', 'reviewer')]), false, 'the Reviewer records a verdict too');
+  assert.equal(unrecorded([hold, by(11, '<!-- epic-check stage=close slices=2/2 verdict=owner -->', 'stranger')]), true, 'an untrusted verdict does not count');
+  assert.equal(unrecorded([hold, by(11, '<!-- epic-check stage=close verdict=owner -->')]), true, 'a verdict without the count does not count');
+  assert.equal(unrecorded([hold, by(11, '<!-- epic-check stage=close slices=1/2 verdict=owner -->')]), true, 'a wrong count does not count');
+  assert.equal(unrecorded([hold, by(11, '<!-- epic-check stage=close slices=2/20 verdict=owner -->')]), true, 'a longer count does not count');
+  assert.equal(unrecorded([hold, by(11, '<!-- epic-check stage=slice slices=2/2 verdict=owner -->')]), true, 'another stage does not count');
+  assert.equal(unrecorded([hold, by(12, '<!-- afk-wait until=2026-11-02T16:00:00Z cause=test deployment -->')]), false);
+  assert.equal(unrecorded([hold, by(12, '<!-- afk-wait until=2026-11-02T16:00:00Z cause=test deployment -->', 'owner')]), false, 'the owner may set a wait');
+  assert.equal(unrecorded([hold, by(12, '<!-- afk-wait until=2026-11-02T16:00:00Z cause=test deployment -->', 'stranger')]), true, 'an untrusted wait does not count');
+  assert.equal(unrecorded([hold, by(12, '<!-- afk-wait until=tomorrow cause=test deployment -->')]), true, 'a malformed wait does not count');
+  assert.equal(unrecorded([hold, by(12, '<!-- afk-wait until=2026-11-02T10:00:00Z cause=test deployment -->')]), true, 'an expired wait does not count');
+  const done = { ...epic, lastEditedAt: '2026-10-01T00:00:00Z', subIssuesSummary: { total: 2, completed: 2 } };
+  const stages = comments => afkPlan({ ...cfg, implementer: 'builder' }, [], () => comments, 'new-run', { issues: [done], prs: [], now }).epics[0].units.map(unit => unit.stage);
+  for (const comments of [[hold, by(11, '<!-- epic-check stage=close slices=2/2 verdict=owner -->', 'stranger')], [hold, by(12, '<!-- afk-wait until=tomorrow cause=x -->')]]) {
+    assert.deepEqual(stages(comments), ['close'], 'what the fallback ignores, afkPlan ignores too');
+    assert.equal(unrecorded(comments), true);
+  }
+});
+
+test('a stage run gets its fallback marker only while the epic is still in the held stage', () => {
+  const run = { stage: 'slice', comment: 10 };
+  const fallback = (held, summary, comments = []) => afkStageFallback({ ...cfg, implementer: 'builder' }, held, summary, comments, 'run-1', 0);
+  assert.equal(fallback(run, { total: 0, completed: 0 }), afkStageMarker('slice', '0/0', 'run-1'));
+  assert.equal(fallback(run, { total: 3, completed: 0 }), null, 'a slicing run that created sub-issues left the slice stage');
+  assert.equal(fallback({ stage: 'close', comment: 10 }, { total: 2, completed: 2 }), afkStageMarker('close', '2/2', 'run-1'));
+  assert.equal(fallback({ stage: 'close', comment: 10 }, { total: 3, completed: 2 }), null, 'a delivery check that added a slice left the close stage');
+  assert.equal(fallback(run, undefined), null, 'a missing summary is no count');
+  assert.equal(fallback(run, { total: 0, completed: 0 }, [{ id: 11, user: { login: 'builder' }, body: afkStageMarker('slice', '0/0', 'run-0') }]), null, 'a recorded verdict needs no fallback');
 });
 
 test('a stage run that ended without a matching verdict gets the exact fallback marker, which then holds the epic', () => {
@@ -715,7 +740,7 @@ test('a stage run that ended without a matching verdict gets the exact fallback 
   const done = { ...epic, lastEditedAt: '2026-10-01T00:00:00Z', subIssuesSummary: { total: 2, completed: 2 } };
   const stages = comments => afkPlan({ ...cfg, implementer: 'builder' }, [], () => comments, 'new-run', { issues: [done], prs: [] }).epics[0].units.map(unit => unit.stage);
   assert.deepEqual(stages([agent]), ['close'], 'the wrong-count marker does not hold the epic');
-  assert.equal(afkStageUnrecorded([agent], 10, 'close', afkSlices(done.subIssuesSummary)), true);
+  assert.equal(afkStageUnrecorded({ ...cfg, implementer: 'builder' }, [agent], 10, 'close', afkSlices(done.subIssuesSummary)), true);
   const fallback = { id: 12, user: { login: 'builder' }, created_at: '2026-10-02T00:01:00Z', body: afkStageMarker('close', afkSlices(done.subIssuesSummary), 'run-1') };
   assert.deepEqual(stages([agent, fallback]), [], 'the fallback marker holds the epic');
 });
