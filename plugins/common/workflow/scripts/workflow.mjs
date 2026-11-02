@@ -50,9 +50,15 @@ function run(program, args, options = {}) {
   if (result.error || result.status !== 0) {
     const scopeFailure = program === 'gh' ? githubScopeFailure(result.stderr || '') : null;
     const network = program === 'gh' && /error connecting|could not resolve host|failed to connect|connection (?:timed out|refused)|network is unreachable|no such host|dial tcp/i.test(result.stderr || '');
-    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? 'GitHub command failed; check network access and the configured account before reauthenticating.' : `${program} ${args[0]} failed`));
+    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? 'GitHub command failed; check network access and the configured account before reauthenticating.' : `${program} ${args[0]} failed${failureCause(result)}`));
   }
   return result.stdout.trim();
+}
+// Name the cause so an intermittent failure can be diagnosed instead of re-run blindly.
+function failureCause(result) {
+  if (result.error) return ` (${result.error.code || result.error.message})`;
+  const line = gitFailureLine(result.stderr || '', { last: true, max: 200 });
+  return ` (${result.signal ? `signal ${result.signal}` : `exit ${result.status}`})${line ? `: ${line}` : ''}`;
 }
 export function githubScopeFailure(stderr) {
   const direct = /missing required scopes?\s*\[([^\]]*)\]/i.exec(stderr);
@@ -215,10 +221,11 @@ function implementerCommitIdentity(root) {
   const email = `${id}+${login}@users.noreply.github.com`;
   return { GIT_AUTHOR_NAME: login, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: email };
 }
-// Git's first diagnostic line, with tokens and URL credentials removed.
-export function gitFailureLine(output) {
-  const line = String(output).split(/\r?\n/).map(text => text.trim()).find(Boolean) || '';
-  return line.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, '[redacted]').replace(/(\/\/)[^/@\s]+@/g, '$1[redacted]@').slice(0, 300);
+// Git's first (or last) diagnostic line, with tokens and URL credentials removed.
+export function gitFailureLine(output, { last = false, max = 300 } = {}) {
+  const lines = String(output).split(/\r?\n/).map(text => text.trim()).filter(Boolean);
+  const line = (last ? lines.at(-1) : lines[0]) || '';
+  return line.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, '[redacted]').replace(/(\/\/)[^/@\s]+@/g, '$1[redacted]@').slice(0, max);
 }
 function commit(args) {
   if (args[0] !== '--message' || !(args.length === 2 || (args.length >= 4 && args[2] === '--'))) throw new Error('Usage: commit --message MESSAGE [-- PATH...]');
