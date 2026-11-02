@@ -619,6 +619,20 @@ export function afkPrRecord(pr, cfg) {
   const needsWork = broken || awaitingReview || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
   return { ...pr, issues, approved, ownerApproved, awaitingReview, broken, needsWork };
 }
+// The latest afk-wait marker from a workflow identity holds an issue back until its UTC time; a later claim or hold supersedes it.
+export function afkWait(comments, authors, now = Date.now()) {
+  const trusted = new Set(authors.filter(Boolean).map(login => login.toLowerCase()));
+  let wait = null;
+  for (const comment of comments) {
+    const body = comment.body || '';
+    if (/<!-- afk-(?:claim|(?:issue|epic)-hold) session=/.test(body)) wait = null;
+    if (!trusted.has(comment.user?.login?.toLowerCase()) || !/<!-- afk-wait\b/.test(body)) continue;
+    const match = /<!-- afk-wait until=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?Z) cause=(\S(?:[^>]*\S)?) -->/.exec(body);
+    const until = match ? Date.parse(match[1]) : NaN;
+    wait = Number.isFinite(until) && new Date(until).toISOString().startsWith(match[1].slice(0, 16)) ? { until: match[1], cause: match[2], at: until } : null;
+  }
+  return wait && wait.at > now ? { until: wait.until, cause: wait.cause } : null;
+}
 export function afkPlan(cfg, live, threads, me = '', data = null) {
   const issues = data?.issues || afkIssues(cfg); const prs = (data?.prs || afkPrData(cfg)).map(pr => afkPrRecord(pr, cfg));
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
@@ -638,14 +652,20 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const comments = threads(issue.number);
     const checked = comments.filter(comment => verdictBy.has(comment.user?.login?.toLowerCase()) && /<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)/.test(comment.body || '')).map(comment => comment.created_at);
     const latest = checked.at(-1);
-    return !latest || issue.lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=/.test(comment.body || ''));
+    return !latest || issue.lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=|^<!-- afk-wait /.test(comment.body || ''));
+  };
+  const now = data?.now ?? Date.now(), waits = [];
+  const waiting = number => {
+    const wait = afkWait(threads(number), [cfg.implementer, cfg.reviewer, cfg.owner], now);
+    if (wait) waits.push({ issue: number, ...wait });
+    return Boolean(wait);
   };
   for (const epic of epics) for (const issue of issues) {
     const owner = epicOf(issue.number);
     if (issue.labels.includes('type:epic') || (owner || firstEpic) !== epic.issue.number || inPr.has(issue.number)) continue;
     const suffix = owner ? '' : ' under no epic';
-    if (issue.labels.includes('lane:proposed') && awaitsEligibility(issue)) epic.units.push({ text: `#${issue.number} awaits its AFK eligibility check${suffix}`, issue: issue.number, paths: [], check: true });
-    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked') epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
+    if (issue.labels.includes('lane:proposed') && awaitsEligibility(issue) && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} awaits its AFK eligibility check${suffix}`, issue: issue.number, paths: [], check: true });
+    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked' && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
   }
   const heldOnEpic = number => threads(number).some(comment => {
     const id = /<!-- afk-epic-hold session=(\S+) -->/.exec(comment.body || '')?.[1];
@@ -667,7 +687,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const parent = epics.find(epic => epic.issue.number === target);
     if (parent) parent.units.push(unit);
   }
-  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic };
+  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits };
 }
 export function* afkCandidates(epics, others, share, heldElsewhere) {
   const taken = new Set(others.map(hold => hold.number));
@@ -1116,7 +1136,8 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const output = afkMerge(cfg, afkPrs(cfg));
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { epics, heldOnEpic } = afkPlan(cfg, live, threads);
+  const { epics, heldOnEpic, waits } = afkPlan(cfg, live, threads);
+  for (const wait of waits) output.push(`Wait: #${wait.issue} until ${wait.until}: ${wait.cause}`);
   const ledgerPath = join(common, 'afk-holds.json');
   let start = withRepoLock('afk-start', () => {
     const ledger = afkReadLedger(ledgerPath);
