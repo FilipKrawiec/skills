@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkMergeThenPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -669,6 +669,25 @@ test('a Todo issue waits for its open blockers and an open PR its packet depends
   assert.deepEqual(units([board(6, 'Todo', ['lane:afk'], { dependencies: [285] })], [open]), []);
   assert.deepEqual(units([board(6, 'Todo', ['lane:afk'], { dependencies: [285] })]), [6]);
   assert.deepEqual(units([board(6, 'Todo', ['lane:afk'], { blocked: true })]), []);
+});
+
+test('a Todo build waits while an open PR that does not deliver it changes a file its packet covers', () => {
+  const plan = (issues, prs) => afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, ...issues], prs });
+  const area = plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/feature/'] }), board(7, 'Todo')], [reviewPr(20, { files: [{ path: 'src/feature/a.js' }], labels: [{ name: 'review:owner' }], reviews: [{ author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '' }] })]);
+  assert.deepEqual([area.units.map(unit => unit.issue), area.held], [[7], [{ issue: 6, pr: 20 }]], 'a non-overlapping build is still offered');
+  const renamed = plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/old.js'] })], [reviewPr(20, { files: [{ path: 'src/new.js', previousPath: 'src/old.js' }] })]);
+  assert.deepEqual(renamed.held, [{ issue: 6, pr: 20 }], "a renamed file's previous path overlaps");
+  assert.deepEqual(plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/a'] })], [reviewPr(20)]).held, [], 'a path without a trailing / covers only itself');
+  assert.deepEqual(plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/'] })], [reviewPr(20, { filesUnread: true })]).held, [], 'unread files hold nothing');
+  assert.deepEqual(plan([board(6, 'Todo', ['lane:afk'], { paths: ['src/'] })], []).units.map(unit => unit.issue), [6], 'offered again once the PR merges or closes');
+});
+
+test('a ready PR merges before the tick plans, so no build is held behind it', () => {
+  const approved = reviewPr(20, { files: [{ path: 'src/6.js' }], statusCheckRollup: [{ conclusion: 'SUCCESS' }], reviews: [{ author: { login: 'reviewer' }, state: 'APPROVED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc verdict=ready -->' }] });
+  let open = [approved];
+  const gh = args => { if (args[0] === 'pr' && args[1] === 'merge') open = open.filter(pr => String(pr.number) !== args[2]); return { status: 0 }; };
+  const plan = afkMergeThenPlan(cfg, [], () => [], 'new-run', { readPrs: () => open, gh, issues: [epic, board(6, 'Todo')] });
+  assert.deepEqual([plan.merged, plan.units.map(unit => unit.pr ?? unit.issue), plan.held], [['PR #20 merged'], [6], []]);
 });
 
 test('a Todo story without lane:afk or a scope packet gets a refine run, never an implementation', () => {
