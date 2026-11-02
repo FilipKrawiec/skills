@@ -180,6 +180,21 @@ test('a checked proposed issue waits for a changed issue before rechecking', () 
   assert.deepEqual(plan.epics[0].units, []);
 });
 
+test('a proposed issue a run already checked waits for a change, whoever posted the verdict', () => {
+  const proposed = issue(6, ['lane:proposed'], { lastEditedAt: '2026-10-01T00:00:00Z' });
+  const comments = [
+    { user: { login: 'builder' }, created_at: '2026-10-02T00:00:00Z', body: '<!-- afk-issue-hold session=run-1 -->' },
+    { user: { login: 'builder' }, created_at: '2026-10-02T00:01:00Z', body: 'AFK eligibility review of #6: REQUEST_CHANGES' },
+    { user: { login: 'builder' }, created_at: '2026-10-02T00:02:00Z', body: '<!-- afk-issue-released session=run-1 -->\nUsage: 3 turns' },
+    { user: { login: 'builder' }, created_at: '2026-10-02T00:03:00Z', body: '<!-- afk-issue-hold session=run-2 -->' },
+  ];
+  const plan = (list, edited = '2026-10-01T00:00:00Z') => afkPlan(cfg, [], number => number === 6 ? list : [], 'new-run', { issues: [epic, { ...proposed, lastEditedAt: edited }], prs: [] }).epics[0].units;
+  assert.deepEqual(plan(comments), []);
+  assert.equal(plan([...comments, { user: { login: 'owner' }, created_at: '2026-10-03T00:00:00Z', body: 'Traced the cause.' }]).length, 1);
+  assert.equal(plan(comments, '2026-10-03T00:00:00Z').length, 1);
+  assert.equal(plan(comments.slice(0, 2)).length, 1);
+});
+
 test('AFK imports the configured gh profile without importing git overrides', t => {
   const directory = mkdtempSync(join(tmpdir(), 'afk-env-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));

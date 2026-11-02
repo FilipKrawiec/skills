@@ -619,11 +619,12 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const claim = (threads(number).map(comment => /<!-- afk-claim session=(\S+) -->/.exec(comment.body || '')?.[1]).filter(Boolean).at(-1));
     return Boolean(claim && claim !== me && live.includes(claim));
   };
+  // A run released from a proposed issue has checked it, whatever its verdict comment looks like; only a later edit or comment re-queues it.
   const awaitsEligibility = issue => {
     const comments = threads(issue.number);
-    const approvals = comments.filter(comment => comment.user?.login?.toLowerCase() === cfg.reviewer.toLowerCase() && /<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)/.test(comment.body || '')).map(comment => comment.created_at);
-    const latest = approvals.at(-1);
-    return !latest || issue.lastEditedAt > latest || comments.some(comment => comment.created_at > latest && comment.user?.login?.toLowerCase() !== cfg.reviewer.toLowerCase());
+    const checked = comments.filter(comment => (comment.user?.login?.toLowerCase() === cfg.reviewer.toLowerCase() && /<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)/.test(comment.body || '')) || /^<!-- afk-issue-released session=/.test(comment.body || '')).map(comment => comment.created_at);
+    const latest = checked.at(-1);
+    return !latest || issue.lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=/.test(comment.body || ''));
   };
   for (const epic of epics) for (const issue of issues) {
     const owner = epicOf(issue.number);
