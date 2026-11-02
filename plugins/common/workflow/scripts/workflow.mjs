@@ -491,7 +491,7 @@ function afkConfig(refreshMetadata = false) {
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
   if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
-  if (!Number.isSafeInteger(lanes.maxReviewRuns) || lanes.maxReviewRuns < 0) throw new Error('afk.maxReviewRuns must be a non-negative integer');
+  if (!Number.isSafeInteger(lanes.maxReviewRuns) || lanes.maxReviewRuns < 1) throw new Error('afk.maxReviewRuns must be a positive integer');
   lanes.explore = { ...workflowDefaults.explore };
   if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
   requireTestStep(lanes.steps);
@@ -741,19 +741,20 @@ export function* afkCandidates(epics, others, share, heldElsewhere) {
 // Reviews have their own afk.maxReviewRuns slots, so runs busy on tickets never block a review; everything else shares afk.maxRuns.
 // WIP is every open PR plus every ticket run without one yet; a new ticket starts only while WIP stays under afk.maxRuns.
 export function afkSlots(cfg, ledger, live, me = '', prs = []) {
-  const inPr = new Set(prs.flatMap(pr => [pr.number, ...(pr.issues || [])]));
-  const used = { review: 0, work: 0 }; let wip = prs.length;
+  // Drafts are not WIP yet; eligibility checks and epic stages are no tickets, so they neither count nor wait for WIP.
+  const open = prs.filter(pr => !pr.isDraft), inPr = new Set(prs.flatMap(pr => [pr.number, ...(pr.issues || [])]));
+  const used = { review: 0, work: 0 }; let wip = open.length;
   for (const id of live) {
     if (id === me) continue;
     const holds = ledger[id] || [];
     used[holds.some(hold => hold.review) ? 'review' : 'work']++;
-    if (holds.length && !holds.some(hold => hold.review || inPr.has(hold.number))) wip++;
+    if (holds.length && !holds.some(hold => hold.review || hold.check || hold.stage || inPr.has(hold.number))) wip++;
   }
   const cap = { review: Number(cfg.maxReviewRuns ?? 2), work: Number(cfg.maxRuns) || Infinity };
   return {
     full: () => used.review >= cap.review && used.work >= cap.work,
     take: candidate => {
-      const kind = candidate.unit?.review ? 'review' : 'work', ticket = kind === 'work' && (candidate.unit?.rank ?? 3) === 3;
+      const kind = candidate.unit?.review ? 'review' : 'work', unit = candidate.unit || {}, ticket = kind === 'work' && unit.rank === undefined && !unit.check && !unit.stage;
       if (used[kind] >= cap[kind] || (ticket && wip >= cap.work)) return false;
       used[kind]++; if (ticket) wip++;
       return true;
