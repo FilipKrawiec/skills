@@ -587,8 +587,13 @@ export function afkEpicOrder(a, b) {
   const bm = b.milestone ? [0, b.milestone.dueOn || '9999', b.milestone.number] : [1, '', 0];
   return afkPriority(a.priority) - afkPriority(b.priority) || am[0] - bm[0] || String(am[1]).localeCompare(String(bm[1])) || Number(am[2]) - Number(bm[2]) || a.number - b.number;
 }
+// The list names only a renamed file's new path and stops at 100 files, so those PRs re-read their files over REST.
 function afkPrData(cfg) {
-  return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files']);
+  return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files']).map(pr => {
+    if (!pr.files?.some(file => file.changeType === 'RENAMED') && (pr.files?.length || 0) < 100) return pr;
+    const files = afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/pulls/${pr.number}/files`]).flat();
+    return { ...pr, files: files.map(file => ({ path: file.filename, previousPath: file.previous_filename })) };
+  });
 }
 // Decides on the newest marked Reviewer review; unmarked ones are thread replies.
 export function afkReviewerApproved(pr, cfg) {
@@ -656,8 +661,9 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const target = owners[0] || firstEpic;
     const suffix = owners.length ? '' : ' (under no epic)';
     // The PR's own packet, then its issues' packets, then the files it already changes.
-    const linked = stories.flatMap(issue => issue.paths || []);
-    const paths = afkPathsFromIssueBody(pr.body || '') ?? (linked.length ? linked : (pr.files || []).map(file => file.path));
+    const paths = afkPathsFromIssueBody(pr.body || '') ?? (stories.some(issue => Array.isArray(issue.paths))
+      ? stories.flatMap(issue => issue.paths || [])
+      : (pr.files || []).flatMap(file => [file.path, file.previousPath].filter(Boolean)));
     const unit = pr.awaitingReview && !pr.broken
       ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [] }
       : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths };

@@ -226,6 +226,8 @@ test('a red PR unit takes its scope from its packet, else its changed files', ()
   assert.deepEqual(paths(red('No linked issue.')), ['src/a.js', 'docs/b.md']);
   assert.deepEqual(paths(red('```scope\n{"paths":["src/"]}\n```')), ['src/'], 'the PR body packet wins');
   assert.deepEqual(paths(red('Closes #2'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'the linked issue packet wins');
+  assert.deepEqual(paths(red('Closes #2'), [epic, issue(2, ['lane:afk'], { paths: [] })]), [], 'a linked empty scope stays empty');
+  assert.deepEqual(paths(red('Closes #2', { files: [{ path: 'src/new.js', previousPath: 'src/old.js' }] }), [epic, issue(2, ['lane:afk'], { paths: null })]), ['src/new.js', 'src/old.js'], 'a rename keeps its source');
 });
 
 test('AFK imports the configured gh profile without importing git overrides', t => {
