@@ -592,7 +592,7 @@ function afkPrData(cfg) {
 // Decides on the newest marked Reviewer review; unmarked ones are thread replies.
 export function afkReviewerApproved(pr, cfg) {
   const mine = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === cfg.reviewer.toLowerCase());
-  const latest = mine.filter(review => review.body?.includes('agent-review')).at(-1); const head = pr.headRefOid;
+  const latest = mine.filter(review => /<!-- agent-review\b/.test(review.body || '')).at(-1); const head = pr.headRefOid;
   const ownerLane = pr.labels?.some(label => label.name === 'review:owner');
   return Boolean(latest?.state === 'APPROVED' && latest.commit?.oid === head && latest.body.includes(`sha=${head}`) && latest.body.includes(`verdict=${ownerLane ? 'owner' : 'ready'}`) &&
     !mine.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head));

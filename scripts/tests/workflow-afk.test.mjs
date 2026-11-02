@@ -143,6 +143,7 @@ test('a Reviewer thread reply after an approval keeps the approval, a change req
   const fixes = { author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'head' }, body: '<!-- agent-review sha=head verdict=fixes -->' };
   const pr = reviews => ({ number: 7, title: 'Update', body: 'Issue #8', headRefOid: 'head', labels: [], statusCheckRollup: [], reviews });
   assert.equal(afkReviewerApproved(pr([approval, reply]), cfg), true);
+  assert.equal(afkReviewerApproved(pr([approval, { ...reply, body: 'Fixed as agent-review asked.' }]), cfg), true);
   assert.equal(afkPrRecord(pr([approval, reply]), cfg).approved, true);
   assert.equal(afkReviewerApproved(pr([approval, fixes]), cfg), false);
   assert.equal(afkReviewerApproved(pr([approval, { ...fixes, body: '' }]), cfg), false);
