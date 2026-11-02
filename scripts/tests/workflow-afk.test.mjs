@@ -205,12 +205,12 @@ test('dead run holds expire after the grace period while live holds persist', ()
   assert.equal('dead' in ledger, false);
 });
 
-test('a PR a finished run left unchanged gets no new run until its head, reviews, checks or an outside comment change', () => {
+test('a PR a finished run left unchanged gets no new run until its head, reviews, checks, merge state, base or an outside comment change', () => {
   const pr = extra => ({ number: 9, title: 'Fix', body: 'No linked issue.', headRefOid: 'abc', labels: [], reviews: [{ author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'abc' }, body: '' }], statusCheckRollup: [], mergeable: 'MERGEABLE', files: [{ path: 'src/a.js' }], ...extra });
   const workflowCfg = { ...cfg, implementer: 'builder' };
-  const plan = (record, comments = [], spentComments = []) => {
-    const spent = { 9: afkPrState(afkPrRecord(pr(), workflowCfg), spentComments, workflowCfg) };
-    return afkPlan(workflowCfg, [], number => number === 9 ? comments : [], 'new-run', { issues: [epic], prs: [record], spent });
+  const plan = (record, comments = [], spentComments = [], base = 'base1') => {
+    const spent = { 9: afkPrState(afkPrRecord(pr(), workflowCfg), spentComments, workflowCfg, 'base1') };
+    return afkPlan(workflowCfg, [], number => number === 9 ? comments : [], 'new-run', { issues: [epic], prs: [record], spent, base });
   };
   const unchanged = plan(pr());
   assert.deepEqual(unchanged.units, []);
@@ -221,9 +221,16 @@ test('a PR a finished run left unchanged gets no new run until its head, reviews
   assert.deepEqual(offered(pr({ headRefOid: 'def' })), [9], 'a new head is reviewed');
   assert.deepEqual(offered(pr({ reviews: [...pr().reviews, { author: { login: 'owner' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '' }] })), [9], 'a new review');
   assert.deepEqual(offered(pr({ statusCheckRollup: [{ conclusion: 'FAILURE' }] })), [9], 'a red check');
+  assert.deepEqual(plan(pr(), [], [], 'base2').units.map(unit => unit.issue), [9], 'a run that waited on a red base is served once the base moves');
+  const states = ['MERGEABLE', 'CONFLICTING', 'UNKNOWN'].map(mergeable => afkPrState(afkPrRecord(pr({ mergeable }), workflowCfg), [], workflowCfg, 'base1'));
+  assert.equal(new Set(states).size, 3, 'a conflict and an unknown merge state differ from mergeable');
+  assert.notEqual(afkPrState(afkPrRecord(pr({ mergeable: 'CONFLICTING' }), workflowCfg), [], workflowCfg), afkPrState(afkPrRecord(pr({ statusCheckRollup: [{ conclusion: 'FAILURE' }] }), workflowCfg), [], workflowCfg), 'a conflict differs from a failed check');
+  const replies = [{ author: { login: 'builder' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: 'Fixed in abc.' }, { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: 'Agreed.' }];
+  assert.deepEqual(offered(pr({ reviews: [...pr().reviews, ...replies] })), [], 'the workflow identities\' thread replies are not new reviews');
+  assert.deepEqual(offered(pr({ reviews: [...pr().reviews, { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc round=2 verdict=fixes -->' }] })), [9], 'a marked Reviewer verdict is');
   assert.deepEqual(plan(pr(), [{ id: 7, user: { login: 'owner' }, body: 'Please also cover X' }]).units.map(unit => unit.issue), [9], 'an owner comment');
-  const fresh = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr()] }).units[0];
-  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:1:green:'], 'the unit carries the state its run will spend');
+  const fresh = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr()], base: 'base1' }).units[0];
+  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:1:green:mergeable:base1:'], 'the unit carries the state its run will spend');
 });
 
 test('a red PR unit takes its scope from its packet, else its changed files', () => {

@@ -263,3 +263,25 @@ test('afk rejects an afk.maxRunMinutes that is not a positive whole number', t =
     assert.match(result.stderr, /Configure afk\.maxRunMinutes as a positive integer/);
   }
 });
+
+test('afk check reads the on-disk spent ledger and serves a PR again once its base moves', t => {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr') { out([{number:2000,title:'Fix',body:'No linked issue.',headRefOid:'abc',labels:[],isDraft:false,mergeable:'MERGEABLE',statusCheckRollup:[],reviews:[{author:{login:'reviewer'},state:'CHANGES_REQUESTED',commit:{oid:'abc'},body:''}],closingIssuesReferences:[]}]); process.exit(0); }\nif(a[0]==='issue') { out([]); process.exit(0); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/files'))) { out([[{filename:'src/a.js'}]]); process.exit(0); }\nif(a.some(x=>x.includes('/comments'))) { out([[]]); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('{}');\n`);
+  chmodSync(gh, 0o755);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  const base = f.linkedGit('rev-parse', 'refs/remotes/origin/HEAD').stdout.trim();
+  writeFileSync(join(common, 'afk-spent.json'), JSON.stringify({ 2000: `abc:1:green:mergeable:${base}:` }));
+  const spent = f.cliRun('afk', 'check');
+  assert.equal(spent.status, 3, `${spent.stdout}\n${spent.stderr}`);
+  assert.match(spent.stdout, /Unchanged: #2000 since its last run/);
+  assert.doesNotMatch(spent.stdout, /Next:/);
+  writeFileSync(join(common, 'afk-spent.json'), JSON.stringify({ 2000: 'abc:1:green:mergeable:oldbase:' }));
+  const moved = f.cliRun('afk', 'check');
+  assert.doesNotMatch(moved.stdout, /Unchanged:/, moved.stderr);
+  assert.match(moved.stdout, /Next: Review: PR #2000 \(Fix\) needs its review fixed/);
+});
