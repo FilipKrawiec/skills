@@ -51,7 +51,7 @@ Use version 1; read it from base.
 
 `node <this-skill-directory>/../../scripts/workflow.mjs afk install` installs the login watcher; each 60-second poll moves `.worktrees/afk-watch` to base and updates the CLI-owned tooling checkout (`afk.toolingDirectory`); never edit it. `afk.maxRuns` (4) caps live runs; each poll starts the first free unit: Blocked, Review, Todo, Backlog, then Priority. Blocked and Backlog get `refine`; a Todo build waits (`Held:`) while an open PR changes a path in its packet. `afk.maxRunMinutes` (60) stops longer runs, process groups included. `afk.retros: bugs-when-empty` files `--retro` bugs only, once other non-owner issues close. Clean, pushed run worktrees are removed. `afk uninstall` removes the job.
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs afk start --me <run id>`: exit 3 ends, 2 reports `Blocked:`, 4 starts an `explore` pass. Exit 0 holds one eligible issue; invoke `afk` on it in its worktree. End with `afk end --me <run id>`.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs afk start --me <run id>`: exit 3 ends, 2 reports `Blocked:`, 4 starts an `explore` pass. Exit 0 holds one eligible issue for `afk` in its worktree. End with `node <this-skill-directory>/../../scripts/workflow.mjs afk end --me <run id>`.
 
 A watcher run whose agent exits cleanly records its unit's state in `afk-spent.json` (git common directory); `afk end`, used by self-started runs, records nothing, as it cannot tell a finish from a release. Until the head, reviews, checks, merge state, base, column, labels or outside comments change, polls skip the unit (`Unchanged: #N`); delete its key to re-offer it.
 

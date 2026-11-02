@@ -391,13 +391,15 @@ export function afkStartRun(cfg, id, common, requestedIssue = null, quiet = fals
       if (!previous.session || previous.session === id || !live.includes(previous.session)) {
         const temp = `${explorePath}.${process.pid}.tmp`;
         writeFileSync(temp, JSON.stringify({ session: id, started: Date.now() })); renameSync(temp, explorePath);
-        console.log('Explore: no work is free for this run; play `explore` unattended.');
-        output.forEach(line => console.log(line)); return 4;
+        afkStartIdleLines(true, output, overlaps).forEach(line => console.log(line)); return 4;
       }
     }
-    console.log('Done: every free piece of work has its runner.');
-    [...output, ...afkHeldLines(overlaps)].forEach(line => console.log(line)); return 3;
+    afkStartIdleLines(false, output, overlaps).forEach(line => console.log(line)); return 3;
   });
+}
+// What `afk start` prints when it holds nothing: its exit line, this tick's merges and every build held behind an open PR.
+export function afkStartIdleLines(explore, output, held) {
+  return [explore ? 'Explore: no work is free for this run; play `explore` unattended.' : 'Done: every free piece of work has its runner.', ...output, ...afkHeldLines(held)];
 }
 // Read once at load: an in-place update during `afk watch` must not stamp the new version on a check the old code ran.
 const loadedToolingVersion = (() => { try { return JSON.parse(readFileSync(new URL('../../plugin.json', import.meta.url), 'utf8')).version || ''; } catch { return ''; } })();

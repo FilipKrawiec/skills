@@ -42,6 +42,7 @@ import {
   afkRunUsage,
   afkShow,
   afkStartCount,
+  afkStartIdleLines,
   hasProcessAncestor,
 } from '../../plugins/common/workflow/scripts/lib/afk-runs.mjs';
 import {
@@ -964,4 +965,12 @@ test('retro filing pauses while open work remains, then takes bugs only', () => 
   assert.equal(afkCheckRetroMode(undefined), undefined);
   assert.equal(afkCheckRetroMode('bugs-when-empty'), 'bugs-when-empty');
   assert.throws(() => afkCheckRetroMode('bugs'), /afk\.retros must be one of all, bugs-when-empty/);
+});
+
+test('afk start names builds held behind an overlapping PR at both its Done and its Explore exit', () => {
+  const held = [{ issue: 345, pr: 354 }], merged = ['PR #1 merged'];
+  const line = 'Held: #345 overlaps open PR #354; no build until it merges or closes';
+  assert.deepEqual(afkStartIdleLines(false, merged, held), ['Done: every free piece of work has its runner.', 'PR #1 merged', line]);
+  assert.deepEqual(afkStartIdleLines(true, merged, held), ['Explore: no work is free for this run; play `explore` unattended.', 'PR #1 merged', line]);
+  assert.deepEqual(afkStartIdleLines(false, [], []), ['Done: every free piece of work has its runner.']);
 });
