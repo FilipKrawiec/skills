@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, readFileSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkSlots, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkSlices, afkStageFallback, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkReap, afkRunStarted,afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkSlots, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkSlices, afkStageFallback, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkReap, afkRunStarted,afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -895,6 +895,28 @@ test('a run past afk.maxRunMinutes is stopped with its whole process group, kill
     for (let i = 0; i < 50 && alive(grandchild); i++) spawnSync('sleep', ['0.1']);
     assert.equal(alive(grandchild), false, 'the agent\'s grandchild is gone');
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a foreign-head run is stopped with its agent\'s whole process group, killing what ignores SIGTERM', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'afk-foreign-group-'));
+  const pidFile = join(dir, 'grandchild');
+  const agent = `const { spawn } = require('node:child_process'); const c = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'], { stdio: 'ignore' }); require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(c.pid)); setInterval(() => {}, 1000);`;
+  // The supervisor launches its agent as afkLaunchAgent does: synchronously, in the agent's own process group.
+  const supervisor = spawn(process.execPath, ['-e', `require('node:child_process').spawnSync(process.execPath, ['-e', ${JSON.stringify(agent)}], { stdio: 'ignore', detached: true })`], { stdio: 'ignore' });
+  const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const written = () => { try { return Number(readFileSync(pidFile, 'utf8')) || 0; } catch { return 0; } };
+  let grandchild = 0;
+  try {
+    for (let i = 0; i < 100 && !(grandchild = written()); i++) spawnSync('sleep', ['0.1']);
+    assert.ok(grandchild > 0, 'the agent started its grandchild');
+    afkStopSupervisedAgent(supervisor.pid, 300);
+    for (let i = 0; i < 50 && alive(grandchild); i++) spawnSync('sleep', ['0.1']);
+    assert.equal(alive(grandchild), false, 'the agent\'s grandchild is gone');
+  } finally {
+    afkStopSupervisedAgent(supervisor.pid, 0);
+    if (grandchild > 0) try { process.kill(grandchild, 'SIGKILL'); } catch {}
+    supervisor.kill('SIGKILL'); rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('with runsCommand, reap stops a watcher-launched run past afk.maxRunMinutes through stopCommand', () => {
