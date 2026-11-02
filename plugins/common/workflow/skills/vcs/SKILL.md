@@ -16,7 +16,7 @@ Fetch the base and reconcile existing work, claims and dependencies. Never overw
 
 ## 2. Commit and push
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs commit --message "<conventional message>" -- <assigned paths>`; the command checks for a linked worktree and refuses existing staged changes to protect them. Run the repository's required pre-push checks for this revision; hosted CI remains a separate merge gate. Before pushing an open PR, disable auto-merge. After opening, merge base instead of rebasing, to preserve review threads: `git merge --no-commit <base>`, then record it with `commit`. Never force-push a protected/default branch without explicit owner authority.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs commit --message "<conventional message>" -- <assigned paths>`; the command checks for a linked worktree and refuses existing staged changes to protect them. Run the repository's required pre-push checks for this revision; hosted CI remains a separate merge gate. Before pushing an open PR, disable auto-merge. After opening, merge base instead of rebasing, to preserve review threads: `git merge --no-ff --no-commit <base>`, then record it with `commit`. Never force-push a protected/default branch without explicit owner authority.
 
 Run `node <this-skill-directory>/../../scripts/workflow.mjs push`; follow its result. Use `push --owner-bootstrap` only for an owner-directed first-config branch. If Reviewer previously pushed the branch, inspect the effective rules and merge decision; an empty commit may not restore eligibility.
 
