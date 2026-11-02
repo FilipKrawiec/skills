@@ -61,6 +61,13 @@ test('AFK plan blocks an issue whose packet depends on an open PR until that PR 
   assert.deepEqual(merged.blocks, []);
 });
 
+test('AFK plan offers no lane:afk issue without a valid scope packet and lists it for refinement', () => {
+  const issues = [epic, issue(2, ['lane:afk'], { paths: null }), issue(3, ['lane:afk'], { paths: [] }), issue(4, ['lane:afk'])];
+  const plan = afkPlan(cfg, [], () => [], 'new-run', { issues, prs: [] });
+  assert.deepEqual(plan.epics[0].units.map(unit => unit.issue), [3, 4]);
+  assert.deepEqual(plan.refines, [2]);
+});
+
 test('afk check reports an issue blocked on an open PR and offers it once the PR merges', t => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'afk-check-')));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -69,7 +76,7 @@ test('afk check reports an issue blocked on an open PR and offers it once the PR
   writeFileSync(join(home, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'token' } }));
   const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
   writeFileSync(join(bin, 'git'), `#!/usr/bin/env node\nif(process.argv[2]==='fetch') process.exit(0);\nprocess.exit(require('node:child_process').spawnSync(process.env.REAL_GIT, process.argv.slice(2), { stdio: 'inherit' }).status ?? 1);\n`);
-  writeFileSync(join(bin, 'gh'), `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('token'); process.exit(0); }\nif(a[0]==='pr') { out(process.env.TEST_PR ? [{number:285,title:'ledger',body:'',headRefOid:'abc',labels:[{name:'review:owner'}],reviews:[{author:{login:'reviewer'},state:'COMMENTED',commit:{oid:'abc'},body:''}],isDraft:false,statusCheckRollup:[],mergeable:'MERGEABLE',files:[{path:'docs/a.md',changeType:'MODIFIED'}]}] : []); process.exit(0); }\nif(a[0]==='issue') { out([]); process.exit(0); }\nif(a.some(x=>x.includes('pullRequests(states'))) { out({data:{repository:{pullRequests:{nodes:[]}}}}); process.exit(0); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,['lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"],\\"dependencies\\":[\\"#285\\"]}\\n\\u0060\\u0060\\u0060')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
+  writeFileSync(join(bin, 'gh'), `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('token'); process.exit(0); }\nif(a[0]==='pr') { out(process.env.TEST_PR ? [{number:285,title:'ledger',body:'',headRefOid:'abc',labels:[{name:'review:owner'}],reviews:[{author:{login:'reviewer'},state:'COMMENTED',commit:{oid:'abc'},body:''}],isDraft:false,statusCheckRollup:[],mergeable:'MERGEABLE',files:[{path:'docs/a.md',changeType:'MODIFIED'}]}] : []); process.exit(0); }\nif(a[0]==='issue') { out([]); process.exit(0); }\nif(a.some(x=>x.includes('pullRequests(states'))) { out({data:{repository:{pullRequests:{nodes:[]}}}}); process.exit(0); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,['lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"],\\"dependencies\\":[\\"#285\\"]}\\n\\u0060\\u0060\\u0060'),row(1083,['lane:afk'],{number:1,parent:null},'Scope: prose only')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
   chmodSync(join(bin, 'git'), 0o755); chmodSync(join(bin, 'gh'), 0o755);
   writeFileSync(join(repo, '.agents', 'config.json'), JSON.stringify({ version: 1, identities: { implementer: 'builder', reviewer: 'reviewer' }, steps: { process: null, assemble: null, test: ['true'] } }));
   mkdirSync(join(repo, '.github')); writeFileSync(join(repo, '.github', 'CODEOWNERS'), '* @reviewer\n/*.rules @owner\n');
@@ -82,11 +89,12 @@ test('afk check reports an issue blocked on an open PR and offers it once the PR
   const check = pr => spawnSync(process.execPath, [fileURLToPath(new URL('../../plugins/common/workflow/scripts/workflow.mjs', import.meta.url)), 'afk', 'check'], { cwd: repo, encoding: 'utf8', env: { ...env, TEST_PR: pr ? '1' : '' } });
   const open = check(true);
   assert.equal(open.status, 3, `${open.stdout}\n${open.stderr}`);
-  assert.match(open.stdout, /Done: no new run has work[^\n]*\nWait: #1082 is blocked until PR #285 merges/);
+  assert.match(open.stdout, /Done: no new run has work[^\n]*\nWait: #1082 is blocked until PR #285 merges\nRefine: #1083 has lane:afk but no valid scope packet/);
   const merged = check(false);
   assert.equal(merged.status, 0, `${merged.stdout}\n${merged.stderr}`);
   assert.match(merged.stdout, /^Start: 1\n/);
   assert.doesNotMatch(merged.stdout, /blocked until PR/);
+  assert.match(merged.stdout, /Refine: #1083 has lane:afk but no valid scope packet/);
 });
 
 test('one-shot AFK runs are counted from live watcher PIDs', t => {

@@ -304,3 +304,20 @@ test('AFK commit and push let a PR scoped by its files follow paths the base ren
   assert.match(branchRename.stderr, /Push paths exceed the assigned AFK scope/);
 });
 
+test('AFK review, check and stage holds ignore an issue packet that covers the path', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  Object.assign(f.env, { WORKFLOW_RUN_ID: 'afk-test-run', WORKFLOW_ISSUE_NUMBER: '1082', FAKE_ISSUE_BODY: 'Scope\n```scope\n{"paths":["docs/report.md"]}\n```' });
+  mkdirSync(join(f.repo, 'docs'));
+  writeFileSync(join(f.repo, 'docs', 'report.md'), 'not this hold\'s work');
+  const before = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  for (const kind of [{ check: true }, { review: true, pr: 1082 }, { stage: 'slice' }]) {
+    writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-test-run': [{ number: 1082, paths: [], ...kind }] }));
+    const refused = f.cliRun('commit', '--message', 'docs: outside the hold', '--', 'docs/report.md');
+    assert.notEqual(refused.status, 0, JSON.stringify(kind));
+    assert.match(refused.stderr, /assigned AFK scope/);
+    assert.equal(f.linkedGit('rev-parse', 'HEAD').stdout.trim(), before);
+  }
+});
+
