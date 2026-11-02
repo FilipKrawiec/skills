@@ -749,9 +749,9 @@ function afkUnitText(column, issue) {
 }
 export function afkPlan(cfg, live, threads, me = '', data = null) {
   const issues = data?.issues || afkIssues(cfg); const prs = (data?.prs || afkPrData(cfg)).map(pr => afkPrRecord(pr, cfg));
-  // A unit a finished run left unchanged gets no new run until something about it changes.
-  const spent = data ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [], orphans = [], units = [];
-  const base = data ? data.base || '' : (() => { try { return git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { return ''; } })();
+  // A unit a finished run left unchanged gets no new run until something about it changes. Given issues, the ledger and base come from data too.
+  const spent = data?.issues ? data.spent || {} : afkReadLedger(afkSpentPath()), unchanged = [], orphans = [], units = [], held = [];
+  const base = data?.issues ? data.base || '' : (() => { try { return git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { return ''; } })();
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
   const heldElsewhere = number => afkLiveHolds(threads(number), live, me).some(hold => hold.run !== me);
   const inPr = new Set(prs.flatMap(pr => pr.issues)), openPrs = new Set(prs.map(pr => pr.number));
@@ -774,6 +774,9 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
       if (epic && !(slices && (slices.total === 0 || slices.completed === slices.total))) continue;
       // A ready issue waits for its open blockers and for an open PR its packet depends on.
       if (issue.blocked || (issue.dependencies || []).some(number => openPrs.has(number))) continue;
+      // It also waits while an open PR changes a file its packet covers: two builds in one area conflict on each merge.
+      const overlap = Array.isArray(issue.paths) && prs.find(pr => !pr.filesUnread && (pr.files || []).some(file => [file.path, file.previousPath].some(path => path && afkPathsWithinScope([path], issue.paths))));
+      if (overlap) { held.push({ issue: issue.number, pr: overlap.number }); continue; }
     }
     const write = column === 'Todo' && !epic && issue.paths !== null;
     offer({ column, text: afkUnitText(column, issue), issue: issue.number, priority: issue.priority, paths: write ? issue.paths : [], ...(write ? {} : { refine: true }) }, issue.number, afkIssueState(issue, column, threads(issue.number), cfg, base));
@@ -796,7 +799,13 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg, base));
   }
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
-  return { units, prs, byNumber, threads, unchanged, orphans };
+  return { units, prs, byNumber, threads, unchanged, orphans, held };
+}
+// Every tick merges ready PRs before it plans: the plan re-reads the open PRs, so it neither serves nor holds a build behind a PR
+// merged this tick. `merge: false` skips merging for a tick another step already merged for.
+export function afkMergeThenPlan(cfg, { readPrs = () => afkPrs(cfg), gh, issues, merge = true } = {}) {
+  const merged = merge ? afkMerge(cfg, readPrs(), null, gh) : [];
+  return { merged, plan: (live, threads, me = '') => afkPlan(cfg, live, threads, me, { ...(issues ? { issues } : {}), prs: readPrs() }) };
 }
 // The units no other live run holds, in board order.
 export function* afkCandidates(units, others) {
@@ -1187,7 +1196,7 @@ function issueQueue(args, lanes) { afkQueue(args); }
 function afkPrs(cfg) {
   return afkPrData(cfg);
 }
-function afkMerge(cfg, prs, wanted = null) {
+function afkMerge(cfg, prs, wanted = null, gh = args => spawnSync('gh', args, { encoding: 'utf8' })) {
   const messages = [];
   for (const pr of prs) {
     if (wanted && !wanted.has(pr.number)) continue;
@@ -1206,8 +1215,8 @@ function afkMerge(cfg, prs, wanted = null) {
     const failed = checks.some(c => ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes((c.conclusion || c.state || '').toUpperCase()));
     if (!passed || !approved || ownerNeeded || failed || pr.mergeable === 'CONFLICTING') continue;
     const args = ['pr', 'merge', String(pr.number), '--repo', cfg.repo, '--squash', '--match-head-commit', head];
-    const merged = spawnSync('gh', args, { encoding: 'utf8' });
-    const queued = merged.status === 0 ? null : spawnSync('gh', [...args, '--auto'], { encoding: 'utf8' });
+    const merged = gh(args);
+    const queued = merged.status === 0 ? null : gh([...args, '--auto']);
     messages.push(`PR #${pr.number} ${merged.status === 0 ? 'merged' : queued?.status === 0 ? 'will merge after checks' : 'merge refused'}`);
   }
   return messages;
@@ -1217,7 +1226,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
   const existing = afkReadLedger(ledgerPath)[id]?.[0];
   const resumingOneShot = !prepared && !cfg.runsCommand && Boolean(existing?.oneShot);
   if (!prepared) afkPreflight(cfg);
-  const output = prepared || resumingOneShot ? [] : afkMerge(cfg, afkPrs(cfg));
+  const tick = afkMergeThenPlan(cfg, { merge: !prepared && !resumingOneShot }), output = tick.merged;
   return withRepoLock('afk-start', () => {
     const ledger = afkReadLedger(ledgerPath);
     if (ledger[id]?.length) {
@@ -1230,7 +1239,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       output.forEach(line => console.log(line)); return 3;
     }
     const threads = afkThreadReader(cfg);
-    const { units } = afkPlan(cfg, live, threads, id);
+    const { units } = tick.plan(live, threads, id);
     const othersHolds = afkOtherHolds(ledger, live, id);
     afkWriteLedger(ledgerPath, ledger);
     for (const candidate of afkCandidates(units, othersHolds)) {
@@ -1287,12 +1296,13 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const budget = afkBudget();
   if (budget.remaining < 1000) { result.start = 0; console.log(`Quiet: GitHub GraphQL has ${budget.remaining} points until ${budget.reset}; live runs keep them.`); return 3; }
   afkPreflight(cfg);
-  const output = afkMerge(cfg, afkPrs(cfg));
+  const tick = afkMergeThenPlan(cfg), output = tick.merged;
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { units, unchanged, orphans } = afkPlan(cfg, live, threads);
+  const { units, unchanged, orphans, held } = tick.plan(live, threads);
   for (const number of orphans) { afkStatus(cfg, number, 'TODO', true); output.push(`Orphaned: #${number} was In progress with no live run; back to Todo`); }
   for (const number of unchanged) output.push(`Unchanged: #${number} since its last run; no new run until it changes`);
+  for (const hold of held) output.push(`Held: #${hold.issue} overlaps open PR #${hold.pr}; no build until it merges or closes`);
   if (units[0]) output.push(`Next: ${units[0].column}: ${units[0].text}`);
   const ledgerPath = join(common, 'afk-holds.json');
   const start = withRepoLock('afk-start', () => {
