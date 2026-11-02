@@ -1314,8 +1314,11 @@ function afkWatch(cfg, common, requestedIssue = null) {
     const issueArg = requestedIssue ? ` --issue ${requestedIssue}` : '';
     const assignment = cfg.runsCommand ? null : afkStartRun(cfg, runId, common, requestedIssue, true, true);
     const held = typeof assignment === 'string' && assignment.includes('Hold:');
+    // The watcher holds the start lock, so a launched agent can never run afk start itself.
+    const explore = assignment === 4;
+    if (!cfg.runsCommand && !held && !explore) continue;
     const holds = afkReadLedger(join(common, 'afk-holds.json'))[runId] || [];
-    const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
+    const prompt = `${cfg.promptPrefix ? `${cfg.promptPrefix}\n` : ''}Use the AFK skill for one unattended work slice. Run id: ${runId}.${held ? ` The workflow CLI already holds this assignment; use it as complete scope and do not call afk start or afk end.\n${assignment}` : explore ? ' The workflow CLI assigned an unattended `explore` pass: no work is free. Play `explore`; do not call afk start or afk end.' : ` Begin with: node ${cliPath} afk start --me ${runId}${issueArg}. End through the AFK skill's end step.`}`;
     let output;
     try {
       if (held && (holds.length !== 1 || !Number.isSafeInteger(holds[0].number) || holds[0].number < 1)) throw new Error('AFK watcher cannot bind the held issue');
