@@ -485,7 +485,9 @@ export function afkEndCards(number, subIssues, named, blocked) {
 // The Blocked note for an issue whose PR (an `afkPrRecord`) was still open when its run ended.
 export function afkOpenPrNote(id, pr, base) {
   const dismissed = (pr.reviews || []).some(review => review.state === 'DISMISSED');
-  const review = pr.approved ? 'approved at this head' : pr.awaitingReview ? `${dismissed ? 'approval dismissed; ' : ''}awaiting the Reviewer at this head` : 'fixes requested at this head';
+  const ownerLane = (pr.labels || []).some(label => label.name === 'review:owner');
+  const approval = ownerLane && !pr.ownerApproved ? 'approved at this head; waiting for the owner\'s approval (`review:owner`)' : 'approved at this head';
+  const review = pr.approved ? approval : pr.awaitingReview ? `${dismissed ? 'approval dismissed; ' : ''}awaiting the Reviewer at this head` : 'fixes requested at this head';
   const pending = (pr.statusCheckRollup || []).some(check => !(check.conclusion || check.state) || ['PENDING', 'EXPECTED', 'QUEUED', 'IN_PROGRESS'].includes((check.conclusion || check.state).toUpperCase()));
   const checks = pr.failed ? 'red' : pending ? 'pending' : 'green';
   return `**Blocked:** run ${id} ended with PR #${pr.number} open (head \`${pr.headRefOid}\`); review: ${review}; checks: ${checks}; merge state: ${(pr.mergeable || 'UNKNOWN').toLowerCase()}; base head \`${base || 'unknown'}\`.`;
