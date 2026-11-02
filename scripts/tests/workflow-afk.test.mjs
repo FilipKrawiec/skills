@@ -30,6 +30,7 @@ import {
 } from '../../plugins/common/workflow/scripts/lib/afk-board.mjs';
 import {
   afkAgentEnvironment,
+  afkCheckRetroMode,
   afkCheckRunLimits,
   afkDefaultStartCommand,
   afkEndCards,
@@ -79,6 +80,7 @@ import {
   oneShotRunId,
 } from '../../plugins/common/workflow/scripts/workflow.mjs';
 import {
+  afkRetroRefusal,
   assertIssueVisibility,
   issueTargetRepo,
   oldestExactTitle,
@@ -950,4 +952,16 @@ test('a run\'s end spends nothing after a crash and falls back to start states w
   assert.deepEqual(afkSpentEntries([held], true, () => now), { 6: 'end' });
   assert.deepEqual(afkSpentEntries([held], true, () => { throw new Error('GraphQL down'); }), { 6: 'start' });
   assert.deepEqual(afkSpentEntries([{ number: 6, pr: 12, column: 'Review', state: 'head1' }], true, () => { throw new Error('unused'); }), { 12: 'head1' });
+});
+
+test('retro filing pauses while open work remains, then takes bugs only', () => {
+  const owner = { number: 2, labels: [{ name: 'lane:owner' }] }, held = { number: 9, labels: [] }, other = { number: 4, labels: [{ name: 'lane:afk' }] };
+  assert.equal(afkRetroRefusal(undefined, [other], ['type:chore'], 9), null);
+  assert.equal(afkRetroRefusal('all', [other], ['type:chore'], 9), null);
+  assert.match(afkRetroRefusal('bugs-when-empty', [owner, held, other], ['type:bug'], 9), /paused until the backlog is empty \(1 open/);
+  assert.equal(afkRetroRefusal('bugs-when-empty', [owner, held], ['type:bug', 'lane:afk'], 9), null);
+  assert.match(afkRetroRefusal('bugs-when-empty', [owner, held], ['type:chore'], 9), /only type:bug/);
+  assert.equal(afkCheckRetroMode(undefined), undefined);
+  assert.equal(afkCheckRetroMode('bugs-when-empty'), 'bugs-when-empty');
+  assert.throws(() => afkCheckRetroMode('bugs'), /afk\.retros must be one of all, bugs-when-empty/);
 });

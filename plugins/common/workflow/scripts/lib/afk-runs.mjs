@@ -69,6 +69,7 @@ export function afkConfig(refreshMetadata = false) {
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
   afkCheckRunLimits(lanes);
+  afkCheckRetroMode(lanes.retros);
   lanes.explore = { ...workflowDefaults.explore };
   if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
   requireTestStep(lanes.steps);
@@ -501,6 +502,11 @@ export function afkEndRun(cfg, common, id, note = null, why = null, spend = fals
     if (!dropped.length) console.log('Released: no issue hold');
     return 0;
   });
+}
+export const afkRetroModes = ['all', 'bugs-when-empty'];
+export function afkCheckRetroMode(mode) {
+  if (mode !== undefined && !afkRetroModes.includes(mode)) throw new Error(`afk.retros must be one of ${afkRetroModes.join(', ')}`);
+  return mode;
 }
 export function afkLoadEnvironment(cfg) {
   for (const key of Object.keys(process.env)) {
