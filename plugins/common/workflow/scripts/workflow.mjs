@@ -311,8 +311,7 @@ async function push(args) {
   if (!/^[0-9a-f]{40,64}$/i.test(remoteBase?.commit?.sha || '') || git('rev-parse', baseRef) !== remoteBase.commit.sha) throw new Error('Fetched base is stale or unverifiable; refresh origin before pushing');
   const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest,headRefName,isCrossRepository,closingIssuesReferences,body'], { cwd: root, env: { ...env, GH_TOKEN: token } });
   if (!Array.isArray(pulls)) throw new Error('Cannot determine open PR auto-merge state');
-  // A slice PR says `Part of #N`: GitHub records no closing link, yet it delivers the held issue.
-  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || new RegExp(`^\\s*Part of #${held}\\b`, 'im').test(pr.body || '') || (pr.closingIssuesReferences || []).some(issue => issue.number === held && `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase())))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing or part of held issue #${held}`);
+  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || prLinkedIssues(pr, repo).includes(held)))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing or part of held issue #${held}`);
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const head = git('rev-parse', 'HEAD');
@@ -605,7 +604,7 @@ export function afkPrFiles(pr, readPages) {
   }
 }
 function afkPrData(cfg) {
-  return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files'])
+  return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files,closingIssuesReferences'])
     .map(pr => afkPrFiles(pr, number => afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/pulls/${number}/files`])));
 }
 // Decides on the newest marked Reviewer review; unmarked ones are thread replies.
@@ -616,8 +615,15 @@ export function afkReviewerApproved(pr, cfg) {
   return Boolean(latest?.state === 'APPROVED' && latest.commit?.oid === head && latest.body.includes(`sha=${head}`) && latest.body.includes(`verdict=${ownerLane ? 'owner' : 'ready'}`) &&
     !mine.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head));
 }
+// A PR delivers the issues GitHub records it closing in this repository, and those a line starting `Part of #N` names:
+// a slice PR gets no closing link, yet it delivers its issue. A bare mention links nothing.
+export function prLinkedIssues(pr, repo) {
+  const closes = (pr.closingIssuesReferences || []).filter(issue => `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase()).map(issue => issue.number);
+  const parts = [...(pr.body || '').matchAll(/^\s*Part of #(\d+)\b/gim)].map(match => Number(match[1]));
+  return [...new Set([...closes, ...parts])];
+}
 export function afkPrRecord(pr, cfg) {
-  const issues = [...new Set([...(pr.body || '').matchAll(/(?<![\w/])#(\d+)\b/g)].map(match => Number(match[1])))];
+  const issues = prLinkedIssues(pr, cfg.repo);
   const reviews = pr.reviews || [];
   const mine = reviews.filter(review => review.author?.login?.toLowerCase() === cfg.reviewer.toLowerCase());
   const head = pr.headRefOid;
