@@ -8,7 +8,7 @@ allowed-tools: Skill Read Edit Write Bash(git:*,gh:*,node:*,just:*,lsof:*)
 
 Deliver the requested authorized slice, or one unattended slice per run. Read `.agents/config.json` from fetched `origin/HEAD` for identities and step scripts. Never change the main checkout. When invoked interactively by the owner, work only on their requested items.
 
-Read [setup.md](references/setup.md) only for scheduling, and [github-safety.md](references/github-safety.md) only for GitHub protection. Use `safety check` for inspection; run `safety apply` only on explicit owner instruction. Git and base CODEOWNERS supply repository, base and roles; CLI defaults supply required checks.
+Read [setup.md](references/setup.md) only for scheduling, and [github-safety.md](references/github-safety.md) only for GitHub protection. Use `safety check` for inspection; run `safety apply` only on explicit owner instruction.
 
 ## 1. Establish work
 
@@ -20,7 +20,7 @@ Delegate routine work within scope. New product direction, paid services, increa
 
 ## 2. Select or resume
 
-For AFK, the CLI's `Hold:`/`Work:` output is the assignment; take no second item. A foreground one-shot watcher owns holds; background hosts manage them. Owner requests use `afk start --me ID --issue NUMBER`.
+For AFK, the CLI's `Hold:`/`Work:` output is the assignment; take no second item. Owner requests use `afk start --me ID --issue NUMBER`.
 
 Use the workflow CLI for assignments and issue writes; it validates actors and serializes claims. Post via `issue comment --number N --body-file PATH`, using a single-link file inside the worktree. Close passing issues with `issue close --number N`; invoke `spec` for transitions.
 
@@ -50,9 +50,9 @@ commands/exits, findings, exit gate and decisions in at most 8 lines.
 
 Trace a failure and attempt at most two evidence-led fixes, then replan or wait with cause, responsible actor and retry condition. Retain the lane; technical difficulty alone is not an owner decision. Request technical adjudication only for an unresolved conflict or changed evidence. Only an owner-reserved decision waits on the owner. Invoke the owning skills for safe cleanup. At a bounded health stop, retain unfinished required migrations as prerequisites.
 
-Before ending, post `## Run notes` on the held issue (explore passes skip this): at most three one-line observations of avoidable cost or flow friction (rereads, repeated suites, extra review rounds, retries, waits, missing signals, unclear rules), each with evidence and owning skill or rule; else `no notes`. Never edit skills or rules in the run; `improve` acts on repeats.
+Before ending, file at most two improvements that would have made this run cheaper or smoother (rereads, repeated suites, extra review rounds, retries, waits, unclear rules), each with evidence; skip when none qualifies. Search open issues in the repository owning the target: this one for project rules, the loaded skills' repository for skills. On a match, comment this run's evidence; otherwise invoke `spec` to file a `type:chore` with criteria and scope packet, `lane:proposed` if routine, else `lane:owner`. Never edit skills or rules in this run.
 
-**Exit gate:** delivery or recorded replan/wait, plus run notes; lane retained unless authority changed.
+**Exit gate:** delivery or recorded replan/wait, plus filed improvements; lane retained unless authority changed.
 
 ## Output
 
