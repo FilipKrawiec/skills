@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Bash(gh:*,git:*)
 
 # Backlog Refinement
 
-Refine only the requested queue. Invoke `spec` for issue criteria, scope and transition semantics; the named actor applies each transition and the orchestrator moves board status. A direct owner request or matching approved milestone is authority; silence, labels and bot summaries are not. A review-only request produces recommendations; refinement authorizes scoped issue and board edits, not implementation, merges or releases.
+Refine only the requested queue. Invoke `spec` for issue criteria, scope and transition semantics; the named actor applies each transition and moves its board status. A direct owner request or matching approved milestone is authority; silence, labels and bot summaries are not. A review-only request produces recommendations; refinement authorizes scoped issue and board edits, not implementation, merges or releases.
 
 ## 1. Inventory
 
@@ -28,7 +28,7 @@ Give open issues a milestone, slices their epic's milestone, and approved epics 
 
 Delegate routine technical decisions; reserve product strategy, new costs, authority and quality-gate weakening for the owner. New interactions need owner prototype direction. Continue independent work while a reserved decision waits.
 
-Clear Blocked cards first: an AFK run stopped there and its `afk-issue-blocked` comment says why. Remove the blocker (packet, dependency, split or routine decision), then move the card to Todo. If it cannot be cleared yet, comment why and leave it Blocked; the watcher retries it after the next merge. `lane:owner` is only for owner-reserved decisions.
+Clear Blocked cards first: an AFK run stopped there and its `afk-issue-blocked` comment says why. Remove the blocker (packet, dependency, split or routine decision), then move the card to Todo. If it cannot be cleared yet, comment why and leave it Blocked; the watcher retries it after the next merge. `lane:owner` is only for owner-reserved decisions. For a `lane:proposed` Backlog item, have a fresh-context subagent load `agent-review` for its eligibility; on `APPROVED AFK`, set `lane:afk` and move the card to Todo.
 
 **Exit gate:** each item has a disposition and unresolved conflicts have an owner and wait.
 

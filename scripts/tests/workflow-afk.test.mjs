@@ -691,6 +691,7 @@ test('an epic is served only to slice it or to close it once every slice closed'
   assert.deepEqual(units(epicAt('Todo', 0, 0)), [['Todo', true, 'epic #30 is in Todo: slice it if it has no sub-issues, otherwise verify its delivery and close it']]);
   assert.deepEqual(units(epicAt('In progress', 3, 1)), []);
   assert.equal(units(epicAt('In progress', 3, 3)).length, 1, 'all slices closed brings it back');
+  assert.equal(units(epicAt('In progress', 0, 0)).length, 1, 'an approved epic In progress with no slices is sliced');
   assert.deepEqual(units({ ...epicAt('Todo', 0, 0), labels: ['type:epic', 'lane:owner'] }), [], 'a draft epic waits for the owner');
 });
 
@@ -707,6 +708,18 @@ test('an issue a finished run left unchanged gets no new run; a Blocked one is r
   assert.equal(plan({ ...blocked, status: 'Todo' }).units.length, 1, 'a new column');
   const todo = board(7, 'Todo', ['lane:afk']);
   assert.equal(afkIssueState(todo, 'Todo', [], workflowCfg, 'base1'), afkIssueState(todo, 'Todo', [], workflowCfg, 'base2'), 'only a Blocked card reads the base head');
+});
+
+test('a sliced epic comes back for its close check once its slices close, and a waiting close check after the next merge', () => {
+  const at = (status, total, completed) => ({ number: 30, labels: ['type:epic'], ancestors: [], status, priority: 'P1', paths: null, lastEditedAt: '2026-10-01T00:00:00Z', subIssuesSummary: { total, completed } });
+  const plan = (record, spent, base = 'base1') => afkPlan(cfg, [], () => [], 'new-run', { issues: [record], prs: [], spent, base });
+  const sliced = { 30: plan(at('Todo', 0, 0), {}).units[0].state };
+  assert.deepEqual(plan(at('Todo', 0, 0), sliced).unchanged, [30], 'a slicing run that changed nothing is not rerun');
+  assert.equal(plan(at('In progress', 3, 3), sliced).units.length, 1, 'all slices closed after slicing');
+  assert.equal(plan(at('Todo', 3, 3), sliced).units.length, 1, 'all slices closed, card left in Todo');
+  const waiting = { 30: plan(at('In progress', 3, 3), {}).units[0].state };
+  assert.deepEqual(plan(at('In progress', 3, 3), waiting).unchanged, [30], 'a close check waiting on a deployment');
+  assert.equal(plan(at('In progress', 3, 3), waiting, 'base2').units.length, 1, 'is retried after the next merge');
 });
 
 test('an implementation run ends in Review with a PR, Blocked without one, else Todo', () => {

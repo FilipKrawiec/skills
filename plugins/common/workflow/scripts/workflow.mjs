@@ -709,10 +709,13 @@ function afkOutsideInput(comments, cfg) {
   const workflow = new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase()));
   return comments.filter(comment => !workflow.has(comment.user?.login?.toLowerCase()) && !/^<!-- afk-/.test(comment.body || '')).at(-1)?.id ?? '';
 }
-// What an issue unit's run acts on: its column, body, labels, open blockers and outside input. A Blocked card also reads the
-// base head, so one a refine run could not clear is tried again after the next merge.
+// What an issue unit's run acts on: its column, body, labels, open blockers and outside input, and an epic's slice counts.
+// A Blocked card and an epic whose slices all closed also read the base head, so a blocker a refine run could not clear, or
+// a close check waiting on a deployment, is tried again after the next merge.
 export function afkIssueState(issue, column, comments, cfg, base = '') {
-  return `${column}:${issue.lastEditedAt || ''}:${[...issue.labels].sort().join(',')}:${issue.blocked ? 'blocked' : ''}:${afkOutsideInput(comments, cfg)}${column === 'Blocked' ? `:${base}` : ''}`;
+  const slices = issue.labels.includes('type:epic') ? issue.subIssuesSummary || { total: 0, completed: 0 } : null;
+  const retry = column === 'Blocked' || (slices?.total > 0 && slices.completed === slices.total);
+  return `${column}:${issue.lastEditedAt || ''}:${[...issue.labels].sort().join(',')}:${issue.blocked ? 'blocked' : ''}:${afkOutsideInput(comments, cfg)}${slices ? `:${slices.completed}/${slices.total}` : ''}${retry ? `:${base}` : ''}`;
 }
 function afkSpentPath() { return join(git('rev-parse', '--path-format=absolute', '--git-common-dir'), 'afk-spent.json'); }
 // Every ping serves the first free unit in this board order; Priority, then the oldest number, decides inside a column.
@@ -742,10 +745,10 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   for (const issue of issues) {
     let column = afkColumn(issue);
     if (issue.labels.includes('lane:owner') || heldElsewhere(issue.number)) continue;
-    // A card In progress with no live run, or in Review with no open PR, is Todo again. An epic stays In progress while
-    // its slices are open and comes back for its delivery check once they all closed.
+    // A card In progress with no live run, or in Review with no open PR, is Todo again. An approved epic In progress is
+    // served to slice it, stays In progress while its slices are open and comes back for its close check once they all closed.
     const epic = issue.labels.includes('type:epic'), slices = issue.subIssuesSummary;
-    if (epic && column === 'In progress' && slices?.total > 0 && slices.completed === slices.total) column = 'Todo';
+    if (epic && column === 'In progress' && slices && slices.completed === slices.total) column = 'Todo';
     else if (!epic && ['In progress', 'Review'].includes(column) && !inPr.has(issue.number)) { orphans.push(issue.number); column = 'Todo'; }
     if (!['Blocked', 'Todo', 'Backlog'].includes(column) || (column !== 'Blocked' && inPr.has(issue.number))) continue;
     // The board grants no authority: a Todo story without `lane:afk` is refined like Backlog.
@@ -1202,7 +1205,6 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
     const ledger = afkReadLedger(ledgerPath);
     if (ledger[id]?.length) {
       if (requestedIssue && ledger[id][0].number !== requestedIssue) throw new Error(`Run ${id} already holds #${ledger[id][0].number}, not #${requestedIssue}`);
-      const live = afkLive(cfg); const threads = afkThreadReader(cfg); const plan = afkPlan(cfg, live, threads, id);
       return afkShow(ledger[id][0], [], output, quiet);
     }
     const live = afkLive(cfg);
