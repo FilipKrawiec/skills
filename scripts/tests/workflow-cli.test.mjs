@@ -284,6 +284,7 @@ test('AFK watcher returns while its run works, and the run supervisor releases t
   const [[runId, [hold]]] = Object.entries(JSON.parse(readFileSync(join(common, 'afk-holds.json'), 'utf8')));
   assert.notEqual(hold.watcherPid, watch.pid);
   assert.match(spawnSync('ps', ['-p', String(hold.watcherPid), '-o', 'command='], { encoding: 'utf8' }).stdout, / afk supervise --me /);
+  assert.equal(JSON.parse(readFileSync(join(common, 'afk-runs', `${runId}.json`), 'utf8')).pid, hold.watcherPid);
   const lock = join(common, 'workflow-locks', 'afk-start.lock');
   const probe = process.platform === 'darwin' ? spawnSync('lockf', ['-t', '0', lock, 'true']) : spawnSync('flock', ['-n', lock, 'true']);
   assert.equal(probe.status, 0, 'the start lock is free while the run works');

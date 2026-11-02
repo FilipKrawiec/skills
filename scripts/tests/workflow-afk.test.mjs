@@ -395,8 +395,9 @@ test('AFK counts a run live while its watcher or its supervisor is', t => {
   assert.equal(afkRunAlive(common, 7, 'watched', alive), true);
   job('supervised', { pid: 7 });
   assert.equal(afkRunAlive(common, 8, 'supervised', alive), true);
-  job('starting', {});
-  assert.equal(afkRunAlive(common, 8, 'starting', alive), true);
+  job('unrecorded', {});
+  assert.equal(afkRunAlive(common, 8, 'unrecorded', alive), false);
+  assert.equal(existsSync(join(common, 'afk-runs', 'unrecorded.json')), false);
   job('ended', { pid: 9 });
   assert.equal(afkRunAlive(common, 8, 'ended', alive), false);
   assert.equal(existsSync(join(common, 'afk-runs', 'ended.json')), false);

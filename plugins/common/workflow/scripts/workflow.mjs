@@ -1474,8 +1474,10 @@ function afkSpawnRun(common, runId, job) {
   const path = afkJobPath(common, runId);
   afkWriteJob(path, job);
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'supervise', '--me', runId], { cwd: job.launch.cwd, detached: true, stdio: 'inherit', env: process.env });
+  child.on('error', error => console.error(`Blocked: the supervisor of run ${runId} failed: ${error.message}`));
   child.unref();
   if (!Number.isSafeInteger(child.pid)) { rmSync(path, { force: true }); throw new Error(`cannot start the supervisor of run ${runId}`); }
+  afkWriteJob(path, { ...job, pid: child.pid });
   if (!job.held) return;
   withRepoLock('afk-start', () => {
     const ledgerPath = join(common, 'afk-holds.json'); const ledger = afkReadLedger(ledgerPath);
@@ -1487,24 +1489,24 @@ function afkSpawnRun(common, runId, job) {
 function afkSupervise(common, runId) {
   const path = afkJobPath(common, runId);
   const job = JSON.parse(readFileSync(path, 'utf8'));
-  afkWriteJob(path, { ...job, pid: process.pid });
   let output, usage = null;
   try {
     output = afkLaunchAgent(job.launch);
     usage = afkRunUsage(output);
   } finally {
-    if (job.held) spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'finish', '--me', runId, ...(usage ? ['--note', usage.line] : [])], { cwd: job.root, stdio: 'inherit', env: process.env });
+    const finished = job.held ? spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'afk', 'finish', '--me', runId, ...(usage ? ['--note', usage.line] : [])], { cwd: job.root, stdio: 'inherit', env: process.env }) : null;
+    if (finished && finished.status !== 0) console.error(`Blocked: run ${runId} still holds its issue; release it with afk end --me ${runId}.`);
     if (job.tree && !afkReleaseRunTree(job.tree, job.root)) console.log(`Kept: ${job.tree} holds work that is not on the remote; preserve it.`);
     rmSync(path, { force: true });
   }
   console.log(afkRunReport(runId, output));
   return 0;
 }
-// A run is live while its watcher or its supervisor is; a job file whose supervisor has not recorded itself yet is starting.
+// A run is live while its watcher or its supervisor is; the watcher records the supervisor in the job file as it starts it.
 export function afkRunAlive(common, pid, name, isAlive = afkPidAlive) {
   if (pid && isAlive(pid)) return true;
   let job; try { job = JSON.parse(readFileSync(afkJobPath(common, name), 'utf8')); } catch { return false; }
-  if (!Number.isSafeInteger(job.pid) || isAlive(job.pid)) return true;
+  if (Number.isSafeInteger(job.pid) && isAlive(job.pid)) return true;
   rmSync(afkJobPath(common, name), { force: true });
   return false;
 }
