@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkMergeThenPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkFree, afkStartCount, afkCheckRunLimits, afkPrFiles, afkEndStatus, afkIssueState, afkColumn, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkMergeThenPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkReviewKind, afkShow, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, afkStopSupervisedAgent, issueTargetRepo, oldestExactTitle, assertIssueVisibility, afkReap, afkRunStarted, afkDuration } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -181,6 +181,26 @@ test('a Reviewer thread reply after an approval keeps the approval, a change req
   assert.equal(afkPrRecord(pr([approval, reply, fixes]), cfg).approved, false);
 });
 
+test('the approval check and the spent ledger classify the same reviews as verdicts and thread replies', () => {
+  const workflowCfg = { ...cfg, implementer: 'builder' };
+  const approval = { author: { login: 'reviewer' }, state: 'APPROVED', commit: { oid: 'head' }, body: '<!-- agent-review sha=head verdict=ready -->' };
+  const replies = [
+    { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'head' }, body: 'Agreed, as agent-review asked.' },
+    { author: { login: 'builder' }, state: 'COMMENTED', commit: { oid: 'head' }, body: 'Fixed in head.' },
+  ];
+  const outside = { author: { login: 'owner' }, state: 'COMMENTED', commit: { oid: 'head' }, body: '' };
+  assert.deepEqual([approval, ...replies, outside].map(review => afkReviewKind(review, workflowCfg)), ['verdict', 'reply', 'reply', 'other']);
+  const pr = reviews => afkPrRecord({ number: 7, title: 'Update', body: 'Issue #8', headRefOid: 'head', labels: [], statusCheckRollup: [], mergeable: 'MERGEABLE', reviews }, workflowCfg);
+  const state = reviews => afkPrState(pr(reviews), [], workflowCfg, 'base1');
+  assert.equal(pr([approval, ...replies]).approved, true, 'thread replies keep the approval');
+  assert.equal(state([approval, ...replies]), state([approval]), 'thread replies leave the spent state');
+  assert.notEqual(state([approval, outside]), state([approval]), 'an outside review changes the spent state');
+  const unmarkedFixes = { author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'head' }, body: '' };
+  assert.equal(afkReviewKind(unmarkedFixes, workflowCfg), 'other');
+  assert.equal(pr([approval, unmarkedFixes]).approved, false, 'an unmarked Reviewer change request still blocks');
+  assert.notEqual(state([approval, unmarkedFixes]), state([approval]), 'and changes the spent state');
+});
+
 test('run limits must be positive integers', () => {
   assert.doesNotThrow(() => afkCheckRunLimits({ maxRuns: 4 }));
   assert.throws(() => afkCheckRunLimits({ maxRuns: 0 }), /afk\.maxRuns must be a positive integer/);
@@ -205,12 +225,12 @@ test('dead run holds expire after the grace period while live holds persist', ()
   assert.equal('dead' in ledger, false);
 });
 
-test('a PR a finished run left unchanged gets no new run until its head, reviews, checks or an outside comment change', () => {
+test('a PR a finished run left unchanged gets no new run until its head, reviews, checks, merge state, base or an outside comment change', () => {
   const pr = extra => ({ number: 9, title: 'Fix', body: 'No linked issue.', headRefOid: 'abc', labels: [], reviews: [{ author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'abc' }, body: '' }], statusCheckRollup: [], mergeable: 'MERGEABLE', files: [{ path: 'src/a.js' }], ...extra });
   const workflowCfg = { ...cfg, implementer: 'builder' };
-  const plan = (record, comments = [], spentComments = []) => {
-    const spent = { 9: afkPrState(afkPrRecord(pr(), workflowCfg), spentComments, workflowCfg) };
-    return afkPlan(workflowCfg, [], number => number === 9 ? comments : [], 'new-run', { issues: [epic], prs: [record], spent });
+  const plan = (record, comments = [], spentComments = [], base = 'base1') => {
+    const spent = { 9: afkPrState(afkPrRecord(pr(), workflowCfg), spentComments, workflowCfg, 'base1') };
+    return afkPlan(workflowCfg, [], number => number === 9 ? comments : [], 'new-run', { issues: [epic], prs: [record], spent, base });
   };
   const unchanged = plan(pr());
   assert.deepEqual(unchanged.units, []);
@@ -221,9 +241,16 @@ test('a PR a finished run left unchanged gets no new run until its head, reviews
   assert.deepEqual(offered(pr({ headRefOid: 'def' })), [9], 'a new head is reviewed');
   assert.deepEqual(offered(pr({ reviews: [...pr().reviews, { author: { login: 'owner' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '' }] })), [9], 'a new review');
   assert.deepEqual(offered(pr({ statusCheckRollup: [{ conclusion: 'FAILURE' }] })), [9], 'a red check');
+  assert.deepEqual(plan(pr(), [], [], 'base2').units.map(unit => unit.issue), [9], 'a run that waited on a red base is served once the base moves');
+  const states = ['MERGEABLE', 'CONFLICTING', 'UNKNOWN'].map(mergeable => afkPrState(afkPrRecord(pr({ mergeable }), workflowCfg), [], workflowCfg, 'base1'));
+  assert.equal(new Set(states).size, 3, 'a conflict and an unknown merge state differ from mergeable');
+  assert.notEqual(afkPrState(afkPrRecord(pr({ mergeable: 'CONFLICTING' }), workflowCfg), [], workflowCfg), afkPrState(afkPrRecord(pr({ statusCheckRollup: [{ conclusion: 'FAILURE' }] }), workflowCfg), [], workflowCfg), 'a conflict differs from a failed check');
+  const replies = [{ author: { login: 'builder' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: 'Fixed in abc.' }, { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: 'Agreed.' }];
+  assert.deepEqual(offered(pr({ reviews: [...pr().reviews, ...replies] })), [], 'the workflow identities\' thread replies are not new reviews');
+  assert.deepEqual(offered(pr({ reviews: [...pr().reviews, { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc round=2 verdict=fixes -->' }] })), [9], 'a marked Reviewer verdict is');
   assert.deepEqual(plan(pr(), [{ id: 7, user: { login: 'owner' }, body: 'Please also cover X' }]).units.map(unit => unit.issue), [9], 'an owner comment');
-  const fresh = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr()] }).units[0];
-  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:1:green:'], 'the unit carries the state its run will spend');
+  const fresh = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr()], base: 'base1' }).units[0];
+  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:1:green:mergeable:base1:'], 'the unit carries the state its run will spend');
 });
 
 test('a red PR unit takes its scope from its packet, else its changed files', () => {
