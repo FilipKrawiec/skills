@@ -1829,14 +1829,17 @@ function ownCommandLine() {
   return result.error || result.status !== 0 ? null : result.stdout.trim();
 }
 const invokedLocked = () => {
+  // ps may escape or truncate a path it cannot show literally, so a re-exec'd child never re-execs again.
+  const reexecuted = process.env.WORKFLOW_ABSOLUTE_REEXEC === '1';
+  delete process.env.WORKFLOW_ABSOLUTE_REEXEC;
   const [command, ...args] = process.argv.slice(2);
-  if (!requiredLocks(command, args).length) return false;
+  if (reexecuted || !requiredLocks(command, args).length) return false;
   const line = ownCommandLine();
   return line !== null && needsAbsoluteInvocation(line, fileURLToPath(import.meta.url));
 };
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && invokedLocked()) {
   // Lock inheritance matches the owner's command line by absolute path.
-  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
+  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, WORKFLOW_ABSOLUTE_REEXEC: '1' } });
   process.exit(result.error ? 1 : result.status ?? 1);
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
