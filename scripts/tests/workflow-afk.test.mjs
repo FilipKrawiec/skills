@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -228,6 +228,31 @@ test('a red PR unit takes its scope from its packet, else its changed files', ()
   assert.deepEqual(paths(red('Closes #2'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'the linked issue packet wins');
   assert.deepEqual(paths(red('Closes #2'), [epic, issue(2, ['lane:afk'], { paths: [] })]), [], 'a linked empty scope stays empty');
   assert.deepEqual(paths(red('Closes #2', { files: [{ path: 'src/new.js', previousPath: 'src/old.js' }] }), [epic, issue(2, ['lane:afk'], { paths: null })]), ['src/new.js', 'src/old.js'], 'a rename keeps its source');
+});
+
+test('an issue waiting for its retry time stays out of selection until that time', () => {
+  const until = '2026-11-02T15:00:00Z', at = Date.parse(until);
+  const wait = { user: { login: 'builder' }, body: `<!-- afk-wait until=${until} cause=measurement window -->\nRetry after the window closes.` };
+  const plan = (now, comments = [wait]) => afkPlan({ ...cfg, implementer: 'builder', maxRuns: 2 }, [], number => number === 7 ? comments : [], 'new-run', { issues: [epic, issue(7, ['lane:afk']), issue(8, ['lane:afk'])], prs: [], now });
+  const picks = now => [...afkCandidates(plan(now).epics, [], true, () => false)].map(candidate => candidate.number);
+  assert.deepEqual(picks(at - 1), [8]);
+  assert.deepEqual(plan(at - 1).waits, [{ issue: 7, until, cause: 'measurement window' }]);
+  assert.deepEqual(picks(at), [7, 8]);
+  assert.deepEqual(picks(at + 1), [7, 8]);
+  assert.deepEqual(plan(at).waits, []);
+  const claimed = [wait, { user: { login: 'builder' }, body: '<!-- afk-issue-hold session=later-run -->' }];
+  assert.deepEqual(plan(at - 1, claimed).epics[0].units.map(unit => unit.issue), [7, 8], 'a later claim supersedes the wait');
+});
+
+test('a lone waiting issue starts no run and only a well-formed trusted marker hides it', () => {
+  const now = Date.parse('2026-11-02T12:00:00Z');
+  const units = comments => afkPlan({ ...cfg, implementer: 'builder' }, [], () => comments, 'new-run', { issues: [epic, issue(7, ['lane:afk'])], prs: [], now }).epics;
+  const marker = (until, login = 'builder', cause = 'deadline') => ({ user: { login }, body: `<!-- afk-wait until=${until} cause=${cause} -->` });
+  assert.deepEqual([...afkCandidates(units([marker('2026-11-03T00:00Z')]), [], true, () => false)], []);
+  for (const comments of [[marker('tomorrow')], [marker('2026-02-30T00:00:00Z')], [marker('2026-11-03T00:00:00+02:00')], [marker('2026-11-03T00:00:00Z', 'stranger')], [{ user: { login: 'builder' }, body: '<!-- afk-wait until=2026-11-03T00:00:00Z -->' }], [marker('2026-11-03T00:00:00Z'), marker('2026-13-01T00:00:00Z')]]) {
+    assert.equal(units(comments)[0].units.length, 1, comments.at(-1).body);
+  }
+  assert.deepEqual(afkWait([marker('2026-11-03T00:00:00Z', 'owner')], ['builder', 'reviewer', 'owner'], now), { until: '2026-11-03T00:00:00Z', cause: 'deadline' });
 });
 
 test('AFK imports the configured gh profile without importing git overrides', t => {
