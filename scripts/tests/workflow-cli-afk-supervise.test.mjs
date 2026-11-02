@@ -104,7 +104,7 @@ test('a run stopped at afk.maxRunMinutes releases its issue saying so, not that 
   const supervised = spawnSync(process.execPath, [cli, 'afk', 'supervise', '--me', runId], { cwd: f.repo, env: f.env, encoding: 'utf8' });
   assert.match(supervised.stderr, /stopped after/);
   const patches = readFileSync(f.env.TEST_PATCHES, 'utf8');
-  assert.match(patches, new RegExp(`afk-issue-blocked session=${runId} -->\\n\\*\\*Blocked:\\*\\* run ${runId} ended without a PR\\.\\n\\nStopped after \\d+ minutes, the afk\\.maxRunMinutes limit\\.`));
-  assert.doesNotMatch(patches, /left no summary/);
+  assert.match(patches, new RegExp(`afk-issue-blocked session=${runId} -->\\n\\*\\*Blocked:\\*\\* run ${runId} ended without a PR\\.\\n\\nStopped after 1 second, the afk\\.maxRunMinutes limit\\.`));
+  assert.doesNotMatch(patches, /left no summary|0 minutes/);
   assert.deepEqual(JSON.parse(readFileSync(join(common, 'afk-holds.json'), 'utf8')), {});
 });
