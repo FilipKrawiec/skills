@@ -556,6 +556,7 @@ function afkConfig(refreshMetadata = false) {
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
   afkCheckRunLimits(lanes);
+  afkCheckRetroMode(lanes.retros);
   lanes.explore = { ...workflowDefaults.explore };
   if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
   requireTestStep(lanes.steps);
@@ -1048,6 +1049,35 @@ function issueWriteRepo(cfg, requested) {
 export function oldestExactTitle(issues, title) {
   return issues.filter(issue => issue.title === title).map(issue => issue.number).sort((a, b) => a - b)[0] ?? null;
 }
+export const afkRetroModes = ['all', 'bugs-when-empty'];
+// `afk.retros: "bugs-when-empty"` pauses retro filing while the target repository has open work other than the run's own
+// issue and owner items, then accepts only bugs, so retros cannot refill a backlog as fast as runs drain it.
+export function afkRetroRefusal(mode, open, labels, held) {
+  if ((mode ?? 'all') === 'all') return null;
+  const work = open.filter(issue => issue.number !== held && !(issue.labels || []).some(label => (label.name ?? label) === 'lane:owner'));
+  if (work.length) return `Retro filing is paused until the backlog is empty (${work.length} open issues); file nothing`;
+  return labels.includes('type:bug') ? null : 'Retro filing takes only type:bug while the backlog is empty; file nothing else';
+}
+export function afkCheckRetroMode(mode) {
+  if (mode !== undefined && !afkRetroModes.includes(mode)) throw new Error(`afk.retros must be one of ${afkRetroModes.join(', ')}`);
+  return mode;
+}
+// Another repository's own setting governs retros filed into it; only a missing config keeps the default, any other failure files nothing.
+function afkRetroMode(cfg, repo) {
+  if (repo === cfg.repo) return cfg.retros;
+  const result = spawnSync('gh', ['api', `repos/${repo}/contents/.agents/config.json`], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+  if (!result.error && result.status !== 0 && /HTTP 404/.test(result.stderr || '')) return undefined;
+  if (result.error || result.status !== 0) throw new Error(`Cannot read ${repo} afk.retros; file no retro until it is readable`);
+  return afkCheckRetroMode(JSON.parse(Buffer.from(JSON.parse(result.stdout).content, 'base64').toString('utf8')).afk?.retros);
+}
+// The run's own issue: the watcher binds it in WORKFLOW_ISSUE_NUMBER; a self-started run records it only in its hold.
+function afkRetroHeld(root) {
+  if (process.env.WORKFLOW_ISSUE_NUMBER) return Number(process.env.WORKFLOW_ISSUE_NUMBER);
+  const runId = process.env.WORKFLOW_RUN_ID;
+  if (!runId) return null;
+  const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
+  return afkReadLedger(join(common, 'afk-holds.json'))[runId]?.[0]?.number ?? null;
+}
 // Open issues whose scope packet shares a path with `paths`: equal, or one lies under the other as the scope rule reads it.
 export function scopeOverlaps(issues, paths) {
   if (!paths?.length) return [];
@@ -1055,11 +1085,11 @@ export function scopeOverlaps(issues, paths) {
   return issues.filter(issue => (afkPathsFromIssueBody(issue.body || '') || []).some(path => paths.some(other => overlap(path, other))));
 }
 function issueCreate(args) {
-  const unique = args.includes('--unique');
+  const unique = args.includes('--unique'), retro = args.includes('--retro');
   const check = args.includes('--check');
-  const o = afkFlags(args.filter(arg => arg !== '--unique' && arg !== '--check'), ['--title', '--body-file', '--labels', '--repo']);
+  const o = afkFlags(args.filter(arg => arg !== '--unique' && arg !== '--check' && arg !== '--retro'), ['--title', '--body-file', '--labels', '--repo']);
   const title = (o['--title'] || '').trim();
-  if (!title || !o['--body-file']) throw new Error('Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--unique] [--check]');
+  if (!title || !o['--body-file']) throw new Error('Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--unique] [--check] [--retro]');
   const root = git('rev-parse', '--show-toplevel');
   const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
   const cfg = afkConfig(); afkLoadEnvironment(cfg);
@@ -1067,10 +1097,15 @@ function issueCreate(args) {
   afkActor(cfg);
   const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
   // List without --search: the search index lags new issues and would hide a concurrent duplicate.
-  const open = () => afkGh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body']);
+  const open = () => afkGh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', retro ? 'number,title,body,labels' : 'number,title,body']);
   const followUp = labels.includes('type:bug') || labels.includes('type:chore');
   return withRepoLock('issue-create', () => {
-    const issues = unique || followUp || check ? open() : [];
+    const issues = unique || followUp || check || retro ? open() : [];
+    if (retro) {
+      const held = repo === cfg.repo ? afkRetroHeld(root) : null;
+      const refusal = afkRetroRefusal(afkRetroMode(cfg, repo), issues, labels, held);
+      if (refusal) { console.log(`Skipped: ${refusal}`); return; }
+    }
     const existing = unique ? oldestExactTitle(issues, title) : null;
     if (existing) { console.log(`Exists: #${existing}`); return; }
     // Advisory: a follow-up sharing a scope path with an open issue usually belongs on that issue as a comment.
