@@ -202,6 +202,18 @@ function requireLinkedWorktree() {
   if (gitDir === commonDir) throw new Error('Use an isolated linked worktree; refusing to change the main checkout');
   return root;
 }
+// Commits carry the implementer's GitHub identity, never the machine's Git user, so the owner can approve them.
+function implementerCommitIdentity(root) {
+  const login = config().lanes.implementer;
+  if (typeof login !== 'string' || !/^[A-Za-z0-9-]+$/.test(login)) throw new Error('Configure identities.implementer before committing');
+  const env = cleanEnvironment();
+  const token = run('gh', ['auth', 'token', '--hostname', 'github.com', '--user', login], { cwd: root, env });
+  if (!token || /\s/.test(token)) throw new Error('No usable implementer credential');
+  const id = jsonCommand('gh', ['api', '--hostname', 'github.com', `users/${login}`], { cwd: root, env: { ...env, GH_TOKEN: token } }).id;
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error('Cannot resolve the implementer GitHub account');
+  const email = `${id}+${login}@users.noreply.github.com`;
+  return { GIT_AUTHOR_NAME: login, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: email };
+}
 function commit(args) {
   if (args.length < 4 || args[0] !== '--message' || args[2] !== '--') throw new Error('Usage: commit --message MESSAGE -- PATH...');
   const message = args[1];
@@ -218,7 +230,7 @@ function commit(args) {
     afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
     afkActor(cfg);
   }
-  const env = cleanEnvironment();
+  const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
   if (staged.error || staged.status !== 0) throw new Error('Existing staged changes or an unreadable index; preserve them and commit separately');
   const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });

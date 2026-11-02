@@ -49,7 +49,7 @@ if (args[0] === 'auth' && args[1] === 'token') {
   else if (args.some(arg => arg.startsWith('repos/acme/app/issues/') && /^\\d+$/.test(arg.split('/').at(-1))) && args.includes('state=open')) { fs.writeFileSync(process.env.ISSUE_STATE_RECORD, JSON.stringify(args)); out({ state: 'open' }); }
   else {
     const actor = process.env.FAKE_ACTOR || 'builder';
-    process.stdout.write(args.includes('--jq') ? actor + '\\n' : JSON.stringify({ login: actor }) + '\\n');
+    process.stdout.write(args.includes('--jq') ? actor + '\\n' : JSON.stringify({ login: actor, id: 4242 }) + '\\n');
   }
 } else if (args[0] === 'pr' && args[1] === 'view') {
   out({ url: 'https://github.com/acme/app/pull/1', baseRefOid: process.env.BASE_SHA, headRefOid: process.env.HEAD_SHA, files: [], reviews: [], reviewDecision: 'REVIEW_REQUIRED', statusCheckRollup: [] });
@@ -202,6 +202,7 @@ test('commit includes only assigned paths', t => {
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(f.linkedGit('show', '--format=', '--name-only', 'HEAD').stdout.trim().split('\\n'), ['assigned.txt']);
   assert.equal(existsSync(join(f.repo, 'unrelated.txt')), true);
+  assert.equal(f.linkedGit('show', '-s', '--format=%an <%ae>|%cn <%ce>', 'HEAD').stdout.trim(), 'builder <4242+builder@users.noreply.github.com>|builder <4242+builder@users.noreply.github.com>');
   assert.equal(JSON.parse(result.stdout).result, 'committed');
 });
 
