@@ -674,7 +674,8 @@ export function afkReviewKind(review, cfg) {
   if (/<!-- agent-review\b/.test(review.body || '')) return 'verdict';
   return review.state === 'COMMENTED' && afkWorkflowLogins(cfg).has(review.author?.login?.toLowerCase()) ? 'reply' : 'other';
 }
-// Decides on the newest Reviewer verdict; thread replies and other unmarked reviews never decide.
+// Approves on the newest Reviewer verdict; thread replies never decide. A Reviewer change request at the head blocks
+// whether marked or not, so that check reads the review state rather than its kind.
 export function afkReviewerApproved(pr, cfg) {
   const mine = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === cfg.reviewer.toLowerCase());
   const latest = mine.filter(review => afkReviewKind(review, cfg) === 'verdict').at(-1); const head = pr.headRefOid;

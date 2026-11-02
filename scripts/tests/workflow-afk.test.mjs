@@ -195,6 +195,10 @@ test('the approval check and the spent ledger classify the same reviews as verdi
   assert.equal(pr([approval, ...replies]).approved, true, 'thread replies keep the approval');
   assert.equal(state([approval, ...replies]), state([approval]), 'thread replies leave the spent state');
   assert.notEqual(state([approval, outside]), state([approval]), 'an outside review changes the spent state');
+  const unmarkedFixes = { author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'head' }, body: '' };
+  assert.equal(afkReviewKind(unmarkedFixes, workflowCfg), 'other');
+  assert.equal(pr([approval, unmarkedFixes]).approved, false, 'an unmarked Reviewer change request still blocks');
+  assert.notEqual(state([approval, unmarkedFixes]), state([approval]), 'and changes the spent state');
 });
 
 test('run limits must be positive integers', () => {
