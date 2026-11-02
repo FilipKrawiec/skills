@@ -172,7 +172,8 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   };
   for (const issue of issues) {
     let column = afkColumn(issue);
-    if (issue.labels.includes('lane:owner') || heldElsewhere(issue.number)) continue;
+    // `state:started` is an exclusive attended assignment: never orphaned, never offered.
+    if (issue.labels.includes('lane:owner') || issue.labels.includes('state:started') || heldElsewhere(issue.number)) continue;
     // A card In progress with no live run, or in Review with no open PR, is Todo again. An approved epic In progress is
     // served to slice it, stays In progress while its slices are open and comes back for its close check once they all closed.
     const epic = issue.labels.includes('type:epic'), slices = issue.subIssuesSummary;
@@ -194,7 +195,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     offer({ column, text: afkUnitText(column, issue), issue: issue.number, priority: issue.priority, paths: write ? issue.paths : [], ...(write ? {} : { refine: true }), input: afkOutsideInput(threads(issue.number), cfg) }, issue.number, afkIssueState(issue, column, threads(issue.number), cfg, base));
   }
   for (const pr of prs) {
-    if (!pr.needsWork || pr.issues.some(heldElsewhere) || heldElsewhere(pr.number)) continue;
+    if (!pr.needsWork || pr.issues.some(heldElsewhere) || heldElsewhere(pr.number) || pr.issues.some(number => byNumber.get(number)?.labels.includes('state:started'))) continue;
     const stories = pr.issues.map(number => byNumber.get(number)).filter(issue => issue && !issue.labels.includes('type:epic'));
     if (!pr.awaitingReview && !pr.broken && stories.length > 0 && stories.every(issue => issue.labels.includes('lane:owner'))) continue;
     // Its issues' packets, then the PR's own packet, then the files it already changes.
