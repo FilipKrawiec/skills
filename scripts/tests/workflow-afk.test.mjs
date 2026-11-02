@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkPrFiles, afkEndStatus, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { prLinkedIssues, afkCandidates, afkSlots, afkPrFiles, afkEndStatus, afkSlices, afkStageMarker, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPrState, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, afkDependenciesFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, afkForeignHeads, afkOwnsHead, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -41,11 +41,52 @@ test('AFK plan skips live claims and holds but lets a new run take a stale claim
 });
 
 test('AFK plan offers no review of a PR whose linked issue a live run holds', () => {
-  const pr = (number, linked) => ({ number, title: `PR ${number}`, body: `Closes #${linked}`, headRefOid: 'abc', labels: [], reviews: [], statusCheckRollup: [], mergeable: 'MERGEABLE' });
+  const pr = (number, linked) => ({ number, title: `PR ${number}`, body: `Closes #${linked}`, closingIssuesReferences: [{ number: linked, repository: { name: 'app', owner: { login: 'acme' } } }], headRefOid: 'abc', labels: [], reviews: [], statusCheckRollup: [], mergeable: 'MERGEABLE' });
   const loose = { ...issue(5, ['lane:afk']), ancestors: [] };
   const comments = new Map([[5, [{ body: '<!-- afk-issue-hold session=live-run -->' }]]]);
   const plan = afkPlan(cfg, ['live-run'], number => comments.get(number) || [], 'new-run', { issues: [epic, loose, issue(6, ['lane:afk'])], prs: [pr(10, 5), pr(11, 6)] });
   assert.deepEqual(plan.epics[0].units.map(unit => unit.text), ['PR #11 (PR 11) awaits its review']);
+});
+
+test('AFK plan blocks an issue whose packet depends on an open PR until that PR merges', () => {
+  assert.deepEqual(afkDependenciesFromIssueBody('```scope\n{"paths":["src/"],"dependencies":["#285", 12, "x"]}\n```'), [285, 12]);
+  assert.deepEqual(afkDependenciesFromIssueBody('no packet'), []);
+  const follow = issue(6, ['lane:afk'], { dependencies: [285] });
+  const open = { number: 285, title: 'Ledger', body: '', headRefOid: 'abc', labels: [], reviews: [], statusCheckRollup: [], mergeable: 'CONFLICTING' };
+  const blocked = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, follow], prs: [open] });
+  assert.equal(blocked.epics[0].units.some(unit => unit.issue === 6), false);
+  assert.deepEqual(blocked.blocks, [{ issue: 6, pr: 285 }]);
+  const merged = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, follow], prs: [] });
+  assert.deepEqual(merged.epics[0].units.map(unit => unit.text), ['#6 is ready']);
+  assert.deepEqual(merged.blocks, []);
+});
+
+test('afk check reports an issue blocked on an open PR and offers it once the PR merges', t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'afk-check-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = join(root, 'bin'), home = join(root, 'home'), repo = join(root, 'repo');
+  mkdirSync(bin); mkdirSync(join(home, '.config', 'gh-agents'), { recursive: true }); mkdirSync(join(repo, '.agents'), { recursive: true });
+  writeFileSync(join(home, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'token' } }));
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+  writeFileSync(join(bin, 'git'), `#!/usr/bin/env node\nif(process.argv[2]==='fetch') process.exit(0);\nprocess.exit(require('node:child_process').spawnSync(process.env.REAL_GIT, process.argv.slice(2), { stdio: 'inherit' }).status ?? 1);\n`);
+  writeFileSync(join(bin, 'gh'), `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('token'); process.exit(0); }\nif(a[0]==='pr') { out(process.env.TEST_PR ? [{number:285,title:'ledger',body:'',headRefOid:'abc',labels:[{name:'review:owner'}],reviews:[{author:{login:'reviewer'},state:'COMMENTED',commit:{oid:'abc'},body:''}],isDraft:false,statusCheckRollup:[],mergeable:'MERGEABLE',files:[{path:'docs/a.md',changeType:'MODIFIED'}]}] : []); process.exit(0); }\nif(a[0]==='issue') { out([]); process.exit(0); }\nif(a.some(x=>x.includes('pullRequests(states'))) { out({data:{repository:{pullRequests:{nodes:[]}}}}); process.exit(0); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,['lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"],\\"dependencies\\":[\\"#285\\"]}\\n\\u0060\\u0060\\u0060')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
+  chmodSync(join(bin, 'git'), 0o755); chmodSync(join(bin, 'gh'), 0o755);
+  writeFileSync(join(repo, '.agents', 'config.json'), JSON.stringify({ version: 1, identities: { implementer: 'builder', reviewer: 'reviewer' }, steps: { process: null, assemble: null, test: ['true'] } }));
+  mkdirSync(join(repo, '.github')); writeFileSync(join(repo, '.github', 'CODEOWNERS'), '* @reviewer\n/*.rules @owner\n');
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WORKFLOW_') && !key.startsWith('GIT_'))), PATH: `${bin}:${process.env.PATH}`, HOME: home, REAL_GIT: realGit, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const git = (...args) => assert.equal(spawnSync(realGit, args, { cwd: repo, env }).status, 0, args.join(' '));
+  git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/acme/app.git'); git('add', '.agents/config.json', '.github/CODEOWNERS');
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'initial'); git('update-ref', 'refs/remotes/origin/main', 'HEAD'); git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
+  // A recent explore pass keeps the idle explorer from taking the slot.
+  writeFileSync(join(repo, '.git', 'afk-idle-explore.json'), JSON.stringify({ started: Date.now() }));
+  const check = pr => spawnSync(process.execPath, [fileURLToPath(new URL('../../plugins/common/workflow/scripts/workflow.mjs', import.meta.url)), 'afk', 'check'], { cwd: repo, encoding: 'utf8', env: { ...env, TEST_PR: pr ? '1' : '' } });
+  const open = check(true);
+  assert.equal(open.status, 3, `${open.stdout}\n${open.stderr}`);
+  assert.match(open.stdout, /Done: no new run has work[^\n]*\nWait: #1082 is blocked until PR #285 merges/);
+  const merged = check(false);
+  assert.equal(merged.status, 0, `${merged.stdout}\n${merged.stderr}`);
+  assert.match(merged.stdout, /^Start: 1\n/);
+  assert.doesNotMatch(merged.stdout, /blocked until PR/);
 });
 
 test('one-shot AFK runs are counted from live watcher PIDs', t => {
@@ -141,6 +182,14 @@ test('AFK plan keeps unreviewed proposals in the eligibility queue', () => {
   assert.match(plan.epics[0].units[0].text, /awaits its AFK eligibility check/);
 });
 
+test('a PR links an issue only by a closing reference in its repository or a Part of line', () => {
+  const closes = (number, owner = 'acme') => ({ number, repository: { name: 'app', owner: { login: owner } } });
+  const pr = (body, refs = []) => ({ number: 7, title: 'Fix', body, closingIssuesReferences: refs, headRefOid: 'head', labels: [], statusCheckRollup: [], reviews: [] });
+  assert.deepEqual(afkPrRecord(pr('Refs #8\nSee #9, and part of #10'), cfg).issues, [], 'a mention links nothing');
+  assert.deepEqual(afkPrRecord(pr('Closes #8', [closes(8), closes(11, 'other')]), cfg).issues, [8], 'only a closing link in this repository counts');
+  assert.deepEqual(prLinkedIssues(pr('Summary\n  Part of #12\nPart of #13.'), 'Acme/App'), [12, 13]);
+});
+
 test('a Reviewer approval applies only to the exact head and verdict', () => {
   const pr = { number: 7, title: 'Update', body: 'Issue #8', headRefOid: 'head', labels: [], statusCheckRollup: [], reviews: [
     { author: { login: 'reviewer' }, state: 'APPROVED', commit: { oid: 'old' }, body: '<!-- agent-review sha=old verdict=ready -->' },
@@ -170,6 +219,61 @@ test('candidate selection honors live holds and work sharing', () => {
   const held = [...afkCandidates(epics, [{ number: 2, epic: 1, paths: ['src/2.js'] }], true, () => false)];
   assert.deepEqual(held.map(item => item.number), [3]);
   assert.deepEqual([...afkCandidates(epics, [], true, () => true)], []);
+});
+
+test('free runs go to blockers, then reviews, then PRs in progress, then new issues, in any epic', () => {
+  const epics = [
+    { issue: { number: 1 }, units: [{ issue: 2, paths: ['src/2.js'] }, { issue: 6, paths: ['src/6.js'], rank: 2 }] },
+    { issue: { number: 4 }, units: [{ issue: 5, paths: ['src/5.js'] }, { issue: 9, paths: [], review: true, rank: 1 }, { issue: 7, paths: ['src/7.js'], rank: 0 }] },
+  ];
+  assert.deepEqual([...afkCandidates(epics, [], true, () => false)].map(item => item.number), [7, 9, 6, 2, 5]);
+  assert.deepEqual([...afkCandidates(epics, [{ number: 9, epic: 4, paths: [] }], true, () => false)].map(item => item.number), [7, 6, 2, 5]);
+  assert.deepEqual([...afkCandidates(epics, [], false, () => false)].map(item => item.number), [1, 4], 'without sharing, one run per epic');
+});
+
+test('reviews have their own run slots, so ticket runs never block them', () => {
+  const ledger = { a: [{ number: 1 }], b: [{ number: 2 }], r: [{ number: 3, review: true }] };
+  const review = { unit: { review: true } }, ticket = { unit: {} };
+  const slots = afkSlots({ maxRuns: 2, maxReviewRuns: 2 }, ledger, ['a', 'b', 'r']);
+  assert.equal(slots.full(), false);
+  assert.equal(slots.take(ticket), false, 'both work slots are busy');
+  assert.equal(slots.take(review), true, 'a review still starts');
+  assert.equal(slots.take(review), false, 'until its own slots are full');
+  assert.equal(slots.full(), true);
+  assert.equal(afkSlots({ maxRuns: 4 }, {}, []).take(review), true, 'two review slots by default');
+});
+
+test('a new ticket starts only while open PRs and ticket runs without a PR stay under afk.maxRuns', () => {
+  const ticket = { unit: {} }, fix = { unit: { rank: 2 } }, blocker = { unit: { rank: 0 } };
+  const prs = [{ number: 10, issues: [1] }, { number: 11, issues: [] }];
+  const ledger = { a: [{ number: 1 }], b: [{ number: 5 }] };
+  const slots = afkSlots({ maxRuns: 4 }, ledger, ['a', 'b'], '', prs);
+  assert.equal(slots.take(ticket), true, 'WIP is 2 PRs + 1 ticket run without a PR = 3');
+  assert.equal(slots.take(ticket), false, 'WIP reached 4; finish work before starting more');
+  assert.equal(slots.take(fix), true, 'work on an open PR uses the last run slot');
+  assert.equal(slots.take(blocker), false, 'all four run slots are busy');
+  const free = afkSlots({ maxRuns: 4 }, {}, [], '', [{ number: 10 }, { number: 11 }, { number: 12 }, { number: 13 }]);
+  assert.equal(free.take(ticket), false, 'four open PRs: no new ticket');
+  assert.equal(free.take(blocker), true, 'work on an open PR still starts');
+});
+
+test('eligibility checks and epic stages start and add no WIP when WIP is full; drafts are not WIP', () => {
+  const four = [{ number: 10 }, { number: 11 }, { number: 12 }, { number: 13 }];
+  const full = afkSlots({ maxRuns: 4 }, {}, [], '', four);
+  assert.equal(full.take({ unit: { check: true } }), true, 'WIP is 4, yet an eligibility check starts');
+  assert.equal(full.take({ unit: { stage: 'close' } }), true, 'and so does an epic stage');
+  assert.equal(full.take({ unit: {} }), false, 'a new ticket waits');
+  const checking = afkSlots({ maxRuns: 5 }, { c: [{ number: 7, check: true }], s: [{ number: 8, stage: 'slice' }] }, ['c', 's'], '', four.slice(0, 3));
+  assert.equal(checking.take({ unit: {} }), true, 'live checks and stages add no WIP');
+  assert.equal(afkSlots({ maxRuns: 4 }, {}, [], '', four.map(pr => ({ ...pr, isDraft: true }))).take({ unit: {} }), true);
+});
+
+test('the plan ranks a red PR, a PR awaiting review and a PR with requested changes for selection', () => {
+  const pr = (number, extra) => ({ number, title: `PR ${number}`, body: 'No linked issue.', headRefOid: 'abc', labels: [], files: [{ path: 'src/a.js' }], statusCheckRollup: [], mergeable: 'MERGEABLE', reviews: [{ author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'abc' }, body: '' }], ...extra });
+  const prs = [pr(20), pr(21, { reviews: [] }), pr(22, { statusCheckRollup: [{ conclusion: 'FAILURE' }] })];
+  const plan = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, issue(2, ['lane:afk'])], prs });
+  assert.deepEqual(Object.fromEntries(plan.epics[0].units.map(unit => [unit.issue, unit.rank])), { 2: undefined, 20: 2, 21: 1, 22: 0 });
+  assert.deepEqual([...afkCandidates(plan.epics, [], true, () => false)].map(item => item.number), [22, 21, 20, 2]);
 });
 
 test('epics are ordered by priority, milestone and number', () => {
@@ -233,15 +337,36 @@ test('a Blocked card stays out of selection until it moves back to Todo', () => 
   assert.equal(ready(null).length, 1);
 });
 
+test('a PR a finished run left unchanged gets no new run until its head, reviews, checks or an outside comment change', () => {
+  const pr = extra => ({ number: 9, title: 'Fix', body: 'No linked issue.', headRefOid: 'abc', labels: [], reviews: [{ author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'abc' }, body: '' }], statusCheckRollup: [], mergeable: 'MERGEABLE', files: [{ path: 'src/a.js' }], ...extra });
+  const workflowCfg = { ...cfg, implementer: 'builder' };
+  const plan = (record, comments = [], spentComments = []) => {
+    const spent = { 9: afkPrState(afkPrRecord(pr(), workflowCfg), spentComments, workflowCfg) };
+    return afkPlan(workflowCfg, [], number => number === 9 ? comments : [], 'new-run', { issues: [epic], prs: [record], spent });
+  };
+  const unchanged = plan(pr());
+  assert.deepEqual(unchanged.epics[0].units, []);
+  assert.deepEqual(unchanged.unchanged, [9]);
+  const runNotes = [{ id: 5, user: { login: 'builder' }, body: 'Round-2 notes' }, { id: 6, user: { login: 'builder' }, body: '<!-- afk-issue-released session=afk-1 -->' }];
+  assert.deepEqual(plan(pr(), runNotes).epics[0].units, [], 'the workflow\'s own comments are not new input');
+  const offered = record => plan(record).epics[0].units.map(unit => unit.issue);
+  assert.deepEqual(offered(pr({ headRefOid: 'def' })), [9], 'a new head is reviewed');
+  assert.deepEqual(offered(pr({ reviews: [...pr().reviews, { author: { login: 'owner' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '' }] })), [9], 'a new review');
+  assert.deepEqual(offered(pr({ statusCheckRollup: [{ conclusion: 'FAILURE' }] })), [9], 'a red check');
+  assert.deepEqual(plan(pr(), [{ id: 7, user: { login: 'owner' }, body: 'Please also cover X' }]).epics[0].units.map(unit => unit.issue), [9], 'an owner comment');
+  const fresh = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr()] }).epics[0].units[0];
+  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:1:green:'], 'the unit carries the state its run will spend');
+});
+
 test('a red PR unit takes its scope from its packet, else its changed files', () => {
   const red = (body, extra = {}) => ({ number: 9, title: 'Fix', body, headRefOid: 'abc', labels: [], isDraft: false, mergeable: 'CONFLICTING', reviews: [{ author: { login: cfg.reviewer }, commit: { oid: 'abc' }, state: 'COMMENTED' }], files: [{ path: 'src/a.js' }, { path: 'docs/b.md' }], ...extra });
   const paths = (pr, issues = [epic]) => afkPlan(cfg, [], () => [], 'new-run', { issues, prs: [pr] }).epics[0].units[0].paths;
   assert.deepEqual(paths(red('No linked issue.')), ['src/a.js', 'docs/b.md']);
   assert.deepEqual(paths(red('```scope\n{"paths":["src/"]}\n```')), ['src/'], 'the PR body packet wins');
-  assert.deepEqual(paths(red('Closes #2'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'the linked issue packet wins');
-  assert.deepEqual(paths(red('Closes #2\n```scope\n{"paths":["src/"]}\n```'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'a PR packet cannot widen its issue packet');
-  assert.deepEqual(paths(red('Closes #2'), [epic, issue(2, ['lane:afk'], { paths: [] })]), [], 'a linked empty scope stays empty');
-  assert.deepEqual(paths(red('Closes #2', { files: [{ path: 'src/new.js', previousPath: 'src/old.js' }] }), [epic, issue(2, ['lane:afk'], { paths: null })]), ['src/new.js', 'src/old.js'], 'a rename keeps its source');
+  assert.deepEqual(paths(red('Part of #2'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'the linked issue packet wins');
+  assert.deepEqual(paths(red('Part of #2\n```scope\n{"paths":["src/"]}\n```'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'a PR packet cannot widen its issue packet');
+  assert.deepEqual(paths(red('Part of #2'), [epic, issue(2, ['lane:afk'], { paths: [] })]), [], 'a linked empty scope stays empty');
+  assert.deepEqual(paths(red('Part of #2', { files: [{ path: 'src/new.js', previousPath: 'src/old.js' }] }), [epic, issue(2, ['lane:afk'], { paths: null })]), ['src/new.js', 'src/old.js'], 'a rename keeps its source');
 });
 
 test('a PR with a rename or 100 files re-reads every page of its files over REST', () => {
@@ -527,8 +652,9 @@ test('AFK keeps watcher and run worktrees out of the main checkout status once',
 
 test('AFK run usage summarizes a JSON runner result and ignores plain output', () => {
   const output = JSON.stringify({ type: 'result', result: 'Summary: done', total_cost_usd: 1.234, num_turns: 42, duration_ms: 754_000, usage: { input_tokens: 1200, output_tokens: 3400, cache_read_input_tokens: 560000, cache_creation_input_tokens: 78000 } });
-  assert.deepEqual(afkRunUsage(output), { result: 'Summary: done', line: 'Usage: $1.23, 42 turns, 13 min, tokens in 1200, out 3400, cache read 560000, cache write 78000' });
-  assert.deepEqual(afkRunUsage(JSON.stringify({ type: 'result', result: 'ok' })), { result: 'ok', line: 'Usage: tokens in 0, out 0, cache read 0, cache write 0' });
+  assert.deepEqual(afkRunUsage(output), { result: 'Summary: done', line: 'Usage: $1.23, 42 turns, 13 min, tokens in 1200, out 3400, cache read 560000, cache write 78000', ok: true });
+  assert.deepEqual(afkRunUsage(JSON.stringify({ type: 'result', result: 'ok' })), { result: 'ok', line: 'Usage: tokens in 0, out 0, cache read 0, cache write 0', ok: true });
+  assert.equal(afkRunUsage(JSON.stringify({ type: 'result', is_error: true, result: 'API error' })).ok, false, 'an error result spends no PR state');
   assert.equal(afkRunUsage('Summary: plain text'), null);
   assert.equal(afkRunUsage('{"other":1}'), null);
   assert.equal(afkRunUsage(undefined), null);
@@ -592,10 +718,28 @@ test('an approved epic without sub-issues queues one slicing run, while a draft 
 
 test('a stage run that ended without a verdict or wait after its hold is recorded so the epic is not served again', () => {
   const hold = { id: 10, body: '<!-- afk-issue-released session=run-1 -->' };
-  assert.equal(afkStageUnrecorded([hold], 10), true);
-  assert.equal(afkStageUnrecorded([{ id: 9, body: '<!-- epic-check stage=close verdict=owner -->' }, hold], 10), true, 'an older verdict does not count');
-  assert.equal(afkStageUnrecorded([hold, { id: 11, body: '<!-- epic-check stage=close verdict=owner -->' }], 10), false);
-  assert.equal(afkStageUnrecorded([hold, { id: 12, body: '<!-- afk-wait until=2026-11-02T16:00:00Z cause=test deployment -->' }], 10), false);
+  const unrecorded = comments => afkStageUnrecorded(comments, 10, 'close', '2/2');
+  assert.equal(unrecorded([hold]), true);
+  assert.equal(unrecorded([{ id: 9, body: '<!-- epic-check stage=close slices=2/2 verdict=owner -->' }, hold]), true, 'an older verdict does not count');
+  assert.equal(unrecorded([hold, { id: 11, body: '<!-- epic-check stage=close slices=2/2 verdict=owner -->' }]), false);
+  assert.equal(unrecorded([hold, { id: 11, body: '<!-- epic-check stage=close verdict=owner -->' }]), true, 'a verdict without the count does not count');
+  assert.equal(unrecorded([hold, { id: 11, body: '<!-- epic-check stage=close slices=1/2 verdict=owner -->' }]), true, 'a wrong count does not count');
+  assert.equal(unrecorded([hold, { id: 11, body: '<!-- epic-check stage=close slices=2/20 verdict=owner -->' }]), true, 'a longer count does not count');
+  assert.equal(unrecorded([hold, { id: 11, body: '<!-- epic-check stage=slice slices=2/2 verdict=owner -->' }]), true, 'another stage does not count');
+  assert.equal(unrecorded([hold, { id: 12, body: '<!-- afk-wait until=2026-11-02T16:00:00Z cause=test deployment -->' }]), false);
+});
+
+test('a stage run that ended without a matching verdict gets the exact fallback marker, which then holds the epic', () => {
+  assert.equal(afkSlices({ completed: 2, total: 3 }), '2/3');
+  assert.equal(afkSlices(undefined), null, 'a missing summary is no count');
+  assert.equal(afkStageMarker('close', '2/2', 'run-1'), '<!-- epic-check stage=close slices=2/2 verdict=none session=run-1 -->\nRun run-1 ended without a verdict; this epic waits for an edit or a new comment.');
+  const agent = { id: 11, user: { login: 'builder' }, created_at: '2026-10-02T00:00:00Z', body: '<!-- epic-check stage=close slices=1/2 verdict=owner -->' };
+  const done = { ...epic, lastEditedAt: '2026-10-01T00:00:00Z', subIssuesSummary: { total: 2, completed: 2 } };
+  const stages = comments => afkPlan({ ...cfg, implementer: 'builder' }, [], () => comments, 'new-run', { issues: [done], prs: [] }).epics[0].units.map(unit => unit.stage);
+  assert.deepEqual(stages([agent]), ['close'], 'the wrong-count marker does not hold the epic');
+  assert.equal(afkStageUnrecorded([agent], 10, 'close', afkSlices(done.subIssuesSummary)), true);
+  const fallback = { id: 12, user: { login: 'builder' }, created_at: '2026-10-02T00:01:00Z', body: afkStageMarker('close', afkSlices(done.subIssuesSummary), 'run-1') };
+  assert.deepEqual(stages([agent, fallback]), [], 'the fallback marker holds the epic');
 });
 
 test('an epic-check verdict holds only its own stage and sub-issue count, so a sliced epic is served for close later', () => {
@@ -608,10 +752,37 @@ test('an epic-check verdict holds only its own stage and sub-issue count, so a s
   assert.deepEqual(stages({ ...at(3, 3), labels: ['type:epic', 'lane:owner'] }, []), [], 'an epic waiting on the owner is never staged');
 });
 
-test('a run past afk.maxRunMinutes is stopped so its hold is released', () => {
-  assert.equal(workflowDefaults.afk.maxRunMinutes, 30);
-  const started = Date.now();
-  assert.throws(() => afkLaunchAgent({ argv: [process.execPath, '-e', 'setTimeout(() => {}, 20000)'], replacements: {}, cwd: process.cwd(), timeoutMs: 300 }), /stopped after/);
-  assert.ok(Date.now() - started < 10000, 'the agent did not run to its end');
-  assert.equal(afkLaunchAgent({ argv: [process.execPath, '-e', 'console.log("done")'], replacements: {}, cwd: process.cwd(), timeoutMs: 10000 }), 'done');
+test('a foreign push on a held PR releases its run, and the PR is served again at the new head', t => {
+  const root = mkdtempSync(join(tmpdir(), 'afk-foreign-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd, env, encoding: 'utf8' });
+  const repo = join(root, 'repo'), tree = join(root, 'run');
+  assert.equal(git(root, 'init', '-q', '-b', 'main', repo).status, 0);
+  assert.equal(git(repo, 'commit', '-q', '--allow-empty', '-m', 'base').status, 0);
+  assert.equal(git(repo, 'worktree', 'add', '-q', '-b', 'run', tree).status, 0);
+  const head = cwd => git(cwd, 'rev-parse', 'HEAD').stdout.trim();
+  const taken = head(repo);
+  const pr = sha => ({ number: 9, title: 'Fix', body: '', closingIssuesReferences: [], headRefOid: sha, labels: [], reviews: [], statusCheckRollup: [], mergeable: 'MERGEABLE' });
+  const plan = sha => afkPlan(cfg, [], () => [], 'new-run', { issues: [epic], prs: [pr(sha)] });
+  const [unit] = plan(taken).epics[0].units;
+  assert.deepEqual({ issue: unit.issue, review: unit.review, pr: unit.pr, head: unit.head }, { issue: 9, review: true, pr: 9, head: taken }, 'the hold records the head it was taken at');
+
+  const ledger = { 'run-1': [{ number: 9, epic: 1, paths: [], review: true, pr: 9, head: taken, comment: 5 }] };
+  const owns = (id, sha) => afkOwnsHead(tree, sha);
+  assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => taken, owns), [], 'an unchanged head keeps the run');
+  assert.equal(git(tree, 'commit', '-q', '--allow-empty', '-m', 'own fix').status, 0);
+  assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => head(tree), owns), [], 'a head the run pushed keeps the run');
+  const pushed = head(tree);
+  assert.equal(git(tree, 'commit', '-q', '--amend', '--allow-empty', '-m', 'own fix, amended').status, 0);
+  assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => pushed, owns), [], 'a head the run pushed and then rewrote keeps the run');
+  assert.equal(git(repo, 'commit', '-q', '--allow-empty', '-m', 'foreign fix').status, 0);
+  const foreign = head(repo);
+  assert.deepEqual(afkForeignHeads(ledger, ['run-1'], () => foreign, owns), [{ id: 'run-1', pr: 9, from: taken, to: foreign }]);
+  assert.deepEqual(afkForeignHeads(ledger, [], () => foreign, owns), [], 'an ended run is left to its own release');
+  assert.equal(afkOwnsHead(tree, '0'.repeat(40)), false, 'a head this checkout never fetched is foreign');
+
+  delete ledger['run-1'];
+  const [again] = [...afkCandidates(plan(foreign).epics, afkOtherHolds(ledger, [], 'new-run'), true, () => false)];
+  assert.deepEqual({ number: again.number, head: again.unit.head }, { number: 9, head: foreign }, 'the released PR is served at its new head');
 });

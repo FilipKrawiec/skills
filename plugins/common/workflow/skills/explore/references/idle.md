@@ -1,6 +1,6 @@
 # Idle Explore
 
-An AFK run plays `explore` unattended when `workflow.mjs afk start` exits 4: no work was free for it, no other live run is working and the last idle explore began at least the CLI default `idleHours` ago. The record is `afk-idle-explore.json` in the repository's git common directory.
+An AFK run that called `workflow.mjs afk start` itself plays `explore` unattended when it exits 4: no work was free for it, no other live run is working and the last idle explore began at least the CLI default `idleHours` ago. The `afk watch` watcher never starts one: without free work it only logs. The record is `afk-idle-explore.json` in the repository's git common directory.
 
 - Use only browser runs unless the brief names others: a simulator boot can stall a host other runs share.
 - Pick the persona and journey as phase 1 says, with no caller's choice: the journey never run, else the one run longest ago.
