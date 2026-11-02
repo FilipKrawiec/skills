@@ -208,6 +208,16 @@ test('push still reports a moved remote when the fetched branch tip was never lo
   assert.match(result.stderr, /remote branch changed or is ahead/); assert.doesNotMatch(result.stderr, /rewritten/);
 });
 
+test('push reports a moved remote on fetch first even when a stale tracking ref left local history', t => {
+  const f = fixture(t); f.env.TEST_PUSH_FAILURE = '1'; f.env.FAKE_PUSH_STDERR = '! [rejected] (fetch first)';
+  const pushed = commitLinked(f, 'pushed');
+  f.linkedGit('update-ref', 'refs/remotes/origin/feature/test', pushed);
+  f.linkedGit('reset', '--hard', '-q', 'HEAD~1'); commitLinked(f, 'rebased');
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /remote branch changed or is ahead/); assert.doesNotMatch(result.stderr, /rewritten/);
+});
+
 test('review context reports identical tree and unresolved threads', t => {
   const f = fixture(t); const base = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
   f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-qm', 'same tree');

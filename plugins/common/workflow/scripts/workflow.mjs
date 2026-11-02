@@ -389,9 +389,10 @@ async function push(args) {
       child.on('close', status => resolve({ status, stderr }));
     });
     if (result.status !== 0) {
-      const rejected = /non-fast-forward|fetch first|stale info/i.test(result.stderr);
-      const reason = rejected && pushRewroteHistory(branch, head) ? `local history was rewritten over the fetched branch; merge base with \`git merge --no-ff --no-commit origin/${defaultBranch}\` instead of rebasing`
-        : rejected ? 'remote branch changed or is ahead'
+      // `fetch first` means the remote tip is absent locally, so the remote moved whatever the stale tracking ref says.
+      const rewritten = /non-fast-forward/i.test(result.stderr) && !/fetch first|stale info/i.test(result.stderr) && pushRewroteHistory(branch, head);
+      const reason = rewritten ? `local history was rewritten over the fetched branch; restore its head from origin/${branch}, then merge base with \`git merge --no-ff --no-commit origin/${defaultBranch}\` instead of rebasing`
+        : /non-fast-forward|fetch first|stale info/i.test(result.stderr) ? 'remote branch changed or is ahead'
         : /authentication failed|could not read (username|password)|invalid username or token|access denied/i.test(result.stderr) ? 'authentication failed'
         : /permission denied|protected branch|rule violations?|GH006|GH013/i.test(result.stderr) ? 'remote permissions or branch rules rejected the push'
         : /could not resolve host|failed to connect|connection (timed out|refused)|unable to access/i.test(result.stderr) ? 'network or remote connection failed'
