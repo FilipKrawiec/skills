@@ -180,6 +180,34 @@ test('push failure reports safe classification without diagnostics', t => {
   assert.match(result.stderr, /remote branch changed or is ahead/); assert.ok(!result.stderr.includes('SECRET_TOKEN')); assert.ok(!result.stderr.includes('private-detail'));
 });
 
+function commitLinked(f, message) {
+  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-qm', message).status, 0);
+  return f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+}
+
+test('push names a rewritten local head when the fetched branch tip left local history', t => {
+  const f = fixture(t); f.env.TEST_PUSH_FAILURE = '1'; f.env.FAKE_PUSH_STDERR = 'rejected non-fast-forward SECRET_TOKEN private-detail';
+  const pushed = commitLinked(f, 'pushed');
+  f.linkedGit('update-ref', 'refs/remotes/origin/feature/test', pushed);
+  f.linkedGit('reset', '--hard', '-q', 'HEAD~1'); commitLinked(f, 'rebased');
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /local history was rewritten/); assert.match(result.stderr, /git merge --no-ff --no-commit origin\/main/);
+  assert.doesNotMatch(result.stderr, /remote branch changed/);
+  assert.ok(!result.stderr.includes('SECRET_TOKEN')); assert.ok(!result.stderr.includes('private-detail'));
+});
+
+test('push still reports a moved remote when the fetched branch tip was never local', t => {
+  const f = fixture(t); f.env.TEST_PUSH_FAILURE = '1'; f.env.FAKE_PUSH_STDERR = 'rejected non-fast-forward';
+  const tree = f.linkedGit('rev-parse', 'HEAD^{tree}').stdout.trim();
+  const moved = run(f.env.REAL_GIT, ['-c', 'user.name=Other', '-c', 'user.email=other@example.test', 'commit-tree', tree, '-p', 'HEAD', '-m', 'remote'], { cwd: f.repo }).stdout.trim();
+  f.linkedGit('update-ref', 'refs/remotes/origin/feature/test', moved);
+  commitLinked(f, 'local');
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /remote branch changed or is ahead/); assert.doesNotMatch(result.stderr, /rewritten/);
+});
+
 test('review context reports identical tree and unresolved threads', t => {
   const f = fixture(t); const base = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
   f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-qm', 'same tree');

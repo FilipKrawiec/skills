@@ -277,6 +277,18 @@ export function githubPushRemoteMatches(remote, repo) {
   const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remote);
   return Boolean(match && match[1].toLowerCase() === String(repo).toLowerCase());
 }
+// The fetched branch tip was once in this checkout's history but the pushed head dropped it: a rebase or amend, not a moved remote.
+// Reads only local refs and the HEAD reflog, so diagnosing needs no credentialed remote call.
+function pushRewroteHistory(branch, head) {
+  const local = (...args) => spawnSync('git', args, { encoding: 'utf8', env: cleanEnvironment() });
+  const tracked = local('rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}^{commit}`);
+  if (tracked.status !== 0) return false;
+  const tip = tracked.stdout.trim();
+  if (local('merge-base', '--is-ancestor', tip, head).status === 0) return false;
+  const reflog = local('reflog', 'show', '--format=%H', 'HEAD');
+  if (reflog.status !== 0) return false;
+  return [...new Set(reflog.stdout.split('\n').filter(Boolean))].slice(0, 200).some(entry => local('merge-base', '--is-ancestor', tip, entry).status === 0);
+}
 async function push(args) {
   const ownerBootstrap = args.length === 1 && args[0] === '--owner-bootstrap';
   const target = args.length === 2 && args[0] === '--to' ? args[1] : null;
@@ -377,7 +389,9 @@ async function push(args) {
       child.on('close', status => resolve({ status, stderr }));
     });
     if (result.status !== 0) {
-      const reason = /non-fast-forward|fetch first|stale info/i.test(result.stderr) ? 'remote branch changed or is ahead'
+      const rejected = /non-fast-forward|fetch first|stale info/i.test(result.stderr);
+      const reason = rejected && pushRewroteHistory(branch, head) ? `local history was rewritten over the fetched branch; merge base with \`git merge --no-ff --no-commit origin/${defaultBranch}\` instead of rebasing`
+        : rejected ? 'remote branch changed or is ahead'
         : /authentication failed|could not read (username|password)|invalid username or token|access denied/i.test(result.stderr) ? 'authentication failed'
         : /permission denied|protected branch|rule violations?|GH006|GH013/i.test(result.stderr) ? 'remote permissions or branch rules rejected the push'
         : /could not resolve host|failed to connect|connection (timed out|refused)|unable to access/i.test(result.stderr) ? 'network or remote connection failed'
