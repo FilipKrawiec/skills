@@ -11,7 +11,7 @@ import { safetyCommand } from './safety.mjs';
 import { runWithLocks } from './locks.mjs';
 
 const help = `Usage:
-  node workflow.mjs commit --message MESSAGE -- PATH...
+  node workflow.mjs commit --message MESSAGE [-- PATH...]
   node workflow.mjs push [--owner-bootstrap | --to BRANCH]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
   node workflow.mjs issue claim|status|create|comment|edit|close|reopen|queue ...
@@ -37,7 +37,7 @@ const heldWorkflowLocks = new Set();
 export const workflowDefaults = {
   github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
   afk: {
-    runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
+    runPrefix: 'afk-', maxRuns: 4, maxReviewRuns: 2, environmentFile: '~/.config/gh-agents/workflow-env.json',
     watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--output-format', 'json', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--worktree', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
     permissionMode: 'auto', pluginUpdateCommands: [],
     toolingRepository: 'https://github.com/FilipKrawiec/skills.git', toolingRef: 'main', toolingDirectory: '~/.local/share/workflow-cli/skills',
@@ -216,28 +216,44 @@ function implementerCommitIdentity(root) {
   return { GIT_AUTHOR_NAME: login, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: email };
 }
 function commit(args) {
-  if (args.length < 4 || args[0] !== '--message' || args[2] !== '--') throw new Error('Usage: commit --message MESSAGE -- PATH...');
+  if (args[0] !== '--message' || !(args.length === 2 || (args.length >= 4 && args[2] === '--'))) throw new Error('Usage: commit --message MESSAGE [-- PATH...]');
   const message = args[1];
   const paths = args.slice(3);
   if (!/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9._/-]+\))?!?: [^\r\n]+$/.test(message)) throw new Error('Commit message must be a single-line Conventional Commit');
   if (paths.some(path => !path || path === '.' || path.startsWith('/') || path.startsWith(':') || path.split('/').includes('..'))) throw new Error('Provide explicit repository-relative paths');
   const root = requireLinkedWorktree();
   if (realpathSync(process.cwd()) !== realpathSync(root)) throw new Error('Run commit from the repository root');
+  const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: root, env: cleanEnvironment() }).status === 0;
+  if (!merging && !paths.length) throw new Error('Usage: commit --message MESSAGE [-- PATH...]; paths are optional only while a merge is in progress');
   const runId = process.env.WORKFLOW_RUN_ID;
+  let scope = null;
   if (runId) {
     const hold = afkBoundHold(root, 'commit');
-    if (Array.isArray(hold.paths) && !afkPathsWithinScope(paths, hold.paths)) throw new Error('Commit paths exceed the assigned AFK scope');
+    if (Array.isArray(hold.paths)) scope = hold.paths;
+    if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error('Commit paths exceed the assigned AFK scope');
     const cfg = config().lanes;
     afkLoadEnvironment({ ...workflowDefaults.afk, ...cfg });
     afkActor(cfg);
   }
   const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
   // A merge commit records the whole merged index; the listed paths are the resolved conflicts.
-  const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: root, env }).status === 0;
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
   if (!merging && (staged.error || staged.status !== 0)) throw new Error('Existing staged changes or an unreadable index; preserve them and commit separately');
-  const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });
-  if (add.error || add.status !== 0) throw new Error('Could not stage selected paths; inspect repository status');
+  if (paths.length) {
+    const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });
+    if (add.error || add.status !== 0) throw new Error('Could not stage selected paths; inspect repository status');
+  }
+  // Content taken unchanged from either parent is already base's or the branch's; only content new to the merge needs scope.
+  if (merging && scope) {
+    const changed = parent => {
+      const diff = spawnSync('git', ['diff', '--cached', '--name-only', '--no-renames', '-z', parent, '--'], { cwd: root, env, encoding: 'utf8' });
+      if (diff.error || diff.status !== 0) throw new Error('Cannot read the merge index; inspect repository status');
+      return diff.stdout.split('\0').filter(Boolean);
+    };
+    const fromBase = new Set(changed('MERGE_HEAD'));
+    const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
+    if (outside.length) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
+  }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error('Commit failed; selected paths remain staged for inspection');
   console.log(JSON.stringify({ result: 'committed', head: git('rev-parse', 'HEAD') }));
@@ -311,8 +327,7 @@ async function push(args) {
   if (!/^[0-9a-f]{40,64}$/i.test(remoteBase?.commit?.sha || '') || git('rev-parse', baseRef) !== remoteBase.commit.sha) throw new Error('Fetched base is stale or unverifiable; refresh origin before pushing');
   const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest,headRefName,isCrossRepository,closingIssuesReferences,body'], { cwd: root, env: { ...env, GH_TOKEN: token } });
   if (!Array.isArray(pulls)) throw new Error('Cannot determine open PR auto-merge state');
-  // A slice PR says `Part of #N`: GitHub records no closing link, yet it delivers the held issue.
-  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || new RegExp(`^\\s*Part of #${held}\\b`, 'im').test(pr.body || '') || (pr.closingIssuesReferences || []).some(issue => issue.number === held && `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase())))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing or part of held issue #${held}`);
+  if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || prLinkedIssues(pr, repo).includes(held)))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing or part of held issue #${held}`);
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const head = git('rev-parse', 'HEAD');
@@ -492,6 +507,7 @@ function afkConfig(refreshMetadata = false) {
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
   if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
+  if (!Number.isSafeInteger(lanes.maxReviewRuns) || lanes.maxReviewRuns < 1) throw new Error('afk.maxReviewRuns must be a positive integer');
   lanes.explore = { ...workflowDefaults.explore };
   if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
   requireTestStep(lanes.steps);
@@ -551,14 +567,21 @@ export const workflowLabels = {
   'type:task': ['c5def5', 'Work that ends in a finding or setting'],
 };
 function afkComments(cfg, issue) { return afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/issues/${issue}/comments`]).flat(); }
+// The issue's fenced `scope` JSON packet; an invalid packet is treated as absent.
+function afkScopePacket(body) {
+  const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
+  try { return scope ? JSON.parse(scope[1]) : null; } catch { return null; }
+}
 export function afkPathsFromIssueBody(body = '') {
   if (/\b(?:make\s+no|do\s+not\s+make(?:\s+any)?)\s+(?:repository|repo)\s+(?:changes|files|commits)\b/i.test(body)) return [];
-  const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
-  try {
-    const parsed = scope ? JSON.parse(scope[1]).paths : null;
-    if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) return parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
-  } catch { /* An invalid scope packet is treated as unscoped. */ }
+  const parsed = afkScopePacket(body)?.paths;
+  if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) return parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
   return null;
+}
+// The packet's dependencies as issue or PR numbers (`12` or `"#12"`); a missing or invalid packet has none.
+export function afkDependenciesFromIssueBody(body = '') {
+  const parsed = afkScopePacket(body)?.dependencies;
+  return Array.isArray(parsed) ? parsed.map(value => Number(String(value).trim().replace(/^#/, ''))).filter(Number.isInteger) : [];
 }
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
@@ -581,7 +604,7 @@ function afkIssues(cfg) {
       const ancestors = []; let parent = issue.parent;
       while (parent) { ancestors.push(parent.number); parent = parent.parent; }
       const paths = afkPathsFromIssueBody(issue.body || '');
-      return { ...issue, labels, priority, status, ancestors, paths, blocked: issue.blockedBy.nodes.some(dep => dep.state === 'OPEN') };
+      return { ...issue, labels, priority, status, ancestors, paths, dependencies: afkDependenciesFromIssueBody(issue.body || ''), blocked: issue.blockedBy.nodes.some(dep => dep.state === 'OPEN') };
     }));
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
   } while (after);
@@ -605,7 +628,7 @@ export function afkPrFiles(pr, readPages) {
   }
 }
 function afkPrData(cfg) {
-  return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files'])
+  return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body,headRefOid,labels,reviews,isDraft,statusCheckRollup,mergeable,files,closingIssuesReferences'])
     .map(pr => afkPrFiles(pr, number => afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/pulls/${number}/files`])));
 }
 // Decides on the newest marked Reviewer review; unmarked ones are thread replies.
@@ -616,8 +639,15 @@ export function afkReviewerApproved(pr, cfg) {
   return Boolean(latest?.state === 'APPROVED' && latest.commit?.oid === head && latest.body.includes(`sha=${head}`) && latest.body.includes(`verdict=${ownerLane ? 'owner' : 'ready'}`) &&
     !mine.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head));
 }
+// A PR delivers the issues GitHub records it closing in this repository, and those a line starting `Part of #N` names:
+// a slice PR gets no closing link, yet it delivers its issue. A bare mention links nothing.
+export function prLinkedIssues(pr, repo) {
+  const closes = (pr.closingIssuesReferences || []).filter(issue => `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase()).map(issue => issue.number);
+  const parts = [...(pr.body || '').matchAll(/^\s*Part of #(\d+)\b/gim)].map(match => Number(match[1]));
+  return [...new Set([...closes, ...parts])];
+}
 export function afkPrRecord(pr, cfg) {
-  const issues = [...new Set([...(pr.body || '').matchAll(/(?<![\w/])#(\d+)\b/g)].map(match => Number(match[1])))];
+  const issues = prLinkedIssues(pr, cfg.repo);
   const reviews = pr.reviews || [];
   const mine = reviews.filter(review => review.author?.login?.toLowerCase() === cfg.reviewer.toLowerCase());
   const head = pr.headRefOid;
@@ -668,7 +698,14 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const latest = checked.at(-1);
     return !latest || issue.lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=|^<!-- afk-wait /.test(comment.body || ''));
   };
-  const now = data?.now ?? Date.now(), waits = [];
+  const now = data?.now ?? Date.now(), waits = [], blocks = [];
+  // A packet dependency on an open PR blocks the issue until that PR merges; the open-PR list already holds it.
+  const openPrs = new Set(prs.map(pr => pr.number));
+  const awaitsPr = issue => {
+    const pr = (issue.dependencies || []).find(number => openPrs.has(number));
+    if (pr) blocks.push({ issue: issue.number, pr });
+    return Boolean(pr);
+  };
   const waiting = number => {
     const wait = afkWait(threads(number), [cfg.implementer, cfg.reviewer, cfg.owner], now);
     if (wait) waits.push({ issue: number, ...wait });
@@ -679,7 +716,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (issue.labels.includes('type:epic') || (owner || firstEpic) !== epic.issue.number || inPr.has(issue.number)) continue;
     const suffix = owner ? '' : ' under no epic';
     if (issue.labels.includes('lane:proposed') && awaitsVerdict(issue, /<!-- agent-review (?:(?:afk-)?eligibility\b|[^>]*\bissue=\d+)/) && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} awaits its AFK eligibility check${suffix}`, issue: issue.number, paths: [], check: true });
-    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked' && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
+    else if (issue.labels.includes('lane:afk') && !issue.blocked && !claimedElsewhere(issue.number) && issue.status !== 'Blocked' && !awaitsPr(issue) && !waiting(issue.number)) epic.units.push({ text: `#${issue.number} is ready${suffix}`, issue: issue.number, paths: issue.paths || [] });
   }
   // An approved epic (no lane; a draft keeps lane:owner) with no slices gets one slicing run, and one whose slices all closed
   // gets one delivery check. An `epic-check` verdict holds the epic only for the same stage and sub-issue count, until it changes.
@@ -713,25 +750,46 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
       ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true }
       : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths };
     const parent = epics.find(epic => epic.issue.number === target);
-    if (parent) parent.units.push(unit);
+    if (parent) parent.units.push({ ...unit, rank: review ? 1 : pr.broken ? 0 : 2 });
   }
-  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits };
+  return { epics, prs, byNumber, threads, claimedElsewhere, heldOnEpic, waits, blocks };
 }
 export function* afkCandidates(epics, others, share, heldElsewhere) {
   const taken = new Set(others.map(hold => hold.number));
   const busy = new Set(others.map(hold => hold.epic));
   const whole = new Set(others.filter(hold => hold.paths === null).map(hold => hold.epic));
-  for (const epic of epics) {
-    const number = epic.issue.number;
-    if (!epic.units.length || whole.has(number) || heldElsewhere(number)) continue;
-    for (const unit of epic.units) {
-      if (!share) {
-        if (!busy.has(number)) yield { number, epic: number, paths: null, unit };
-        break;
-      }
-      if (!taken.has(unit.issue)) yield { number: unit.issue, epic: number, paths: unit.paths, unit };
-    }
+  const open = epics.filter(epic => epic.units.length && !whole.has(epic.issue.number) && !heldElsewhere(epic.issue.number));
+  if (!share) {
+    for (const epic of open) if (!busy.has(epic.issue.number)) yield { number: epic.issue.number, epic: epic.issue.number, paths: null, unit: epic.units[0] };
+    return;
   }
+  // Across every epic: blockers (a red or conflicting PR), then reviews, then PRs in progress, then new issues.
+  for (const rank of [0, 1, 2, 3]) for (const epic of open) for (const unit of epic.units) {
+    if ((unit.rank ?? 3) === rank && !taken.has(unit.issue)) yield { number: unit.issue, epic: epic.issue.number, paths: unit.paths, unit };
+  }
+}
+// Reviews have their own afk.maxReviewRuns slots, so runs busy on tickets never block a review; everything else shares afk.maxRuns.
+// WIP is every open PR plus every ticket run without one yet; a new ticket starts only while WIP stays under afk.maxRuns.
+export function afkSlots(cfg, ledger, live, me = '', prs = []) {
+  // Drafts are not WIP yet; eligibility checks and epic stages are no tickets, so they neither count nor wait for WIP.
+  const open = prs.filter(pr => !pr.isDraft), inPr = new Set(prs.flatMap(pr => [pr.number, ...(pr.issues || [])]));
+  const used = { review: 0, work: 0 }; let wip = open.length;
+  for (const id of live) {
+    if (id === me) continue;
+    const holds = ledger[id] || [];
+    used[holds.some(hold => hold.review) ? 'review' : 'work']++;
+    if (holds.length && !holds.some(hold => hold.review || hold.check || hold.stage || inPr.has(hold.number))) wip++;
+  }
+  const cap = { review: Number(cfg.maxReviewRuns ?? 2), work: Number(cfg.maxRuns) || Infinity };
+  return {
+    full: () => used.review >= cap.review && used.work >= cap.work,
+    take: candidate => {
+      const kind = candidate.unit?.review ? 'review' : 'work', unit = candidate.unit || {}, ticket = kind === 'work' && unit.rank === undefined && !unit.check && !unit.stage;
+      if (used[kind] >= cap[kind] || (ticket && wip >= cap.work)) return false;
+      used[kind]++; if (ticket) wip++;
+      return true;
+    },
+  };
 }
 export function afkLiveHolds(comments, live, me) {
   const holds = [];
@@ -1122,17 +1180,20 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
     }
     const live = afkLive(cfg);
     const others = live.filter(runId => runId !== id);
-    if (Number(cfg.maxRuns) > 0 && others.length >= Number(cfg.maxRuns)) {
-      console.log(`Done: ${others.length} other runs are live, as many as afk.maxRuns allows.`);
+    const slots = afkSlots(cfg, ledger, live, id);
+    if (slots.full()) {
+      console.log(`Done: ${others.length} other runs are live, as many as afk.maxRuns and afk.maxReviewRuns allow.`);
       output.forEach(line => console.log(line)); return 3;
     }
     const threads = afkThreadReader(cfg);
-    const { epics, heldOnEpic } = afkPlan(cfg, live, threads, id);
+    const { epics, heldOnEpic, prs } = afkPlan(cfg, live, threads, id);
+    const wipSlots = afkSlots(cfg, ledger, live, id, prs);
     const othersHolds = afkOtherHolds(ledger, live, id);
     afkWriteLedger(ledgerPath, ledger);
     const cap = Number(cfg.maxRuns) || 0;
     for (const candidate of afkCandidates(epics, othersHolds, Boolean(cap), heldOnEpic)) {
       if (requestedIssue && candidate.number !== requestedIssue) continue;
+      if (cap && !wipSlots.take(candidate)) continue;
       const type = candidate.paths === null ? 'epic' : 'issue';
       const comment = afkHold(cfg, live, id, candidate.number, type);
       if (!comment) continue;
@@ -1185,7 +1246,8 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const output = afkMerge(cfg, afkPrs(cfg));
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { epics, heldOnEpic, waits } = afkPlan(cfg, live, threads);
+  const { epics, heldOnEpic, waits, blocks, prs } = afkPlan(cfg, live, threads);
+  for (const block of blocks) output.push(`Wait: #${block.issue} is blocked until PR #${block.pr} merges`);
   for (const wait of waits) output.push(`Wait: #${wait.issue} until ${wait.until}: ${wait.cause}`);
   const ledgerPath = join(common, 'afk-holds.json');
   let start = withRepoLock('afk-start', () => {
@@ -1193,16 +1255,17 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
     const others = afkOtherHolds(ledger, live, '');
     const booting = live.filter(id => !ledger[id]?.length);
     const cap = Number(cfg.maxRuns) || 0;
-    const slots = cap ? cap - live.length : epics.length;
+    // A booting run (no hold yet) takes the first free work itself, so it counts against the work slots it will use.
+    const slots = afkSlots(cfg, ledger, live.filter(id => !booting.includes(id)), '', prs);
     const chosen = [];
-    for (const candidate of afkCandidates(epics, [...others, ...chosen], Boolean(cap), heldOnEpic)) {
+    for (const candidate of afkCandidates(epics, others, Boolean(cap), heldOnEpic)) {
       if (requestedIssue && candidate.number !== requestedIssue) continue;
-      if (chosen.length >= Math.max(0, slots) + booting.length) break;
-      chosen.push(candidate);
+      if (!cap || slots.take(candidate)) chosen.push(candidate);
     }
     if (requestedIssue && !chosen.length) return 0;
     afkWriteLedger(ledgerPath, ledger);
-    return Math.max(0, Math.min(slots, chosen.length - booting.length));
+    const reviews = chosen.filter(candidate => candidate.unit?.review).length;
+    return reviews + Math.max(0, chosen.length - reviews - booting.length);
   });
   if (!requestedIssue && !start && !live.length && afkExploreDue(cfg, live)) start = 1;
   result.start = start;
@@ -1774,7 +1837,8 @@ function validInheritedLockContext(names) {
       if (match) processes.set(Number(match[1]), { parent: Number(match[2]), command: match[3] });
     }
     const owner = processes.get(ownerPid);
-    if (!owner || !owner.command.includes(fileURLToPath(import.meta.url))) return false;
+    // The owner ran this argv, so its ps line matches ours even where ps escapes the path.
+    if (!owner || !(owner.command.includes(fileURLToPath(import.meta.url)) || owner.command.trim() === ownCommandLine())) return false;
     const ancestors = [];
     let pid = process.ppid;
     for (let depth = 0; pid && depth < 16; depth++) {
@@ -1835,10 +1899,25 @@ async function execute(command, args) {
   else if (command === 'safety') { const { lanes } = config(); process.exitCode = safetyCommand(args, lanes); }
   else throw new Error('Invalid command; use --help');
 }
-export function needsAbsoluteInvocation(argv1, self) { return argv1 !== self; }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && needsAbsoluteInvocation(process.argv[1], fileURLToPath(import.meta.url))) {
+export function needsAbsoluteInvocation(command, self) { return !command.includes(self); }
+function ownCommandLine() {
+  // Node makes process.argv[1] absolute, so only ps shows how this process was invoked.
+  const result = spawnSync('ps', ['-o', 'command=', '-p', String(process.pid)], { encoding: 'utf8' });
+  return result.error || result.status !== 0 ? null : result.stdout.trim();
+}
+const invokedLocked = () => {
+  // ps may escape or truncate a path it cannot show literally, so a re-exec'd child never re-execs again.
+  const reexecuted = process.env.WORKFLOW_ABSOLUTE_REEXEC === '1';
+  delete process.env.WORKFLOW_ABSOLUTE_REEXEC;
+  const [command, ...args] = process.argv.slice(2);
+  // A lock child already runs by the absolute path its owner chose.
+  if (reexecuted || process.env.WORKFLOW_LOCK_TOKEN || !requiredLocks(command, args).length) return false;
+  const line = ownCommandLine();
+  return line !== null && needsAbsoluteInvocation(line, fileURLToPath(import.meta.url));
+};
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && invokedLocked()) {
   // Lock inheritance matches the owner's command line by absolute path.
-  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
+  const result = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit', env: { ...process.env, WORKFLOW_ABSOLUTE_REEXEC: '1' } });
   process.exit(result.error ? 1 : result.status ?? 1);
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
