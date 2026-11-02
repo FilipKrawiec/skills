@@ -401,6 +401,10 @@ test('a red PR unit takes its scope from its packet, else its changed files', ()
   assert.deepEqual(paths(red('Part of #2\n```scope\n{"paths":["src/"]}\n```'), [epic, issue(2, ['lane:afk'])]), ['src/2.js'], 'a PR packet cannot widen its issue packet');
   assert.deepEqual(paths(red('Part of #2'), [epic, issue(2, ['lane:afk'], { paths: [] })]), [], 'a linked empty scope stays empty');
   assert.deepEqual(paths(red('Part of #2', { files: [{ path: 'src/new.js', previousPath: 'src/old.js' }] }), [epic, issue(2, ['lane:afk'], { paths: null })]), ['src/new.js', 'src/old.js'], 'a rename keeps its source');
+  const byFiles = (pr, issues = [epic]) => afkPlan(cfg, [], () => [], 'new-run', { issues, prs: [pr] }).epics[0].units[0].scopedByFiles;
+  assert.equal(byFiles(red('No linked issue.')), true, 'only a unit scoped by its files follows base renames');
+  assert.equal(byFiles(red('```scope\n{"paths":["src/"]}\n```')), undefined);
+  assert.equal(byFiles(red('Part of #2'), [epic, issue(2, ['lane:afk'])]), undefined);
 });
 
 test('a PR with a rename or 100 files re-reads every page of its files over REST', () => {

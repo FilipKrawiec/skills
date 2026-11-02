@@ -238,7 +238,7 @@ function commit(args) {
     hold = afkBoundHold(root, 'commit');
     environment = afkEnvironmentOnce();
     if (Array.isArray(hold.paths)) scope = merging ? hold.paths : afkHeldScope(hold, paths, environment);
-    if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error('Commit paths exceed the assigned AFK scope');
+    if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error(`Commit paths exceed the assigned AFK scope${afkScopeHint(hold)}`);
     afkActor(environment());
   }
   const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
@@ -264,7 +264,7 @@ function commit(args) {
     };
     const fromBase = new Set(changed('MERGE_HEAD'));
     const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
-    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside, environment))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
+    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside, environment))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents${afkScopeHint(hold)}`);
   }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) {
@@ -782,8 +782,9 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const target = owners[0] || firstEpic;
     const suffix = owners.length ? '' : ' (under no epic)';
     // Its issues' packets, then the PR's own packet, then the files it already changes.
-    const paths = stories.some(issue => Array.isArray(issue.paths)) ? stories.flatMap(issue => issue.paths || [])
-      : afkPathsFromIssueBody(pr.body || '') ?? (pr.filesUnread ? null : (pr.files || []).flatMap(file => [file.path, file.previousPath].filter(Boolean)));
+    const packet = stories.some(issue => Array.isArray(issue.paths)) ? stories.flatMap(issue => issue.paths || []) : afkPathsFromIssueBody(pr.body || '');
+    const scopedByFiles = packet === null && !pr.filesUnread;
+    const paths = packet ?? (scopedByFiles ? (pr.files || []).flatMap(file => [file.path, file.previousPath].filter(Boolean)) : null);
     const review = pr.awaitingReview && !pr.broken;
     // A fix scoped by files that could not be read waits for a later plan rather than holding an incomplete scope.
     if (!review && paths === null) continue;
@@ -791,7 +792,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (spent[pr.number] === state) { unchanged.push(pr.number); continue; }
     const unit = review
       ? { text: `PR #${pr.number} (${pr.title})${suffix} awaits its review`, issue: pr.number, paths: [], review: true, pr: pr.number, head: pr.headRefOid, state }
-      : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths, pr: pr.number, head: pr.headRefOid, state };
+      : { text: `PR #${pr.number} (${pr.title})${suffix}${pr.broken ? ' has a red check or a conflict' : ''}`, issue: stories[0]?.number || pr.number, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid, state };
     const parent = epics.find(epic => epic.issue.number === target);
     if (parent) parent.units.push({ ...unit, rank: review ? 1 : pr.broken ? 0 : 2 });
   }
@@ -1172,9 +1173,26 @@ function afkAssertPushScope(root, baseRef) {
   const hold = afkBoundHold(root, 'push');
   if (Array.isArray(hold.paths)) {
     const changed = afkChangedPaths(root, git('rev-parse', baseRef));
-    if (!afkPathsWithinScope(changed, afkHeldScope(hold, changed))) throw new Error('Push paths exceed the assigned AFK scope');
+    if (!afkPathsWithinScope(changed, afkHeldScope(hold, changed))) throw new Error(`Push paths exceed the assigned AFK scope${afkScopeHint(hold)}`);
   }
 }
+// A PR scoped by its changed files follows them into the files the base renamed them to since the held head; the branch's own renames widen nothing.
+function afkBaseRenamedScope(hold) {
+  if (!hold.scopedByFiles) return hold.paths;
+  const base = 'refs/remotes/origin/HEAD';
+  const env = cleanEnvironment();
+  const from = hold.head || spawnSync('git', ['merge-base', 'HEAD', base], { env, encoding: 'utf8' }).stdout?.trim();
+  if (!from) return hold.paths;
+  const log = spawnSync('git', ['log', '--reverse', '--format=', '--name-status', '-M', '--diff-filter=R', '-z', `${from}..${base}`, '--'], { env, encoding: 'utf8' });
+  if (log.error || log.status !== 0) return hold.paths;
+  const scope = [...hold.paths];
+  const fields = log.stdout.split('\0').map(field => field.replace(/^\n+/, '')).filter(Boolean);
+  for (let i = 0; i + 2 < fields.length && fields[i].startsWith('R'); i += 3) {
+    if (afkPathsWithinScope([fields[i + 1]], scope)) scope.push(fields[i + 2]);
+  }
+  return scope;
+}
+function afkScopeHint(hold) { return hold.scopedByFiles ? `; add a \`scope\` packet listing them to #${hold.number}'s body` : ''; }
 // Reads the lanes config and loads the AFK environment at most once for the callers sharing the returned loader.
 function afkEnvironmentOnce() {
   let cfg = null;
@@ -1187,6 +1205,8 @@ function afkEnvironmentOnce() {
 // A fix hold records only its PR's first linked story, so the other stories' corrected packets still refuse.
 function afkHeldScope(hold, paths, environment = afkEnvironmentOnce()) {
   if (!Array.isArray(hold.paths) || afkPathsWithinScope(paths, hold.paths) || hold.review || hold.check || hold.stage) return hold.paths;
+  const followed = afkBaseRenamedScope(hold);
+  if (afkPathsWithinScope(paths, followed)) return followed;
   try {
     const cfg = environment();
     const current = afkPathsFromIssueBody(afkGh(['api', `repos/${cfg.repo}/issues/${hold.number}`]).body || '');
@@ -1264,7 +1284,7 @@ function afkStartRun(cfg, id, common, requestedIssue = null, quiet = false, prep
       const type = candidate.paths === null ? 'epic' : 'issue';
       const comment = afkHold(cfg, live, id, candidate.number, type);
       if (!comment) continue;
-      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), ...(candidate.unit?.stage ? { stage: candidate.unit.stage } : {}), ...(candidate.unit?.pr ? { pr: candidate.unit.pr, ...(candidate.unit.head ? { head: candidate.unit.head } : {}), ...(candidate.unit.state ? { state: candidate.unit.state } : {}) } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
+      const held = { number: candidate.number, epic: candidate.epic, paths: candidate.paths, ...(candidate.unit?.check ? { check: true } : {}), ...(candidate.unit?.review ? { review: true } : {}), ...(candidate.unit?.stage ? { stage: candidate.unit.stage } : {}), ...(candidate.unit?.pr ? { pr: candidate.unit.pr, ...(candidate.unit.head ? { head: candidate.unit.head } : {}), ...(candidate.unit.scopedByFiles ? { scopedByFiles: true } : {}), ...(candidate.unit.state ? { state: candidate.unit.state } : {}) } : {}), comment, oneShot: prepared && !cfg.runsCommand, watcherPid: prepared && !cfg.runsCommand ? process.pid : undefined };
       ledger[id] = [...(ledger[id] || []), held];
       try {
         // A review hold names a PR, which has no card of its own; its issues stay in Review.
