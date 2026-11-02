@@ -81,6 +81,17 @@ test('push refuses a Part of slice PR whose issue another live AFK run holds', t
   assertNoPush(f);
 });
 
+test('push refuses a PR whose epic another live AFK run holds', t => {
+  const f = fixture(t); holdLedger(f, 'afk-holder', 7);
+  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'Part of #7' }]);
+  f.env.HOLD_COMMENTS_ISSUE = '7';
+  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-epic-hold session=afk-holder -->' }]);
+  const refused = f.cliRun('push');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /A live AFK run holds #7/);
+  assertNoPush(f);
+});
+
 test('push goes through a hold whose run has ended', t => {
   const f = fixture(t);
   holdLedger(f, 'afk-holder', 4, Number(run(process.execPath, ['-e', 'console.log(process.pid)']).stdout.trim()));
