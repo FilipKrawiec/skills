@@ -24,7 +24,7 @@ An exact-head verdict can carry prior findings only when base, Git tree, criteri
 
 Before round 1, compare the diff's changed files with the issue's `### Estimate` (S up to about 5, M up to about 20). Past twice that, post `round=0 verdict=split`, not counted against `reviewRounds`, instead of reviewing: whole-diff rounds on an oversized slice keep finding new edges. The implementer splits the issue through `spec` and narrows or closes the PR. A missing estimate is missing evidence.
 
-From round 2, accept review results only from a brief naming the earlier findings and the fix's diff since the last reviewed head. Block only on an earlier finding left unfixed or a regression in what the fix touches; list every other finding in the decision as a follow-up for the implementer to file. A follow-up to an unmerged PR lands in its next round or lists it in `dependencies`. A fix-only delta that adds no behaviour needs axis A and the corrections, not axis B; any delta that adds behaviour needs both axes.
+From round 2, accept review results only from a brief naming the earlier findings and the fix's diff since the last reviewed head. Block only on an earlier finding left unfixed or a regression in what the fix touches; list every other finding in the decision as a follow-up for the implementer to file. A follow-up to an unmerged PR lands in its next round or the follow-up's packet lists it. A fix-only delta that adds no behaviour needs axis A and the corrections, not axis B; any delta that adds behaviour needs both axes.
 
 **Exit gate:** both axes (axis A alone for a fix-only delta) and blocking findings evaluated for the exact base/head, or `verdict=split`.
 

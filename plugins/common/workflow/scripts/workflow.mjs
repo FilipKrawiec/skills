@@ -551,22 +551,21 @@ export const workflowLabels = {
   'type:task': ['c5def5', 'Work that ends in a finding or setting'],
 };
 function afkComments(cfg, issue) { return afkGh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/issues/${issue}/comments`]).flat(); }
+// The issue's fenced `scope` JSON packet; an invalid packet is treated as absent.
+function afkScopePacket(body) {
+  const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
+  try { return scope ? JSON.parse(scope[1]) : null; } catch { return null; }
+}
 export function afkPathsFromIssueBody(body = '') {
   if (/\b(?:make\s+no|do\s+not\s+make(?:\s+any)?)\s+(?:repository|repo)\s+(?:changes|files|commits)\b/i.test(body)) return [];
-  const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
-  try {
-    const parsed = scope ? JSON.parse(scope[1]).paths : null;
-    if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) return parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
-  } catch { /* An invalid scope packet is treated as unscoped. */ }
+  const parsed = afkScopePacket(body)?.paths;
+  if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) return parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
   return null;
 }
 // The packet's dependencies as issue or PR numbers (`12` or `"#12"`); a missing or invalid packet has none.
 export function afkDependenciesFromIssueBody(body = '') {
-  const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
-  try {
-    const parsed = scope ? JSON.parse(scope[1]).dependencies : null;
-    return Array.isArray(parsed) ? parsed.map(value => Number(String(value).trim().replace(/^#/, ''))).filter(Number.isInteger) : [];
-  } catch { return []; }
+  const parsed = afkScopePacket(body)?.dependencies;
+  return Array.isArray(parsed) ? parsed.map(value => Number(String(value).trim().replace(/^#/, ''))).filter(Number.isInteger) : [];
 }
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
@@ -1201,7 +1200,7 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
   const { epics, heldOnEpic, waits, blocks } = afkPlan(cfg, live, threads);
-  for (const block of blocks) output.push(`Blocked: #${block.issue} waits for PR #${block.pr} to merge`);
+  for (const block of blocks) output.push(`Wait: #${block.issue} is blocked until PR #${block.pr} merges`);
   for (const wait of waits) output.push(`Wait: #${wait.issue} until ${wait.until}: ${wait.cause}`);
   const ledgerPath = join(common, 'afk-holds.json');
   let start = withRepoLock('afk-start', () => {

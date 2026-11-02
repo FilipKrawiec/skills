@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, linkSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -59,6 +59,34 @@ test('AFK plan blocks an issue whose packet depends on an open PR until that PR 
   const merged = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, follow], prs: [] });
   assert.deepEqual(merged.epics[0].units.map(unit => unit.text), ['#6 is ready']);
   assert.deepEqual(merged.blocks, []);
+});
+
+test('afk check reports an issue blocked on an open PR and offers it once the PR merges', t => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'afk-check-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = join(root, 'bin'), home = join(root, 'home'), repo = join(root, 'repo');
+  mkdirSync(bin); mkdirSync(join(home, '.config', 'gh-agents'), { recursive: true }); mkdirSync(join(repo, '.agents'), { recursive: true });
+  writeFileSync(join(home, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'token' } }));
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+  writeFileSync(join(bin, 'git'), `#!/usr/bin/env node\nif(process.argv[2]==='fetch') process.exit(0);\nprocess.exit(require('node:child_process').spawnSync(process.env.REAL_GIT, process.argv.slice(2), { stdio: 'inherit' }).status ?? 1);\n`);
+  writeFileSync(join(bin, 'gh'), `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('token'); process.exit(0); }\nif(a[0]==='pr') { out(process.env.TEST_PR ? [{number:285,title:'ledger',body:'',headRefOid:'abc',labels:[{name:'review:owner'}],reviews:[{author:{login:'reviewer'},state:'COMMENTED',commit:{oid:'abc'},body:''}],isDraft:false,statusCheckRollup:[],mergeable:'MERGEABLE',files:[{path:'docs/a.md',changeType:'MODIFIED'}]}] : []); process.exit(0); }\nif(a[0]==='issue') { out([]); process.exit(0); }\nif(a.some(x=>x.includes('pullRequests(states'))) { out({data:{repository:{pullRequests:{nodes:[]}}}}); process.exit(0); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { const row=(number,labels,parent,body='')=>({number,title:'item',body,lastEditedAt:'2020-01-01T00:00:00Z',labels:{nodes:labels.map(name=>({name}))},blockedBy:{nodes:[]},milestone:null,parent,projectItems:{nodes:[]}}); out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[row(1,['type:epic'],null),row(1082,['lane:afk'],{number:1,parent:null},'\\u0060\\u0060\\u0060scope\\n{\\"paths\\":[\\"docs/\\"],\\"dependencies\\":[\\"#285\\"]}\\n\\u0060\\u0060\\u0060')]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/comments')) && a.includes('--slurp')) { out([[]]); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('event');\n`);
+  chmodSync(join(bin, 'git'), 0o755); chmodSync(join(bin, 'gh'), 0o755);
+  writeFileSync(join(repo, '.agents', 'config.json'), JSON.stringify({ version: 1, identities: { implementer: 'builder', reviewer: 'reviewer' }, steps: { process: null, assemble: null, test: ['true'] } }));
+  mkdirSync(join(repo, '.github')); writeFileSync(join(repo, '.github', 'CODEOWNERS'), '* @reviewer\n/*.rules @owner\n');
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WORKFLOW_') && !key.startsWith('GIT_'))), PATH: `${bin}:${process.env.PATH}`, HOME: home, REAL_GIT: realGit, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const git = (...args) => assert.equal(spawnSync(realGit, args, { cwd: repo, env }).status, 0, args.join(' '));
+  git('init', '-q', '-b', 'main'); git('remote', 'add', 'origin', 'https://github.com/acme/app.git'); git('add', '.agents/config.json', '.github/CODEOWNERS');
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'initial'); git('update-ref', 'refs/remotes/origin/main', 'HEAD'); git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
+  // A recent explore pass keeps the idle explorer from taking the slot.
+  writeFileSync(join(repo, '.git', 'afk-idle-explore.json'), JSON.stringify({ started: Date.now() }));
+  const check = pr => spawnSync(process.execPath, [fileURLToPath(new URL('../../plugins/common/workflow/scripts/workflow.mjs', import.meta.url)), 'afk', 'check'], { cwd: repo, encoding: 'utf8', env: { ...env, TEST_PR: pr ? '1' : '' } });
+  const open = check(true);
+  assert.equal(open.status, 3, `${open.stdout}\n${open.stderr}`);
+  assert.match(open.stdout, /Done: no new run has work[^\n]*\nWait: #1082 is blocked until PR #285 merges/);
+  const merged = check(false);
+  assert.equal(merged.status, 0, `${merged.stdout}\n${merged.stderr}`);
+  assert.match(merged.stdout, /^Start: 1\n/);
+  assert.doesNotMatch(merged.stdout, /blocked until PR/);
 });
 
 test('one-shot AFK runs are counted from live watcher PIDs', t => {
