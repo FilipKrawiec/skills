@@ -5,7 +5,6 @@ import {
   afkCandidates,
   afkComments,
   afkFree,
-  afkHeldLines,
   afkLiveHolds,
   afkMergeThenPlan,
   afkPathsFromIssueBody,
@@ -85,7 +84,6 @@ export function afkConfig(refreshMetadata = false) {
   if (lanes.startCommand.some(value => value.includes('{model}')) && (typeof lanes.model !== 'string' || !lanes.model.trim())) throw new Error('Configure afk.model because startCommand uses {model}');
   if (lanes.startCommand.some(value => value.includes('{permissionMode}')) && (typeof lanes.permissionMode !== 'string' || !lanes.permissionMode.trim())) throw new Error('Configure afk.permissionMode because startCommand uses {permissionMode}');
   if (lanes.promptPrefix !== undefined && typeof lanes.promptPrefix !== 'string') throw new Error('Configure afk.promptPrefix as a string');
-  if (lanes.alwaysInScope !== undefined && !(Array.isArray(lanes.alwaysInScope) && lanes.alwaysInScope.every(value => typeof value === 'string' && value === value.trim() && !['', '.', './', '/'].includes(value)))) throw new Error('Configure afk.alwaysInScope as an array of repository paths');
   if (!Number.isSafeInteger(lanes.maxRunMinutes) || lanes.maxRunMinutes < 1) throw new Error('Configure afk.maxRunMinutes as a positive integer');
   if (!Number.isSafeInteger(lanes.watchIntervalSeconds) || lanes.watchIntervalSeconds < 15) throw new Error('Configure afk.watchIntervalSeconds as an integer of at least 15');
   if (lanes.runsCommand && (!Number.isSafeInteger(lanes.waitTimeoutMinutes) || lanes.waitTimeoutMinutes < 1)) throw new Error('Configure afk.waitTimeoutMinutes as a positive integer when afk.runsCommand is set');
@@ -367,7 +365,7 @@ export function afkStartRun(cfg, id, common, requestedIssue = null, quiet = fals
       output.forEach(line => console.log(line)); return 3;
     }
     const threads = afkThreadReader(cfg);
-    const { units, byNumber, held: overlaps } = tick.plan(live, threads, id);
+    const { units, byNumber } = tick.plan(live, threads, id);
     const othersHolds = afkOtherHolds(ledger, live, id);
     afkWriteLedger(ledgerPath, ledger);
     for (const candidate of afkCandidates(units, othersHolds)) {
@@ -395,15 +393,15 @@ export function afkStartRun(cfg, id, common, requestedIssue = null, quiet = fals
       if (!previous.session || previous.session === id || !live.includes(previous.session)) {
         const temp = `${explorePath}.${process.pid}.tmp`;
         writeFileSync(temp, JSON.stringify({ session: id, started: Date.now() })); renameSync(temp, explorePath);
-        afkStartIdleLines(true, output, overlaps).forEach(line => console.log(line)); return 4;
+        afkStartIdleLines(true, output).forEach(line => console.log(line)); return 4;
       }
     }
-    afkStartIdleLines(false, output, overlaps).forEach(line => console.log(line)); return 3;
+    afkStartIdleLines(false, output).forEach(line => console.log(line)); return 3;
   });
 }
-// What `afk start` prints when it holds nothing: its exit line, this tick's merges and every build held behind an open PR.
-export function afkStartIdleLines(explore, output, held) {
-  return [explore ? 'Explore: no work is free for this run; play `explore` unattended.' : 'Done: every free piece of work has its runner.', ...output, ...afkHeldLines(held)];
+// What `afk start` prints when it holds nothing: its exit line and this tick's merges.
+export function afkStartIdleLines(explore, output) {
+  return [explore ? 'Explore: no work is free for this run; play `explore` unattended.' : 'Done: every free piece of work has its runner.', ...output];
 }
 // Read once at load: an in-place update during `afk watch` must not stamp the new version on a check the old code ran.
 const loadedToolingVersion = (() => { try { return JSON.parse(readFileSync(new URL('../../plugin.json', import.meta.url), 'utf8')).version || ''; } catch { return ''; } })();
@@ -429,10 +427,9 @@ export function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = nu
   const tick = afkMergeThenPlan(cfg), output = tick.merged;
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { units, unchanged, orphans, held } = tick.plan(live, threads);
+  const { units, unchanged, orphans } = tick.plan(live, threads);
   for (const number of orphans) { afkStatus(cfg, number, 'TODO', true); output.push(`Orphaned: #${number} was In progress with no live run; back to Todo`); }
   for (const number of unchanged) output.push(`Unchanged: #${number} since its last run; no new run until it changes`);
-  output.push(...afkHeldLines(held));
   if (units[0]) output.push(`Next: ${units[0].column}: ${units[0].text}`);
   const ledgerPath = join(common, 'afk-holds.json');
   const start = withRepoLock('afk-start', () => {
