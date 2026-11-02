@@ -44,6 +44,7 @@ if (args[0] === 'auth' && args[1] === 'token') {
   if (process.env.GH_TOKEN !== 'SECRET_TOKEN') process.exit(1);
   if (args.includes('user') && process.env.RACE_URL_TARGET) require('node:child_process').spawnSync(process.env.REAL_GIT, ['config', 'url.' + process.env.RACE_URL_TARGET + '.insteadOf', process.env.TEST_NATIVE_REMOTE], { cwd: process.cwd() });
   if (args.some(arg => arg.includes('collaborators/') && arg.includes('/permission'))) out({ role_name: 'admin' });
+  else if (args.some(arg => arg.startsWith('repos/acme/app/issues/') && arg.endsWith('/comments'))) out([JSON.parse(process.env.HOLD_COMMENTS || '[]')]);
   else if (args.includes('repos/acme/app')) out({ default_branch: 'main', owner: { type: process.env.FAKE_OWNER_KIND || 'Organization', login: 'acme' } });
   else if (args.includes('repos/acme/app/branches/main')) out({ commit: { sha: process.env.REMOTE_BASE_SHA } });
   else if (args.some(arg => arg.startsWith('repos/acme/app/issues/') && /^\\d+$/.test(arg.split('/').at(-1))) && args.includes('state=open')) { fs.writeFileSync(process.env.ISSUE_STATE_RECORD, JSON.stringify(args)); out({ state: 'open' }); }
@@ -680,6 +681,21 @@ test('repo, base, owner and reviewer are derived from origin and CODEOWNERS', t 
   const f = fixture(t);
   const result = f.cliRun('push');
   assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).repository, 'acme/app');
+});
+
+test('push refuses a PR another live AFK run holds, and lets the holder push', t => {
+  const f = fixture(t);
+  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ 'afk-holder': [{ number: 4, paths: null, oneShot: true, watcherPid: process.pid }] }));
+  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [] }]);
+  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
+  const refused = f.cliRun('push');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /AFK run afk-holder holds #4/);
+  assertNoPush(f);
+  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-finished -->' }]);
+  const stale = f.cliRun('push');
+  assert.equal(stale.status, 0, stale.stderr);
 });
 
 test('push refuses when auto-merge is enabled', t => {

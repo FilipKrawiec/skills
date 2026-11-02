@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afkCandidates, afkPrFiles, afkEndStatus, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
+import { afkCandidates, afkPrFiles, afkEndStatus, afkStageUnrecorded, afkEpicOrder, afkLive, afkLiveHolds, afkLoadEnvironment, afkOneShotLive, afkOtherHolds, afkPlan, afkPrRecord, afkPriority, afkReviewerApproved, afkShow, afkWait, afkPathsFromIssueBody, applyGithubMetadata, assertDistinctPushRoles, githubRepoFromRemote, githubScopeFailure, missingProjectScope, readThroughLocalCache, validateIssueCommentBody, hasLockfAncestor, hasProcessAncestor, oneShotRunId, workflowDefaults, workflowLabels, workflowMetadataCachePath, workspaceFilePath, afkAgentEnvironment, afkPathsWithinScope, afkWorkflowCliPath, afkDefaultStartCommand, afkReleaseRunTree, afkPlistBelongsToWorkflow, afkPluginDir, afkEnsureTooling, afkLauncherSource, githubPushRemoteMatches, needsAbsoluteInvocation, afkRunUsage, afkLaunchAgent, afkSweepRunTrees, afkRunAlive, afkExcludeWorktrees, issueTargetRepo, oldestExactTitle, assertIssueVisibility } from '../../plugins/common/workflow/scripts/workflow.mjs';
 
 const cfg = { repo: 'acme/app', reviewer: 'reviewer', owner: 'owner' };
 
@@ -606,4 +606,12 @@ test('an epic-check verdict holds only its own stage and sub-issue count, so a s
   assert.deepEqual(stages(at(3, 3), [verdict('close', '2/2')]), ['close'], 'a slice added by the close check and then closed serves it again');
   assert.deepEqual(stages(at(3, 3), [verdict('close', '3/3')]), [], 'an unchanged count stays held');
   assert.deepEqual(stages({ ...at(3, 3), labels: ['type:epic', 'lane:owner'] }, []), [], 'an epic waiting on the owner is never staged');
+});
+
+test('a run past afk.maxRunMinutes is stopped so its hold is released', () => {
+  assert.equal(workflowDefaults.afk.maxRunMinutes, 30);
+  const started = Date.now();
+  assert.throws(() => afkLaunchAgent({ argv: [process.execPath, '-e', 'setTimeout(() => {}, 20000)'], replacements: {}, cwd: process.cwd(), timeoutMs: 300 }), /stopped after/);
+  assert.ok(Date.now() - started < 10000, 'the agent did not run to its end');
+  assert.equal(afkLaunchAgent({ argv: [process.execPath, '-e', 'console.log("done")'], replacements: {}, cwd: process.cwd(), timeoutMs: 10000 }), 'done');
 });
