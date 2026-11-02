@@ -904,13 +904,19 @@ test('a foreign-head run is stopped with its agent\'s whole process group, killi
   // The supervisor launches its agent as afkLaunchAgent does: synchronously, in the agent's own process group.
   const supervisor = spawn(process.execPath, ['-e', `require('node:child_process').spawnSync(process.execPath, ['-e', ${JSON.stringify(agent)}], { stdio: 'ignore', detached: true })`], { stdio: 'ignore' });
   const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const written = () => { try { return Number(readFileSync(pidFile, 'utf8')) || 0; } catch { return 0; } };
+  let grandchild = 0;
   try {
-    for (let i = 0; i < 100 && !existsSync(pidFile); i++) spawnSync('sleep', ['0.1']);
-    const grandchild = Number(readFileSync(pidFile, 'utf8'));
+    for (let i = 0; i < 100 && !(grandchild = written()); i++) spawnSync('sleep', ['0.1']);
+    assert.ok(grandchild > 0, 'the agent started its grandchild');
     afkStopSupervisedAgent(supervisor.pid, 300);
     for (let i = 0; i < 50 && alive(grandchild); i++) spawnSync('sleep', ['0.1']);
     assert.equal(alive(grandchild), false, 'the agent\'s grandchild is gone');
-  } finally { supervisor.kill('SIGKILL'); rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    afkStopSupervisedAgent(supervisor.pid, 0);
+    if (grandchild > 0) try { process.kill(grandchild, 'SIGKILL'); } catch {}
+    supervisor.kill('SIGKILL'); rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('with runsCommand, reap stops a watcher-launched run past afk.maxRunMinutes through stopCommand', () => {
