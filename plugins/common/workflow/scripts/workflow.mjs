@@ -215,6 +215,11 @@ function implementerCommitIdentity(root) {
   const email = `${id}+${login}@users.noreply.github.com`;
   return { GIT_AUTHOR_NAME: login, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: login, GIT_COMMITTER_EMAIL: email };
 }
+// Git's first diagnostic line, with tokens and URL credentials removed.
+export function gitFailureLine(output) {
+  const line = String(output).split(/\r?\n/).map(text => text.trim()).find(Boolean) || '';
+  return line.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, '[redacted]').replace(/(\/\/)[^/@\s]+@/g, '$1[redacted]@').slice(0, 300);
+}
 function commit(args) {
   if (args[0] !== '--message' || !(args.length === 2 || (args.length >= 4 && args[2] === '--'))) throw new Error('Usage: commit --message MESSAGE [-- PATH...]');
   const message = args[1];
@@ -244,6 +249,12 @@ function commit(args) {
     const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });
     if (add.error || add.status !== 0) throw new Error('Could not stage selected paths; inspect repository status');
   }
+  // Conflicts the listed paths did not stage stay unmerged; git would refuse them with a message this command hides.
+  if (merging) {
+    const unmerged = spawnSync('git', ['diff', '--name-only', '--diff-filter=U', '-z', '--'], { cwd: root, env, encoding: 'utf8' });
+    const conflicted = unmerged.status === 0 ? [...new Set(unmerged.stdout.split('\0').filter(Boolean))] : [];
+    if (conflicted.length) throw new Error(`Unmerged paths remain: ${conflicted.join(', ')}; pass each resolved path after --`);
+  }
   // Content taken unchanged from either parent is already base's or the branch's; only content new to the merge needs scope.
   if (merging && scope) {
     const changed = parent => {
@@ -256,7 +267,10 @@ function commit(args) {
     if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents`);
   }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
-  if (result.error || result.status !== 0) throw new Error('Commit failed; selected paths remain staged for inspection');
+  if (result.error || result.status !== 0) {
+    const reason = gitFailureLine(result.stderr || result.stdout || result.error?.message || '');
+    throw new Error(`Commit failed${reason ? `: ${reason}` : ''}; selected paths remain staged for inspection`);
+  }
   console.log(JSON.stringify({ result: 'committed', head: git('rev-parse', 'HEAD') }));
 }
 export function githubPushRemoteMatches(remote, repo) {
@@ -507,6 +521,9 @@ function afkActor(cfg) {
   const actor = afkGh(['api', 'user']).login;
   if (!cfg.implementer || actor?.toLowerCase() !== cfg.implementer.toLowerCase()) throw new Error(`Authenticated as ${actor || 'unknown'}; AFK writes require ${cfg.implementer || 'a configured implementer'}`);
 }
+export function afkCheckRunLimits(lanes) {
+  for (const key of ['maxRuns', 'maxReviewRuns']) if (!Number.isSafeInteger(lanes[key]) || lanes[key] < 1) throw new Error(`afk.${key} must be a positive integer`);
+}
 function afkConfig(refreshMetadata = false) {
   git('fetch', '--quiet', 'origin');
   const { lanes, baseRef } = config();
@@ -515,8 +532,7 @@ function afkConfig(refreshMetadata = false) {
   lanes.startCommand ??= afkDefaultStartCommand(lanes.model);
   for (const [key, value] of Object.entries(workflowDefaults.afk)) lanes[key] ??= value;
   lanes.serviceLabel ??= `dev.workflow.afk.${lanes.repo.replace('/', '.')}`;
-  if (!Number.isSafeInteger(lanes.maxRuns) || lanes.maxRuns < 1) throw new Error('afk.maxRuns must be a positive integer');
-  if (!Number.isSafeInteger(lanes.maxReviewRuns) || lanes.maxReviewRuns < 1) throw new Error('afk.maxReviewRuns must be a positive integer');
+  afkCheckRunLimits(lanes);
   lanes.explore = { ...workflowDefaults.explore };
   if (!Object.hasOwn(lanes.steps, 'process') || !Object.hasOwn(lanes.steps, 'assemble')) throw new Error('Configure steps.process and steps.assemble; use null when a phase is skill-handled or not applicable');
   requireTestStep(lanes.steps);
@@ -694,6 +710,23 @@ export function afkPrState(pr, comments, cfg) {
   return `${pr.headRefOid}:${(pr.reviews || []).length}:${pr.broken ? 'red' : 'green'}:${input?.id ?? ''}`;
 }
 function afkSpentPath() { return join(git('rev-parse', '--path-format=absolute', '--git-common-dir'), 'afk-spent.json'); }
+// Runs post the eligibility verdict through `issue comment`, so the implementer's marked verdict counts as the Reviewer's.
+export function afkVerdictBy(cfg) { return new Set([cfg.reviewer, cfg.implementer].filter(Boolean).map(login => login.toLowerCase())); }
+export function afkWaitBy(cfg) { return [cfg.implementer, cfg.reviewer, cfg.owner]; }
+// An approved epic with no slices is in its slicing stage, and one whose slices all closed in its delivery check.
+export function afkEpicStage(slices) { return slices.total === 0 ? 'slice' : slices.completed === slices.total ? 'close' : null; }
+// The one `epic-check` marker prefix for a stage and sub-issue count, and the pattern every reader matches it with.
+export function afkEpicCheck(stage, slices) {
+  const marker = `<!-- epic-check stage=${stage} slices=${slices}`;
+  return { marker, pattern: new RegExp(`${marker}\\b`) };
+}
+// A verdict is wanted until a workflow identity records one; the workflow's own hold and release markers are never new input,
+// while an edit or any other comment after the latest verdict re-queues the check.
+export function afkAwaitsVerdict(cfg, lastEditedAt, comments, verdict) {
+  const verdictBy = afkVerdictBy(cfg);
+  const latest = comments.filter(comment => verdictBy.has(comment.user?.login?.toLowerCase()) && verdict.test(comment.body || '')).map(comment => comment.created_at).at(-1);
+  return !latest || lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=|^<!-- afk-wait /.test(comment.body || ''));
+}
 export function afkPlan(cfg, live, threads, me = '', data = null) {
   const issues = data?.issues || afkIssues(cfg); const prs = (data?.prs || afkPrData(cfg)).map(pr => afkPrRecord(pr, cfg));
   // A PR a finished run left unchanged gets no new run until something about it changes.
@@ -709,15 +742,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const claim = (comments.map(comment => /<!-- afk-claim session=(\S+) -->/.exec(comment.body || '')?.[1]).filter(Boolean).at(-1));
     return Boolean(claim && claim !== me && live.includes(claim)) || afkLiveHolds(comments, live, me).some(hold => hold.kind === 'issue' && hold.run !== me);
   };
-  // Runs post the eligibility verdict through `issue comment`, so the implementer's marked verdict counts as the Reviewer's;
-  // the workflow's own hold and release markers are never new input, while an edit or any other comment re-queues the check.
-  const verdictBy = new Set([cfg.reviewer, cfg.implementer].filter(Boolean).map(login => login.toLowerCase()));
-  const awaitsVerdict = (issue, verdict) => {
-    const comments = threads(issue.number);
-    const checked = comments.filter(comment => verdictBy.has(comment.user?.login?.toLowerCase()) && verdict.test(comment.body || '')).map(comment => comment.created_at);
-    const latest = checked.at(-1);
-    return !latest || issue.lastEditedAt > latest || comments.some(comment => comment.created_at > latest && !/^<!-- afk-(?:issue|epic)-(?:hold|released) session=|^<!-- afk-claim session=|^<!-- afk-wait /.test(comment.body || ''));
-  };
+  const awaitsVerdict = (issue, verdict) => afkAwaitsVerdict(cfg, issue.lastEditedAt, threads(issue.number), verdict);
   const now = data?.now ?? Date.now(), waits = [], blocks = [];
   // A packet dependency on an open PR blocks the issue until that PR merges; the open-PR list already holds it.
   const openPrs = new Set(prs.map(pr => pr.number));
@@ -727,7 +752,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     return Boolean(pr);
   };
   const waiting = number => {
-    const wait = afkWait(threads(number), [cfg.implementer, cfg.reviewer, cfg.owner], now);
+    const wait = afkWait(threads(number), afkWaitBy(cfg), now);
     if (wait) waits.push({ issue: number, ...wait });
     return Boolean(wait);
   };
@@ -743,8 +768,8 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   for (const epic of epics) {
     const { issue } = epic, slices = issue.subIssuesSummary;
     if (!slices || inPr.has(issue.number) || issue.labels.some(label => label.startsWith('lane:'))) continue;
-    const stage = slices.total === 0 ? 'slice' : slices.completed === slices.total ? 'close' : null;
-    if (!stage || !awaitsVerdict(issue, new RegExp(`<!-- epic-check stage=${stage} slices=${afkSlices(slices)}\\b`)) || waiting(issue.number)) continue;
+    const stage = afkEpicStage(slices);
+    if (!stage || !awaitsVerdict(issue, afkEpicCheck(stage, afkSlices(slices)).pattern) || waiting(issue.number)) continue;
     epic.units.push({ text: stage === 'slice' ? `epic #${issue.number} is approved and has no sub-issues; slice it` : `epic #${issue.number} has every sub-issue closed; verify its delivery and close it`, issue: issue.number, paths: [], stage });
   }
   const heldOnEpic = number => threads(number).some(comment => {
@@ -791,23 +816,28 @@ export function* afkCandidates(epics, others, share, heldElsewhere) {
   }
 }
 // Reviews have their own afk.maxReviewRuns slots, so runs busy on tickets never block a review; everything else shares afk.maxRuns.
-// WIP is every open PR plus every ticket run without one yet; a new ticket starts only while WIP stays under afk.maxRuns.
+// WIP is every open PR, drafts included, plus every ticket run without one yet; a new ticket starts only while WIP stays under afk.maxRuns.
+// A booting run (live, no hold yet) takes no slot: the start lock lets one run hold at a time, and afkStartCount subtracts booting runs from its start count.
+export function afkBooting(ledger, live) { return live.filter(id => !ledger[id]?.length); }
 export function afkSlots(cfg, ledger, live, me = '', prs = []) {
-  // Drafts are not WIP yet; eligibility checks and epic stages are no tickets, so they neither count nor wait for WIP.
-  const open = prs.filter(pr => !pr.isDraft), inPr = new Set(prs.flatMap(pr => [pr.number, ...(pr.issues || [])]));
-  const used = { review: 0, work: 0 }; let wip = open.length;
+  // Eligibility checks and epic stages are no tickets, so they neither count nor wait for WIP.
+  const inPr = new Set(prs.flatMap(pr => [pr.number, ...(pr.issues || [])]));
+  const used = { review: 0, work: 0 }; let wip = prs.length, waited = false;
   for (const id of live) {
-    if (id === me) continue;
-    const holds = ledger[id] || [];
+    if (id === me || !ledger[id]?.length) continue;
+    const holds = ledger[id];
     used[holds.some(hold => hold.review) ? 'review' : 'work']++;
-    if (holds.length && !holds.some(hold => hold.review || hold.check || hold.stage || inPr.has(hold.number))) wip++;
+    if (!holds.some(hold => hold.review || hold.check || hold.stage || inPr.has(hold.number))) wip++;
   }
   const cap = { review: Number(cfg.maxReviewRuns ?? 2), work: Number(cfg.maxRuns) || Infinity };
   return {
     full: () => used.review >= cap.review && used.work >= cap.work,
+    // Set once a free work slot refused a new ticket only because WIP is at afk.maxRuns.
+    waiting: () => waited ? `Waiting: WIP ${wip}/${cap.work}; no new ticket` : null,
     take: candidate => {
       const kind = candidate.unit?.review ? 'review' : 'work', unit = candidate.unit || {}, ticket = kind === 'work' && unit.rank === undefined && !unit.check && !unit.stage;
-      if (used[kind] >= cap[kind] || (ticket && wip >= cap.work)) return false;
+      if (used[kind] >= cap[kind]) return false;
+      if (ticket && wip >= cap.work) { waited = true; return false; }
       used[kind]++; if (ticket) wip++;
       return true;
     },
@@ -1265,6 +1295,13 @@ export function afkToolingVersion() { return loadedToolingVersion; }
 export function afkCheckQuiet(previous, signal, version, now = Date.now()) {
   return Boolean(version) && previous?.version === version && previous.signal === signal && now - previous.at < 1_800_000;
 }
+// A booting run takes the first free work itself, so each one covers a chosen ticket or PR task instead of a new run.
+export function afkStartCount(cfg, ledger, live, candidates, prs) {
+  const cap = Number(cfg.maxRuns) || 0, slots = afkSlots(cfg, ledger, live, '', prs);
+  const chosen = candidates.filter(candidate => !cap || slots.take(candidate));
+  const reviews = chosen.filter(candidate => candidate.unit?.review).length;
+  return { count: reviews + Math.max(0, chosen.length - reviews - afkBooting(ledger, live).length), waiting: slots.waiting() };
+}
 function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const live = afkLive(cfg); const statePath = quiet ? join(common, 'afk-check.json') : null;
   const signal = statePath ? afkSignal(cfg, live) : null; const version = afkToolingVersion();
@@ -1288,19 +1325,13 @@ function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const start = withRepoLock('afk-start', () => {
     const ledger = afkReadLedger(ledgerPath);
     const others = afkOtherHolds(ledger, live, '');
-    const booting = live.filter(id => !ledger[id]?.length);
     const cap = Number(cfg.maxRuns) || 0;
-    // A booting run (no hold yet) takes the first free work itself, so it counts against the work slots it will use.
-    const slots = afkSlots(cfg, ledger, live.filter(id => !booting.includes(id)), '', prs);
-    const chosen = [];
-    for (const candidate of afkCandidates(epics, others, Boolean(cap), heldOnEpic)) {
-      if (requestedIssue && candidate.number !== requestedIssue) continue;
-      if (!cap || slots.take(candidate)) chosen.push(candidate);
-    }
-    if (requestedIssue && !chosen.length) return 0;
+    const candidates = [...afkCandidates(epics, others, Boolean(cap), heldOnEpic)].filter(candidate => !requestedIssue || candidate.number === requestedIssue);
+    const { count, waiting } = afkStartCount(cfg, ledger, live, candidates, prs);
+    if (waiting) output.push(waiting);
+    if (requestedIssue && !count) return 0;
     afkWriteLedger(ledgerPath, ledger);
-    const reviews = chosen.filter(candidate => candidate.unit?.review).length;
-    return reviews + Math.max(0, chosen.length - reviews - booting.length);
+    return count;
   });
   result.start = start;
   if (statePath) { mkdirSync(dirname(statePath), { recursive: true }); writeFileSync(statePath, JSON.stringify({ signal, version, at: Date.now() })); }
@@ -1329,18 +1360,24 @@ function afkStillReady(cfg, number) {
 // A missing summary is no count: `0/0` would name a slicing stage the epic is not in.
 export function afkSlices(summary) { return summary ? `${summary.completed ?? 0}/${summary.total ?? 0}` : null; }
 export function afkStageMarker(stage, slices, id) {
-  return `<!-- epic-check stage=${stage} slices=${slices} verdict=none session=${id} -->\nRun ${id} ended without a verdict; this epic waits for an edit or a new comment.`;
+  return `${afkEpicCheck(stage, slices).marker} verdict=none session=${id} -->\nRun ${id} ended without a verdict; this epic waits for an edit or a new comment.`;
 }
-// A stage run that left neither a wait nor a verdict `afkPlan` matches (its stage and current count) would be served again on every poll.
-export function afkStageUnrecorded(comments, holdComment, stage, slices) {
-  const verdict = new RegExp(`<!-- epic-check stage=${stage} slices=${slices}\\b`);
-  return !comments.some(comment => Number(comment.id) > Number(holdComment) && (verdict.test(comment.body || '') || /<!-- afk-wait\b/.test(comment.body || '')));
+// A stage run that left the epic as `afkPlan` would serve it again (no verdict it honours for this stage and count, and no
+// active wait) would be served on every poll.
+export function afkStageUnrecorded(cfg, epic, comments, stage, slices, now = Date.now()) {
+  return afkAwaitsVerdict(cfg, epic.lastEditedAt, comments, afkEpicCheck(stage, slices).pattern) && !afkWait(comments, afkWaitBy(cfg), now);
 }
-function afkEpicSlices(cfg, number, rest) {
-  if (rest) return afkSlices(rest);
+// The marker a stage run's end posts, or null: none once the epic left the held stage (slicing created sub-issues)
+// or `afkPlan` would no longer serve it.
+export function afkStageFallback(cfg, held, epic, comments, id, now = Date.now()) {
+  const slices = afkSlices(epic.subIssuesSummary);
+  return slices && afkEpicStage(epic.subIssuesSummary) === held.stage && afkStageUnrecorded(cfg, epic, comments, held.stage, slices, now) ? afkStageMarker(held.stage, slices, id) : null;
+}
+// The epic's state, sub-issue count and last body edit, which `afkPlan` reads through `afkIssues`.
+function afkEpicNow(cfg, number) {
   const [owner, name] = cfg.repo.split('/');
-  const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){subIssuesSummary{total completed}}}}';
-  return afkSlices(afkGh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]).data?.repository?.issue?.subIssuesSummary);
+  const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){state lastEditedAt subIssuesSummary{total completed}}}}';
+  return afkGh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`]).data?.repository?.issue || {};
 }
 // A closed issue lands in Done whatever is passed; an epic left open after its slicing or delivery check stays In progress.
 export function afkEndStatus(held, named, blocked) {
@@ -1359,12 +1396,11 @@ function afkEndRun(cfg, common, id, note = null, why = null, spend = false) {
       console.log(`Released: ${kind} #${held.number}`);
       const blocked = kind === 'issue' && !held.check && !held.review && !held.stage && why !== null && !named.has(held.number) && afkStillReady(cfg, held.number);
       if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
-      const epicNow = held.stage ? afkGh(['api', `repos/${cfg.repo}/issues/${held.number}`]) : null;
-      const slices = held.stage && epicNow.state === 'open' ? afkEpicSlices(cfg, held.number, epicNow.sub_issues_summary) : null;
-      if (held.stage && epicNow.state === 'open' && !slices) console.log(`Skipped: epic #${held.number} stage marker, since GitHub returned no sub-issue count`);
-      if (slices && afkStageUnrecorded(afkComments(cfg, held.number), held.comment, held.stage, slices)) {
-        run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkStageMarker(held.stage, slices, id)}`]);
-      }
+      const epicNow = held.stage ? afkEpicNow(cfg, held.number) : null;
+      const epic = epicNow?.state === 'OPEN' ? epicNow : null;
+      if (epic && !afkSlices(epic.subIssuesSummary)) console.log(`Skipped: epic #${held.number} stage marker, since GitHub returned no sub-issue count`);
+      const marker = epic && afkSlices(epic.subIssuesSummary) ? afkStageFallback(cfg, held, epic, afkComments(cfg, held.number), id) : null;
+      if (marker) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${marker}`]);
       if ((kind === 'issue' && !held.review) || held.stage) afkStatus(cfg, held.number, afkEndStatus(held, named.has(held.number), blocked), true);
     }
     const openEpics = afkIssues(cfg).filter(issue => issue.labels.includes('type:epic'));
