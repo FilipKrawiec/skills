@@ -330,14 +330,15 @@ async function push(args) {
   if (!Array.isArray(pulls)) throw new Error('Cannot determine open PR auto-merge state');
   if (held !== null && !pulls.some(pr => pr.headRefName === branch && pr.isCrossRepository === false && (pr.number === held || prLinkedIssues(pr, repo).includes(held)))) throw new Error(`push --to ${branch} is not the head of the held PR or of a PR closing or part of held issue #${held}`);
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
+  if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   // Pushing over a PR that another live run works on strands that run's own push, so its hold never ends; only the holder pushes.
+  // An epic stage run never pushes its slices' PRs, so its epic hold does not block a slice that is `Part of` the epic.
   const live = afkLive({ ...workflowDefaults.afk, ...lanes });
-  for (const pr of pulls) for (const number of [pr.number, ...(pr.closingIssuesReferences || []).map(issue => issue.number)]) {
+  for (const pr of pulls) for (const number of new Set([pr.number, ...prLinkedIssues(pr, repo)])) {
     const comments = jsonCommand('gh', ['api', '--paginate', '--slurp', `repos/${repo}/issues/${number}/comments`], { cwd: root, env: metadataEnv }).flat();
-    const holder = afkLiveHolds(comments, live, process.env.WORKFLOW_RUN_ID || '').find(hold => hold.run !== process.env.WORKFLOW_RUN_ID);
+    const holder = afkLiveHolds(comments, live, process.env.WORKFLOW_RUN_ID || '').find(hold => hold.kind === 'issue' && hold.run !== process.env.WORKFLOW_RUN_ID);
     if (holder) throw new Error(`AFK run ${holder.run} holds #${number}; let it finish instead of pushing to PR #${pr.number}`);
   }
-  if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const head = git('rev-parse', 'HEAD');
   const helper = join(dirname(fileURLToPath(import.meta.url)), 'git-askpass.mjs');
   const hook = run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], { cwd: root, env });
@@ -531,7 +532,7 @@ function afkConfig(refreshMetadata = false) {
   if (lanes.startCommand.some(value => value.includes('{model}')) && (typeof lanes.model !== 'string' || !lanes.model.trim())) throw new Error('Configure afk.model because startCommand uses {model}');
   if (lanes.startCommand.some(value => value.includes('{permissionMode}')) && (typeof lanes.permissionMode !== 'string' || !lanes.permissionMode.trim())) throw new Error('Configure afk.permissionMode because startCommand uses {permissionMode}');
   if (lanes.promptPrefix !== undefined && typeof lanes.promptPrefix !== 'string') throw new Error('Configure afk.promptPrefix as a string');
-  if (typeof lanes.maxRunMinutes !== 'number' || !(lanes.maxRunMinutes > 0)) throw new Error('Configure afk.maxRunMinutes as a positive number');
+  if (!Number.isSafeInteger(lanes.maxRunMinutes) || lanes.maxRunMinutes < 1) throw new Error('Configure afk.maxRunMinutes as a positive integer');
   if (!Number.isSafeInteger(lanes.watchIntervalSeconds) || lanes.watchIntervalSeconds < 15) throw new Error('Configure afk.watchIntervalSeconds as an integer of at least 15');
   if (lanes.runsCommand && (!Number.isSafeInteger(lanes.waitTimeoutMinutes) || lanes.waitTimeoutMinutes < 1)) throw new Error('Configure afk.waitTimeoutMinutes as a positive integer when afk.runsCommand is set');
   if (lanes.runsCommand && (!lanes.stopCommand || typeof lanes.stateFile !== 'string' || !lanes.stateFile.includes('{id}'))) throw new Error('Configure afk.stopCommand and afk.stateFile with {id} when afk.runsCommand is set');

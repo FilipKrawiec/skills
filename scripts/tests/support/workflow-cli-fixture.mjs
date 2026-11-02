@@ -33,7 +33,7 @@ if (args[0] === 'auth' && args[1] === 'token') {
   if (process.env.GH_TOKEN !== 'SECRET_TOKEN') process.exit(1);
   if (args.includes('user') && process.env.RACE_URL_TARGET) require('node:child_process').spawnSync(process.env.REAL_GIT, ['config', 'url.' + process.env.RACE_URL_TARGET + '.insteadOf', process.env.TEST_NATIVE_REMOTE], { cwd: process.cwd() });
   if (args.some(arg => arg.includes('collaborators/') && arg.includes('/permission'))) out({ role_name: 'admin' });
-  else if (args.some(arg => arg.startsWith('repos/acme/app/issues/') && arg.endsWith('/comments'))) out([JSON.parse(process.env.HOLD_COMMENTS || '[]')]);
+  else if (args.some(arg => arg.startsWith('repos/acme/app/issues/') && arg.endsWith('/comments'))) out([!process.env.HOLD_COMMENTS_ISSUE || args.some(arg => arg.endsWith('/issues/' + process.env.HOLD_COMMENTS_ISSUE + '/comments')) ? JSON.parse(process.env.HOLD_COMMENTS || '[]') : []]);
   else if (args.includes('repos/acme/app')) out({ default_branch: 'main', owner: { type: process.env.FAKE_OWNER_KIND || 'Organization', login: 'acme' } });
   else if (args.includes('repos/acme/app/branches/main')) out({ commit: { sha: process.env.REMOTE_BASE_SHA } });
   else if (args.some(arg => arg.startsWith('repos/acme/app/issues/') && /^\\d+$/.test(arg.split('/').at(-1))) && args.includes('state=open')) { fs.writeFileSync(process.env.ISSUE_STATE_RECORD, JSON.stringify(args)); out({ state: 'open' }); }
