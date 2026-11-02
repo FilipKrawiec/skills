@@ -37,8 +37,8 @@ export const workflowDefaults = {
   github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
   afk: {
     runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
-    watchIntervalSeconds: 60, startCommand: ['pi', '--provider', 'ollama', '--model', '{model}', '--no-session', '--print', '--name', '{runId}', '--tools', 'bash', '{prompt}'],
-    model: 'coding:latest', promptPrefix: '/skill:afk', pluginUpdateCommands: [],
+    watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--name', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
+    permissionMode: 'auto', pluginUpdateCommands: [],
   },
   explore: { personas: '.agents/personas.md', maxIssues: 3, idleHours: 24, capturesBranch: 'explore-captures' },
 };
