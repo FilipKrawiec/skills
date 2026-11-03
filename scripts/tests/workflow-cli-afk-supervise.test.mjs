@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, chmodSync, existsSync, openSync, closeSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, chmodSync, existsSync, realpathSync, openSync, closeSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afkLeftovers, afkStopLeftovers } from '../../plugins/common/workflow/scripts/lib/afk-watch.mjs';
 import { cli, configPath, json, config, run, fixture, commitFixture } from './support/workflow-cli-fixture.mjs';
@@ -129,10 +129,15 @@ test('leftover selection is scoped to the run tree, never outside it', () => {
     { pid: 6, command: 'supervisor', cwd: tree },
   ];
   assert.deepEqual(afkLeftovers(table, tree, [6]).map(row => row.pid), [1, 2]);
+  const root = realpathSync(process.cwd());
+  const table2 = [{ pid: 11, command: 'stubborn', cwd: root }, { pid: 12, command: 'polite', cwd: root }, { pid: 13, command: 'outside', cwd: '/elsewhere' }, { pid: 14, command: 'unreadable', cwd: null }];
   const killed = [], gone = new Set();
-  const table2 = [{ pid: 11, command: 'runner', cwd: process.cwd() }, { pid: 12, command: 'x', cwd: '/elsewhere' }];
-  const kill = (pid, signal) => { killed.push([pid, signal]); if (signal === 0 && gone.has(pid)) throw new Error('gone'); if (signal === 'SIGTERM') gone.add(pid); };
-  const stopped = afkStopLeftovers(process.cwd(), { table: table2, graceMs: 0, kill });
-  assert.deepEqual(stopped.map(row => row.pid), [11]);
-  assert.ok(killed.every(([pid]) => pid === 11));
+  const kill = (pid, signal) => { killed.push([pid, signal]); if (signal === 0 && gone.has(pid)) throw new Error('gone'); if (signal === 'SIGTERM' && pid === 12) gone.add(pid); };
+  const lines = [], log = console.log; console.log = line => lines.push(line);
+  let stopped; try { stopped = afkStopLeftovers(root, { table: table2, graceMs: 0, kill }); } finally { console.log = log; }
+  assert.deepEqual(stopped.map(row => row.pid), [11, 12]);
+  assert.deepEqual(killed.filter(([pid]) => pid === 11).map(([, signal]) => signal), ['SIGTERM', 0, 'SIGKILL'], 'a survivor is killed after the grace');
+  assert.deepEqual(killed.filter(([pid]) => pid === 12).map(([, signal]) => signal), ['SIGTERM', 0], 'an exited process is never sent SIGKILL');
+  assert.ok(killed.every(([pid]) => pid === 11 || pid === 12), 'processes outside the tree or unreadable are untouched');
+  assert.deepEqual(lines, ['Stopped leftover process 11: stubborn', 'Stopped leftover process 12: polite']);
 });

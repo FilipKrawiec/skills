@@ -412,7 +412,9 @@ function afkProcessTable() {
   const cwds = new Map();
   if (!existsSync('/proc/self/cwd')) {
     let pid = null;
-    for (const line of (spawnSync('lsof', ['-a', '-d', 'cwd', '-Fpn'], { encoding: 'utf8', maxBuffer: 64 << 20 }).stdout || '').split('\n')) {
+    const listing = spawnSync('lsof', ['-a', '-d', 'cwd', '-Fpn'], { encoding: 'utf8', maxBuffer: 64 << 20 });
+    if (!listing.stdout) console.error(`Warning: lsof listed no working directories (${listing.error?.message || `exit ${listing.status}`}); leftover processes are not stopped.`);
+    for (const line of (listing.stdout || '').split('\n')) {
       if (line.startsWith('p')) pid = Number(line.slice(1)); else if (line.startsWith('n') && pid) cwds.set(pid, line.slice(1));
     }
   }
@@ -423,13 +425,13 @@ function afkProcessTable() {
 export function afkStopLeftovers(tree, { table = afkProcessTable(), graceMs = 5_000, kill = (pid, signal) => process.kill(pid, signal) } = {}) {
   let real; try { real = realpathSync(tree); } catch { return []; }
   const signal = (pid, name) => { try { kill(pid, name); return true; } catch { return false; } };
-  const stopped = afkLeftovers(table, real, [process.pid, process.ppid]);
+  const stopped = afkLeftovers(table, real, [process.pid, process.ppid]).filter(({ pid }) => signal(pid, 'SIGTERM'));
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (const end = Date.now() + graceMs; Date.now() < end && stopped.some(({ pid }) => signal(pid, 0));) Atomics.wait(pause, 0, 0, 100);
+  // SIGKILL only a process that still answers signal 0, so a pid that exited and was reused is never hit.
   for (const { pid, command } of stopped) {
-    console.log(`Stopped leftover process ${pid}: ${command}`);
-    if (!signal(pid, 'SIGTERM')) continue;
-    const pause = new Int32Array(new SharedArrayBuffer(4));
-    for (const end = Date.now() + graceMs; Date.now() < end && signal(pid, 0);) Atomics.wait(pause, 0, 0, 100);
-    signal(pid, 'SIGKILL');
+    if (signal(pid, 0)) signal(pid, 'SIGKILL');
+    console.log(`Stopped leftover process ${pid}: ${command.slice(0, 200)}`);
   }
   return stopped;
 }
