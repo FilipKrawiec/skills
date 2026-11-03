@@ -48,7 +48,7 @@ Return verdict, blockers and follow-ups in at most 8 lines.
 
 ## 4. Recover and close
 
-Trace a failure and attempt at most two evidence-led fixes, then replan or wait with cause, responsible actor and retry condition. Retain the lane; technical difficulty alone is not an owner decision. Only owner-reserved decisions wait on the owner; request technical adjudication only for an unresolved conflict. Invoke the owning skills for safe cleanup. At a bounded health stop, retain unfinished required migrations as prerequisites.
+Trace a failure and attempt at most two evidence-led fixes, then replan or wait with cause, responsible actor and retry condition. Retain the lane; technical difficulty alone is not an owner decision. Only unrecorded owner-reserved decisions wait on the owner; fetch an official asset a recorded one names from its publisher; request technical adjudication only for an unresolved conflict. Invoke the owning skills for safe cleanup. At a bounded health stop, retain unfinished required migrations as prerequisites.
 
 Before ending a held run, file at most two evidenced improvements that would have made it cheaper. Write here for project rules; for skills add `--repo` with the loaded skills' origin, and treat a CLI refusal as owner-reserved, with its link. Comment evidence on an open match, like an `issue create --check` overlap; otherwise `issue create --retro` a routine `type:bug`/`type:chore` via `spec`; `Skipped:` ends filing. Comment owner-reserved ones on the issue `issue create --unique --title "Owner improvements" --labels type:task,lane:owner --body-file PATH` returns. Never edit skills or rules here.
 
