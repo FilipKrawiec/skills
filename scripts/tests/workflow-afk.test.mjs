@@ -909,11 +909,11 @@ test('a sliced epic comes back for its close check once its slices close, and a 
   assert.deepEqual(commented.unchanged, [30], 'the run\'s own wait comment is not new input');
 });
 
-test('an implementation run that ends with its PR open goes to Blocked, as does one without a PR; else Todo', () => {
-  assert.deepEqual([afkEndStatus(true, false), afkEndStatus(false, true), afkEndStatus(false, false)], ['BLOCKED', 'BLOCKED', 'TODO']);
+test('an implementation run that ends with its PR open goes to Review, one without a PR to Blocked; else Todo', () => {
+  assert.deepEqual([afkEndStatus(true, false), afkEndStatus(false, true), afkEndStatus(false, false)], ['REVIEW', 'BLOCKED', 'TODO']);
   const pr = extra => afkPrRecord({ number: 1095, title: 'Fix', body: 'Closes #8', headRefOid: 'head726', labels: [], statusCheckRollup: [], mergeable: 'MERGEABLE', reviews: [], ...extra }, cfg);
   const note = afkOpenPrNote('afk-1', pr(), 'base123');
-  assert.match(note, /^\*\*Blocked:\*\* run afk-1 ended with PR #1095 open/);
+  assert.match(note, /^\*\*In review:\*\* run afk-1 ended with PR #1095 open/);
   assert.match(note, /head `head726`/);
   assert.match(note, /review: awaiting the Reviewer at this head/);
   assert.match(note, /checks: green/);
@@ -958,9 +958,9 @@ test('a run that splits its held issue builds the first sub-issue while its hold
   const grand = { ...parent, number: 39, subIssuesSummary: { total: 1, completed: 0 } };
   const nested = afkPlan(cfg, ['elder'], number => (number === 39 ? [{ id: 2, body: '<!-- afk-issue-hold session=elder -->' }] : []), 'new-run', { issues: [grand, { ...parent, ancestors: [39] }, { ...third, ancestors: [40, 39] }], prs: [] }).units.map(unit => unit.issue);
   assert.deepEqual(nested, [43], 'a hold on a grandparent covers no grandchild');
-  assert.deepEqual(afkEndCards(40, [41, 42], new Set([41]), false), [[40, 'PROGRESS'], [41, 'BLOCKED']], 'the parent epic stays In progress and the built sub-issue, its PR still open, goes to Blocked');
+  assert.deepEqual(afkEndCards(40, [41, 42], new Set([41]), false), [[40, 'PROGRESS'], [41, 'REVIEW']], 'the parent epic stays In progress and the built sub-issue, its PR still open, goes to Review');
   assert.deepEqual(afkEndCards(40, [41, 42], new Set(), true), [[40, 'PROGRESS']], 'without a PR the sub-issues stay Todo for the next run');
-  assert.deepEqual(afkEndCards(7, [], new Set([7]), false), [[7, 'BLOCKED']], 'an issue that was not split goes to Blocked while its PR is open');
+  assert.deepEqual(afkEndCards(7, [], new Set([7]), false), [[7, 'REVIEW']], 'an issue that was not split goes to Review while its PR is open');
 });
 
 test('AFK eligibility records post as the configured Reviewer, not through the credential-stripping CLI', () => {
