@@ -43,17 +43,17 @@ Use version 1; read it from base.
 | `lane:afk` | Approved for AFK. |
 | `lane:proposed` | Changes requested behaviour or lacks authority. |
 | `lane:owner` | Owner participation is required to implement. |
-| `state:claimed`, `state:started` | An AFK run, or another session, is on it. |
+| `state:claimed`, `state:started` | An AFK run, or another session, is on it. `state:started` over 30 minutes old is released when no live session sits on branch `<issue>-…`. |
 | `review:owner` | PR for the owner; `agent-review` withholds approval. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue. |
 
 ## Unattended runs
 
-`node <this-skill-directory>/../../scripts/workflow.mjs afk install` installs the login watcher; each 60-second poll moves `.worktrees/afk-watch` to base and updates the CLI-owned tooling checkout (`afk.toolingDirectory`); never edit it. `afk.maxRuns` (4) caps live runs; each poll starts the first free unit: Blocked, Review, Todo, Backlog, then Priority. Blocked and Backlog get `refine`; shared files never hold a Todo build: when two PRs change one file, the later one rebases. `afk.maxRunMinutes` (60) stops longer runs' process groups; a run's end stops its leftover worktree processes (logged), then removes clean, pushed worktrees. `afk.retros: bugs-when-empty` files `--retro` bugs only, once other non-owner issues close. `afk uninstall` removes the job.
+`node <this-skill-directory>/../../scripts/workflow.mjs afk install` installs the login watcher; each 60-second poll moves `.worktrees/afk-watch` to base and updates the CLI-owned tooling checkout (`afk.toolingDirectory`); never edit it. `afk.maxRuns` (4) caps live runs; each poll starts the first free unit: Blocked, Review, Todo, Backlog, then Priority. Blocked and Backlog get `refine`; shared files never hold a Todo build; the later PR rebases. `afk.maxRunMinutes` (60) stops longer runs' process groups; a run's end stops its leftover processes (logged), then removes clean, pushed worktrees. `afk.retros: bugs-when-empty` files `--retro` bugs only, once other work closes. `afk uninstall` removes it.
 
 Run `node <this-skill-directory>/../../scripts/workflow.mjs afk start --me <run id>`: exit 3 ends, 2 reports `Blocked:`, 4 starts an `explore` pass. Exit 0 holds one eligible issue in its worktree. End with `node <this-skill-directory>/../../scripts/workflow.mjs afk end --me <run id>`.
 
-A cleanly exiting watcher run records its unit's state in `afk-spent.json` (git common directory); `afk end` (self-started runs) records nothing: it cannot tell finish from release. Until its head, reviews, checks, merge state, base, column, labels or outside comments change, polls skip it (`Unchanged: #N`); delete its key to re-offer.
+A cleanly exiting watcher run records its unit's state in `afk-spent.json` (git common directory); `afk end` records nothing: it cannot tell finish from release. Until its head, reviews, checks, merge state, base, column, labels or outside comments change, polls skip it (`Unchanged: #N`); delete its key to re-offer.
 
-- The orchestrator owns assignments/recovery; the host supplies routing, coordination and credentials. Labels are not atomic locks.
-- Production needs exact owner approval for candidate/destination; branch restrictions alone do not grant it. Notifications use only an authorized configured channel; queue changes produce a daily changed digest, incidents/all-work-blocked an immediate notice.
+- The orchestrator owns assignments/recovery; the host supplies routing, coordination and credentials. Labels are no locks.
+- Production needs exact owner approval for candidate/destination; branch restrictions alone do not grant it. Notifications use only an authorized configured channel; queue changes make a daily digest, incidents an immediate notice.
