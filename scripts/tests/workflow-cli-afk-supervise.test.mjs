@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, chmodSync, existsSync, openSync, closeSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, chmodSync, existsSync, realpathSync, openSync, closeSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { afkLeftovers, afkStopLeftovers } from '../../plugins/common/workflow/scripts/lib/afk-watch.mjs';
 import { cli, configPath, json, config, run, fixture, commitFixture } from './support/workflow-cli-fixture.mjs';
 
 function fakeGh(f) {
@@ -11,18 +12,18 @@ function fakeGh(f) {
   chmodSync(gh, 0o755);
 }
 
-async function supervisedRun(t, state, lane, selectLane = 'lane:afk', pr = false, foreign = false) {
+async function supervisedRun(t, state, lane, selectLane = 'lane:afk', pr = false, foreign = false, leftover = false) {
   if (spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { stdio: 'ignore' }).status !== 0) { t.skip('watcher lock ownership requires process inspection'); return; }
   const f = fixture(t);
   const child = join(f.root, 'agent.mjs');
-  writeFileSync(child, `import { spawnSync } from 'node:child_process';\nimport { existsSync, writeFileSync } from 'node:fs';\nconst begun = Date.now(), wait = () => existsSync(process.env.TEST_GO) || Date.now() - begun > 120000 ? finish() : setTimeout(wait, 50);\nconst finish = () => { const r = spawnSync(process.execPath, [process.env.TEST_CLI, 'afk', 'end', '--me', process.env.WORKFLOW_RUN_ID], { encoding: 'utf8' }); writeFileSync(process.env.TEST_RESULT, r.stdout + r.stderr); console.log(JSON.stringify({type:'result',result:'Summary: done',num_turns:3})); };\nwait();\n`);
+  writeFileSync(child, `import { spawn, spawnSync } from 'node:child_process';\nimport { existsSync, writeFileSync } from 'node:fs';\nconst begun = Date.now(), wait = () => existsSync(process.env.TEST_GO) || Date.now() - begun > 120000 ? finish() : setTimeout(wait, 50);\nconst finish = () => { if (process.env.TEST_LEFTOVER) { const c = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' }); c.unref(); writeFileSync(process.env.TEST_LEFTOVER, String(c.pid)); } const r = spawnSync(process.execPath, [process.env.TEST_CLI, 'afk', 'end', '--me', process.env.WORKFLOW_RUN_ID], { encoding: 'utf8' }); writeFileSync(process.env.TEST_RESULT, r.stdout + r.stderr); console.log(JSON.stringify({type:'result',result:'Summary: done',num_turns:3})); };\nwait();\n`);
   fakeGh(f);
   const cfg ={ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { startCommand: [process.execPath, child, '{runId}', '{prompt}'] } };
   writeFileSync(join(f.repo, configPath), json(cfg));
   assert.equal(f.linkedGit('add', configPath).status, 0);
   commitFixture(f);
   writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
-  Object.assign(f.env, { TEST_STATE: state, TEST_LANE: lane, TEST_SELECT_LANE: selectLane, TEST_PR: pr ? '1' : '', TEST_CLI: cli, TEST_GO: join(f.root, 'go'), TEST_RESULT: join(f.root, 'end.txt'), TEST_PATCHES: join(f.root, 'patches.log') });
+  Object.assign(f.env, { TEST_STATE: state, TEST_LANE: lane, TEST_SELECT_LANE: selectLane, TEST_PR: pr ? '1' : '', TEST_CLI: cli, TEST_GO: join(f.root, 'go'), TEST_RESULT: join(f.root, 'end.txt'), TEST_PATCHES: join(f.root, 'patches.log'), ...(leftover ? { TEST_LEFTOVER: join(f.root, 'leftover.pid') } : {}) });
   const log = join(f.root, 'watch.log');
   const output = openSync(log, 'w');
   const watch = spawnSync(process.execPath, [cli, 'afk', 'watch', '--issue', pr ? '2000' : '1082'], { cwd: f.repo, env: f.env, stdio: ['ignore', output, output] });
@@ -73,6 +74,12 @@ async function supervisedRun(t, state, lane, selectLane = 'lane:afk', pr = false
   if (state === 'open' && lane === 'lane:afk' && selectLane === 'lane:afk' && !pr) assert.match(readFileSync(f.env.TEST_PATCHES, 'utf8'), blocked);
   else assert.doesNotMatch(readFileSync(f.env.TEST_PATCHES, 'utf8'), /afk-issue-blocked/);
   assert.equal(existsSync(join(common, 'afk-runs', `${runId}.json`)), false);
+  if (leftover) {
+    const pid = Number(readFileSync(f.env.TEST_LEFTOVER, 'utf8'));
+    assert.match(readFileSync(log, 'utf8'), new RegExp(`Stopped leftover process ${pid}: sleep 300`));
+    for (let i = 0; i < 50 && alive(pid); i++) await new Promise(done => setTimeout(done, 100));
+    assert.equal(alive(pid), false, 'the leftover child is stopped');
+  }
 }
 
 test('AFK watcher returns while its run works, and the run supervisor releases the hold', t => supervisedRun(t, 'open', 'lane:afk'));
@@ -107,4 +114,30 @@ test('a run stopped at afk.maxRunMinutes releases its issue saying so, not that 
   assert.match(patches, new RegExp(`afk-issue-blocked session=${runId} -->\\n\\*\\*Blocked:\\*\\* run ${runId} ended without a PR\\.\\n\\nStopped after 1 second, the afk\\.maxRunMinutes limit\\.`));
   assert.doesNotMatch(patches, /left no summary|0 minutes/);
   assert.deepEqual(JSON.parse(readFileSync(join(common, 'afk-holds.json'), 'utf8')), {});
+});
+
+test('a run that ends stops the process its agent left in the worktree', t => supervisedRun(t, 'open', 'lane:afk', 'lane:afk', false, false, true));
+
+test('leftover selection is scoped to the run tree, never outside it', () => {
+  const tree = '/w/.claude/worktrees/afk-1';
+  const table = [
+    { pid: 1, command: 'runner', cwd: tree },
+    { pid: 2, command: 'emulator', cwd: `${tree}/sub/dir` },
+    { pid: 3, command: 'sibling', cwd: `${tree}-other` },
+    { pid: 4, command: 'dev server', cwd: '/home/owner/app' },
+    { pid: 5, command: 'unreadable', cwd: null },
+    { pid: 6, command: 'supervisor', cwd: tree },
+  ];
+  assert.deepEqual(afkLeftovers(table, tree, [6]).map(row => row.pid), [1, 2]);
+  const root = realpathSync(process.cwd());
+  const table2 = [{ pid: 11, command: 'stubborn', cwd: root }, { pid: 12, command: 'polite', cwd: root }, { pid: 13, command: 'outside', cwd: '/elsewhere' }, { pid: 14, command: 'unreadable', cwd: null }];
+  const killed = [], gone = new Set();
+  const kill = (pid, signal) => { killed.push([pid, signal]); if (signal === 0 && gone.has(pid)) throw new Error('gone'); if (signal === 'SIGTERM' && pid === 12) gone.add(pid); };
+  const lines = [], log = console.log; console.log = line => lines.push(line);
+  let stopped; try { stopped = afkStopLeftovers(root, { table: table2, graceMs: 0, kill }); } finally { console.log = log; }
+  assert.deepEqual(stopped.map(row => row.pid), [11, 12]);
+  assert.deepEqual(killed.filter(([pid]) => pid === 11).map(([, signal]) => signal), ['SIGTERM', 0, 'SIGKILL'], 'a survivor is killed after the grace');
+  assert.deepEqual(killed.filter(([pid]) => pid === 12).map(([, signal]) => signal), ['SIGTERM', 0], 'an exited process is never sent SIGKILL');
+  assert.ok(killed.every(([pid]) => pid === 11 || pid === 12), 'processes outside the tree or unreadable are untouched');
+  assert.deepEqual(lines, ['Stopped leftover process 11: stubborn', 'Stopped leftover process 12: polite']);
 });

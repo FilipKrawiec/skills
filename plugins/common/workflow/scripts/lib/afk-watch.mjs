@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
@@ -402,6 +402,39 @@ function afkSpawnRun(common, runId, job) {
     afkWriteLedger(ledgerPath, ledger);
   });
 }
+// Selects the processes whose working directory is inside the run's tree; a path that only shares the tree's prefix, an unreadable directory and the excluded pids never match.
+export function afkLeftovers(table, tree, exclude = []) {
+  return table.filter(row => row.cwd && !exclude.includes(row.pid) && (row.cwd === tree || row.cwd.startsWith(tree + sep)));
+}
+// One lsof call lists every process's working directory (Linux reads /proc instead); a process whose directory cannot be read has none and is never stopped.
+function afkProcessTable() {
+  const out = spawnSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }).stdout || '';
+  const cwds = new Map();
+  if (!existsSync('/proc/self/cwd')) {
+    let pid = null;
+    const listing = spawnSync('lsof', ['-a', '-d', 'cwd', '-Fpn'], { encoding: 'utf8', maxBuffer: 64 << 20 });
+    if (!listing.stdout) console.error(`Warning: lsof listed no working directories (${listing.error?.message || `exit ${listing.status}`}); leftover processes are not stopped.`);
+    for (const line of (listing.stdout || '').split('\n')) {
+      if (line.startsWith('p')) pid = Number(line.slice(1)); else if (line.startsWith('n') && pid) cwds.set(pid, line.slice(1));
+    }
+  }
+  return out.split('\n').flatMap(line => { const m = /^\s*(\d+)\s+(.*)$/.exec(line); return m ? [{ pid: Number(m[1]), command: m[2] }] : []; })
+    .map(row => { let cwd = cwds.get(row.pid) || null; if (!cwd) try { cwd = realpathSync(`/proc/${row.pid}/cwd`); } catch {} return { ...row, cwd }; });
+}
+// A run's end stops what its agent left running in its worktree, before the tree is released, and logs each stop.
+export function afkStopLeftovers(tree, { table = afkProcessTable(), graceMs = 5_000, kill = (pid, signal) => process.kill(pid, signal) } = {}) {
+  let real; try { real = realpathSync(tree); } catch { return []; }
+  const signal = (pid, name) => { try { kill(pid, name); return true; } catch { return false; } };
+  const stopped = afkLeftovers(table, real, [process.pid, process.ppid]).filter(({ pid }) => signal(pid, 'SIGTERM'));
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (const end = Date.now() + graceMs; Date.now() < end && stopped.some(({ pid }) => signal(pid, 0));) Atomics.wait(pause, 0, 0, 100);
+  // SIGKILL only a process that still answers signal 0, so a pid that exited and was reused is never hit.
+  for (const { pid, command } of stopped) {
+    if (signal(pid, 0)) signal(pid, 'SIGKILL');
+    console.log(`Stopped leftover process ${pid}: ${command.slice(0, 200)}`);
+  }
+  return stopped;
+}
 // Runs one launched agent to its end, then releases its hold and its worktree.
 export function afkSupervise(common, runId) {
   const path = afkJobPath(common, runId);
@@ -415,6 +448,7 @@ export function afkSupervise(common, runId) {
     if (error.code === 'ETIMEDOUT') why = `Stopped after ${afkDuration(job.launch.timeoutMs)}, the afk.maxRunMinutes limit.`;
     throw error;
   } finally {
+    if (job.tree) afkStopLeftovers(job.tree);
     const finished = job.held ? spawnSync(process.execPath, [fileURLToPath(new URL('../workflow.mjs', import.meta.url)), 'afk', 'finish', '--me', runId, ...(why ? ['--why', why] : []), ...(usage ? ['--note', usage.line] : []), ...(usage?.ok ? ['--spent', 'yes'] : [])], { cwd: job.root, stdio: 'inherit', env: process.env }) : null;
     if (finished && finished.status !== 0) console.error(`Blocked: run ${runId} still holds its issue; release it with afk end --me ${runId}.`);
     if (job.tree && !afkReleaseRunTree(job.tree, job.root)) console.log(`Kept: ${job.tree} holds work that is not on the remote; preserve it.`);
