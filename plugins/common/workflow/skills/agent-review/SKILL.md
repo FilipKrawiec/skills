@@ -10,7 +10,7 @@ Read base `.agents/config.json` for implementer and Reviewer identities; use `wo
 
 ## 1. Decide the assignment
 
-For a technical fork, reuse an applicable recorded decision; otherwise decide routine engineering inside approved intent and record choice, reason and packet correction. Never reverse owner decisions or change product strategy, budget, authority or quality gates. Return reserved questions with options; `spec` defines lane transitions; the named actor applies them.
+For a technical fork, reuse an applicable recorded decision; otherwise decide routine engineering inside approved intent and record choice, reason and packet correction. Never return a question a recorded owner decision answers, nor reverse owner decisions or change product strategy, budget, authority or quality gates. Return reserved questions with options; `spec` defines lane transitions; the named actor applies them.
 
 For a `lane:proposed` Backlog item, evaluate AFK eligibility using `spec`, and record `APPROVED AFK` or `REQUEST_CHANGES` under `<!-- agent-review eligibility issue=<N> -->` with `GH_TOKEN=$(gh auth token --user <identities.reviewer>) gh issue comment`; `workflow.mjs` strips `GH_TOKEN`. The Backlog `refine` run applies the lane and board move. Before an eligibility check repeats a recorded wait or names the owner as next actor, re-read the wait's retry condition against current evidence; when met, act on it. For a queue, select at most four ready PRs, oldest first, skipping drafts; use [queue.md](references/queue.md) for queue operations.
 
