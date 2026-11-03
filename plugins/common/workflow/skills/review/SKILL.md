@@ -27,7 +27,7 @@ Return findings, exact base/head, evidence and missing information in <=8 lines.
 ## 2. Review
 
 - **A — standards:** check architecture and ownership boundaries, accessibility and layout, duplicated concepts, inconsistent mappings, and stale project rules. Name a design smell only when it can cause a concrete defect or rework.
-- **B — specification:** trace acceptance criteria and observable outcomes; check edge cases, failures, security, concurrency, cleanup and relevant tests. Flag scope creep, hollow tests, test-only production paths, weakened thresholds and missing meaningful coverage.
+- **B — specification:** trace acceptance criteria and observable outcomes; trace each new user-facing unit to a production call site, since one reached only from tests proves no criterion a user observes; put each capture beside the design the issue names as binding, and a visible difference that no decision records blocks; check edge cases, failures, security, concurrency, cleanup and relevant tests. Flag scope creep, hollow tests, test-only production paths, weakened thresholds and missing meaningful coverage.
 
 Report only introduced, actionable defects with a read `file:line`, failure scenario and remedy; omit lint and unrelated pre-existing issues. A runtime/security defect, unhandled edge, boundary breach or hollow/failing test is a Blocker; a design smell likely to cause defects or rework is a Major. A confirmed Blocker or introduced Major blocks. List at most three optional suggestions separately.
 
