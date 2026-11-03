@@ -26,11 +26,13 @@ import {
   afkReviewKind,
   afkReviewerApproved,
   prLinkedIssues,
+  afkAttendedSessions,
 } from '../../plugins/common/workflow/scripts/lib/afk-board.mjs';
 import {
   afkAgentEnvironment,
   afkCheckRetroMode,
   afkCheckRunLimits,
+  afkReleaseAttended,
   afkDefaultStartCommand,
   afkEndCards,
   afkEndStatus,
@@ -867,6 +869,33 @@ test('an attended state:started card is never orphaned or offered, while an aban
   assert.deepEqual([plan.orphans, plan.units.map(unit => [unit.issue, unit.column])], [[4], [[4, 'Todo']]]);
   const withPr = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, board(7, 'Review', ['lane:afk', 'state:started'])], prs: [reviewPr(20, { body: 'Part of #7' })] });
   assert.deepEqual(withPr.units, [], 'an attended issue\'s open PR is not offered either');
+});
+
+test('an attended hold ends with its session: held by a live session or inside the grace window, released and served otherwise', () => {
+  const now = Date.parse('2026-11-03T12:00:00Z'), old = '2026-11-03T10:00:00Z', fresh = '2026-11-03T11:50:00Z';
+  const plan = (startedAt, sessions, prs = []) => afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, board(2, 'In progress', ['lane:afk', 'state:started'], { startedAt })], prs, sessions, now });
+  const held = plan(old, [{ cwd: '/w/a', branch: '2-fix-it' }]);
+  assert.deepEqual([held.released, held.units], [[], []], 'a live session on its branch holds it');
+  const gone = plan(old, [{ cwd: '/w/b', branch: '20-other' }]);
+  assert.deepEqual([gone.released, gone.units.map(unit => unit.issue)], [[2], [2]], 'no session holds it: released and offered');
+  const young = plan(fresh, []);
+  assert.deepEqual([young.released, young.units], [[], []], 'inside the grace window it is held');
+  assert.deepEqual(plan(old, null).released, [], 'unlistable sessions release nothing');
+  const withPr = plan(old, [], [reviewPr(20, { body: 'Part of #2', statusCheckRollup: [{ conclusion: 'FAILURE' }], isDraft: true })]);
+  assert.deepEqual([withPr.released, withPr.units.map(unit => unit.pr)], [[2], [20]], 'its red PR becomes a fix unit');
+  assert.deepEqual(afkAttendedSessions(() => JSON.stringify([{ cwd: '/w/a', state: 'running' }, { cwd: '/w/b', state: 'done' }, { state: 'running' }]), cwd => `${cwd.slice(-1)}-x`), [{ cwd: '/w/a', branch: 'a-x' }]);
+});
+
+test('a release removes the label, comments why and logs it; a failed release is logged and the rest go on; a missing label event or branch lookup failure is not a live hold', () => {
+  const calls = [];
+  const lines = afkReleaseAttended(cfg, [2, 3], (command, args) => { calls.push(args.join(' ')); if (args[2] === '2' && args[1] === 'comment') throw new Error('boom'); });
+  assert.deepEqual(lines, ["Release of #2's attended hold failed: boom", "Released: #3's attended hold; no live session holds it"]);
+  assert.ok(calls.includes('issue edit 3 --repo acme/app --remove-label state:started') && calls.some(call => call.startsWith('issue comment 3 ')));
+  const now = Date.parse('2026-11-03T12:00:00Z');
+  const noEvent = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, board(2, 'Todo', ['lane:afk', 'state:started'])], prs: [], sessions: [], now });
+  assert.deepEqual(noEvent.released, [2], 'no label event reads as an old label');
+  assert.equal(afkAttendedSessions(() => '{bad'), null);
+  assert.equal(afkAttendedSessions(() => JSON.stringify([{ cwd: '/x', state: 'running' }]), () => { throw new Error('gone'); }), null, 'an unreadable branch leaves every hold in place');
 });
 
 test('an epic is served only to slice it or to close it once every slice closed', () => {

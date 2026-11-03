@@ -27,7 +27,7 @@ export function afkDependenciesFromIssueBody(body = '') {
 }
 function afkIssues(cfg) {
   const [owner, name] = cfg.repo.split('/');
-  const fields = 'number title body lastEditedAt labels(first:30){nodes{name}} blockedBy(first:30){nodes{state}} milestone{number dueOn} subIssuesSummary{total completed} parent{number parent{number parent{number parent{number}}}}';
+  const fields = 'number title body lastEditedAt labels(first:30){nodes{name}} blockedBy(first:30){nodes{state}} milestone{number dueOn} subIssuesSummary{total completed} timelineItems(last:50,itemTypes:[LABELED_EVENT]){nodes{... on LabeledEvent{createdAt label{name}}}} parent{number parent{number parent{number parent{number}}}}';
   const query = withPriority => `query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{${fields}${withPriority ? ' projectItems(first:10){nodes{project{number} priority: fieldValueByName(name:"Priority"){... on ProjectV2ItemFieldSingleSelectValue{name}} status: fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}' : ''}}}}}`;
   const found = []; let after;
   do {
@@ -46,7 +46,8 @@ function afkIssues(cfg) {
       const ancestors = []; let parent = issue.parent;
       while (parent) { ancestors.push(parent.number); parent = parent.parent; }
       const paths = afkPathsFromIssueBody(issue.body || '');
-      return { ...issue, labels, priority, status, ancestors, paths, dependencies: afkDependenciesFromIssueBody(issue.body || ''), blocked: issue.blockedBy.nodes.some(dep => dep.state === 'OPEN') };
+      const startedAt = issue.timelineItems?.nodes.filter(event => event.label?.name === 'state:started').at(-1)?.createdAt || null;
+      return { ...issue, startedAt, labels, priority, status, ancestors, paths, dependencies: afkDependenciesFromIssueBody(issue.body || ''), blocked: issue.blockedBy.nodes.some(dep => dep.state === 'OPEN') };
     }));
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
   } while (after);
@@ -143,6 +144,22 @@ function afkUnitText(column, issue) {
   if (issue.paths === null) return `#${issue.number} is in Todo without a valid scope packet: invoke \`refine\` on it alone to add one`;
   return `#${issue.number} is ready`;
 }
+// An attended hold lasts while a live session sits in a worktree on a branch `<issue>-…`, or while its label is younger than the grace window.
+export const afkAttendedGraceMs = 30 * 60_000;
+export function afkAttendedHeld(issue, sessions, now = Date.now()) {
+  if (!Array.isArray(sessions)) return true;
+  // The newest 50 label events always include a recent label; a missing event means an old one.
+  const startedAt = Date.parse(issue.startedAt || '');
+  if (Number.isFinite(startedAt) && now - startedAt < afkAttendedGraceMs) return true;
+  return sessions.some(session => String(session.branch || '').startsWith(`${issue.number}-`));
+}
+// The live sessions as `{ cwd, branch }`; null when they cannot be listed, so no hold is released blind.
+export function afkAttendedSessions(list = () => run('claude', ['agents', '--json']), branchOf = cwd => git('-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD')) {
+  try {
+    return JSON.parse(list() || '[]').filter(a => a.cwd && !['done', 'stopped', 'failed'].includes(a.state || a.status))
+      .map(a => ({ cwd: a.cwd, branch: branchOf(a.cwd) }));
+  } catch { return null; }
+}
 export function afkPlan(cfg, live, threads, me = '', data = null) {
   const issues = data?.issues || afkIssues(cfg); const prs = (data?.prs || afkPrData(cfg)).map(pr => afkPrRecord(pr, cfg));
   // A unit a finished run left unchanged gets no new run until something about it changes. Given issues, the ledger and base come from data too.
@@ -158,6 +175,14 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     return holdsOf(number, except) || Boolean(parent && [null, undefined, 'In progress'].includes(parent.status) && holdsOf(parent.number, except));
   };
   const heldElsewhere = number => heldBy(number, me);
+  // `state:started` is an exclusive attended assignment while its session lives; once gone the hold is released and the issue is served as any other.
+  const released = [], now = data?.now ?? Date.now();
+  const attended = new Set(issues.filter(issue => {
+    if (!issue.labels.includes('state:started')) return false;
+    if (afkAttendedHeld(issue, data?.sessions, now)) return true;
+    released.push(issue.number);
+    return false;
+  }).map(issue => issue.number));
   const inPr = new Set(prs.flatMap(pr => pr.issues)), openPrs = new Set(prs.map(pr => pr.number));
   const offer = (unit, key, state) => {
     if (spent[key] === state) { unchanged.push(key); return; }
@@ -165,8 +190,8 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   };
   for (const issue of issues) {
     let column = afkColumn(issue);
-    // `state:started` is an exclusive attended assignment: never orphaned, never offered.
-    if (issue.labels.includes('lane:owner') || issue.labels.includes('state:started') || heldElsewhere(issue.number)) continue;
+    // A held `state:started` issue is never orphaned, never offered.
+    if (issue.labels.includes('lane:owner') || attended.has(issue.number) || heldElsewhere(issue.number)) continue;
     // A card In progress with no live run, or in Review with no open PR, is Todo again. An approved epic In progress is
     // served to slice it, stays In progress while its slices are open and comes back for its close check once they all closed.
     const epic = issue.labels.includes('type:epic'), slices = issue.subIssuesSummary;
@@ -186,7 +211,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     offer({ column, text: afkUnitText(column, issue), issue: issue.number, priority: issue.priority, paths: write ? issue.paths : [], ...(write ? {} : { refine: true }), input: afkOutsideInput(threads(issue.number), cfg) }, issue.number, afkIssueState(issue, column, threads(issue.number), cfg, base));
   }
   for (const pr of prs) {
-    if (!pr.needsWork || pr.issues.some(heldElsewhere) || heldElsewhere(pr.number) || pr.issues.some(number => byNumber.get(number)?.labels.includes('state:started'))) continue;
+    if (!pr.needsWork || pr.issues.some(heldElsewhere) || heldElsewhere(pr.number) || pr.issues.some(number => attended.has(number))) continue;
     const stories = pr.issues.map(number => byNumber.get(number)).filter(issue => issue && !issue.labels.includes('type:epic'));
     if (!pr.awaitingReview && !pr.broken && stories.length > 0 && stories.every(issue => issue.labels.includes('lane:owner'))) continue;
     // Its issues' packets, then the PR's own packet, then the files it already changes.
@@ -203,13 +228,13 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg, base));
   }
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
-  return { units, prs, byNumber, threads, unchanged, orphans };
+  return { units, prs, byNumber, threads, unchanged, orphans, released };
 }
 // Every tick merges ready PRs before it plans: the plan re-reads the open PRs, so it neither serves nor holds a build behind a PR
 // merged this tick. `merge: false` skips merging for a tick another step already merged for.
-export function afkMergeThenPlan(cfg, { readPrs = () => afkPrs(cfg), gh, issues, merge = true } = {}) {
+export function afkMergeThenPlan(cfg, { readPrs = () => afkPrs(cfg), gh, issues, merge = true, sessions } = {}) {
   const merged = merge ? afkMerge(cfg, readPrs(), null, gh) : [];
-  return { merged, plan: (live, threads, me = '') => afkPlan(cfg, live, threads, me, { ...(issues ? { issues } : {}), prs: readPrs() }) };
+  return { merged, plan: (live, threads, me = '') => afkPlan(cfg, live, threads, me, { ...(issues ? { issues } : {}), ...(sessions !== undefined ? { sessions } : {}), prs: readPrs() }) };
 }
 // Why `afk start --issue` could not hold an issue; a packet-less issue names its missing packet, which a refine run adds.
 export function afkStartRefusal(number, issue) {
