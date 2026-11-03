@@ -413,6 +413,18 @@ export function afkCheckQuiet(previous, signal, version, now = Date.now()) {
 }
 // Each ping starts one run when a slot is free and a unit waits; the run takes the first unit itself.
 export function afkStartCount(cfg, live, candidates) { return candidates.length && afkFree(cfg, live) ? 1 : 0; }
+// Removes `state:started` and says why on the issue; one failed release is logged and does not stop the check.
+export function afkReleaseAttended(cfg, numbers, exec = run) {
+  const lines = [];
+  for (const number of numbers) {
+    try {
+      exec('gh', ['issue', 'edit', String(number), '--repo', cfg.repo, '--remove-label', 'state:started']);
+      exec('gh', ['issue', 'comment', String(number), '--repo', cfg.repo, '--body', 'Released the attended hold (`state:started`): no live session holds this issue and the label is older than 30 minutes. It is served as any other issue.']);
+      lines.push(`Released: #${number}'s attended hold; no live session holds it`);
+    } catch (error) { lines.push(`Release of #${number}'s attended hold failed: ${error.message}`); }
+  }
+  return lines;
+}
 export function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const live = afkLive(cfg); const statePath = quiet ? join(common, 'afk-check.json') : null;
   const signal = statePath ? afkSignal(cfg, live) : null; const version = afkToolingVersion();
@@ -429,11 +441,7 @@ export function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = nu
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
   const { units, unchanged, orphans, released } = tick.plan(live, threads);
-  for (const number of released) {
-    run('gh', ['issue', 'edit', String(number), '--repo', cfg.repo, '--remove-label', 'state:started']);
-    run('gh', ['issue', 'comment', String(number), '--repo', cfg.repo, '--body', 'Released the attended hold (`state:started`): no live session holds this issue and the label is older than 30 minutes. It is served as any other issue.']);
-    output.push(`Released: #${number}'s attended hold; no live session holds it`);
-  }
+  output.push(...afkReleaseAttended(cfg, released));
   for (const number of orphans) { afkStatus(cfg, number, 'TODO', true); output.push(`Orphaned: #${number} was In progress with no live run; back to Todo`); }
   for (const number of unchanged) output.push(`Unchanged: #${number} since its last run; no new run until it changes`);
   if (units[0]) output.push(`Next: ${units[0].column}: ${units[0].text}`);

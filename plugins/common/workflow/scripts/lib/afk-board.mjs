@@ -148,15 +148,16 @@ function afkUnitText(column, issue) {
 export const afkAttendedGraceMs = 30 * 60_000;
 export function afkAttendedHeld(issue, sessions, now = Date.now()) {
   if (!Array.isArray(sessions)) return true;
+  // The newest 50 label events always include a recent label; a missing event means an old one.
   const startedAt = Date.parse(issue.startedAt || '');
-  if (!Number.isFinite(startedAt) || now - startedAt < afkAttendedGraceMs) return true;
+  if (Number.isFinite(startedAt) && now - startedAt < afkAttendedGraceMs) return true;
   return sessions.some(session => String(session.branch || '').startsWith(`${issue.number}-`));
 }
 // The live sessions as `{ cwd, branch }`; null when they cannot be listed, so no hold is released blind.
 export function afkAttendedSessions(list = () => run('claude', ['agents', '--json']), branchOf = cwd => git('-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD')) {
   try {
     return JSON.parse(list() || '[]').filter(a => a.cwd && !['done', 'stopped', 'failed'].includes(a.state || a.status))
-      .map(a => { let branch = ''; try { branch = branchOf(a.cwd); } catch {} return { cwd: a.cwd, branch }; });
+      .map(a => ({ cwd: a.cwd, branch: branchOf(a.cwd) }));
   } catch { return null; }
 }
 export function afkPlan(cfg, live, threads, me = '', data = null) {

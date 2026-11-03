@@ -32,6 +32,7 @@ import {
   afkAgentEnvironment,
   afkCheckRetroMode,
   afkCheckRunLimits,
+  afkReleaseAttended,
   afkDefaultStartCommand,
   afkEndCards,
   afkEndStatus,
@@ -883,6 +884,18 @@ test('an attended hold ends with its session: held by a live session or inside t
   const withPr = plan(old, [], [reviewPr(20, { body: 'Part of #2', statusCheckRollup: [{ conclusion: 'FAILURE' }], isDraft: true })]);
   assert.deepEqual([withPr.released, withPr.units.map(unit => unit.pr)], [[2], [20]], 'its red PR becomes a fix unit');
   assert.deepEqual(afkAttendedSessions(() => JSON.stringify([{ cwd: '/w/a', state: 'running' }, { cwd: '/w/b', state: 'done' }, { state: 'running' }]), cwd => `${cwd.slice(-1)}-x`), [{ cwd: '/w/a', branch: 'a-x' }]);
+});
+
+test('a release removes the label, comments why and logs it; a failed release is logged and the rest go on; a missing label event or branch lookup failure is not a live hold', () => {
+  const calls = [];
+  const lines = afkReleaseAttended(cfg, [2, 3], (command, args) => { calls.push(args.join(' ')); if (args[2] === '2' && args[1] === 'comment') throw new Error('boom'); });
+  assert.deepEqual(lines, ["Release of #2's attended hold failed: boom", "Released: #3's attended hold; no live session holds it"]);
+  assert.ok(calls.includes('issue edit 3 --repo acme/app --remove-label state:started') && calls.some(call => call.startsWith('issue comment 3 ')));
+  const now = Date.parse('2026-11-03T12:00:00Z');
+  const noEvent = afkPlan(cfg, [], () => [], 'new-run', { issues: [epic, board(2, 'Todo', ['lane:afk', 'state:started'])], prs: [], sessions: [], now });
+  assert.deepEqual(noEvent.released, [2], 'no label event reads as an old label');
+  assert.equal(afkAttendedSessions(() => '{bad'), null);
+  assert.equal(afkAttendedSessions(() => JSON.stringify([{ cwd: '/x', state: 'running' }]), () => { throw new Error('gone'); }), null, 'an unreadable branch leaves every hold in place');
 });
 
 test('an epic is served only to slice it or to close it once every slice closed', () => {
