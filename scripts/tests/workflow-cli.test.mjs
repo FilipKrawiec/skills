@@ -118,9 +118,20 @@ test('commit keeps trailers after a valid subject and refuses an invalid subject
   writeFileSync(join(f.repo, 'assigned.txt'), 'assigned');
   const bad = f.cliRun('commit', '--message', 'bad subject\n\nCo-Authored-By: N <n@example.com>', '--', 'assigned.txt');
   assert.notEqual(bad.status, 0);
+  assert.notEqual(f.cliRun('commit', '--message', '\nfix: late subject\n\nCo-Authored-By: N <n@example.com>', '--', 'assigned.txt').status, 0);
   const result = f.cliRun('commit', '--message', 'fix: a subject\n\nCo-Authored-By: N <n@example.com>', '--', 'assigned.txt');
   assert.equal(result.status, 0, result.stderr);
   assert.match(f.linkedGit('show', '-s', '--format=%B', 'HEAD').stdout, /^fix: a subject\n\nCo-Authored-By: N <n@example.com>/);
+});
+
+test('commit accepts a CRLF subject line followed by a trailer', t => {
+  const f = fixture(t);
+  run(f.env.REAL_GIT, ['config', 'user.name', 'Test'], { cwd: f.repo });
+  run(f.env.REAL_GIT, ['config', 'user.email', 'test@example.test'], { cwd: f.repo });
+  writeFileSync(join(f.repo, 'assigned.txt'), 'assigned');
+  const result = f.cliRun('commit', '--message', 'fix: crlf subject\r\n\r\nCo-Authored-By: N <n@example.com>', '--', 'assigned.txt');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(f.linkedGit('show', '-s', '--format=%B', 'HEAD').stdout, /Co-Authored-By: N <n@example.com>/);
 });
 
 test('commit refuses existing staged changes', t => {
