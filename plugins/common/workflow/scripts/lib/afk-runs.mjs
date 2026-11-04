@@ -366,7 +366,8 @@ export function afkStartRun(cfg, id, common, requestedIssue = null, quiet = fals
       output.forEach(line => console.log(line)); return 3;
     }
     const threads = afkThreadReader(cfg);
-    const { units, byNumber } = tick.plan(live, threads, id);
+    const { units, byNumber, staleClaims } = tick.plan(live, threads, id);
+    afkReleaseReviewClaims(cfg, staleClaims).forEach(line => output.push(line));
     const othersHolds = afkOtherHolds(ledger, live, id);
     afkWriteLedger(ledgerPath, ledger);
     for (const candidate of afkCandidates(units, othersHolds)) {
@@ -425,6 +426,17 @@ export function afkReleaseAttended(cfg, numbers, exec = run) {
   }
   return lines;
 }
+// Removes a stale `state:reviewing`; one failed release is logged and does not stop the check.
+export function afkReleaseReviewClaims(cfg, numbers, exec = run) {
+  const lines = [];
+  for (const number of numbers) {
+    try {
+      exec('gh', ['pr', 'edit', String(number), '--repo', cfg.repo, '--remove-label', 'state:reviewing']);
+      lines.push(`Released: PR #${number}'s review claim; no live Reviewer holds it`);
+    } catch (error) { lines.push(`Release of PR #${number}'s review claim failed: ${error.message}`); }
+  }
+  return lines;
+}
 export function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = null) {
   const live = afkLive(cfg); const statePath = quiet ? join(common, 'afk-check.json') : null;
   const signal = statePath ? afkSignal(cfg, live) : null; const version = afkToolingVersion();
@@ -440,8 +452,8 @@ export function afkCheckRun(cfg, common, quiet, result = {}, requestedIssue = nu
   const tick = afkMergeThenPlan(cfg, { sessions: afkAttendedSessions() }), output = tick.merged;
   for (const number of afkFinishPrCards(cfg)) output.push(`PR #${number}'s card moved to Done: the PR is merged or closed`);
   const threads = afkThreadReader(cfg);
-  const { units, unchanged, orphans, released } = tick.plan(live, threads);
-  output.push(...afkReleaseAttended(cfg, released));
+  const { units, unchanged, orphans, released, staleClaims } = tick.plan(live, threads);
+  output.push(...afkReleaseAttended(cfg, released), ...afkReleaseReviewClaims(cfg, staleClaims));
   for (const number of orphans) { afkStatus(cfg, number, 'TODO', true); output.push(`Orphaned: #${number} was In progress with no live run; back to Todo`); }
   for (const number of unchanged) output.push(`Unchanged: #${number} since its last run; no new run until it changes`);
   if (units[0]) output.push(`Next: ${units[0].column}: ${units[0].text}`);

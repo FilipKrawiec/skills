@@ -184,6 +184,13 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     return false;
   }).map(issue => issue.number));
   const inPr = new Set(prs.flatMap(pr => pr.issues)), openPrs = new Set(prs.map(pr => pr.number));
+  // `state:reviewing` marks a Reviewer's claim: while it lives no run takes the PR; a finished, expired or missing claim frees the label.
+  const staleClaims = [];
+  const claimed = new Set(prs.filter(pr => pr.labels.some(label => label.name === 'state:reviewing')).filter(pr => {
+    if (afkReviewClaimLive(threads(pr.number), pr.reviews, now, (cfg.maxRunMinutes || 60) * 60_000)) return true;
+    staleClaims.push(pr.number);
+    return false;
+  }).map(pr => pr.number));
   const offer = (unit, key, state) => {
     if (spent[key] === state) { unchanged.push(key); return; }
     units.push({ ...unit, state });
@@ -211,7 +218,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     offer({ column, text: afkUnitText(column, issue), issue: issue.number, priority: issue.priority, paths: write ? issue.paths : [], ...(write ? {} : { refine: true }), input: afkOutsideInput(threads(issue.number), cfg) }, issue.number, afkIssueState(issue, column, threads(issue.number), cfg, base));
   }
   for (const pr of prs) {
-    if (!pr.needsWork || pr.issues.some(heldElsewhere) || heldElsewhere(pr.number) || pr.issues.some(number => attended.has(number))) continue;
+    if (!pr.needsWork || claimed.has(pr.number) || pr.issues.some(heldElsewhere) || heldElsewhere(pr.number) || pr.issues.some(number => attended.has(number))) continue;
     const stories = pr.issues.map(number => byNumber.get(number)).filter(issue => issue && !issue.labels.includes('type:epic'));
     if (!pr.awaitingReview && !pr.broken && stories.length > 0 && stories.every(issue => issue.labels.includes('lane:owner'))) continue;
     // Its issues' packets, then the PR's own packet, then the files it already changes.
@@ -228,7 +235,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg, base));
   }
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
-  return { units, prs, byNumber, threads, unchanged, orphans, released };
+  return { units, prs, byNumber, threads, unchanged, orphans, released, staleClaims };
 }
 // Every tick merges ready PRs before it plans: the plan re-reads the open PRs, so it neither serves nor holds a build behind a PR
 // merged this tick. `merge: false` skips merging for a tick another step already merged for.
@@ -264,6 +271,13 @@ export function* afkCandidates(units, others) {
 }
 // At most afk.maxRuns runs are live, booting ones included, and each ping starts at most one.
 export function afkFree(cfg, live, me = '') { return Math.max(0, (Number(cfg.maxRuns) || 4) - live.filter(id => id !== me).length); }
+// A claim (an `agent-review claim` comment) lives until an `agent-review` verdict review follows it or it outlasts a run.
+export function afkReviewClaimLive(comments, reviews, now, maxMs) {
+  const claim = comments.findLast(comment => /<!-- agent-review claim\b/.test(comment.body || ''));
+  const at = Date.parse(claim?.created_at || '');
+  if (!(now - at < maxMs)) return false;
+  return !(reviews || []).some(review => /<!-- agent-review\b/.test(review.body || '') && Date.parse(review.submittedAt || '') >= at);
+}
 export function afkLiveHolds(comments, live, me) {
   const holds = [];
   for (const comment of comments) for (const match of (comment.body || '').matchAll(/<!-- afk-(epic|issue)-hold session=(\S+) -->/g)) {
