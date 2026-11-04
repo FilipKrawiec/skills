@@ -49,7 +49,7 @@ export function commit(args) {
   if (args[0] !== '--message' || !(args.length === 2 || (args.length >= 4 && args[2] === '--'))) throw new Error('Usage: commit --message MESSAGE [-- PATH...]');
   const message = args[1];
   const paths = args.slice(3);
-  if (!/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9._/-]+\))?!?: [^\r\n]+$/.test(message)) throw new Error('Commit message must be a single-line Conventional Commit');
+  if (!/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9._/-]+\))?!?: [^\r\n]+$/.test(message.split('\n')[0].replace(/\r$/, ''))) throw new Error('Commit message subject (first line) must be a Conventional Commit');
   if (paths.some(path => !path || path === '.' || path.startsWith('/') || path.startsWith(':') || path.split('/').includes('..'))) throw new Error('Provide explicit repository-relative paths');
   const root = requireLinkedWorktree();
   if (realpathSync(process.cwd()) !== realpathSync(root)) throw new Error('Run commit from the repository root');

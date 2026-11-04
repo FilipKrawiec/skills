@@ -111,6 +111,18 @@ test('commit records a stopped merge as the implementer', t => {
   assert.equal(f.linkedGit('show', '-s', '--format=%p|%an', 'HEAD').stdout.trim().split('|').map((v, i) => i ? v : v.split(' ').length).join('|'), '2|builder');
 });
 
+test('commit keeps trailers after a valid subject and refuses an invalid subject', t => {
+  const f = fixture(t);
+  run(f.env.REAL_GIT, ['config', 'user.name', 'Test'], { cwd: f.repo });
+  run(f.env.REAL_GIT, ['config', 'user.email', 'test@example.test'], { cwd: f.repo });
+  writeFileSync(join(f.repo, 'assigned.txt'), 'assigned');
+  const bad = f.cliRun('commit', '--message', 'bad subject\n\nCo-Authored-By: N <n@example.com>', '--', 'assigned.txt');
+  assert.notEqual(bad.status, 0);
+  const result = f.cliRun('commit', '--message', 'fix: a subject\n\nCo-Authored-By: N <n@example.com>', '--', 'assigned.txt');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(f.linkedGit('show', '-s', '--format=%B', 'HEAD').stdout, /^fix: a subject\n\nCo-Authored-By: N <n@example.com>/);
+});
+
 test('commit refuses existing staged changes', t => {
   const f = fixture(t);
   writeFileSync(join(f.repo, 'previous.txt'), 'preserve'); writeFileSync(join(f.repo, 'assigned.txt'), 'assigned');
