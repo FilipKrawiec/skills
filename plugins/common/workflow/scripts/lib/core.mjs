@@ -250,6 +250,7 @@ export const workflowLabels = {
   'lane:owner': ['d93f0b', 'Requires owner participation to decide or implement'],
   'state:claimed': ['fbca04', 'An AFK run is working on this'],
   'state:started': ['fef2c0', 'An attended session is working on this'],
+  'state:reviewing': ['0e8a16', 'The Reviewer is reviewing this PR'],
   'review:owner': ['e99695', 'PR is waiting for owner approval'],
   'type:epic': ['3e4b9e', 'Parent of bounded work items'],
   'type:story': ['a2eeef', 'New or changed user-visible behavior'],

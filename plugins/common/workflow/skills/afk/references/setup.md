@@ -16,7 +16,7 @@ Use version 1; read it from base.
 }
 ```
 
-`afk.model` is optional; `steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array. Git derives repo/base; CODEOWNERS defines path owners and must name exactly one default Reviewer matching `identities.reviewer`; `verify` is the default check. Until the first config merges, `push --owner-bootstrap` reads a missing Owner from the branch's CODEOWNERS; afterwards, from base. The CLI caches the linked Project and open `Review queue` issue for 24 hours in common `.git`; `cache show` and `cache refresh` manage it.
+`afk.model` is optional; `steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array. Git derives repo/base; CODEOWNERS defines path owners and must name exactly one default Reviewer matching `identities.reviewer`; `verify` is the default check. Until the first config merges, `push --owner-bootstrap` reads a missing Owner from the branch's CODEOWNERS; afterwards, from base. The CLI caches the Project and `Review queue` issue for 24 hours in common `.git`; `cache show` and `cache refresh` manage it.
 
 ## One-time setup
 
@@ -25,7 +25,7 @@ Use version 1; read it from base.
 
 ## Board
 
-- Statuses Backlog, Todo, In progress, Blocked, Review, Done; single-select Priority (P0, P1, P2). Existing board: add options, move every card, delete old options.
+- Statuses Backlog, Todo, In progress, Blocked, Review, Done; single-select Priority (P0, P1, P2). Existing board: add options, move cards, delete old ones.
 - Milestones group production outcomes or their linked health work; agents prioritize approved outcomes and health prerequisites.
 - AFK runs without `project` scope.
 - Workflow: auto-add → Backlog. Do not automate PR-linked, reopened or closed status changes; the orchestrator applies readiness-aware transitions under `spec`.
@@ -55,5 +55,5 @@ Run `node <this-skill-directory>/../../scripts/workflow.mjs afk start --me <run 
 
 A cleanly exiting watcher run records its unit's state in `afk-spent.json` (git common directory); `afk end` records nothing: it cannot tell finish from release. Until its head, reviews, checks, merge state, base, column, labels or outside comments change, polls skip it (`Unchanged: #N`); delete its key to re-offer.
 
-- The orchestrator owns assignments/recovery; the host supplies routing, coordination and credentials. Labels are no locks.
+- The orchestrator owns assignments/recovery; the host supplies routing, coordination and credentials. Labels other than `state:reviewing` are no locks.
 - Production needs exact owner approval for candidate/destination; branch restrictions alone do not grant it. Notifications use only an authorized configured channel; queue changes make a daily digest, incidents an immediate notice.

@@ -33,6 +33,7 @@ import {
   afkCheckRetroMode,
   afkCheckRunLimits,
   afkReleaseAttended,
+  afkReleaseReviewClaims,
   afkDefaultStartCommand,
   afkEndCards,
   afkEndStatus,
@@ -171,7 +172,7 @@ test('one-shot AFK runs are counted from live watcher PIDs', t => {
 
 test('workflow label catalog is centralized in the CLI', () => {
   assert.deepEqual(Object.keys(workflowLabels), [
-    'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed', 'state:started',
+    'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed', 'state:started', 'state:reviewing',
     'review:owner', 'type:epic', 'type:story', 'type:bug', 'type:chore', 'type:task',
   ]);
 });
@@ -1050,4 +1051,27 @@ test('afk start names this tick\'s merges at both its Done and its Explore exit'
   const merged = ['PR #1 merged'];
   assert.deepEqual(afkStartIdleLines(false, merged), ['Done: every free piece of work has its runner.', 'PR #1 merged']);
   assert.deepEqual(afkStartIdleLines(true, merged), ['Explore: no work is free for this run; play `explore` unattended.', 'PR #1 merged']);
+});
+
+test('a PR the Reviewer claimed is not served while its claim lives; a finished, expired or missing claim frees its state:reviewing label', () => {
+  const now = Date.parse('2026-11-04T12:00:00Z');
+  const claim = (id, at) => ({ id, created_at: at, user: { login: 'reviewer' }, body: '<!-- agent-review claim sha=abc -->\n**Reviewing:** head `abc`.' });
+  const verdict = at => ({ state: 'COMMENTED', submittedAt: at, author: { login: 'reviewer' }, commit: { oid: 'old' }, body: '<!-- agent-review sha=old round=1 verdict=fixes -->' });
+  const plan = (comments, reviews = []) => afkPlan(cfg, [], () => comments, 'new-run', { issues: [epic], prs: [reviewPr(20, { labels: [{ name: 'state:reviewing' }], reviews })], now });
+  const live = plan([claim(1, '2026-11-04T11:50:00Z')], [verdict('2026-11-04T11:40:00Z')]);
+  assert.deepEqual([live.units, live.staleClaims], [[], []], 'a live claim keeps every other run off the PR; an earlier verdict does not end it');
+  for (const [why, comments, reviews] of [['verdict posted', [claim(1, '2026-11-04T11:50:00Z')], [verdict('2026-11-04T11:55:00Z')]], ['claim expired', [claim(1, '2026-11-04T10:30:00Z')]], ['no claim', []]]) {
+    const stale = plan(comments, reviews);
+    assert.deepEqual([stale.staleClaims, stale.units.map(unit => unit.pr)], [[20], [20]], why);
+  }
+  const unlabelled = afkPlan(cfg, [], () => [claim(1, '2026-11-04T11:50:00Z')], 'new-run', { issues: [epic], prs: [reviewPr(20)], now });
+  assert.deepEqual([unlabelled.staleClaims, unlabelled.units.map(unit => unit.pr)], [[], [20]], 'only the label marks a claim');
+});
+
+test('releasing a stale review claim removes state:reviewing; a failed release is logged and the rest go on', () => {
+  const calls = [];
+  const lines = afkReleaseReviewClaims(cfg, [20, 21], (command, args) => { calls.push(args.join(' ')); if (args[2] === '20') throw new Error('boom'); });
+  assert.deepEqual(lines, ["Release of PR #20's review claim failed: boom", "Released: PR #21's review claim; no live Reviewer holds it"]);
+  assert.ok(calls.includes('pr edit 21 --repo acme/app --remove-label state:reviewing'));
+  assert.deepEqual(workflowLabels['state:reviewing'], ['0e8a16', 'The Reviewer is reviewing this PR']);
 });
