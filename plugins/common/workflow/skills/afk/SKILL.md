@@ -28,31 +28,34 @@ Write implementer records through the workflow CLI: `issue comment` or `issue ed
 
 ## 3. Deliver
 
-Invoke the skills for implementation, review and VCS. After each push, a fresh subagent loading `agent-review` posts the binding verdict, given the Reviewer brief below without your reasoning. The run that pushed the head fixes its findings here; a new one reviews each delta. Only a held review unit loads `agent-review` itself; it posts its exact-head verdict and ends delivery: it commits nothing, and the CLI serves `verdict=fixes` findings to a later fix unit for that PR. An implementer run stays until its PR merges: wait on pending checks with `gh pr checks --watch`, and after a dismissed approval have a fresh Reviewer subagent post a new exact-head verdict. Ending with the PR open blocks the card. Once merged, invoke `ship`. Run review, and fixes from a `round=2` `verdict=fixes` on, on the host's strongest model at high effort (cheaper fixes reintroduced blockers); other work on its standard model. Run `steps.test` once per head, after its last fix; targeted tests between fixes. Every changed or untracked path belongs in the scope packet. Before the first review, compare changed files with `### Estimate` (S ~5, M ~20); past twice that, on `verdict=split` or needing several PRs, invoke `spec` to split it and build its first sub-issue. File the Reviewer's follow-ups via `spec`.
+You orchestrate only: after the plan's approval never edit project files yourself.
 
-Process the issue and plan with the invoked skills; run `steps.assemble` with `{platform}` only when previewing the app (`null`: none). Test an explicitly read-only workflow check with CLI evidence alone unless the issue asks. Run argv arrays directly, substituting only placeholders; stop and report a missing required script.
+1. **Plan:** invoke `plan`; a 100% reproducibility score approves it.
+2. **Execute:** dispatch one fresh Craftsman subagent loading `tdd` with the plan, briefed with [worker-brief.md](references/worker-brief.md). It returns `done`, `stuck` or `replan`. Compare changed files with `### Estimate` (S ~5, M ~20); past twice that, or needing several PRs, invoke `spec` to split it and build its first sub-issue.
+3. **Open:** verify the scope packet covers every changed path, run `steps.test` once, then invoke `vcs` to commit, push, open the draft PR with the plan's context and decisions, and have its risk label set.
+4. **Review:** a fresh subagent loading `agent-review` reviews the draft, given the Reviewer brief below without your reasoning. On `verdict=fixes`, invoke `pr-fix`, then review again. `verdict=cap` or `shape` ends delivery; report it.
+5. **Ship:** on `verdict=ready`, invoke `ship`. The run ends at the ready PR; team review and merge follow without it.
 
-Delegate only for independence or parallelism; brief each other worker with [worker-brief.md](references/worker-brief.md).
+A held PR unit does what its `Work:` line says, first match wins: `passed author review` invokes `ship`; `awaits its review` loads `agent-review` itself and commits nothing; any other open PR invokes `pr-fix`; `merged` invokes `ship` then `improve` on that PR alone. Run `steps.assemble` with `{platform}` only when previewing the app (`null`: none). Run argv arrays directly; stop and report a missing required script.
 
 The Reviewer's brief:
 
 ```text
-Review PR #<N> (issue #<issue>): base <SHA>, head <SHA>, last reviewed <SHA|none>, round <R>.
-Axis A/B findings: <file:line list>; earlier findings: <list>.
-Load agent-review; post its exact-head decision with GH_TOKEN=$(gh auth token
+Review PR #<N> (issue #<issue>): base <SHA>, head <SHA>, last reviewed <SHA|none>.
+Plan: <link>. Load agent-review; post with GH_TOKEN=$(gh auth token
 --user <config reviewer>) on each gh call. Never print the token.
-Return verdict, blockers and follow-ups in at most 8 lines.
+Return verdict, round and Important findings in at most 8 lines.
 ```
 
-**Exit gate:** merged PR with `ship` evidence, or a bounded failure record.
+**Exit gate:** ready PR handed to team review, a capped draft, or a bounded failure record.
 
 ## 4. Recover and close
 
 Trace a failure and attempt at most two evidence-led fixes, then replan or wait with cause, responsible actor and retry condition. Retain the lane; technical difficulty alone is not an owner decision. Only unrecorded owner-reserved decisions wait on the owner; fetch an official asset a recorded one names from its publisher; request technical adjudication only for an unresolved conflict. Invoke the owning skills for safe cleanup. At a bounded health stop, retain unfinished required migrations as prerequisites.
 
-Before ending a held run, file at most two evidenced improvements that would have made it cheaper. Write here for project rules; for skills add `--repo` with the loaded skills' origin, and treat a CLI refusal as owner-reserved, with its link. Comment evidence on an open match, like an `issue create --check` overlap; otherwise `issue create --retro` a routine `type:bug`/`type:chore` via `spec`; `Skipped:` ends filing. Comment owner-reserved ones on the issue `issue create --unique --title "Owner improvements" --labels type:task,lane:owner --body-file PATH` returns. Never edit skills or rules here.
+Never edit skills or rules here: lessons go through `improve` after merge, which files plugin lessons as follow-up issues, never agent memory.
 
-**Exit gate:** delivery or recorded replan/wait, plus filed improvements; lane retained unless authority changed.
+**Exit gate:** delivery or recorded replan/wait; lane retained unless authority changed.
 
 ## Output
 

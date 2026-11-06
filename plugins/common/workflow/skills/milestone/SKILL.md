@@ -14,7 +14,7 @@ A trusted direct owner request authorizes its specified work; otherwise use the 
 
 ## 2. Deliver
 
-Resume from actual issue decisions, worktree, PR head, checks, review and deployment evidence. Reuse existing records. Invoke the owning skills for refinement, implementation, review, VCS, shipping and release; use independent review and required GitHub protections for merge. Verify criteria, scope, decisions and prior findings from authoritative records; generated review context can omit information. Reuse unchanged review evidence or review only the delta as `review` permits; bind GitHub approval to the actual head. Authors never approve their own work. Honor the repository's pre-push and hosted checks separately; pending CI need not delay a clean code review.
+Resume from actual issue decisions, worktree, PR head, checks, review and deployment evidence. Reuse existing records. Invoke the owning skills for refinement, implementation, review, VCS, shipping and release; use independent review and required GitHub protections for merge. Verify criteria, scope, decisions and prior findings from authoritative records; generated review context can omit information. Later review rounds judge only the delta, as `agent-review` defines; bind GitHub approval to the actual head. Authors never approve their own work. Honor the repository's pre-push and hosted checks separately; pending CI need not delay a clean code review.
 
 Delegate when needed for independence or parallel work. Never hold an issue twice; shared files do not block parallel slices, and the later PR resolves conflicts. Use minimal fresh context where supported and include this brief:
 

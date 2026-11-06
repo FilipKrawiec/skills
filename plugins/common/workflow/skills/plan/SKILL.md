@@ -1,35 +1,56 @@
 ---
 name: plan
-description: Use when an issue needs an implementation plan or when resuming work from a posted plan.
+description: Use when an issue needs an implementation plan, when scoring or approving a plan, or when resuming work from a posted plan.
 allowed-tools: Skill Read Bash(gh:*,git:*)
 ---
 
 # Plan
 
-Plan within a direct owner request or approved milestone brief; labels, silence and bot summaries grant no authority. Keep temporary blockers in their authorized lane. Do not implement or advance delivery in this phase.
+Plan within a direct owner request or approved milestone brief; labels, silence and bot summaries grant no authority. This and `spec` are the only phases that wait for the developer: clarify intent here, so nothing after approval needs to ask. Do not implement.
 
 ## 1. Read
 
-Read the issue, scope packet, relevant criteria and decisions, and the affected code, tests and rules. For an existing plan or PR, inspect its branch, evidence and remaining work; do not rebuild a settled plan. For a small direct change, limit analysis to affected behavior and constraints.
+Read the issue, scope packet, criteria and decisions, and the affected code, tests and agent rules. For an existing plan or PR, inspect its branch, evidence and remaining work; do not rebuild a settled plan.
 
-**Exit gate:** the requested outcome, relevant evidence and constraints are known.
+**Exit gate:** the requested outcome, evidence and constraints are known.
 
-## 2. Decide
+## 2. Write it as a guide
 
-Name the outcome, affected paths, observable tests, focused commands, contracts, risks and unresolved decisions. Map each affected criterion to its evidence; preserve shared interface inputs, outputs, errors and compatibility. Delegate routine implementation choices.
+Write the plan for whoever executes it: a Craftsman subagent or the developer by hand. Each numbered step states:
 
-Reserve changes to product intent, paid services, budgets, authority, credentials, release or quality gates for the owner. New interactions require owner prototype direction. Continue independent authorized work while a reserved decision waits. Replan on a substantive conflict with intent or constraints, not a routine discovery. Bound investigations by question, time and evidence.
+- **Why:** the criterion or decision it serves.
+- **How:** the paths, interfaces, the failing test to write first, and the command proving it.
 
-If technical adjudication is needed, return the question, options, evidence, recommendation, constraints and bound to the orchestrator. For release work, plan required review, configured test delivery and exact owner approval of the production artifact and configuration; preserve required health and migration prerequisites.
+Add the risks, the decisions taken with their reasons, and the manual test steps CI cannot run. Preserve shared interface inputs, outputs, errors and compatibility. Reserve product intent, paid services, budgets, authority, credentials, release or quality gates for the owner; new interactions need owner prototype direction. Return a technical-adjudication question with options, evidence and a recommendation.
 
-**Exit gate:** executable steps and tests, with reserved decisions or gaps named.
+**Exit gate:** every step has a why and a how.
 
-## 3. Record
+## 3. Score reproducibility
 
-Use a compact in-chat plan for direct work; post one `## Plan` issue comment for AFK or work that must survive the session. A durable plan names scope, risks, decisions, steps and verification. Update that exact comment by ID when it changes; never use `--edit-last`. Do not request approval for routine choices within recorded authority.
+Give the plan alone, with the issue, to two fresh subagents on different models where the host offers them:
 
-**Exit gate:** plan available to implementers, with a comment link when durable.
+```text
+Read plan <link> and issue #<N> only; do not edit.
+For each step, answer: why does it exist, and how would you do it
+(paths, test, command)? Mark a step `guess` where you had to guess either.
+Return one line per step: `<step> ok|guess <what you guessed>`.
+```
+
+The score is the share of steps both marked `ok` whose answers match the plan. Below 100%, sharpen each guessed step, asking the developer the why or how question it raised when attended, and score again. A plan below 100% after two revisions goes to the owner with the guessed steps.
+
+**Exit gate:** 100% score, recorded with the plan.
+
+## 4. Approve and record
+
+Post one `## Plan` issue comment, or a compact in-chat plan for small direct work, with the steps, decisions, risks, manual test steps and `Reproducibility: 100% (<n> steps, 2 scorers)`. Update that exact comment by ID; never use `--edit-last`.
+
+- **Attended:** the developer approves the scored plan.
+- **Unattended:** a 100% score on a `lane:afk` issue is the approval.
+
+After approval the main thread only orchestrates and never edits project files.
+
+**Exit gate:** approved plan linked, or the owner question it waits on.
 
 ## Output
 
-At most 5 lines: **Summary:** outcome, scope and plan link when posted. **Decision:** next action/actor or reserved options and recommendation.
+At most 5 lines: **Summary:** outcome, score and plan link. **Decision:** approve the plan, or reserved options and recommendation.

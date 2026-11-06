@@ -6,7 +6,7 @@ allowed-tools: Skill Read Edit Bash
 
 # Test-Driven Development
 
-Follow the project's test commands, pre-push checks and required CI gates. Name the focused test before changing code. Implement the approved behavior and routine technical choices within scope; return a material contradiction as `replan: <step, evidence, recommendation>`. Do not weaken configured coverage, mutation, risk, security or other gates; changing their thresholds, scope, exemptions or baselines requires owner approval.
+Follow the project's test commands, pre-push checks and required CI gates. Name the focused test before changing code. As a Craftsman given a plan, execute its steps in order as written, the same way a developer following it by hand would. Implement the approved behavior and routine technical choices within scope; return a material contradiction as `replan: <step, evidence, recommendation>`. Do not weaken configured coverage, mutation, risk, security or other gates; changing their thresholds, scope, exemptions or baselines requires owner approval.
 
 ## 1. Prove the behavior
 

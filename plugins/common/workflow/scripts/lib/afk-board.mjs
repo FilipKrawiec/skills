@@ -100,13 +100,22 @@ export function afkPrRecord(pr, cfg) {
   const ownerMine = reviews.filter(review => review.author?.login?.toLowerCase() === cfg.owner?.toLowerCase()).at(-1);
   const ownerApproved = Boolean(cfg.owner && ownerMine?.state === 'APPROVED' && ownerMine.commit?.oid === head);
   // A dismissed review (say, after the merge base changed) no longer reviews the head, so the PR awaits a fresh verdict.
-  const reviewerReviewedHead = mine.some(review => review.commit?.oid === head && review.state !== 'DISMISSED');
+  // A ready PR is in team mode: an author-mode verdict at its head does not review it there.
+  const atHead = mine.filter(review => review.commit?.oid === head && review.state !== 'DISMISSED' && !(!pr.isDraft && /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || '')));
+  const reviewerReviewedHead = atHead.length > 0;
+  // A draft whose newest author verdict at its head is `ready` and whose checks pass waits only for `ship`.
+  const latestAuthor = atHead.filter(review => /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || '')).at(-1);
+  const workflow = afkWorkflowLogins(cfg);
+  // A change request from outside the workflow at the head is work for `pr-fix`, even under the Reviewer's approval.
+  const outsideChanges = reviews.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head && !workflow.has(review.author?.login?.toLowerCase()));
   const checks = pr.statusCheckRollup || [];
   const failed = checks.some(check => ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes((check.conclusion || check.state || '').toUpperCase()));
   const broken = pr.mergeable === 'CONFLICTING' || failed;
+  const passed = checks.length > 0 && checks.every(check => ['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes((check.conclusion || check.state || '').toUpperCase()));
+  const shipReady = Boolean(pr.isDraft && passed && !broken && /\bverdict=ready\b/.test(latestAuthor?.body || ''));
   const awaitingReview = !reviewerReviewedHead;
-  const needsWork = broken || awaitingReview || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
-  return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, needsWork };
+  const needsWork = broken || awaitingReview || outsideChanges || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
+  return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, shipReady, needsWork };
 }
 // What a PR unit's run acts on: its head, its review decisions (a dismissal counts), whether an approval stands at the head,
 // its checks, its merge state, the base head and the last comment from someone outside the workflow. A run's own hold,
@@ -133,7 +142,8 @@ export function afkIssueState(issue, column, comments, cfg, base = '') {
 }
 function afkSpentPath() { return join(git('rev-parse', '--path-format=absolute', '--git-common-dir'), 'afk-spent.json'); }
 // Every ping serves the first free unit in this board order; Priority, then the oldest number, decides inside a column.
-export const afkColumns = ['Blocked', 'Review', 'Todo', 'Backlog'];
+// `Done` units run `improve` on a recently merged PR.
+export const afkColumns = ['Blocked', 'Review', 'Done', 'Todo', 'Backlog'];
 // An issue's column; without a board card, `lane:afk` is Todo and anything else Backlog.
 export function afkColumn(issue) { return issue.status || (issue.labels.includes('lane:afk') ? 'Todo' : 'Backlog'); }
 // The job each column gives its run.
@@ -220,6 +230,8 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   for (const pr of prs) {
     if (!pr.needsWork || claimed.has(pr.number) || pr.issues.some(heldElsewhere) || heldElsewhere(pr.number) || pr.issues.some(number => attended.has(number))) continue;
     const stories = pr.issues.map(number => byNumber.get(number)).filter(issue => issue && !issue.labels.includes('type:epic'));
+    // A draft whose issues all left `lane:afk` was capped by author review and waits for the owner.
+    if (pr.isDraft && stories.length > 0 && !stories.some(issue => issue.labels.includes('lane:afk'))) continue;
     if (!pr.awaitingReview && !pr.broken && stories.length > 0 && stories.every(issue => issue.labels.includes('lane:owner'))) continue;
     // Its issues' packets, then the PR's own packet, then the files it already changes.
     const packet = stories.some(issue => Array.isArray(issue.paths)) ? stories.flatMap(issue => issue.paths || []) : afkPathsFromIssueBody(pr.body || '');
@@ -227,12 +239,22 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     const paths = packet ?? (scopedByFiles ? (pr.files || []).flatMap(file => [file.path, file.previousPath].filter(Boolean)) : null);
     const review = pr.awaitingReview && !pr.broken;
     // A fix scoped by files that could not be read waits for a later plan rather than holding an incomplete scope.
-    if (!review && paths === null) continue;
+    if (!review && !pr.shipReady && paths === null) continue;
     const priority = stories.map(issue => issue.priority).sort((a, b) => afkPriority(a) - afkPriority(b))[0];
-    const unit = review
+    const unit = pr.shipReady
+      ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) passed author review: invoke \`ship\` to hand it to team review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
+      : review
       ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) awaits its review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
       : { column: 'Review', text: `PR #${pr.number} (${pr.title})${pr.broken ? ' has a red check or a conflict' : ' needs its review fixed'}`, issue: stories[0]?.number || pr.number, priority, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid };
     offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg, base));
+  }
+  // Each PR merged in the last week gets one `improve` run until a `## Lessons` comment records it.
+  const merged = data?.merged ?? (data?.issues ? [] : afkMergedPrs(cfg, now));
+  for (const pr of merged) {
+    if (!(now - Date.parse(pr.mergedAt || '') < afkImproveWindowMs) || heldElsewhere(pr.number)) continue;
+    const comments = threads(pr.number);
+    if (comments.some(comment => /^## Lessons\b/m.test(comment.body || ''))) continue;
+    offer({ column: 'Done', text: `PR #${pr.number} (${pr.title}) merged: invoke \`ship\` on it to check base and record delivery, then \`improve\` on it alone and comment \`## Lessons\` on it`, issue: pr.number, priority: 'P9', paths: [], refine: true, input: afkOutsideInput(comments, cfg) }, pr.number, `improve:${pr.mergedAt}:${afkOutsideInput(comments, cfg)}`);
   }
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
   return { units, prs, byNumber, threads, unchanged, orphans, released, staleClaims };
@@ -303,6 +325,13 @@ export function afkPathsWithinScope(paths, scope) {
     return root && (path === root || path.startsWith(`${root}/`));
   }));
 }
+export const afkImproveWindowMs = 7 * 24 * 60 * 60_000;
+// Merged in the improve window, newest merges first; an unreadable list offers no improve unit this plan.
+export function afkMergedPrs(cfg, now = Date.now()) {
+  const since = new Date(now - afkImproveWindowMs).toISOString().slice(0, 10);
+  try { return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'merged', '--search', `merged:>=${since} sort:updated-desc`, '--limit', '30', '--json', 'number,title,mergedAt']); }
+  catch (error) { console.error(`Merged PRs unreadable (${error.message}); no improve unit this plan.`); return []; }
+}
 export function afkPrs(cfg) {
   return afkPrData(cfg);
 }
@@ -312,10 +341,8 @@ export function afkMerge(cfg, prs, wanted = null, gh = args => spawnSync('gh', a
     if (wanted && !wanted.has(pr.number)) continue;
     const checks = pr.statusCheckRollup || [];
     const passed = checks.length && checks.every(c => ['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes((c.conclusion || c.state || '').toUpperCase()));
-    if (pr.isDraft) {
-      if (passed && pr.mergeable === 'MERGEABLE') { run('gh', ['pr', 'ready', String(pr.number), '--repo', cfg.repo]); messages.push(`PR #${pr.number} marked ready`); }
-      continue;
-    }
+    // A draft is in author review; only `ship` marks it ready.
+    if (pr.isDraft) continue;
     const head = pr.headRefOid;
     const ownerLane = pr.labels?.some(l => l.name === 'review:owner');
     const ownerReviews = (pr.reviews || []).filter(r => r.author?.login?.toLowerCase() === cfg.owner?.toLowerCase());
