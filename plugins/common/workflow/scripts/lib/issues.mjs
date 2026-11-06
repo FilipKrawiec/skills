@@ -21,12 +21,11 @@ import {
   afkGh,
   afkMarker,
   config,
+  ensureWorkflowLabels,
   git,
   githubRepoFromRemote,
-  jsonCommand,
   run,
   withRepoLock,
-  workflowLabels,
 } from './core.mjs';
 
 export function validateIssueCommentBody(body) {
@@ -212,10 +211,5 @@ export function labelsCommand(args) {
   if (args.length !== 1 || args[0] !== 'ensure') throw new Error('Usage: labels ensure');
   const { lanes } = config();
   if (!lanes.repo) throw new Error('Cannot infer a GitHub repository from origin');
-  const existing = new Set(jsonCommand('gh', ['label', 'list', '--repo', lanes.repo, '--limit', '1000', '--json', 'name']).map(label => label.name));
-  for (const [name, [color, description]] of Object.entries(workflowLabels)) {
-    if (existing.has(name)) continue;
-    run('gh', ['label', 'create', name, '--repo', lanes.repo, '--color', color, '--description', description]);
-    console.log(`Created: ${name}`);
-  }
+  for (const name of ensureWorkflowLabels(lanes.repo)) console.log(`Created: ${name}`);
 }

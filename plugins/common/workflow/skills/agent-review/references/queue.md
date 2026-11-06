@@ -9,7 +9,7 @@ Order entries by first difference:
 3. Earliest milestone, then board Priority or priority label; none last.
 4. Oldest first.
 
-Include every ready PR carrying review:owner and owner-authored PR with blockers. Count waiting dependent issues, not stacked drafts. Do not route ordinary technical recovery to the owner: retain its lane and list the bounded diagnosis/replan/wait. Separate optional suggestions from blockers.
+Account for every PR since the last digest with one state: reviewed (verdict at its head), fixed (fixes pushed, awaiting a round), improved (merged, lessons recorded), non-compliant (shape note open) or draft (author mode, or capped). Include every ready PR carrying review:owner and owner-authored PR with blockers. Count waiting dependent issues, not stacked drafts. Do not route ordinary technical recovery to the owner: retain its lane and list the bounded diagnosis/replan/wait. Separate optional suggestions from blockers.
 
 Use one concise line per entry:
 

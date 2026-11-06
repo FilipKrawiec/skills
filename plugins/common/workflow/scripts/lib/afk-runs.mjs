@@ -27,6 +27,7 @@ import {
   cachedGithubMetadata,
   cleanEnvironment,
   config,
+  ensureWorkflowLabels,
   git,
   githubPushRemoteMatches,
   githubScopeFailure,
@@ -154,6 +155,9 @@ function afkPreflight(cfg) {
   if (reviewerToken.status !== 0) throw new Error(`No gh login for ${cfg.reviewer}; authenticate that reviewer account`);
   const permissions = afkGh(['api', `repos/${cfg.repo}`]).permissions || {};
   if (permissions.admin || permissions.maintain) throw new Error(`${actor} has admin or maintain permission on ${cfg.repo}; the AFK implementer must not have merge authority`);
+  // A label added in a CLI upgrade (say, `risk:R1`) exists before any run needs to set it.
+  try { ensureWorkflowLabels(cfg.repo, () => afkGh(['label', 'list', '--repo', cfg.repo, '--limit', '1000', '--json', 'name'])).forEach(name => console.error(`Created label: ${name}`)); }
+  catch (error) { console.error(`Workflow labels unchecked (${error.message}); run labels ensure.`); }
 }
 function afkBudget() {
   const result = spawnSync('gh', ['api', 'rate_limit', '--jq', '.resources.graphql | [.remaining, .reset] | @tsv'], { encoding: 'utf8' });
@@ -502,9 +506,15 @@ function afkSubIssues(cfg, number) {
 // without a PR goes to Blocked.
 export function afkEndStatus(named, blocked) { return named ? 'REVIEW' : blocked ? 'BLOCKED' : 'TODO'; }
 // A held issue the run split into sub-issues is their epic and stays In progress; each sub-issue an open PR names goes to Review.
-export function afkEndCards(number, subIssues, named, blocked) {
-  if (!subIssues.length) return [[number, afkEndStatus(named.has(number), blocked)]];
-  return [[number, 'PROGRESS'], ...subIssues.filter(sub => named.has(sub)).map(sub => [sub, 'REVIEW'])];
+// An issue whose PR is still a draft (author review, or capped) stays In progress.
+export function afkEndCards(number, subIssues, named, blocked, drafts = new Set()) {
+  const status = issue => drafts.has(issue) ? 'PROGRESS' : 'REVIEW';
+  if (!subIssues.length) return [[number, named.has(number) ? status(number) : afkEndStatus(false, blocked)]];
+  return [[number, 'PROGRESS'], ...subIssues.filter(sub => named.has(sub)).map(sub => [sub, status(sub)])];
+}
+// The issues open PRs name, and those whose PR is still a draft, which `afkEndCards` keeps In progress.
+export function afkOpenPrIssues(open) {
+  return { named: new Set(open.flatMap(pr => pr.issues)), drafts: new Set(open.filter(pr => pr.isDraft).flatMap(pr => pr.issues)) };
 }
 // The Review note for an issue whose PR (an `afkPrRecord`) was still open when its run ended.
 export function afkOpenPrNote(id, pr, base) {
@@ -525,7 +535,7 @@ export function afkEndRun(cfg, common, id, note = null, why = null, spend = fals
     const entries = afkSpentEntries(dropped, spend, () => afkPlan(cfg, afkLive(cfg), afkThreadReader(cfg), id).units);
     const implemented = dropped.filter(held => held.paths !== null && !held.refine && !held.review && !held.pr);
     const open = implemented.length ? afkPrData(cfg).map(pr => afkPrRecord(pr, cfg)) : [];
-    const named = new Set(open.flatMap(pr => pr.issues));
+    const { named, drafts } = afkOpenPrIssues(open);
     let base = ''; try { base = git('rev-parse', 'refs/remotes/origin/HEAD'); } catch { /* the note says unknown */ }
     for (const held of dropped) {
       const kind = held.paths === null ? 'epic' : 'issue';
@@ -535,7 +545,7 @@ export function afkEndRun(cfg, common, id, note = null, why = null, spend = fals
       const subIssues = afkSubIssues(cfg, held.number);
       const blocked = why !== null && !subIssues.length && !named.has(held.number) && afkStillReady(cfg, held.number);
       if (blocked) run('gh', ['api', `repos/${cfg.repo}/issues/${held.number}/comments`, '-f', `body=${afkMarker('issue-blocked', id)}\n**Blocked:** run ${id} ended without a PR.\n\n${why.trim().slice(0, 3000) || 'It left no summary; see the watcher log.'}`]);
-      for (const [number, status] of afkEndCards(held.number, subIssues, named, blocked)) {
+      for (const [number, status] of afkEndCards(held.number, subIssues, named, blocked, drafts)) {
         const pr = named.has(number) && open.find(record => record.issues.includes(number));
         if (pr) run('gh', ['api', `repos/${cfg.repo}/issues/${number}/comments`, '-f', `body=${afkMarker('issue-review', id)}\n${afkOpenPrNote(id, pr, base)}`]);
         afkStatus(cfg, number, status, true);

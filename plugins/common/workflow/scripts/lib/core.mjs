@@ -252,10 +252,23 @@ export const workflowLabels = {
   'state:started': ['fef2c0', 'An attended session is working on this'],
   'state:reviewing': ['0e8a16', 'The Reviewer is reviewing this PR'],
   'review:owner': ['e99695', 'PR is waiting for owner approval'],
+  'risk:R0': ['c2e0c6', 'Low-risk PR: one finder, no verifier'],
+  'risk:R1': ['fef2c0', 'PR changes behaviour inside one boundary'],
+  'risk:R2': ['d93f0b', 'PR crosses boundaries or touches contracts, data or security'],
   'type:epic': ['3e4b9e', 'Parent of bounded work items'],
   'type:story': ['a2eeef', 'New or changed user-visible behavior'],
   'type:bug': ['d73a4a', 'A fix for something that does not work as specified'],
   'type:chore': ['cfd3d7', 'Code change with no new user-visible behavior'],
   'type:task': ['c5def5', 'Work that ends in a finding or setting'],
 };
+// Creates each workflow label the repository lacks and returns their names; `list` and `create` default to gh.
+export function ensureWorkflowLabels(repo, list = () => jsonCommand('gh', ['label', 'list', '--repo', repo, '--limit', '1000', '--json', 'name']), create = (name, color, description) => run('gh', ['label', 'create', name, '--repo', repo, '--color', color, '--description', description])) {
+  const existing = new Set(list().map(label => label.name));
+  const created = [];
+  for (const [name, [color, description]] of Object.entries(workflowLabels)) {
+    if (existing.has(name)) continue;
+    create(name, color, description); created.push(name);
+  }
+  return created;
+}
 export function afkExpandedPath(path) { return path.replace(/^~(?=\/|$)/, homedir()); }

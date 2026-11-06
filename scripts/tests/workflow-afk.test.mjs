@@ -173,7 +173,7 @@ test('one-shot AFK runs are counted from live watcher PIDs', t => {
 test('workflow label catalog is centralized in the CLI', () => {
   assert.deepEqual(Object.keys(workflowLabels), [
     'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed', 'state:started', 'state:reviewing',
-    'review:owner', 'type:epic', 'type:story', 'type:bug', 'type:chore', 'type:task',
+    'review:owner', 'risk:R0', 'risk:R1', 'risk:R2', 'type:epic', 'type:story', 'type:bug', 'type:chore', 'type:task',
   ]);
 });
 

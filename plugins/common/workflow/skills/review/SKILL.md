@@ -1,42 +1,44 @@
 ---
 name: review
-description: Use when auditing a diff, branch, PR, staged changes, or a whole codebase or area for defects, specification compliance, design and test rigor.
+description: Use when auditing a diff, branch, PR, staged changes, or a whole codebase or area for whether it delivers its acceptance criteria, fits the system and breaks nothing else, or when verifying review findings.
 allowed-tools: Skill Read Bash(git:*,node:*)
 ---
 
 # Code Review
 
-Review independently of the implementer. Judge both **A: standards** and **B: specification**; only `agent-review` posts a binding GitHub decision. Follow stricter repository review requirements. Read [area-audit.md](references/area-audit.md) for a whole area and [hot-paths.md](references/hot-paths.md) for hot paths or startup.
+Review independently of the implementer; only `agent-review` posts to GitHub. Read [area-audit.md](references/area-audit.md) for a whole area and [hot-paths.md](references/hot-paths.md) for hot paths or startup.
 
 ## 1. Establish evidence
 
-Capture base and head, scope, applicable acceptance criteria, owner decisions, earlier findings and test evidence. For a directly requested general audit with no specification, use the requested scope and review purpose; report the absence of a spec. Read the diff, applicable agent rules and `REVIEW.md`. For a re-review, inspect changes since the previous reviewed head and unresolved findings, not the full diff. Carry findings to a new head only after verifying that base and Git tree, acceptance criteria, scope, applicable decisions and rules are unchanged. Otherwise review affected evidence and unresolved findings. Never reopen an answered finding without new evidence.
+Capture base and head, scope, acceptance criteria, owner decisions, already-posted findings and test evidence. Read the diff, or only the delta your brief names. Read the target repository's agent rules (AGENTS.md and host rule files) and `REVIEW.md`: they alone define what fits. For a requested audit with no specification, use the requested scope and report the absence of a spec.
 
-For low-risk changes, one independent reviewer may judge both axes when repository and owner rules permit. Use separate reviewers when required or for security, authority, concurrency, complex behavior or unclear risk. Supply the smallest sufficient context; do not rely on a worker inheriting the chat.
+**Exit gate:** criteria, rules, diff or delta, and your assigned question known.
 
-```text
-Review <A|B|both> independently; do not edit or post.
-Intent/criteria/decisions: <issue, scope, constraints, prior decisions>.
-Checkout: <worktree>; base <SHA>; head <SHA>; last reviewed <SHA|none>.
-Evidence: <changed paths, tests, captures, findings and repairs>.
-Return findings, exact base/head, evidence and missing information in <=8 lines.
-```
+## 2. Find
 
-**Exit gate:** scope, applicable criteria, diff and reviewers for both axes identified; missing required issue or PR criteria blocks approval pending repair or refinement.
+Answer only your assigned question; a finder assigned all of them answers each.
 
-## 2. Review
+- **Acceptance outcome:** trace each criterion to an observable outcome and a production call site; a unit reached only from tests proves nothing a user observes. Run the manual steps CI cannot and report what you saw. Flag hollow tests, weakened thresholds and scope creep.
+- **Correctness:** edge cases, failure paths, security, concurrency, cleanup and data loss in the changed code.
+- **Fit:** breaches of the repository's own rules, boundaries and patterns, each citing the rule's `file:line`.
+- **Blast radius:** callers, contracts, migrations and configuration outside the diff that the change breaks.
 
-- **A — standards:** check architecture and ownership boundaries, accessibility and layout, duplicated concepts, inconsistent mappings, and stale project rules. Name a design smell only when it can cause a concrete defect or rework.
-- **B — specification:** trace acceptance criteria and observable outcomes; trace each new user-facing unit to a production call site, since one reached only from tests proves no criterion a user observes; put each capture beside the design the issue names as binding, and a visible difference that no decision records blocks; check edge cases, failures, security, concurrency, cleanup and relevant tests. Flag scope creep, hollow tests, test-only production paths, weakened thresholds and missing meaningful coverage.
+Tag each candidate:
 
-Report only introduced, actionable defects with a read `file:line`, failure scenario and remedy; omit lint and unrelated pre-existing issues. A runtime/security defect, unhandled edge, boundary breach or hollow/failing test is a Blocker; a design smell likely to cause defects or rework is a Major. A confirmed Blocker or introduced Major blocks. List at most three optional suggestions separately.
+- **Important:** a concrete failure scenario against a criterion, a cited rule or existing behaviour. Only these block.
+- **Nit:** a real improvement that breaks nothing.
+- **Pre-existing:** a defect the diff did not introduce.
 
-A finding blocks only after a reviewer independent of its author and the implementer verifies it against the head. The binding reviewer may be that verifier. Verification confirms or rejects only the named finding; do not repeat an established decision without new evidence.
+Never report lint, taste, or a rule the repository does not state. Never repeat a finding already posted, answered or resolved.
 
-**Exit gate:** both axes and any blocking findings independently evaluated.
+**Exit gate:** each candidate has a tag, a read `file:line`, a failure scenario and a remedy.
 
-## 3. Report
+## 3. Verify
 
-Return at most 8 lines: `APPROVED` or `REQUEST_CHANGES`; each confirmed blocking finding with severity, axis, location, failure and remedy; optional suggestions; scope; exact base/head; checks and missing evidence. A new head needs an exact-head verdict, which may reuse unchanged evidence as above.
+As verifier, take each candidate alone against the head: read the cited line, reproduce or trace the failure, and confirm or reject it with evidence. Never add new findings; never upgrade a tag.
 
-**Exit gate:** exact-head verdict or named missing evidence.
+**Exit gate:** every candidate confirmed or rejected.
+
+## 4. Report
+
+Return at most 10 lines, one per candidate: `tag file:line failure remedy`, then exact base/head, what you ran with exits, and missing evidence.
