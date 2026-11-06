@@ -261,4 +261,14 @@ export const workflowLabels = {
   'type:chore': ['cfd3d7', 'Code change with no new user-visible behavior'],
   'type:task': ['c5def5', 'Work that ends in a finding or setting'],
 };
+// Creates each workflow label the repository lacks and returns their names; `list` and `create` default to gh.
+export function ensureWorkflowLabels(repo, list = () => jsonCommand('gh', ['label', 'list', '--repo', repo, '--limit', '1000', '--json', 'name']), create = (name, color, description) => run('gh', ['label', 'create', name, '--repo', repo, '--color', color, '--description', description])) {
+  const existing = new Set(list().map(label => label.name));
+  const created = [];
+  for (const [name, [color, description]] of Object.entries(workflowLabels)) {
+    if (existing.has(name)) continue;
+    create(name, color, description); created.push(name);
+  }
+  return created;
+}
 export function afkExpandedPath(path) { return path.replace(/^~(?=\/|$)/, homedir()); }

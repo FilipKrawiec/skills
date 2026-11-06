@@ -64,7 +64,7 @@ Return `tag file:line failure remedy` lines, at most 10.
 
 ## 5. Post
 
-Post one review per round on the exact head, an inline note per finding at its `file:line` starting **Important**, **Nit** or **Pre-existing**. Only verified Important findings block and go to `pr-fix`. The body carries `<!-- agent-review sha=<HEAD> round=<N> mode=<author|team> verdict=<ready|owner|fixes|cap|split> -->` and the counts.
+Post one review per round on the exact head, an inline note per finding at its `file:line` starting **Important**, **Nit** or **Pre-existing**. Only verified Important findings block and go to `pr-fix`; at R0 you verify its evidence. The body carries `<!-- agent-review sha=<HEAD> round=<N> mode=<author|team> verdict=<ready|owner|fixes|cap|split> -->`.
 
 - **Author mode** posts `COMMENT`. With no open Important thread, `verdict=ready` hands the PR to `ship`. Round 3 or later with open Important threads is `verdict=cap`: keep the draft, replace the risk label with `risk:R2`, swap the issue's `lane:afk` for `lane:owner`, and comment on the issue what keeps failing, one line per open thread.
 - **Team mode** posts `REQUEST_CHANGES` while a verified Important thread is open, otherwise `APPROVE` with `verdict=ready`, or `verdict=owner` with `review:owner` where CODEOWNERS on base names the owner for a changed path (both sides of renames). Approve only when effective protection requires code-owner review and you are neither PR author nor latest pusher; otherwise report the gap.

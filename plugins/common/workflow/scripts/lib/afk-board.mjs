@@ -103,19 +103,29 @@ export function afkPrRecord(pr, cfg) {
   // A ready PR is in team mode: an author-mode verdict at its head does not review it there.
   const atHead = mine.filter(review => review.commit?.oid === head && review.state !== 'DISMISSED' && !(!pr.isDraft && /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || '')));
   const reviewerReviewedHead = atHead.length > 0;
-  // A draft whose newest author verdict at its head is `ready` and whose checks pass waits only for `ship`.
-  const latestAuthor = atHead.filter(review => /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || '')).at(-1);
+  const verdictOf = review => /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(review?.body || '')?.[1] || null;
+  const authorMode = review => /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || '');
+  // The newest author verdict at the head: `ready` waits only for `ship`, `cap` waits for the owner.
+  const latestAuthor = atHead.filter(authorMode).at(-1);
+  const capped = Boolean(pr.isDraft && verdictOf(latestAuthor) === 'cap');
+  // The newest Reviewer verdict at the head asked to split the issue for its size.
+  const split = verdictOf(atHead.filter(review => verdictOf(review)).at(-1)) === 'split';
   const workflow = afkWorkflowLogins(cfg);
-  // A change request from outside the workflow at the head is work for `pr-fix`, even under the Reviewer's approval.
-  const outsideChanges = reviews.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head && !workflow.has(review.author?.login?.toLowerCase()));
+  // Someone outside the workflow whose newest review at the head requests changes has work for `pr-fix`, even under the Reviewer's approval.
+  const outsideLatest = new Map();
+  for (const review of reviews) {
+    const login = review.author?.login?.toLowerCase();
+    if (login && !workflow.has(login) && review.commit?.oid === head && ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) outsideLatest.set(login, review.state);
+  }
+  const outsideChanges = [...outsideLatest.values()].includes('CHANGES_REQUESTED');
   const checks = pr.statusCheckRollup || [];
   const failed = checks.some(check => ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes((check.conclusion || check.state || '').toUpperCase()));
   const broken = pr.mergeable === 'CONFLICTING' || failed;
-  const passed = checks.length > 0 && checks.every(check => ['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes((check.conclusion || check.state || '').toUpperCase()));
-  const shipReady = Boolean(pr.isDraft && passed && !broken && /\bverdict=ready\b/.test(latestAuthor?.body || ''));
+  // `ship` waits on pending checks itself; a red check or a conflict, or someone's change request, comes first.
+  const shipReady = Boolean(pr.isDraft && !broken && !outsideChanges && verdictOf(latestAuthor) === 'ready');
   const awaitingReview = !reviewerReviewedHead;
   const needsWork = broken || awaitingReview || outsideChanges || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
-  return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, shipReady, needsWork };
+  return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, shipReady, capped, split, needsWork };
 }
 // What a PR unit's run acts on: its head, its review decisions (a dismissal counts), whether an approval stands at the head,
 // its checks, its merge state, the base head and the last comment from someone outside the workflow. A run's own hold,
@@ -230,8 +240,8 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   for (const pr of prs) {
     if (!pr.needsWork || claimed.has(pr.number) || pr.issues.some(heldElsewhere) || heldElsewhere(pr.number) || pr.issues.some(number => attended.has(number))) continue;
     const stories = pr.issues.map(number => byNumber.get(number)).filter(issue => issue && !issue.labels.includes('type:epic'));
-    // A draft whose issues all left `lane:afk` was capped by author review and waits for the owner.
-    if (pr.isDraft && stories.length > 0 && !stories.some(issue => issue.labels.includes('lane:afk'))) continue;
+    // A draft author review capped waits for the owner until its head changes.
+    if (pr.capped) continue;
     if (!pr.awaitingReview && !pr.broken && stories.length > 0 && stories.every(issue => issue.labels.includes('lane:owner'))) continue;
     // Its issues' packets, then the PR's own packet, then the files it already changes.
     const packet = stories.some(issue => Array.isArray(issue.paths)) ? stories.flatMap(issue => issue.paths || []) : afkPathsFromIssueBody(pr.body || '');
@@ -245,7 +255,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
       ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) passed author review: invoke \`ship\` to hand it to team review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
       : review
       ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) awaits its review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
-      : { column: 'Review', text: `PR #${pr.number} (${pr.title})${pr.broken ? ' has a red check or a conflict' : ' needs its review fixed'}`, issue: stories[0]?.number || pr.number, priority, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid };
+      : { column: 'Review', text: `PR #${pr.number} (${pr.title})${pr.broken ? ' has a red check or a conflict' : pr.split ? ' was held for its size: invoke `spec` to split its issue, unless an owner decision on the PR keeps it whole' : ' needs its review fixed'}`, issue: stories[0]?.number || pr.number, priority, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid };
     offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg, base));
   }
   // Each PR merged in the last week gets one `improve` run until a `## Lessons` comment records it.
@@ -254,7 +264,9 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (!(now - Date.parse(pr.mergedAt || '') < afkImproveWindowMs) || heldElsewhere(pr.number)) continue;
     const comments = threads(pr.number);
     if (comments.some(comment => /^## Lessons\b/m.test(comment.body || ''))) continue;
-    offer({ column: 'Done', text: `PR #${pr.number} (${pr.title}) merged: invoke \`ship\` on it to check base and record delivery, then \`improve\` on it alone and comment \`## Lessons\` on it`, issue: pr.number, priority: 'P9', paths: [], refine: true, input: afkOutsideInput(comments, cfg) }, pr.number, `improve:${pr.mergedAt}:${afkOutsideInput(comments, cfg)}`);
+    // Its files scope a revert `ship` may prepare when the merge turned base red.
+    const files = (pr.files || []).map(file => file.path).filter(Boolean);
+    offer({ column: 'Done', text: `PR #${pr.number} (${pr.title}) merged: invoke \`ship\` on it to check base and record delivery, then \`improve\` on it alone and comment \`## Lessons\` on it`, issue: pr.number, priority: 'P9', paths: files, pr: pr.number, input: afkOutsideInput(comments, cfg) }, pr.number, `improve:${pr.mergedAt}:${afkOutsideInput(comments, cfg)}`);
   }
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
   return { units, prs, byNumber, threads, unchanged, orphans, released, staleClaims };
@@ -327,9 +339,9 @@ export function afkPathsWithinScope(paths, scope) {
 }
 export const afkImproveWindowMs = 7 * 24 * 60 * 60_000;
 // Merged in the improve window, newest merges first; an unreadable list offers no improve unit this plan.
-export function afkMergedPrs(cfg, now = Date.now()) {
+export function afkMergedPrs(cfg, now = Date.now(), gh = afkGh) {
   const since = new Date(now - afkImproveWindowMs).toISOString().slice(0, 10);
-  try { return afkGh(['pr', 'list', '--repo', cfg.repo, '--state', 'merged', '--search', `merged:>=${since} sort:updated-desc`, '--limit', '30', '--json', 'number,title,mergedAt']); }
+  try { return gh(['pr', 'list', '--repo', cfg.repo, '--state', 'merged', '--search', `merged:>=${since} sort:updated-desc`, '--limit', '30', '--json', 'number,title,mergedAt,files']); }
   catch (error) { console.error(`Merged PRs unreadable (${error.message}); no improve unit this plan.`); return []; }
 }
 export function afkPrs(cfg) {

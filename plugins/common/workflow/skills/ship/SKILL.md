@@ -1,7 +1,7 @@
 ---
 name: ship
 description: Use when a reviewed draft PR is ready to hand to team review, or when a change has merged, to check actual base HEAD CI, respond to attributable failures and distinguish merged, deployed and accepted evidence.
-allowed-tools: Read Edit Bash
+allowed-tools: Skill Read Edit Bash
 ---
 
 # Ship
@@ -17,11 +17,11 @@ Branch on the PR's state, first match wins:
 
 Run `gh pr checks <N> --watch`; hand off only a green head. Then, in order:
 
-1. Rewrite the description as delivered: problem, change, each criterion with its evidence, decisions, risks, manual test results, `Closes #N`. Keep any attribution lines where they are.
+1. Rewrite the description as delivered: problem, change, each criterion with its evidence, decisions, risks, manual test results. Keep the PR's issue link keyword (`Closes` or `Part of`) and any attribution lines as they are.
 2. Recheck the risk label against the final diff; raise it if the diff grew, never lower it.
-3. Run `gh pr ready <N>`, which invites human review.
+3. Run `gh pr ready <N>`, which invites human review; move its issue's card to Review and remove the issue's execution label.
 4. Request review from every active repository user: collaborators with write access who committed, reviewed or commented in the last 90 days, except workflow identities.
-5. Turn on squash auto-merge bound to the head: `gh pr merge <N> --squash --auto --match-head-commit <HEAD>`. Branch protection decides which approvals it waits for.
+5. Invoke `vcs` to turn on squash auto-merge bound to the head; it applies the protection, owner-hold and `release` gates first.
 6. Comment the decisions taken and their reasons on the issue, one line each.
 
 The unattended run ends here; team-mode review and `pr-fix` serve the PR from now on.

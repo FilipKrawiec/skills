@@ -29,7 +29,7 @@ Read [afk-ready.md](references/afk-ready.md) for AFK readiness. Before AFK assig
 | Orchestrator | owner lane to `lane:afk` | Participation resolved and authority covers the rest; recheck readiness. |
 | Product partner | one `type:*` | Actual outcome changes type; an epic has no work lane. |
 | VCS | `state:claimed` / `state:started` | Exclusive unattended / attended assignment; In Progress. |
-| VCS | remove execution label | Ready linked PR; Review, the open PR still excludes reassignment. |
+| Ship | remove execution label | PR marked ready; Review, the open PR still excludes reassignment. |
 | Risk subagent | one `risk:R*` on a PR | Set once the draft opens; `ship` raises, never lowers. |
 | Reviewer | `lane:afk` to `lane:owner`, PR `risk:R2` | Author review capped; PR stays draft. |
 | Reviewer | add/remove own `review:owner` | Extra owner gate appears/clears; never erase an explicit owner hold. |

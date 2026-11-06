@@ -14,7 +14,8 @@ Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr 
 
 - unresolved review threads tagged **Important** by the Reviewer;
 - unresolved human threads and comments that ask for a change;
-- a red required check at the head.
+- a red required check at the head;
+- a merge conflict with the base: merge the base through `vcs`, never rebase.
 
 Nit and Pre-existing threads are follow-ups: comment their link on the issue for `spec` to file, and fix nothing for them. A human asking a question gets an answer, not a commit.
 
