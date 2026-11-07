@@ -41,7 +41,7 @@ Separate three facts: fresh-context review judgment (`review`), GitHub attributi
 
 Only `spec` and `plan` wait for the developer; a plan is approved at a 100% reproducibility score. Afterwards the orchestrator only dispatches: a Craftsman executes the plan, a draft PR gets one `risk:R0|R1|R2` label from a fresh subagent, and `agent-review` reviews it in author mode (pipeline first, finders sized by risk, one verifier, Important/Nit/Pre-existing tags, delta-only later rounds, a cap of three). `pr-fix` is the only fixer. `ship` marks the PR ready for team mode, where the same engine adds only new findings. `improve` runs once per merged PR.
 
-Work in isolated short-lived branches/worktrees from a fetched base; preserve the main checkout. Parallel implementation requires native coordination that holds each issue once and satisfied dependencies; shared files never block, the later PR resolves conflicts. Waiting work need not idle independent work. Reviews bind to the exact head; blocking findings request changes, optional suggestions stay optional.
+Work in isolated short-lived branches/worktrees from a fetched base; preserve the main checkout. Parallel implementation requires native coordination that holds each issue once and satisfied dependencies; shared files never block, the later PR resolves conflicts. Waiting work need not idle independent work. Reviews bind to the exact head; blocking findings are verified Important threads (a team-mode change request), optional suggestions stay optional.
 
 ## Health and confidence
 
@@ -57,4 +57,4 @@ Canonical packages live in `plugins/common/<package>/skills/`. Each skill is sel
 
 Use project-native build and quality tools. This library runs `just verify` for unit tests and one plugin validation; distributing health instructions does not authorize installing their toolchain here. The `workflow.mjs project` command reads the nearest `AGENTS.md`; direct project commands remain the normal path. Prefer deleting duplicated checks and instructions over adding scripts, schemas or coordination frameworks.
 
-The board remains Backlog, Todo, In progress, Review, Done. Any change to its columns or membership requires coordinated devcontainer work. Keep one owner decision queue, a daily digest when things change and immediate incident/all-useful-work-blocked alerts through an explicitly authorized channel.
+The board remains Backlog, Todo, In progress, Blocked, Review, Done; Blocked holds only what a person must do. Any change to its columns or membership requires coordinated devcontainer work. Keep one owner decision queue, a daily digest when things change and immediate incident/all-useful-work-blocked alerts through an explicitly authorized channel.

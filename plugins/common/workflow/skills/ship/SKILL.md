@@ -19,7 +19,7 @@ Run `gh pr checks <N> --watch`; hand off only a green head. Then, in order:
 
 1. Rewrite the description as delivered: problem, change, each criterion with its evidence, decisions, risks, manual test results. Keep the PR's issue link keyword (`Closes` or `Part of`) and any attribution lines as they are.
 2. Recheck the risk label against the final diff; raise it if the diff grew, never lower it.
-3. Run `gh pr ready <N>`, which invites human review; move its issue's card to Review and remove the issue's execution label.
+3. Run `gh pr ready <N>`, which invites human review; move its issue's card to Review (a `Part of` issue too: it stays there until deployed acceptance) and remove the issue's execution label.
 4. Request review from every active repository user: collaborators with write access who committed, reviewed or commented in the last 90 days, except workflow identities.
 5. Invoke `vcs` to turn on squash auto-merge bound to the head; it applies the protection, owner-hold and `release` gates first.
 6. Comment the decisions taken and their reasons on the issue, one line each.

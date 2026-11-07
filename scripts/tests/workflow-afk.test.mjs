@@ -995,7 +995,7 @@ test('a run that splits its held issue builds the first sub-issue while its hold
 
 test('AFK eligibility records post as the configured Reviewer, not through the credential-stripping CLI', () => {
   const skill = name => readFileSync(new URL(`../../plugins/common/workflow/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
-  assert.match(skill('agent-review'), /eligibility issue=<N> -->` with `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh issue comment`; `workflow.mjs` strips `GH_TOKEN`/);
+  assert.match(skill('agent-review'), /Run every `gh` call as `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh \.\.\.`[^\n]*`workflow\.mjs` strips `GH_TOKEN`/);
   assert.match(skill('afk'), /Write implementer records through the workflow CLI/);
 });
 
