@@ -20,7 +20,7 @@ When an existing test already demonstrates the failure, use its failing run as t
 
 Improve structure while preserving behavior. Keep tests observable: avoid private-state access, test-only production APIs, backdoor setters, mere existence assertions or tests of a fake alone. Use injected dependencies and fake clocks where needed. For an adapter, check each implementation against its contract; for a gate, cover allowed and rejected cases and exemption boundaries.
 
-Run the project's specified pre-push checks once on the final changed revision. When the project assigns its full verification or coverage gate to hosted CI, consume that result as the full gate; run it locally only when required or needed to diagnose a failure. A pending hosted check is pending evidence, not a pass. Preserve all configured reproducible confidence evidence; timeouts and skipped checks are not passes. Reuse a valid result for unchanged code instead of rerunning it.
+Run the project's specified pre-push checks once on the final changed revision; as a Craftsman, run only your focused tests, since the orchestrator runs `steps.test` once before committing. When the project assigns its full verification or coverage gate to hosted CI, consume that result as the full gate; run it locally only when required or needed to diagnose a failure. A pending hosted check is pending evidence, not a pass. Preserve all configured reproducible confidence evidence; timeouts and skipped checks are not passes. Reuse a valid result for unchanged code instead of rerunning it.
 
 **Exit gate:** focused and required local checks pass; required hosted checks pass for completion, or their pending/failure state and next actor are recorded.
 

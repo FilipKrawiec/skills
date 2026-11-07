@@ -38,7 +38,7 @@ Read [afk-ready.md](references/afk-ready.md) for AFK readiness. Before AFK assig
 | Orchestrator | close product milestone | Exact release evidence proves deployed acceptance; Done. |
 | Ship | remove execution label | Completed, returned or reverted; record evidence or replan. |
 
-Temporary dependency, CI, capability or owner waits retain lane, milestone and assignment. Record cause, actor, resume condition and evidence; never overwrite active claims. Scope or authority changes need their own decision. With a board: Todo for ready AFK, In Progress for active work and draft PRs, Review for a ready closing PR (`Part of` stays In Progress), Done for verified slices, delivered epics or accepted milestones. Draft epics stay in Backlog; approved ones are In Progress. Without a board use priority labels; status never grants authority.
+Temporary dependency, CI, capability or owner waits retain lane, milestone and assignment. Record cause, actor, resume condition and evidence; never overwrite active claims. Scope or authority changes need their own decision. With a board: Todo for ready AFK, In Progress for active work and draft PRs, Review once its PR is ready (`Part of` until deployed acceptance), Done for verified slices, delivered epics or accepted milestones. Draft epics stay in Backlog; approved ones are In Progress. Without a board use priority labels; status never grants authority.
 
 **Exit gate:** one type, milestone and lane (an approved epic none), with waits and actors explicit.
 

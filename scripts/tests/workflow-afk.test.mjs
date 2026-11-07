@@ -330,6 +330,15 @@ test('dead run holds expire after the grace period while live holds persist', ()
   assert.equal('dead' in ledger, false);
 });
 
+test('a PR `ship` marked ready is served for team review though its head, reviews and checks did not change', () => {
+  const workflowCfg = { ...cfg, implementer: 'builder' };
+  const authorReady = { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc round=1 mode=author verdict=ready -->' };
+  const pr = extra => afkPrRecord({ number: 9, title: 'Fix', body: 'No linked issue.', headRefOid: 'abc', isDraft: true, labels: [{ name: 'risk:R1' }], reviews: [authorReady], statusCheckRollup: [{ conclusion: 'SUCCESS' }], mergeable: 'MERGEABLE', files: [{ path: 'src/a.js' }], ...extra }, workflowCfg);
+  const spent = { 9: afkPrState(pr(), [], workflowCfg, 'base1') };
+  const units = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr({ isDraft: false })], spent, base: 'base1' }).units;
+  assert.deepEqual(units.map(unit => unit.text), ['PR #9 (Fix) awaits its review'], 'the ship run spent the draft; the ready PR needs its team-mode review');
+});
+
 test('a PR a finished run left unchanged gets no new run until its head, reviews, checks, merge state, base or an outside comment change', () => {
   const pr = extra => ({ number: 9, title: 'Fix', body: 'No linked issue.', headRefOid: 'abc', labels: [], reviews: [{ author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'abc' }, body: '' }], statusCheckRollup: [], mergeable: 'MERGEABLE', files: [{ path: 'src/a.js' }], ...extra });
   const workflowCfg = { ...cfg, implementer: 'builder' };
@@ -355,7 +364,7 @@ test('a PR a finished run left unchanged gets no new run until its head, reviews
   assert.deepEqual(offered(pr({ reviews: [...pr().reviews, { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc round=2 verdict=fixes -->' }] })), [9], 'a marked Reviewer verdict is');
   assert.deepEqual(plan(pr(), [{ id: 7, user: { login: 'owner' }, body: 'Please also cover X' }]).units.map(unit => unit.issue), [9], 'an owner comment');
   const fresh = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr()], base: 'base1' }).units[0];
-  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:1/0:green:mergeable:base1:'], 'the unit carries the state its run will spend');
+  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:ready:1/0:green:mergeable:base1:'], 'the unit carries the state its run will spend');
 });
 
 test('a red PR unit takes its scope from its packet, else its changed files', () => {
@@ -995,7 +1004,7 @@ test('a run that splits its held issue builds the first sub-issue while its hold
 
 test('AFK eligibility records post as the configured Reviewer, not through the credential-stripping CLI', () => {
   const skill = name => readFileSync(new URL(`../../plugins/common/workflow/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
-  assert.match(skill('agent-review'), /eligibility issue=<N> -->` with `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh issue comment`; `workflow.mjs` strips `GH_TOKEN`/);
+  assert.match(skill('agent-review'), /Run every `gh` call as `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh \.\.\.`[^\n]*`workflow\.mjs` strips `GH_TOKEN`/);
   assert.match(skill('afk'), /Write implementer records through the workflow CLI/);
 });
 
