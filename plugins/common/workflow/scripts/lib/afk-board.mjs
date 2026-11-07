@@ -231,7 +231,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (column === 'Todo') {
       if (epic && !(slices && (slices.total === 0 || slices.completed === slices.total))) continue;
       // A ready issue waits for its open blockers and for an open PR its packet depends on; a packet-less story is refined meanwhile.
-      // Shared files never keep two builds apart: when both change one file, the later PR rebases on the base.
+      // Shared files never keep two builds apart: when both change one file, the later PR merges the base.
       if ((epic || issue.paths !== null) && (issue.blocked || (issue.dependencies || []).some(number => openPrs.has(number)))) continue;
     }
     const write = column === 'Todo' && !epic && issue.paths !== null;

@@ -34,7 +34,7 @@ build_tools:
 - Before editing, name the targeted test or validator; run it while you work. Run a full suite before starting only to reproduce a bug or set a baseline.
 - Run the verify gate (`just verify`) once when the change is done. Never re-run it on unchanged code; a second pass proves nothing.
 - Read-only analysis, plan-only work and doc edits without runnable scripts need no verification.
-- Make a change asked for in chat in place, with focused tests. Dispatch workers, open issues or write plans only when asked or when the work spans several slices.
+- Make a small change asked for in chat in place, with focused tests, without a plan. Open issues or write plans only when asked or when the work spans several slices; once a plan is approved, `plan` hands execution to Craftsman subagents.
 
 ## Output
 
