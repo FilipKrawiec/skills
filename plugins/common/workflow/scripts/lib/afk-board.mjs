@@ -127,14 +127,14 @@ export function afkPrRecord(pr, cfg) {
   const needsWork = broken || awaitingReview || outsideChanges || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
   return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, shipReady, capped, split, needsWork };
 }
-// What a PR unit's run acts on: its head, its review decisions (a dismissal counts), whether an approval stands at the head,
+// What a PR unit's run acts on: its head, draft or ready (`ship` marking it ready hands it to team review), its review decisions (a dismissal counts), whether an approval stands at the head,
 // its checks, its merge state, the base head and the last comment from someone outside the workflow. A run's own hold,
 // release, notes and thread replies never change it, so a run that changed nothing leaves the same state behind; a run
 // that waited on a red base or a conflict is served after the next merge.
 export function afkPrState(pr, comments, cfg, base = '') {
   const decisions = (pr.reviews || []).filter(review => afkReviewKind(review, cfg) !== 'reply');
   const reviews = `${decisions.length}/${decisions.filter(review => review.state === 'DISMISSED').length}${pr.approved ? '+' : ''}`;
-  return `${pr.headRefOid}:${reviews}:${pr.failed ? 'red' : 'green'}:${(pr.mergeable || 'UNKNOWN').toLowerCase()}:${base}:${afkOutsideInput(comments, cfg)}`;
+  return `${pr.headRefOid}:${pr.isDraft ? 'draft' : 'ready'}:${reviews}:${pr.failed ? 'red' : 'green'}:${(pr.mergeable || 'UNKNOWN').toLowerCase()}:${base}:${afkOutsideInput(comments, cfg)}`;
 }
 function afkWorkflowLogins(cfg) { return new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase())); }
 // The last comment from someone outside the workflow; the workflow's own markers and notes are never new input.
