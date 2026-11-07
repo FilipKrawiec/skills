@@ -56,6 +56,7 @@ import {
   push,
   reviewContext,
 } from './lib/vcs.mjs';
+import { worktreeCommand } from './lib/worktrees.mjs';
 
 const help = `Usage:
   node workflow.mjs commit --message MESSAGE [-- PATH...]
@@ -63,6 +64,7 @@ const help = `Usage:
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
   node workflow.mjs issue claim|status|create|comment|edit|close|reopen|queue ...
   node workflow.mjs labels ensure
+  node workflow.mjs worktree tidy [--dry-run] [--idle-days N]
   node workflow.mjs cache show|refresh
   node workflow.mjs cache refresh
   node workflow.mjs afk install|uninstall|watch|start|check|merge|end|runs|reap ...
@@ -254,6 +256,7 @@ async function execute(command, args) {
   else if (command === 'issue' && args[0] === 'reopen') { config(); issueReopen(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'queue') { const { lanes } = config(); issueQueue(args.slice(1)); }
   else if (command === 'labels') labelsCommand(args);
+  else if (command === 'worktree') worktreeCommand(args);
   else if (command === 'cache') cacheCommand(args);
   else if (command === 'afk') process.exitCode = afkCommand(args);
   else if (command === 'manifests') manifestsCommand(args);

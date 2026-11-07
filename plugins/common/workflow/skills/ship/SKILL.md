@@ -46,7 +46,7 @@ For ambiguous or non-AFK failures, report evidence and the responsible actor; do
 
 ## 4. Record delivery
 
-For affected issues, prove the closing merge is an ancestor of actual HEAD. Report merge, CI, deployment and acceptance separately; missing evidence stays pending. Record `## Shipped #M` only when the exact artifact/configuration containing closing PR #M is deployed and accepted, with HEAD and run links; then remove execution labels. Never close an epic here; the AFK run served for that epic closes it once its slices reach test. A product milestone remains in Review until deployed acceptance.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs worktree tidy` to remove the merged PR's worktree and any others left behind. For affected issues, prove the closing merge is an ancestor of actual HEAD. Report merge, CI, deployment and acceptance separately; missing evidence stays pending. Record `## Shipped #M` only when the exact artifact/configuration containing closing PR #M is deployed and accepted, with HEAD and run links; then remove execution labels. Never close an epic here; the AFK run served for that epic closes it once its slices reach test. A product milestone remains in Review until deployed acceptance.
 
 **Exit gate:** affected issues' states and evidence recorded, or pending evidence named.
 
