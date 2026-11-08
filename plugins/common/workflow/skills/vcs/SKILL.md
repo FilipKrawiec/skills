@@ -24,13 +24,13 @@ Run `node <this-skill-directory>/../../scripts/workflow.mjs push`; follow its re
 
 ## 3. PR and readiness
 
-Open a PR as a draft; only `ship` marks it ready, after `agent-review` posts `verdict=ready` at its head. `pr-fix` alone fixes review threads; never dismiss blockers or resolve human threads. Keep GitHub approval bound to the current head; required CI remains a merge gate.
+Open a PR as a draft; only `ship` marks it ready, after `agent-review` posts `verdict=ready` at its head. Never end a session on a draft or leave it to a watcher, which may be paused: once `gh pr checks <N> --watch` is green, have a fresh subagent loading `agent-review` review it, given the PR, head and checkout without your reasoning. On `verdict=fixes` invoke `pr-fix` and review again; on `verdict=ready` invoke `ship`; on `verdict=shape` fix what it names and review again; on `verdict=cap` or `split`, report it. `pr-fix` alone fixes review threads; never dismiss blockers or resolve human threads. Keep GitHub approval bound to the current head; required CI remains a merge gate.
 
 Reuse an existing PR or open a draft. Once it opens, a fresh subagent with no implementation context reads the diff, issue and agent rules and sets exactly one label: `risk:R0` (docs, tests, local change), `risk:R1` (behaviour inside one boundary) or `risk:R2` (contracts, data, security, authority, concurrency or several boundaries). State the problem and change, scope, risks, evidence, and the plan's context and decisions; include real captures for visible changes. Link the issue and plan when applicable. Use `Closes #N` when merge completes the issue, and `Part of #N` only for an outcome awaiting deployed acceptance. Work needing several PRs is never sliced with `Part of`: invoke `spec` to split it into sub-issues, and each PR closes one.
 
 Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr <number>` for review facts; check missing information independently. Require effective code-owner protection, required checks and resolved owner holds before enabling auto-merge. If merge triggers production publication, apply `release` and its owner-approval and native-control gates before enabling it. Bind squash auto-merge to the current head (`--match-head-commit`); GitHub merges only after the required approval and checks at that head, and a changed head needs renewed review. Confirm GitHub accepted the request; never wait for the merge itself. Production approval remains separate under `release`.
 
-**Exit gate:** draft PR with one risk label, auto-merge on at the head of a PR `ship` marked ready, or PR/head and the next actor and gate.
+**Exit gate:** a PR `ship` marked ready with auto-merge on at its head, a capped or split draft reported, or PR/head and the next actor and gate.
 
 ## 4. Tidy and report
 
