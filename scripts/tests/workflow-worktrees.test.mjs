@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -148,4 +148,48 @@ test('worktree tidy command rejects a bad --idle-days and keeps idle trees witho
     worktreeCommand(['tidy', '--dry-run', '--idle-days', '0']);
   } finally { console.log = log; process.env.PATH = path; process.chdir(cwd); }
   assert.ok(lines.some(line => line.includes(idleTree) && line.includes('PR states unavailable')), lines.join('\n'));
+});
+
+test('worktree tidy command without gh keeps a clean pushed tree but still removes one already in the base', t => {
+  const { repo, git, add } = fixture(t);
+  const bin = join(repo, '..', 'bin');
+  mkdirSync(bin);
+  for (const tool of ['git', 'lsof']) {
+    const found = spawnSync('which', [tool], { encoding: 'utf8' }).stdout.trim();
+    if (found) symlinkSync(found, join(bin, tool));
+  }
+  assert.equal(git(repo, 'remote', 'add', 'origin', 'https://github.com/example/repo.git').status, 0);
+  const pushed = add('pushed');
+  assert.equal(git(pushed, 'commit', '-q', '--allow-empty', '-m', 'on the remote').status, 0);
+  assert.equal(git(repo, 'update-ref', 'refs/remotes/origin/pushed', 'pushed').status, 0);
+  const inBase = add('ended');
+  const old = new Date(Date.now() - 2 * hour);
+  for (const tree of [pushed, inBase]) {
+    const gitDir = git(tree, 'rev-parse', '--absolute-git-dir').stdout.trim();
+    for (const name of ['index', 'HEAD', 'logs/HEAD']) if (existsSync(join(gitDir, name))) utimesSync(join(gitDir, name), old, old);
+  }
+  const cwd = process.cwd(), path = process.env.PATH, log = console.log, lines = [];
+  try {
+    process.chdir(repo);
+    process.env.PATH = bin;
+    console.log = line => lines.push(line);
+    worktreeCommand(['tidy']);
+  } finally { console.log = log; process.env.PATH = path; process.chdir(cwd); }
+  assert.ok(lines.some(line => line.startsWith('kept') && line.includes(pushed) && line.includes('PR states unavailable')), lines.join('\n'));
+  assert.equal(existsSync(pushed), true);
+  assert.ok(lines.some(line => line.startsWith('removed') && line.includes(inBase)), lines.join('\n'));
+  assert.equal(existsSync(inBase), false);
+});
+
+test('worktree facts compare real paths, so a symlinked checkout or process directory still counts', t => {
+  const { repo, add, factsOf, context } = fixture(t);
+  const tree = add('linked');
+  const link = join(repo, '..', 'link');
+  symlinkSync(tree, link);
+  mkdirSync(join(tree, 'src'));
+  context.current = link;
+  context.busy = [join(link, 'src')];
+  const facts = factsOf(tree);
+  assert.equal(facts.current, true);
+  assert.equal(facts.busy, true);
 });

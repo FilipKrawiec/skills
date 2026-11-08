@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afkRunAlive } from './afk-watch.mjs';
@@ -44,6 +44,8 @@ export function prStates(pulls) {
   return states;
 }
 
+const real = path => { try { return realpathSync(path); } catch { return path; } };
+
 function gitIn(cwd, args, extraEnv = {}) {
   return spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...cleanEnvironment(), GIT_OPTIONAL_LOCKS: '0', ...extraEnv } });
 }
@@ -68,16 +70,17 @@ function liveSession(tree, root) {
 
 // Reads what the verdict needs; a fact that cannot be read keeps the tree.
 export function worktreeFacts(tree, { root, current, baseRef, prs, busy }) {
+  const treePath = real(tree.path);
   const status = gitIn(tree.path, ['status', '--porcelain', '--untracked-files=all']);
   const unpushed = gitIn(tree.path, ['log', '--oneline', 'HEAD', '--not', '--remotes']);
   const hasHead = gitIn(tree.path, ['rev-parse', '--verify', '-q', 'HEAD']).status === 0;
   return {
     ...tree,
-    main: tree.path === root,
-    current: tree.path === current,
-    watcher: tree.path === join(root, '.worktrees', 'afk-watch'),
+    main: treePath === real(root),
+    current: treePath === real(current),
+    watcher: treePath === join(real(root), '.worktrees', 'afk-watch'),
     live: liveSession(tree, root),
-    busy: busy === null || status.status !== 0 || busy.some(path => path === tree.path || path.startsWith(`${tree.path}/`)),
+    busy: busy === null || status.status !== 0 || busy.map(real).some(path => path === treePath || path.startsWith(`${treePath}/`)),
     pr: tree.branch ? prs.get(tree.branch) ?? null : null,
     dirty: status.stdout.trim() !== '',
     hasHead,
@@ -143,14 +146,14 @@ export function worktreeCommand(args) {
   const trees = parseWorktreeList(listed.stdout);
   const root = trees[0].path;
   const pulls = spawnSync('gh', ['pr', 'list', '--state', 'all', '--limit', '1000', '--json', 'headRefName,state'], { cwd: current, encoding: 'utf8' });
-  // Without PR states an open PR's tree could look idle, so nothing but clean, pushed or merged trees go.
+  // Without PR states an open PR's tree could look idle, so only a tree already in the base goes.
   const prs = pulls.status === 0 ? prStates(JSON.parse(pulls.stdout)) : null;
   const busy = busyPaths();
   const now = Date.now();
   for (const tree of trees) {
     const facts = worktreeFacts(tree, { root, current, baseRef, prs: prs ?? new Map(), busy });
     let verdict = worktreeVerdict(facts, { now, idleDays });
-    if (!prs && verdict.why.startsWith('idle')) verdict = { action: 'keep', why: 'PR states unavailable' };
+    if (!prs && verdict.action === 'remove' && verdict.why !== 'its head is in the base') verdict = { action: 'keep', why: 'PR states unavailable' };
     if (verdict.action === 'keep') { console.log(`kept ${tree.path} (${verdict.why})`); continue; }
     if (dryRun) { console.log(`would remove ${tree.path} (${verdict.why}${facts.dirty ? '; backs up its changes' : ''})`); continue; }
     const result = removeWorktree(facts, verdict, root, baseRef);
