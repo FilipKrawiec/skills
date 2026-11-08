@@ -32,7 +32,7 @@ You orchestrate only: after the plan's approval never edit project files yoursel
 
 1. **Plan:** invoke `plan`; a 100% reproducibility score approves it.
 2. **Execute:** dispatch one fresh Craftsman subagent loading `tdd` with the plan, briefed with [worker-brief.md](references/worker-brief.md). It returns `done`, `stuck` or `replan`. Compare changed files with `### Estimate` (S ~5, M ~20); past twice that, or needing several PRs, invoke `spec` to split it and build its first sub-issue.
-3. **Open:** verify the scope packet covers every changed path, run `steps.test` once, then invoke `vcs` to commit, push, open the draft PR with the plan's context and decisions, and have its risk label set.
+3. **Open:** verify the scope packet covers every changed path, run `steps.test` once, then invoke `vcs` to commit, push, open the draft PR with the plan's context and decisions, and have its risk label set; `vcs` stops at the labelled draft here, since steps 4 and 5 review and ship.
 4. **Review:** a fresh subagent loading `agent-review` reviews the draft, given the Reviewer brief below without your reasoning. On `verdict=fixes`, invoke `pr-fix`, then review again; on `verdict=shape`, fix what the note names through `vcs` (draft, one risk label), then review again; on `verdict=split`, invoke `spec` to split it. `verdict=cap` ends delivery; report it.
 5. **Ship:** on `verdict=ready`, invoke `ship`. The run ends at the ready PR; team review and merge follow without it.
 
