@@ -1,7 +1,7 @@
 {
   "name": "filipkrawiec-authoring",
   "description": "Skill authoring guidance for writing and validating agent skills.",
-  "version": "11.60.0",
+  "version": "11.61.0",
   "skills": "./skills/",
   "author": {
     "name": "Filip Krawiec",
