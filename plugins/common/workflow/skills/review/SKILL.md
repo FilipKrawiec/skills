@@ -21,7 +21,7 @@ Answer only your assigned question; a finder assigned all of them answers each.
 - **Acceptance outcome:** trace each criterion to an observable outcome and a production call site; a unit reached only from tests proves nothing a user observes. Run the manual steps CI cannot and report what you saw. Flag hollow tests, weakened thresholds and scope creep.
 - **Correctness:** edge cases, failure paths, security, concurrency, cleanup and data loss in the changed code.
 - **Fit:** breaches of the repository's own rules, boundaries and patterns, each citing the rule's `file:line`.
-- **Blast radius:** callers, contracts, migrations and configuration outside the diff that the change breaks.
+- **Blast radius:** callers, contracts, migrations and configuration outside the diff that the change breaks. A surviving reference to a path or name the diff removes or renames is an Important finding even when the line is outside the diff.
 
 Tag each candidate:
 

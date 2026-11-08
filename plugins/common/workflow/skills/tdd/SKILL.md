@@ -26,7 +26,7 @@ Run the project's specified pre-push checks once on the final changed revision; 
 
 ## 3. Report
 
-Return at most 8 lines: changed behavior and paths, `done` with each behavior step's red run (failing command and failure line, one line per step) captured before its fix, or `stuck: <step, evidence>` when a step's test was never seen failing. A fix written with its test leaves no red run: reverse-apply the fix, capture red, restore it; report `stuck` only when red still does not appear. Then name green evidence or why red does not apply, checks and exits, configured confidence evidence, pending checks or failures, and the next action. Do not redispatch workers or perform orchestration.
+Return at most 8 lines: changed behavior and paths, `done` with each behavior step's red run (failing command and failure line, one line per step) captured before its fix, or `stuck: <step, evidence>` when a step's test was never seen failing. A fix written with its test leaves no red run: reverse-apply the fix, capture red, restore it; report `stuck` only when red still does not appear. Then name green evidence or why red does not apply, checks and exits, configured confidence evidence, pending checks or failures, and the next action. For a plan that moved or renamed files, re-run its old-path search before reporting `done`. Do not redispatch workers or perform orchestration.
 
 **Exit gate:** `done` with a red run per behavior step and evidence for the final revision, or `stuck`, `replan` or a named blocker with the next action.
 

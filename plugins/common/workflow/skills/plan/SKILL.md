@@ -10,7 +10,7 @@ Plan within a direct owner request or approved milestone brief; labels, silence 
 
 ## 1. Read
 
-Read the issue, scope packet, criteria and decisions, and the affected code, tests and agent rules. For an existing plan or PR, inspect its branch, evidence and remaining work; do not rebuild a settled plan.
+Read the issue, scope packet, criteria and decisions, and the affected code, tests and agent rules. For an existing plan or PR, inspect its branch, evidence and remaining work; do not rebuild a settled plan. For a plan that moves, renames or merges files, search the whole repository for each old path and name, and give every consumer found (scripts, CI config, dependency tooling, scope/path maps, docs) its own plan step; a plan with none records that the search found none.
 
 **Exit gate:** the requested outcome, evidence and constraints are known.
 
