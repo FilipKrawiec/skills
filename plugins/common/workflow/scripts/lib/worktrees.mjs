@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
+import { afkRunAlive } from './afk-watch.mjs';
 import { cleanEnvironment, config } from './core.mjs';
 
 const day = 86_400_000;
@@ -13,11 +14,12 @@ export function worktreeVerdict(tree, { now, idleDays }) {
   if (tree.current) return { action: 'keep', why: 'this checkout' };
   if (tree.watcher) return { action: 'keep', why: 'AFK watcher' };
   if (tree.busy) return { action: 'keep', why: 'a process works in it' };
+  if (tree.live) return { action: 'keep', why: 'a live session holds it' };
   if (tree.pr === 'OPEN') return { action: 'keep', why: 'its PR is open' };
   if (tree.pr === 'MERGED' || tree.pr === 'CLOSED') return { action: 'remove', why: `its PR is ${tree.pr.toLowerCase()}`, deleteBranch: true };
-  if (tree.inBase) return { action: 'remove', why: 'its head is in the base', deleteBranch: true };
+  if (tree.inBase && !tree.dirty) return { action: 'remove', why: 'its head is in the base', deleteBranch: true };
   if (tree.pushed && !tree.dirty) return { action: 'remove', why: 'clean and pushed', deleteBranch: true };
-  // An idle tree's commits stay on its branch, so only its branch is kept.
+  // An idle tree keeps its branch; a detached one gets a backup ref of its HEAD when removed.
   if (now - tree.touched >= idleDays * day) return { action: 'remove', why: `idle for ${idleDays}+ days`, deleteBranch: false };
   return { action: 'keep', why: 'recent unpushed work' };
 }
@@ -27,7 +29,8 @@ export function parseWorktreeList(text) {
     const lines = block.split('\n');
     const path = lines.find(line => line.startsWith('worktree '))?.slice(9);
     const branch = lines.find(line => line.startsWith('branch refs/heads/'))?.slice(18) || null;
-    return { path, branch, locked: lines.some(line => line.startsWith('locked')) };
+    const lock = lines.find(line => line === 'locked' || line.startsWith('locked '));
+    return { path, branch, locked: Boolean(lock), lockPid: Number(/\(pid (\d+)\)/.exec(lock || '')?.[1]) || null };
   }).filter(tree => tree.path);
 }
 
@@ -39,7 +42,7 @@ export function prStates(pulls) {
 }
 
 function gitIn(cwd, args, extraEnv = {}) {
-  return spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...cleanEnvironment(), ...extraEnv } });
+  return spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...cleanEnvironment(), GIT_OPTIONAL_LOCKS: '0', ...extraEnv } });
 }
 
 function busyPaths() {
@@ -53,6 +56,13 @@ function touched(path) {
   return stamps.length ? Math.max(...stamps) : 0;
 }
 
+// A tree is live while its lock names a running pid or an AFK job of its name still runs; a dead pid's lock is stale.
+function liveSession(tree, root) {
+  const pidAlive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+  if (tree.lockPid && pidAlive(tree.lockPid)) return true;
+  try { return afkRunAlive(join(root, '.git'), null, basename(tree.path)); } catch { return false; }
+}
+
 // Reads what the verdict needs; a fact that cannot be read keeps the tree.
 export function worktreeFacts(tree, { root, current, baseRef, prs, busy }) {
   const status = gitIn(tree.path, ['status', '--porcelain', '--untracked-files=all']);
@@ -63,6 +73,7 @@ export function worktreeFacts(tree, { root, current, baseRef, prs, busy }) {
     main: tree.path === root,
     current: tree.path === current,
     watcher: tree.path === join(root, '.worktrees', 'afk-watch'),
+    live: liveSession(tree, root),
     busy: busy === null || status.status !== 0 || busy.some(path => path === tree.path || path.startsWith(`${tree.path}/`)),
     pr: tree.branch ? prs.get(tree.branch) ?? null : null,
     dirty: status.stdout.trim() !== '',
@@ -89,17 +100,30 @@ export function backupWorktree(tree, root, now = new Date()) {
     const identity = { GIT_AUTHOR_NAME: 'workflow', GIT_AUTHOR_EMAIL: 'workflow@localhost', GIT_COMMITTER_NAME: 'workflow', GIT_COMMITTER_EMAIL: 'workflow@localhost' };
     const commit = gitIn(tree.path, ['commit-tree', written.stdout.trim(), ...(tree.hasHead ? ['-p', 'HEAD'] : []), '-m', message], identity);
     if (commit.status !== 0) return null;
-    const ref = `refs/backup/worktrees/${basename(tree.path)}-${stamp}`;
-    return gitIn(root, ['update-ref', ref, commit.stdout.trim()]).status === 0 ? ref : null;
+    return saveRef(root, tree, commit.stdout.trim(), stamp);
   } finally { rmSync(index, { force: true }); }
 }
 
-export function removeWorktree(tree, verdict, root) {
-  const backup = tree.dirty ? backupWorktree(tree, root) : null;
+// Creates refs/backup/worktrees/<name>-<stamp>-<short hash>; the empty old value makes the update create-only, so no backup is overwritten.
+function saveRef(root, tree, sha, stamp) {
+  const ref = `refs/backup/worktrees/${basename(tree.path)}-${stamp}-${sha.slice(0, 7)}`;
+  return gitIn(root, ['update-ref', ref, sha, '']).status === 0 ? ref : null;
+}
+
+// A branch goes only when its head is on a remote or in the base; otherwise it stays and the note says so.
+export function removeWorktree(tree, verdict, root, baseRef) {
+  let backup = tree.dirty ? backupWorktree(tree, root) : null;
   if (tree.dirty && !backup) return { removed: false, note: 'backup failed' };
+  if (!tree.branch && !tree.dirty && tree.hasHead && !tree.pushed && !tree.inBase) {
+    backup = saveRef(root, tree, gitIn(tree.path, ['rev-parse', 'HEAD']).stdout.trim(), new Date().toISOString().replace(/[-:]/g, '').slice(0, 15));
+    if (!backup) return { removed: false, note: 'backup failed' };
+  }
   gitIn(root, ['worktree', 'unlock', tree.path]);
   if (gitIn(root, ['worktree', 'remove', '--force', '--force', tree.path]).status !== 0) return { removed: false, note: 'git refused', backup };
-  if (verdict.deleteBranch && tree.branch) gitIn(root, ['branch', '-D', tree.branch]);
+  if (!verdict.deleteBranch || !tree.branch) return { removed: true, backup };
+  const unsaved = gitIn(root, ['rev-list', '-1', `refs/heads/${tree.branch}`, '--not', '--remotes', ...(baseRef ? [baseRef] : [])]);
+  if (unsaved.status !== 0 || unsaved.stdout.trim() !== '') return { removed: true, backup, note: `branch kept: ${tree.branch} holds commits no remote has` };
+  gitIn(root, ['branch', '-D', tree.branch]);
   return { removed: true, backup };
 }
 
@@ -126,8 +150,8 @@ export function worktreeCommand(args) {
     if (!prs && verdict.why.startsWith('idle')) verdict = { action: 'keep', why: 'PR states unavailable' };
     if (verdict.action === 'keep') { console.log(`kept ${tree.path} (${verdict.why})`); continue; }
     if (dryRun) { console.log(`would remove ${tree.path} (${verdict.why}${facts.dirty ? '; backs up its changes' : ''})`); continue; }
-    const result = removeWorktree(facts, verdict, root);
-    console.log(`${result.removed ? 'removed' : 'kept'} ${tree.path} (${result.removed ? verdict.why : result.note}${result.backup ? `; changes in ${result.backup}` : ''})`);
+    const result = removeWorktree(facts, verdict, root, baseRef);
+    console.log(`${result.removed ? 'removed' : 'kept'} ${tree.path} (${result.removed ? verdict.why : result.note}${result.removed && result.note ? `; ${result.note}` : ''}${result.backup ? `; changes in ${result.backup}` : ''})`);
   }
   if (!dryRun) gitIn(root, ['worktree', 'prune']);
 }

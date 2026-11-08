@@ -10,7 +10,7 @@ Follow the repository's branch, scope, verification and review rules. Preserve t
 
 ## 1. Start
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs worktree tidy` first: runs end before their PR merges, so no run is left to remove its tree. It removes the trees of merged or closed PRs, clean pushed trees and trees idle two days, backing up uncommitted changes under `refs/backup/worktrees/`, and keeps the main checkout, the watcher, trees a process works in and open PRs. Fetch the base and reconcile existing work, claims and dependencies. Never overwrite another assignment or stack on an unmerged dependency. Record the assigned scope and execution state. Use the CLI's `afk/<issue>-<slug>` prefix for unattended work or an appropriate issue-prefixed branch for attended work.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs worktree tidy` first: runs end before their PR merges, so no run removes its own tree, and the script decides what stays or goes. Fetch the base and reconcile existing work, claims and dependencies. Never overwrite another assignment or stack on an unmerged dependency. Record the assigned scope and execution state. Use the CLI's `afk/<issue>-<slug>` prefix for unattended work or an appropriate issue-prefixed branch for attended work.
 
 **Exit gate:** isolated assignment, or a specific dependency or claim wait.
 
@@ -34,6 +34,6 @@ Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr 
 
 ## 4. Tidy and report
 
-Once merged or handed off, remove this assignment's worktree when clean and pushed, through that harness tool where it created it, and its merged branches; preserve unrelated sessions and anything unpushed. Once merged, run `worktree tidy` as in step 1. Return at most 5 lines: PR/head, checks, review and merge state; next actor or reserved decision. Do not change settings, secrets or releases.
+Once merged or handed off, run `worktree tidy` as in step 1; never remove a tree by hand. It removes other sessions' trees too (merged or closed PR, clean and pushed, idle two days), backing up uncommitted changes under `refs/backup/worktrees/`. Return at most 5 lines: PR/head, checks, review and merge state; next actor or reserved decision. Do not change settings, secrets or releases.
 
 **Exit gate:** safe cleanup or a reason to defer it.
