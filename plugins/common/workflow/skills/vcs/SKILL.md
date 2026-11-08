@@ -10,7 +10,7 @@ Follow the repository's branch, scope, verification and review rules. Preserve t
 
 ## 1. Start
 
-Fetch the base and reconcile existing work, claims and dependencies; never overwrite another assignment or stack on an unmerged dependency. Record the scope. Use the CLI's `afk/<issue>-<slug>` prefix for unattended work or an appropriate issue-prefixed branch for attended work.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs worktree tidy` first. Fetch the base and reconcile existing work, claims and dependencies; never overwrite another assignment or stack on an unmerged dependency. Record the scope. Use the CLI's `afk/<issue>-<slug>` prefix for unattended work or an appropriate issue-prefixed branch for attended work.
 
 **Exit gate:** isolated assignment, or a specific dependency or claim wait.
 
@@ -34,6 +34,6 @@ Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr 
 
 ## 4. Tidy and report
 
-Once merged or handed off, remove this assignment's worktree when clean and pushed, through that harness tool where it created it, and merged branches; preserve unrelated sessions and anything unpushed. Return at most 5 lines: PR/head, checks, review and merge state; next actor or reserved decision. Do not change settings, secrets or releases.
+Once merged or handed off, run `worktree tidy` as in step 1; never remove a tree by hand. It backs up uncommitted changes under `refs/backup/worktrees/`. Return at most 5 lines: PR/head, checks, review and merge state; next actor or reserved decision. Do not change settings, secrets or releases.
 
 **Exit gate:** safe cleanup or a reason to defer it.
