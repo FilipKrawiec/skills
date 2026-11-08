@@ -6,6 +6,8 @@ import { afkRunAlive } from './afk-watch.mjs';
 import { cleanEnvironment, config } from './core.mjs';
 
 const day = 86_400_000;
+// A tree younger than this is never removed for being ended, in the base or pushed: another session may have just made it.
+const graceMs = 3_600_000;
 
 // Decides one linked worktree's fate from the facts read about it; first match wins.
 // A removed tree's uncommitted changes are backed up first, so only a live, open or recent tree is kept.
@@ -16,9 +18,10 @@ export function worktreeVerdict(tree, { now, idleDays }) {
   if (tree.busy) return { action: 'keep', why: 'a process works in it' };
   if (tree.live) return { action: 'keep', why: 'a live session holds it' };
   if (tree.pr === 'OPEN') return { action: 'keep', why: 'its PR is open' };
-  if (tree.pr === 'MERGED' || tree.pr === 'CLOSED') return { action: 'remove', why: `its PR is ${tree.pr.toLowerCase()}`, deleteBranch: true };
-  if (tree.inBase && !tree.dirty) return { action: 'remove', why: 'its head is in the base', deleteBranch: true };
-  if (tree.pushed && !tree.dirty) return { action: 'remove', why: 'clean and pushed', deleteBranch: true };
+  const settled = now - tree.touched >= graceMs;
+  if (settled && (tree.pr === 'MERGED' || tree.pr === 'CLOSED')) return { action: 'remove', why: `its PR is ${tree.pr.toLowerCase()}`, deleteBranch: true };
+  if (settled && tree.inBase && !tree.dirty) return { action: 'remove', why: 'its head is in the base', deleteBranch: true };
+  if (settled && tree.pushed && !tree.dirty) return { action: 'remove', why: 'clean and pushed', deleteBranch: true };
   // An idle tree keeps its branch; a detached one gets a backup ref of its HEAD when removed.
   if (now - tree.touched >= idleDays * day) return { action: 'remove', why: `idle for ${idleDays}+ days`, deleteBranch: false };
   return { action: 'keep', why: 'recent unpushed work' };

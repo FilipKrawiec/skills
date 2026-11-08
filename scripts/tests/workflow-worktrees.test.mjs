@@ -15,6 +15,8 @@ import {
 
 const now = Date.UTC(2026, 10, 7);
 const day = 86_400_000;
+const hour = 3_600_000;
+const aged = now - 2 * hour;
 const idle = { path: '/r/.claude/worktrees/x', branch: 'x', touched: now - 3 * day };
 const verdict = facts => worktreeVerdict({ ...idle, ...facts }, { now, idleDays: 2 });
 
@@ -28,13 +30,16 @@ test('worktree tidy keeps the main checkout, this checkout, the watcher, a busy 
 });
 
 test('worktree tidy removes a tree whose PR ended, whose clean head is in the base, or that is clean and pushed, with its branch', () => {
-  assert.deepEqual(verdict({ pr: 'MERGED', dirty: true, touched: now }), { action: 'remove', why: 'its PR is merged', deleteBranch: true });
-  assert.equal(verdict({ pr: 'CLOSED', touched: now }).why, 'its PR is closed');
-  assert.equal(verdict({ inBase: true, touched: now }).why, 'its head is in the base');
-  assert.equal(verdict({ inBase: true, dirty: true, touched: now }).action, 'keep');
+  assert.deepEqual(verdict({ pr: 'MERGED', dirty: true, touched: aged }), { action: 'remove', why: 'its PR is merged', deleteBranch: true });
+  assert.equal(verdict({ pr: 'CLOSED', touched: aged }).why, 'its PR is closed');
+  assert.equal(verdict({ inBase: true, touched: aged }).why, 'its head is in the base');
+  assert.equal(verdict({ inBase: true, dirty: true, touched: aged }).action, 'keep');
   assert.equal(verdict({ inBase: true, dirty: true }).why, 'idle for 2+ days');
-  assert.equal(verdict({ pushed: true, touched: now }).why, 'clean and pushed');
-  assert.equal(verdict({ pushed: true, dirty: true, touched: now }).action, 'keep');
+  assert.equal(verdict({ pushed: true, touched: aged }).why, 'clean and pushed');
+  assert.equal(verdict({ pushed: true, dirty: true, touched: aged }).action, 'keep');
+  for (const facts of [{ inBase: true }, { pushed: true }, { pr: 'MERGED' }, { pr: 'CLOSED' }]) {
+    assert.deepEqual(verdict({ ...facts, touched: now }), { action: 'keep', why: 'recent unpushed work' });
+  }
 });
 
 test('worktree tidy removes an idle tree but keeps its branch, and keeps recent unpushed work', () => {
@@ -66,7 +71,7 @@ function fixture(t) {
   const addDetached = name => { assert.equal(git(repo, 'worktree', 'add', '-q', '--lock', '--detach', treePath(name), 'origin/main').status, 0); return treePath(name); };
   const context = { root: repo, current: repo, baseRef: 'refs/remotes/origin/main', prs: new Map([['merged', 'MERGED']]), busy: [] };
   const factsOf = path => worktreeFacts(parseWorktreeList(git(repo, 'worktree', 'list', '--porcelain').stdout).find(tree => tree.path === path), context);
-  const tidy = facts => removeWorktree(facts, worktreeVerdict(facts, { now: Date.now(), idleDays: 2 }), repo, context.baseRef);
+  const tidy = facts => removeWorktree(facts, worktreeVerdict(facts, { now: Date.now() + 2 * hour, idleDays: 2 }), repo, context.baseRef);
   return { repo, git, add, addDetached, factsOf, tidy, context };
 }
 
