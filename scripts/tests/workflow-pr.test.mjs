@@ -9,7 +9,7 @@ const head = 'a'.repeat(40);
 const cfg = { repo: 'acme/app', base: 'main', implementer: 'builder', reviewer: 'reviewer', owner: 'owner', requiredChecks: ['verify'] };
 const verdict = (mode, value, state, extra = {}) => ({ author: { login: 'reviewer' }, state, body: `<!-- agent-review sha=${head} round=1 mode=${mode} verdict=${value} -->`, commit: { oid: head }, ...extra });
 const green = [{ name: 'verify', conclusion: 'SUCCESS' }];
-const draft = (extra = {}) => ({ number: 5, state: 'OPEN', isDraft: true, headRefOid: head, labels: [], mergeable: 'MERGEABLE', statusCheckRollup: green, reviews: [verdict('author', 'ready', 'COMMENTED')], ...extra });
+const draft = (extra = {}) => ({ number: 5, state: 'OPEN', isDraft: true, baseRefName: 'main', headRefOid: head, labels: [], mergeable: 'MERGEABLE', statusCheckRollup: green, reviews: [verdict('author', 'ready', 'COMMENTED')], ...extra });
 const ready = (extra = {}) => draft({ isDraft: false, reviews: [verdict('team', 'ready', 'APPROVED')], ...extra });
 const policy = { reviews: [1, true, true, true], checks: ['verify'] };
 
@@ -30,6 +30,7 @@ test('pr ready refuses without the author verdict at the head, on red, pending o
     'pending check': draft({ statusCheckRollup: [{ name: 'verify', status: 'IN_PROGRESS', conclusion: '' }] }),
     'missing required check': draft({ statusCheckRollup: [{ name: 'lint', conclusion: 'SUCCESS' }] }),
     conflict: draft({ mergeable: 'CONFLICTING' }),
+    'another base': draft({ baseRefName: 'release' }),
   };
   for (const [name, pr] of Object.entries(refusals)) assert.ok(prReadyRefusal(pr, cfg), name);
 });
@@ -54,6 +55,7 @@ test('pr auto-merge refuses a draft, a missing or stale approval, an owner hold,
     'owner requests changes': [ready({ reviews: [{ author: { login: 'owner' }, state: 'CHANGES_REQUESTED', commit: { oid: 'b'.repeat(40) } }, verdict('team', 'ready', 'APPROVED')] }), policy],
     'red check': [ready({ statusCheckRollup: [{ name: 'verify', conclusion: 'FAILURE' }] }), policy],
     conflict: [ready({ mergeable: 'CONFLICTING' }), policy],
+    'another base': [ready({ baseRefName: 'release' }), policy],
     'unreadable protection': [ready(), null],
     'no code-owner review': [ready(), { reviews: [1, false, true, true], checks: ['verify'] }],
     'check not required': [ready(), { reviews: [1, true, true, true], checks: [] }],

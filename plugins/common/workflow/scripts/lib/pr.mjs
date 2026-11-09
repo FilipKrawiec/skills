@@ -8,11 +8,13 @@ const passedStates = ['SUCCESS', 'NEUTRAL', 'SKIPPED'];
 const checkState = check => (check.conclusion || check.state || '').toUpperCase();
 const checkName = check => check.name || check.context || '';
 
-// Why `pr ready` may not hand the draft to team review, or null: the newest author verdict at its head is `ready`, every check
-// at that head passed, the configured required checks among them, and no conflict or outside change request stands.
+// Why `pr ready` may not hand the draft to team review, or null: it targets the configured base, the newest author verdict at
+// its head is `ready`, every check at that head passed, the configured required checks among them, and no conflict or outside
+// change request stands.
 export function prReadyRefusal(pr, cfg) {
   if (pr.state !== 'OPEN') return `PR #${pr.number} is ${String(pr.state).toLowerCase()}`;
   if (!pr.isDraft) return `PR #${pr.number} is already ready for review`;
+  if (pr.baseRefName !== cfg.base) return `PR #${pr.number} targets ${pr.baseRefName}, not ${cfg.base}`;
   const checks = pr.statusCheckRollup || [];
   const failed = checks.filter(check => failedStates.includes(checkState(check))).map(checkName);
   if (failed.length) return `checks failed at ${pr.headRefOid}: ${failed.join(', ')}`;
@@ -28,10 +30,11 @@ export function prReadyRefusal(pr, cfg) {
 
 // Why `pr auto-merge` may not turn on squash auto-merge, or null: the PR is ready, the Reviewer approved its head with
 // `verdict=ready` (`verdict=owner` under `review:owner`, which also needs the owner's approval at that head), no owner change
-// request stands, no check failed, and the base requires code-owner review and the configured checks.
+// request stands, no check failed, it targets the configured base, and that base requires code-owner review and the configured checks.
 export function prAutoMergeRefusal(pr, cfg, policy) {
   if (pr.state !== 'OPEN') return `PR #${pr.number} is ${String(pr.state).toLowerCase()}`;
   if (pr.isDraft) return `PR #${pr.number} is a draft; run pr ready first`;
+  if (pr.baseRefName !== cfg.base) return `PR #${pr.number} targets ${pr.baseRefName}, not ${cfg.base}`;
   if (!policy?.reviews?.[1]) return `${cfg.base} does not visibly require code-owner review`;
   const unprotected = (cfg.requiredChecks || []).filter(name => !policy.checks.includes(name));
   if (unprotected.length) return `${cfg.base} does not require checks: ${unprotected.join(', ')}`;
@@ -46,7 +49,7 @@ export function prAutoMergeRefusal(pr, cfg, policy) {
   return null;
 }
 
-const prFields = 'number,state,isDraft,headRefOid,labels,reviews,statusCheckRollup,mergeable,body,closingIssuesReferences,autoMergeRequest';
+const prFields = 'number,state,isDraft,baseRefName,headRefOid,labels,reviews,statusCheckRollup,mergeable,body,closingIssuesReferences,autoMergeRequest';
 function readPr(repo, number) { return jsonCommand('gh', ['pr', 'view', number, '--repo', repo, '--json', prFields]); }
 function readPolicy(repo, base) {
   const read = endpoint => { try { return jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/${endpoint}`]); } catch { return null; } };
