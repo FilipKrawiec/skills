@@ -121,6 +121,7 @@ test('ship runs the team-mode review before requesting reviewers and the owner o
     assert.match(text, /verdict=owner/);
     assert.match(text, /third failed round|round >= 3/);
   }
+  assert.match(ship, /gh pr ready <N>`, then drop its CODEOWNERS owner auto-request[^\n]*--remove-reviewer/);
   assert.doesNotMatch(ship, /invites human review/);
   assert.match(skill('vcs'), /team-mode pass/);
 });
