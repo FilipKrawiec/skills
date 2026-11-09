@@ -15,11 +15,11 @@ Branch on the PR's state, first match wins:
 
 ## 1. Hand off to team review
 
-Run `gh pr checks <N> --watch`; hand off only a green head. Then, in order:
+Run `gh pr checks <N> --watch`; hand off only a green head. Then:
 
 1. Rewrite the description as delivered: problem, change, each criterion with its evidence, decisions, risks, manual test results. Keep the PR's issue link keyword (`Closes` or `Part of`) and any attribution lines as they are.
 2. Recheck the risk label against the final diff; raise it if the diff grew, never lower it.
-3. Run `gh pr ready <N>`, then drop its CODEOWNERS owner auto-request: `gh pr edit <N> --remove-reviewer <owner>`. Move its issue's card to Review (a `Part of` issue too: it stays there until deployed acceptance) and remove the issue's execution label.
+3. Run `node <this-skill-directory>/../../scripts/workflow.mjs pr ready --pr <N>` (never raw `gh pr ready`); it also drops the owner's CODEOWNERS request. Report a refusal. Move its issue's card to Review (a `Part of` issue too: it stays there until deployed acceptance) and remove the issue's execution label.
 4. Team review: start a fresh subagent with this brief: `Review PR #<N> (issue #<issue>) in team mode: base <SHA>, head <SHA>, last reviewed <SHA|none>. Load agent-review; post the verdict only with `review-post`, as agent-review step 5 defines. Never print the token. Return verdict, round and Important findings in at most 8 lines.` Act on the returned verdict, first match wins:
    - `verdict=owner`: go to step 5 and also request the owner;
    - `verdict=ready`: go to step 5;
