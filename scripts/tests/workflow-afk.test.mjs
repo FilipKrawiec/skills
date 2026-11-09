@@ -1079,6 +1079,8 @@ test('a PR the Reviewer claimed is not served while its claim lives; a finished,
   assert.deepEqual(plan([failed, claim(6, '2026-11-04T11:56:00Z')]).units, [], 'a failure before a newer claim does not');
   const prState = comments => plan(comments).units[0].state;
   assert.notEqual(prState([]), prState([failed]), 'the failure comment changes the PR state so the run is served again');
+  assert.equal(prState([failed, { ...failed, id: 9, created_at: '2026-11-04T11:57:00Z' }]), prState([failed]), 'a repeated failure leaves the state unchanged');
+  assert.equal(prState([{ ...failed, created_at: '2026-11-04T10:00:00Z' }, claim(6, '2026-11-04T10:30:00Z')]), prState([]), 'a failure older than the latest claim does not count');
   const unlabelled = afkPlan(cfg, [], () => [claim(1, '2026-11-04T11:50:00Z')], 'new-run', { issues: [epic], prs: [reviewPr(20)], now });
   assert.deepEqual([unlabelled.staleClaims, unlabelled.units.map(unit => unit.pr)], [[], [20]], 'only the label marks a claim');
 });

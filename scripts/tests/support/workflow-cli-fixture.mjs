@@ -17,6 +17,12 @@ const fakeGh = `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 const out = value => process.stdout.write(JSON.stringify(value) + '\\n');
+const reviewThreads = () => {
+  const logged = process.env.GH_LOG && fs.existsSync(process.env.GH_LOG) ? fs.readFileSync(process.env.GH_LOG, 'utf8').split('\\n') : [];
+  const posted = process.env.REVIEW_RECORD && fs.existsSync(process.env.REVIEW_RECORD);
+  const nodes = [...JSON.parse(process.env.REVIEW_THREADS), ...(posted && process.env.REVIEW_THREADS_AFTER ? JSON.parse(process.env.REVIEW_THREADS_AFTER) : [])];
+  return nodes.map(node => ({ ...node, isResolved: node.isResolved || logged.includes('resolve ' + node.id) }));
+};
 if (args[0] === 'auth' && args[1] === 'token') {
   if (process.env.FAIL_GH_NETWORK) { process.stderr.write('error connecting to github.com SECRET_TOKEN'); process.exit(1); }
   if (process.env.GH_TOKEN || process.env.GH_HOST) process.exit(1);
@@ -34,7 +40,7 @@ if (args[0] === 'auth' && args[1] === 'token') {
     const id = args.find(arg => arg.startsWith('threadId=')).slice('threadId='.length);
     if (process.env.GH_LOG) fs.appendFileSync(process.env.GH_LOG, 'resolve ' + id + '\\n');
     out({ data: { resolveReviewThread: { thread: { isResolved: true } } } });
-  } else if (process.env.REVIEW_THREADS && args.some(arg => arg.includes('reviewThreads'))) out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: JSON.parse(process.env.REVIEW_THREADS) } } } } });
+  } else if (process.env.REVIEW_THREADS && args.some(arg => arg.includes('reviewThreads'))) out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: reviewThreads() } } } } });
   else out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [{ isResolved: false, isOutdated: false }] } } } } });
 } else if (args[0] === 'api') {
   if (process.env.GH_TOKEN !== 'SECRET_TOKEN') process.exit(1);

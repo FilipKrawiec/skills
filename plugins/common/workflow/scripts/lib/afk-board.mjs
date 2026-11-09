@@ -134,10 +134,19 @@ export function afkPrRecord(pr, cfg) {
 export function afkPrState(pr, comments, cfg, base = '') {
   const decisions = (pr.reviews || []).filter(review => afkReviewKind(review, cfg) !== 'reply');
   const reviews = `${decisions.length}/${decisions.filter(review => review.state === 'DISMISSED').length}${pr.approved ? '+' : ''}`;
-  return `${pr.headRefOid}:${pr.isDraft ? 'draft' : 'ready'}:${reviews}:${pr.failed ? 'red' : 'green'}:${(pr.mergeable || 'UNKNOWN').toLowerCase()}:${base}:${afkOutsideInput(comments, cfg)}:${comments.findLast(comment => postFailed.test(comment.body || ''))?.id ?? ''}`;
+  return `${pr.headRefOid}:${pr.isDraft ? 'draft' : 'ready'}:${reviews}:${pr.failed ? 'red' : 'green'}:${(pr.mergeable || 'UNKNOWN').toLowerCase()}:${base}:${afkOutsideInput(comments, cfg)}:${afkPostFailedOpen(pr, comments) ? 'post-failed' : ''}`;
 }
 // `review-post` leaves this marker when a verdict could not be posted; it releases the claim and changes the PR state so a run serves the PR again.
 const postFailed = /<!-- agent-review post-failed\b/;
+// True while a post-failed comment is newer than the last Reviewer claim or verdict; a boolean, so repeated failures leave the state unchanged.
+function afkPostFailedOpen(pr, comments) {
+  const times = [
+    ...comments.filter(comment => /<!-- agent-review claim\b/.test(comment.body || '')).map(comment => Date.parse(comment.created_at || '')),
+    ...(pr.reviews || []).filter(review => /<!-- agent-review\b/.test(review.body || '')).map(review => Date.parse(review.submittedAt || '')),
+  ].filter(Number.isFinite);
+  const since = Math.max(0, ...times);
+  return comments.some(comment => postFailed.test(comment.body || '') && !(Date.parse(comment.created_at || '') <= since));
+}
 function afkWorkflowLogins(cfg) { return new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase())); }
 // The last comment from someone outside the workflow; the workflow's own markers and notes are never new input.
 function afkOutsideInput(comments, cfg) {

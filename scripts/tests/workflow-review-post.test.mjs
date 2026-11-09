@@ -50,6 +50,23 @@ test('APPROVE resolves the reviewer Nit, Pre-existing and flagged threads before
   assert.equal(log().length, 5);
 });
 
+test('APPROVE then resolves the Nit and Pre-existing threads its own inline comments opened', t => {
+  const created = [thread('N1', 'reviewer', '**Nit** rename'), thread('N2', 'reviewer', '**Important** kept'), thread('N3', 'owner', '**Nit** human')];
+  const { post, log } = setup(t, { REVIEW_THREADS: JSON.stringify(threads), REVIEW_THREADS_AFTER: JSON.stringify(created) });
+  const result = post('--event', 'APPROVE', '--comments-file', 'comments.json');
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(log(), ['resolve T1', 'resolve T2', 'post', 'resolve N1', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
+});
+
+test('a failing resolve after the posted review warns, keeps exit 0 and still removes the label', t => {
+  const { post, log, f } = setup(t, { REVIEW_THREADS: JSON.stringify([]), REVIEW_THREADS_AFTER: JSON.stringify([thread('N1', 'reviewer', '**Nit** x')]), FAIL_RESOLVE: '1' });
+  const result = post('--event', 'APPROVE', '--comments-file', 'comments.json');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /Warning: review posted, but could not resolve/);
+  assert.equal(existsSync(f.env.REVIEW_RECORD), true);
+  assert.deepEqual(log(), ['post', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
+});
+
 test('COMMENT resolves only flagged threads', t => {
   const { post, log } = setup(t, { REVIEW_THREADS: JSON.stringify(threads) });
   assert.equal(post('--event', 'COMMENT').status, 0);

@@ -329,6 +329,16 @@ function reviewerToken(root, login) {
   return token;
 }
 const resolveMutation = 'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}';
+function reviewerThreads(threads, login, approve, flagged) {
+  return threads.nodes.filter(thread => {
+    const first = thread.comments?.nodes?.[0];
+    if (thread.isResolved || String(first?.author?.login).toLowerCase() !== login.toLowerCase()) return false;
+    return flagged.has(thread.id) || (approve && /^\*\*(Nit|Pre-existing)/.test(first.body || ''));
+  });
+}
+function resolveThread(thread, options) {
+  run('gh', ['api', 'graphql', '--hostname', 'github.com', '-f', `query=${resolveMutation}`, '-f', `threadId=${thread.id}`], options);
+}
 // Posts the Reviewer's verdict as one call, resolves the Reviewer's own non-blocking threads first, and releases state:reviewing only after the post.
 export function reviewPost(args) {
   const { root, lanes } = config();
@@ -339,21 +349,22 @@ export function reviewPost(args) {
   const pr = o['--pr'];
   const env = { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) };
   const options = { cwd: root, env };
+  const approve = o['--event'] === 'APPROVE';
   try {
     const threads = readThreads(repo, pr, options);
     if (threads.pageInfo.hasNextPage) throw new Error('Too many review threads to resolve');
     const flagged = new Set(o['--resolve-thread']);
-    for (const thread of threads.nodes) {
-      const first = thread.comments?.nodes?.[0];
-      if (thread.isResolved || String(first?.author?.login).toLowerCase() !== login.toLowerCase()) continue;
-      const automatic = o['--event'] === 'APPROVE' && /^\*\*(Nit|Pre-existing)/.test(first.body || '');
-      if (!flagged.has(thread.id) && !automatic) continue;
-      run('gh', ['api', 'graphql', '--hostname', 'github.com', '-f', `query=${resolveMutation}`, '-f', `threadId=${thread.id}`], options);
-    }
+    for (const thread of reviewerThreads(threads, login, approve, flagged)) resolveThread(thread, options);
     const payload = { commit_id: o['--sha'], body: o.body, event: o['--event'], comments: o.comments.map(c => ({ path: c.path, line: c.line, side: 'RIGHT', body: c.body })) };
     const posted = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/pulls/${pr}/reviews`, '--input', '-'], { ...options, input: JSON.stringify(payload) });
     if (!Number.isInteger(posted?.id)) throw new Error('GitHub did not confirm the review');
     console.log(`Posted review ${posted.id} on #${pr}`);
+    // The inline Nit and Pre-existing notes of this review are open threads now; the posted verdict stands if resolving them fails.
+    if (approve) {
+      try {
+        for (const thread of reviewerThreads(readThreads(repo, pr, options), login, true, new Set())) resolveThread(thread, options);
+      } catch (error) { console.error(`Warning: review posted, but could not resolve its Nit or Pre-existing threads on #${pr} (${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}); resolve them by hand.`); }
+    }
   } catch (error) {
     const reason = String(error.message).replace(/\s+/g, ' ').slice(0, 300);
     try { run('gh', ['pr', 'comment', pr, '--repo', `github.com/${repo}`, '--body', `<!-- agent-review post-failed sha=${o['--sha']} --> Review post failed (${o['--event']}): ${reason}`], options); } catch { /* the exit code still signals failure */ }
