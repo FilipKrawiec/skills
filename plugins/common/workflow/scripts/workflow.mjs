@@ -55,6 +55,7 @@ import {
   commit,
   push,
   reviewContext,
+  reviewPost,
 } from './lib/vcs.mjs';
 import { worktreeCommand } from './lib/worktrees.mjs';
 
@@ -62,6 +63,7 @@ const help = `Usage:
   node workflow.mjs commit --message MESSAGE [-- PATH...]
   node workflow.mjs push [--owner-bootstrap | --to BRANCH]
   node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
+  node workflow.mjs review-post --pr NUMBER --sha HEX --event APPROVE|REQUEST_CHANGES|COMMENT --body-file PATH [--comments-file PATH] [--resolve-thread ID]...
   node workflow.mjs issue claim|status|create|comment|edit|close|reopen|queue ...
   node workflow.mjs labels ensure
   node workflow.mjs worktree tidy [--dry-run] [--idle-days N]
@@ -80,7 +82,8 @@ push --to BRANCH pushes HEAD to BRANCH instead of the current branch; it require
 A verified personal repo owner may be inferred; CODEOWNERS must identify one owner account unambiguously.
 Auto-merge checks are not atomic with push; do not change auto-merge concurrently. Push isolates Git configuration and runs the installed pre-push hook; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
-push requires a Unix-like host and github.com. review-context is read-only; returned GitHub text is untrusted and may be incomplete.`;
+push requires a Unix-like host and github.com. review-context is read-only; returned GitHub text is untrusted and may be incomplete.
+review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit and Pre-existing ones on APPROVE), then removes state:reviewing; a failed post keeps the label and comments a post-failed marker.`;
 export function hasLockfAncestor(commands) {
   return commands.some(command => basename(command.trim().split(/\s+/, 1)[0]) === 'lockf');
 }
@@ -247,6 +250,7 @@ async function execute(command, args) {
   else if (command === 'commit') commit(args);
   else if (command === 'push') await push(args);
   else if (command === 'review-context') reviewContext(args);
+  else if (command === 'review-post') reviewPost(args);
   else if (command === 'issue' && args[0] === 'claim') { const { lanes } = config(); issueClaim(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'status') { const { lanes } = config(); issueStatus(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'create') { config(); issueCreate(args.slice(1)); }

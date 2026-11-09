@@ -364,7 +364,7 @@ test('a PR a finished run left unchanged gets no new run until its head, reviews
   assert.deepEqual(offered(pr({ reviews: [...pr().reviews, { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc round=2 verdict=fixes -->' }] })), [9], 'a marked Reviewer verdict is');
   assert.deepEqual(plan(pr(), [{ id: 7, user: { login: 'owner' }, body: 'Please also cover X' }]).units.map(unit => unit.issue), [9], 'an owner comment');
   const fresh = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr()], base: 'base1' }).units[0];
-  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:ready:1/0:green:mergeable:base1:'], 'the unit carries the state its run will spend');
+  assert.deepEqual([fresh.pr, fresh.state], [9, 'abc:ready:1/0:green:mergeable:base1::'], 'the unit carries the state its run will spend');
 });
 
 test('a red PR unit takes its scope from its packet, else its changed files', () => {
@@ -1004,7 +1004,7 @@ test('a run that splits its held issue builds the first sub-issue while its hold
 
 test('AFK eligibility records post as the configured Reviewer, not through the credential-stripping CLI', () => {
   const skill = name => readFileSync(new URL(`../../plugins/common/workflow/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
-  assert.match(skill('agent-review'), /Run every `gh` call as `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh \.\.\.`[^\n]*`workflow\.mjs` strips `GH_TOKEN`/);
+  assert.match(skill('agent-review'), /Run each read and comment `gh` call as `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh \.\.\.`[^\n]*Post verdicts only with `review-post`/);
   assert.match(skill('afk'), /Write implementer records through the workflow CLI/);
 });
 
@@ -1073,6 +1073,14 @@ test('a PR the Reviewer claimed is not served while its claim lives; a finished,
     const stale = plan(comments, reviews);
     assert.deepEqual([stale.staleClaims, stale.units.map(unit => unit.pr)], [[20], [20]], why);
   }
+  const failed = { id: 5, created_at: '2026-11-04T11:55:00Z', user: { login: 'reviewer' }, body: '<!-- agent-review post-failed sha=abc --> Review post failed (APPROVE): boom' };
+  const afterFailure = plan([claim(1, '2026-11-04T11:50:00Z'), failed]);
+  assert.deepEqual([afterFailure.staleClaims, afterFailure.units.map(unit => unit.pr)], [[20], [20]], 'a post-failed comment after the claim ends it');
+  assert.deepEqual(plan([failed, claim(6, '2026-11-04T11:56:00Z')]).units, [], 'a failure before a newer claim does not');
+  const prState = comments => plan(comments).units[0].state;
+  assert.notEqual(prState([]), prState([failed]), 'the failure comment changes the PR state so the run is served again');
+  assert.equal(prState([failed, { ...failed, id: 9, created_at: '2026-11-04T11:57:00Z' }]), prState([failed]), 'a repeated failure leaves the state unchanged');
+  assert.equal(prState([{ ...failed, created_at: '2026-11-04T10:00:00Z' }, claim(6, '2026-11-04T10:30:00Z')]), prState([]), 'a failure older than the latest claim does not count');
   const unlabelled = afkPlan(cfg, [], () => [claim(1, '2026-11-04T11:50:00Z')], 'new-run', { issues: [epic], prs: [reviewPr(20)], now });
   assert.deepEqual([unlabelled.staleClaims, unlabelled.units.map(unit => unit.pr)], [[], [20]], 'only the label marks a claim');
 });

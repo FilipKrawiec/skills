@@ -134,7 +134,18 @@ export function afkPrRecord(pr, cfg) {
 export function afkPrState(pr, comments, cfg, base = '') {
   const decisions = (pr.reviews || []).filter(review => afkReviewKind(review, cfg) !== 'reply');
   const reviews = `${decisions.length}/${decisions.filter(review => review.state === 'DISMISSED').length}${pr.approved ? '+' : ''}`;
-  return `${pr.headRefOid}:${pr.isDraft ? 'draft' : 'ready'}:${reviews}:${pr.failed ? 'red' : 'green'}:${(pr.mergeable || 'UNKNOWN').toLowerCase()}:${base}:${afkOutsideInput(comments, cfg)}`;
+  return `${pr.headRefOid}:${pr.isDraft ? 'draft' : 'ready'}:${reviews}:${pr.failed ? 'red' : 'green'}:${(pr.mergeable || 'UNKNOWN').toLowerCase()}:${base}:${afkOutsideInput(comments, cfg)}:${afkPostFailedOpen(pr, comments) ? 'post-failed' : ''}`;
+}
+// `review-post` leaves this marker when a verdict could not be posted; it releases the claim and changes the PR state so a run serves the PR again.
+const postFailed = /<!-- agent-review post-failed\b/;
+// True while a post-failed comment is newer than the last Reviewer claim or verdict; a boolean, so repeated failures leave the state unchanged.
+function afkPostFailedOpen(pr, comments) {
+  const times = [
+    ...comments.filter(comment => /<!-- agent-review claim\b/.test(comment.body || '')).map(comment => Date.parse(comment.created_at || '')),
+    ...(pr.reviews || []).filter(review => /<!-- agent-review\b/.test(review.body || '')).map(review => Date.parse(review.submittedAt || '')),
+  ].filter(Number.isFinite);
+  const since = Math.max(0, ...times);
+  return comments.some(comment => postFailed.test(comment.body || '') && !(Date.parse(comment.created_at || '') <= since));
 }
 function afkWorkflowLogins(cfg) { return new Set([cfg.implementer, cfg.reviewer].filter(Boolean).map(login => login.toLowerCase())); }
 // The last comment from someone outside the workflow; the workflow's own markers and notes are never new input.
@@ -305,11 +316,12 @@ export function* afkCandidates(units, others) {
 }
 // At most afk.maxRuns runs are live, booting ones included, and each ping starts at most one.
 export function afkFree(cfg, live, me = '') { return Math.max(0, (Number(cfg.maxRuns) || 4) - live.filter(id => id !== me).length); }
-// A claim (an `agent-review claim` comment) lives until an `agent-review` verdict review follows it or it outlasts a run.
+// A claim (an `agent-review claim` comment) lives until an `agent-review` verdict review or a post-failed comment follows it, or it outlasts a run.
 export function afkReviewClaimLive(comments, reviews, now, maxMs) {
   const claim = comments.findLast(comment => /<!-- agent-review claim\b/.test(comment.body || ''));
   const at = Date.parse(claim?.created_at || '');
   if (!(now - at < maxMs)) return false;
+  if (comments.some(comment => postFailed.test(comment.body || '') && Date.parse(comment.created_at || '') > at)) return false;
   return !(reviews || []).some(review => /<!-- agent-review\b/.test(review.body || '') && Date.parse(review.submittedAt || '') >= at);
 }
 export function afkLiveHolds(comments, live, me) {
