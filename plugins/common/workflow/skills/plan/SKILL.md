@@ -47,7 +47,7 @@ Post one `## Plan` issue comment, or a compact in-chat plan for small direct wor
 - **Attended:** the developer approves the scored plan.
 - **Unattended:** a 100% score on a `lane:afk` issue is the approval.
 
-After approval the main thread only orchestrates and never edits project files, attended or not. First invoke `vcs` to start the assignment, so the work runs in an isolated worktree and branch, never the main checkout; then a Craftsman subagent executes the plan through `tdd`, `vcs` opens the draft PR with its risk label, a fresh subagent runs `agent-review`, `pr-fix` fixes, and `ship` hands the PR to team review.
+After approval the main thread only orchestrates and never edits project files, attended or not. First invoke `vcs` to start the assignment, so the work runs in an isolated worktree and branch, never the main checkout; then brief a Craftsman subagent with `Intent:`, `Plan:` (the plan link), `Criteria and scope:` and `Checkout:` (that worktree path and base SHA) to execute the plan there through `tdd` and return paths, commands and exits; `vcs` opens the draft PR with its risk label, a fresh subagent runs `agent-review`, `pr-fix` fixes, and `ship` hands the PR to team review.
 
 **Exit gate:** approved plan linked, or the owner question it waits on.
 
