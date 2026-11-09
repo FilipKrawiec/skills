@@ -28,9 +28,24 @@ if (args[0] === 'auth' && args[1] === 'token') {
     if (process.env.HOOK_TO_REPLACE) fs.writeFileSync(process.env.HOOK_TO_REPLACE, '#!/bin/sh\\nprintf replaced > "$HOOK_RECORD"\\n');
     const oid = process.env.REMOTE_BRANCH_SHA;
     out(process.env.BRANCH_QUERY_ERROR ? { errors: [{ message: 'missing access' }], data: { repository: { ref: null } } } : { data: { repository: { ref: oid ? { target: { oid } } : null } } });
-  } else out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [{ isResolved: false, isOutdated: false }] } } } } });
+  } else if (args.some(arg => arg.includes('resolveReviewThread'))) {
+    if (process.env.GH_TOKEN !== 'SECRET_TOKEN') process.exit(1);
+    if (process.env.FAIL_RESOLVE) process.exit(1);
+    const id = args.find(arg => arg.startsWith('threadId=')).slice('threadId='.length);
+    if (process.env.GH_LOG) fs.appendFileSync(process.env.GH_LOG, 'resolve ' + id + '\\n');
+    out({ data: { resolveReviewThread: { thread: { isResolved: true } } } });
+  } else if (process.env.REVIEW_THREADS && args.some(arg => arg.includes('reviewThreads'))) out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: JSON.parse(process.env.REVIEW_THREADS) } } } } });
+  else out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [{ isResolved: false, isOutdated: false }] } } } } });
 } else if (args[0] === 'api') {
   if (process.env.GH_TOKEN !== 'SECRET_TOKEN') process.exit(1);
+  const review = args.find(arg => /^repos\\/acme\\/app\\/pulls\\/\\d+\\/reviews$/.test(arg));
+  if (review) {
+    if (process.env.FAIL_REVIEW_POST) { process.stderr.write('post rejected SECRET_TOKEN'); process.exit(1); }
+    if (process.env.REVIEW_RECORD) fs.writeFileSync(process.env.REVIEW_RECORD, JSON.stringify({ token: process.env.GH_TOKEN, payload: JSON.parse(fs.readFileSync(0, 'utf8')) }));
+    if (process.env.GH_LOG) fs.appendFileSync(process.env.GH_LOG, 'post\\n');
+    out({ id: 7 });
+    process.exit(0);
+  }
   if (args.includes('user') && process.env.RACE_URL_TARGET) require('node:child_process').spawnSync(process.env.REAL_GIT, ['config', 'url.' + process.env.RACE_URL_TARGET + '.insteadOf', process.env.TEST_NATIVE_REMOTE], { cwd: process.cwd() });
   if (args.some(arg => arg.includes('collaborators/') && arg.includes('/permission'))) out({ role_name: 'admin' });
   else if (args.some(arg => arg.startsWith('repos/acme/app/issues/') && arg.endsWith('/comments'))) out([!process.env.HOLD_COMMENTS_ISSUE || args.some(arg => arg.endsWith('/issues/' + process.env.HOLD_COMMENTS_ISSUE + '/comments')) ? JSON.parse(process.env.HOLD_COMMENTS || '[]') : []]);
@@ -43,6 +58,9 @@ if (args[0] === 'auth' && args[1] === 'token') {
     const actor = process.env.FAKE_ACTOR || 'builder';
     process.stdout.write(args.includes('--jq') ? actor + '\\n' : JSON.stringify({ login: actor, id: 4242 }) + '\\n');
   }
+} else if (args[0] === 'pr' && (args[1] === 'edit' || args[1] === 'comment')) {
+  if (process.env.FAIL_PR_EDIT && args[1] === 'edit') process.exit(1);
+  if (process.env.GH_LOG) fs.appendFileSync(process.env.GH_LOG, args.slice(0, 2).join(' ') + ' ' + args.slice(2).join(' ') + '\\n');
 } else if (args[0] === 'pr' && args[1] === 'view') {
   out({ url: 'https://github.com/acme/app/pull/1', baseRefOid: process.env.BASE_SHA, headRefOid: process.env.HEAD_SHA, files: [], reviews: [], reviewDecision: 'REVIEW_REQUIRED', statusCheckRollup: [] });
 } else if (args[0] === 'pr' && args[1] === 'list') out(process.env.AUTO_MERGE ? [{ number: 4, autoMergeRequest: { enabledAt: 'now' } }] : JSON.parse(process.env.OPEN_PRS || '[]').filter(pr => pr.headRefName === args[args.indexOf('--head') + 1]));

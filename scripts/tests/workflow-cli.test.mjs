@@ -350,12 +350,12 @@ test('afk check reads the on-disk spent ledger and serves a PR again once its ba
   writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
   const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
   const base = f.linkedGit('rev-parse', 'refs/remotes/origin/HEAD').stdout.trim();
-  writeFileSync(join(common, 'afk-spent.json'), JSON.stringify({ 2000: `abc:ready:1/0:green:mergeable:${base}:` }));
+  writeFileSync(join(common, 'afk-spent.json'), JSON.stringify({ 2000: `abc:ready:1/0:green:mergeable:${base}::` }));
   const spent = f.cliRun('afk', 'check');
   assert.equal(spent.status, 3, `${spent.stdout}\n${spent.stderr}`);
   assert.match(spent.stdout, /Unchanged: #2000 since its last run/);
   assert.doesNotMatch(spent.stdout, /Next:/);
-  writeFileSync(join(common, 'afk-spent.json'), JSON.stringify({ 2000: 'abc:ready:1/0:green:mergeable:oldbase:' }));
+  writeFileSync(join(common, 'afk-spent.json'), JSON.stringify({ 2000: 'abc:ready:1/0:green:mergeable:oldbase::' }));
   const moved = f.cliRun('afk', 'check');
   assert.doesNotMatch(moved.stdout, /Unchanged:/, moved.stderr);
   assert.match(moved.stdout, /Next: Review: PR #2000 \(Fix\) needs its review fixed/);

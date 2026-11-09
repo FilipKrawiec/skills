@@ -1,0 +1,87 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fixture } from './support/workflow-cli-fixture.mjs';
+
+const sha = 'a'.repeat(40);
+const thread = (id, author, body) => ({ id, isResolved: false, isOutdated: false, path: 'a.txt', line: 1, comments: { nodes: [{ url: 'u', body, author: { login: author } }] } });
+
+function setup(t, extra = {}) {
+  const f = fixture(t);
+  f.env.GH_LOG = join(f.root, `gh-${Math.random().toString(36).slice(2)}.log`);
+  f.env.REVIEW_RECORD = join(f.root, 'review.json');
+  Object.assign(f.env, extra);
+  writeFileSync(join(f.repo, 'body.md'), `<!-- agent-review sha=${sha} verdict=ready -->\nLooks good`);
+  writeFileSync(join(f.repo, 'comments.json'), JSON.stringify([{ path: 'a.txt', line: 3, body: '**Nit** rename' }]));
+  const post = (...args) => f.cliRun('review-post', '--pr', '5', '--sha', sha, '--body-file', 'body.md', ...args);
+  const log = () => (existsSync(f.env.GH_LOG) ? readFileSync(f.env.GH_LOG, 'utf8').split('\n').filter(Boolean) : []);
+  return { f, post, log, record: () => JSON.parse(readFileSync(f.env.REVIEW_RECORD, 'utf8')) };
+}
+
+test('review-post sends one review as the reviewer, then removes the label', t => {
+  const { f, post, log, record } = setup(t);
+  const result = post('--event', 'APPROVE', '--comments-file', 'comments.json');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Posted review 7 on #5/);
+  assert.equal(record().token, 'SECRET_TOKEN');
+  assert.deepEqual(record().payload, { commit_id: sha, event: 'APPROVE', body: readFileSync(join(f.repo, 'body.md'), 'utf8'), comments: [{ path: 'a.txt', line: 3, side: 'RIGHT', body: '**Nit** rename' }] });
+  assert.doesNotMatch(result.stdout + result.stderr, /SECRET_TOKEN/);
+  assert.deepEqual(log(), ['post', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
+});
+
+test('review-post refuses a bad event, sha or body marker before any GitHub call', t => {
+  const { f, post, log } = setup(t);
+  assert.notEqual(post('--event', 'MERGE').status, 0);
+  assert.notEqual(f.cliRun('review-post', '--pr', '5', '--sha', 'HEAD', '--event', 'COMMENT', '--body-file', 'body.md').status, 0);
+  writeFileSync(join(f.repo, 'plain.md'), 'no marker');
+  assert.notEqual(f.cliRun('review-post', '--pr', '5', '--sha', sha, '--event', 'COMMENT', '--body-file', 'plain.md').status, 0);
+  assert.deepEqual(log(), []);
+  assert.equal(existsSync(f.env.REVIEW_RECORD), false);
+});
+
+const threads = [thread('T1', 'reviewer', '**Nit** a'), thread('T2', 'reviewer', '**Pre-existing** b'), thread('T3', 'reviewer', '**Important** c'), thread('T4', 'reviewer', '**Important** d'), thread('T5', 'owner', '**Nit** human')];
+
+test('APPROVE resolves the reviewer Nit, Pre-existing and flagged threads before posting', t => {
+  const { post, log } = setup(t, { REVIEW_THREADS: JSON.stringify(threads) });
+  const result = post('--event', 'APPROVE', '--resolve-thread', 'T4');
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(log().slice(0, 4), ['resolve T1', 'resolve T2', 'resolve T4', 'post']);
+  assert.equal(log().length, 5);
+});
+
+test('COMMENT resolves only flagged threads', t => {
+  const { post, log } = setup(t, { REVIEW_THREADS: JSON.stringify(threads) });
+  assert.equal(post('--event', 'COMMENT').status, 0);
+  assert.equal(log()[0], 'post');
+  const flagged = setup(t, { REVIEW_THREADS: JSON.stringify(threads) });
+  assert.equal(flagged.post('--event', 'COMMENT', '--resolve-thread', 'T3').status, 0);
+  assert.deepEqual(flagged.log().slice(0, 2), ['resolve T3', 'post']);
+});
+
+test('a failing resolve blocks the post, keeps the label and leaves a failure comment', t => {
+  const { post, log, f } = setup(t, { REVIEW_THREADS: JSON.stringify(threads), FAIL_RESOLVE: '1' });
+  const result = post('--event', 'APPROVE');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Blocked:/);
+  assert.equal(existsSync(f.env.REVIEW_RECORD), false);
+  assert.equal(log().length, 1);
+  assert.match(log()[0], /^pr comment 5 --repo github.com\/acme\/app --body <!-- agent-review post-failed sha=a{40} -->/);
+});
+
+test('a failed post keeps the label, comments the failure and never prints the token', t => {
+  const { post, log } = setup(t, { FAIL_REVIEW_POST: '1' });
+  const result = post('--event', 'REQUEST_CHANGES');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Blocked:/);
+  assert.doesNotMatch(result.stdout + result.stderr + log().join('\n'), /SECRET_TOKEN/);
+  assert.equal(log().length, 1);
+  assert.match(log()[0], /post-failed sha=a{40} -->.*REQUEST_CHANGES/);
+});
+
+test('a failed label removal warns and still exits 0', t => {
+  const { post } = setup(t, { FAIL_PR_EDIT: '1' });
+  const result = post('--event', 'COMMENT');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /state:reviewing/);
+});

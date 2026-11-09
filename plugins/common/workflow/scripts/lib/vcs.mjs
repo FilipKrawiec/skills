@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +32,7 @@ import {
   run,
   workflowDefaults,
 } from './core.mjs';
+import { workspaceFilePath } from './issues.mjs';
 
 // Commits carry the implementer's GitHub identity, never the machine's Git user, so the owner can approve them.
 function implementerCommitIdentity(root) {
@@ -248,9 +249,7 @@ function parseOptions(args) {
   if (options['--previous-base'] && (!options['--previous'] || !/^[0-9a-f]{7,64}$/i.test(options['--previous-base']))) throw new Error('--previous-base requires a commit SHA and --previous');
   return options;
 }
-export function reviewContext(args) {
-  const options = parseOptions(args);
-  const { root, lanes, configAvailable } = config(false);
+function resolveRepo(lanes) {
   let repo = lanes.repo;
   if (!repo) {
     const remote = git('remote', 'get-url', 'origin');
@@ -258,13 +257,22 @@ export function reviewContext(args) {
     if (!match) throw new Error('Cannot infer a github.com repository from origin');
     repo = match[1];
   }
-  repo = parseRepo(repo);
-  const pr = jsonCommand('gh', ['pr', 'view', options['--pr'], '--repo', `github.com/${repo}`, '--json', 'url,title,isDraft,labels,baseRefOid,headRefOid,files,reviews,reviewDecision,statusCheckRollup,comments'], { cwd: root });
+  return parseRepo(repo);
+}
+const threadQuery = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){pageInfo{hasNextPage} nodes{id isResolved isOutdated path line comments(first:20){nodes{url body author{login}}}}}}}}';
+function readThreads(repo, number, options) {
   const [owner, name] = repo.split('/');
-  const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){pageInfo{hasNextPage} nodes{id isResolved isOutdated path line comments(first:20){nodes{url body author{login}}}}}}}}';
-  const threadData = jsonCommand('gh', ['api', 'graphql', '--hostname', 'github.com', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${options['--pr']}`], { cwd: root });
-  const threads = threadData?.data?.repository?.pullRequest?.reviewThreads;
+  const data = jsonCommand('gh', ['api', 'graphql', '--hostname', 'github.com', '-f', `query=${threadQuery}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${number}`], options);
+  const threads = data?.data?.repository?.pullRequest?.reviewThreads;
   if (!threads || !Array.isArray(threads.nodes) || typeof threads.pageInfo?.hasNextPage !== 'boolean') throw new Error('Cannot read review threads');
+  return threads;
+}
+export function reviewContext(args) {
+  const options = parseOptions(args);
+  const { root, lanes, configAvailable } = config(false);
+  const repo = resolveRepo(lanes);
+  const pr = jsonCommand('gh', ['pr', 'view', options['--pr'], '--repo', `github.com/${repo}`, '--json', 'url,title,isDraft,labels,baseRefOid,headRefOid,files,reviews,reviewDecision,statusCheckRollup,comments'], { cwd: root });
+  const threads = readThreads(repo, options['--pr'], { cwd: root });
   const output = { untrustedGithubData: true, ...pr, baseConfigurationAvailable: configAvailable, filesMayBeIncomplete: true, reviewThreads: threads.nodes, threadsTruncated: threads.pageInfo.hasNextPage };
   if (options['--previous']) {
     const previous = options['--previous'];
@@ -286,4 +294,72 @@ export function reviewContext(args) {
     output.issue = { url: issue.url, body: (issue.body || '').slice(0, 8000), bodyTruncated: (issue.body || '').length > 8000, decisions: comments.slice(-20), decisionsMayBeIncomplete: true };
   }
   console.log(JSON.stringify(output));
+}
+
+const reviewEvents = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
+function reviewPostOptions(args, root) {
+  const o = { '--resolve-thread': [] };
+  const list = [...args];
+  while (list.length) {
+    const key = list.shift();
+    if (!['--pr', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread'].includes(key) || !list.length) throw new Error('Usage: review-post --pr N --sha HEX --event APPROVE|REQUEST_CHANGES|COMMENT --body-file PATH [--comments-file PATH] [--resolve-thread ID]...');
+    const value = list.shift();
+    if (key === '--resolve-thread') o[key].push(value);
+    else if (Object.hasOwn(o, key)) throw new Error(`${key} given twice`);
+    else o[key] = value;
+  }
+  if (!/^[1-9]\d*$/.test(o['--pr'] || '')) throw new Error('--pr requires a pull request number');
+  if (!/^[0-9a-f]{40,64}$/i.test(o['--sha'] || '')) throw new Error('--sha requires the full hex head commit SHA');
+  if (!reviewEvents.includes(o['--event'])) throw new Error(`--event must be one of ${reviewEvents.join(', ')}`);
+  if (o['--resolve-thread'].some(id => !/^[\w=-]+$/.test(id))) throw new Error('--resolve-thread requires a thread id');
+  if (!o['--body-file']) throw new Error('--body-file is required');
+  o.body = readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8');
+  if (!o.body.includes(`<!-- agent-review sha=${o['--sha']}`)) throw new Error('Review body must contain <!-- agent-review sha=<sha> ...');
+  o.comments = [];
+  if (o['--comments-file']) {
+    o.comments = JSON.parse(readFileSync(workspaceFilePath(root, o['--comments-file']), 'utf8'));
+    const valid = Array.isArray(o.comments) && o.comments.every(c => c && typeof c.path === 'string' && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === 'string' && c.body);
+    if (!valid) throw new Error('Comments file must be a JSON array of {path, line, body}');
+  }
+  return o;
+}
+function reviewerToken(root, login) {
+  const token = run('gh', ['auth', 'token', '--hostname', 'github.com', '--user', login], { cwd: root, env: cleanEnvironment() });
+  if (!token || /\s/.test(token)) throw new Error('No usable reviewer credential');
+  return token;
+}
+const resolveMutation = 'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}';
+// Posts the Reviewer's verdict as one call, resolves the Reviewer's own non-blocking threads first, and releases state:reviewing only after the post.
+export function reviewPost(args) {
+  const { root, lanes } = config();
+  const o = reviewPostOptions(args, root);
+  const login = lanes.reviewer;
+  if (typeof login !== 'string' || !/^[A-Za-z0-9-]+$/.test(login)) throw new Error('Configure identities.reviewer before posting a review');
+  const repo = resolveRepo(lanes);
+  const pr = o['--pr'];
+  const env = { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) };
+  const options = { cwd: root, env };
+  try {
+    const threads = readThreads(repo, pr, options);
+    if (threads.pageInfo.hasNextPage) throw new Error('Too many review threads to resolve');
+    const flagged = new Set(o['--resolve-thread']);
+    for (const thread of threads.nodes) {
+      const first = thread.comments?.nodes?.[0];
+      if (thread.isResolved || String(first?.author?.login).toLowerCase() !== login.toLowerCase()) continue;
+      const automatic = o['--event'] === 'APPROVE' && /^\*\*(Nit|Pre-existing)/.test(first.body || '');
+      if (!flagged.has(thread.id) && !automatic) continue;
+      run('gh', ['api', 'graphql', '--hostname', 'github.com', '-f', `query=${resolveMutation}`, '-f', `threadId=${thread.id}`], options);
+    }
+    const payload = { commit_id: o['--sha'], body: o.body, event: o['--event'], comments: o.comments.map(c => ({ path: c.path, line: c.line, side: 'RIGHT', body: c.body })) };
+    const posted = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/pulls/${pr}/reviews`, '--input', '-'], { ...options, input: JSON.stringify(payload) });
+    if (!Number.isInteger(posted?.id)) throw new Error('GitHub did not confirm the review');
+    console.log(`Posted review ${posted.id} on #${pr}`);
+  } catch (error) {
+    const reason = String(error.message).replace(/\s+/g, ' ').slice(0, 300);
+    try { run('gh', ['pr', 'comment', pr, '--repo', `github.com/${repo}`, '--body', `<!-- agent-review post-failed sha=${o['--sha']} --> Review post failed (${o['--event']}): ${reason}`], options); } catch { /* the exit code still signals failure */ }
+    console.error(`Blocked: review post failed (${reason}); state:reviewing kept, retry.`);
+    process.exitCode = 1;
+    return;
+  }
+  try { run('gh', ['pr', 'edit', pr, '--repo', `github.com/${repo}`, '--remove-label', 'state:reviewing'], options); } catch { console.error(`Warning: could not remove state:reviewing from #${pr}; remove it by hand.`); }
 }
