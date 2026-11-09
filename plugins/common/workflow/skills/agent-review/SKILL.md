@@ -8,7 +8,7 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 
 The review engine. Read base `.agents/config.json` for identities and base CODEOWNERS. Never implement, commit, push or use the owner's credential. Refuse a head this session committed or pushed. Run every `gh` call as `GH_TOKEN=$(gh auth token --user <identities.reviewer>) gh ...` without printing the token; `workflow.mjs` strips `GH_TOKEN`.
 
-You are told why and how, never what. **Why:** a blocking finding shows the change misses an acceptance criterion, does not fit the system, or breaks something else. **How:** finders, a verifier, `file:line` evidence, tags. What fits comes only from the target repository's agent rules (AGENTS.md and host rule files) and `REVIEW.md`; bring no checks of your own.
+**Why:** a blocking finding shows the change misses an acceptance criterion, does not fit the system, or breaks something else. **How:** finders, a verifier, `file:line` evidence, tags. What fits comes only from the target repository's agent rules (AGENTS.md and host rule files) and `REVIEW.md`; bring no checks of your own.
 
 ## 1. Decide the assignment
 
@@ -28,7 +28,7 @@ Claim it: skip one labelled `state:reviewing`; otherwise comment `<!-- agent-rev
 
 ## 3. Step zero: pipeline
 
-Run `gh pr checks <N> --watch`. A red required check is one **Important** finding with its run link: post it as the round's review, `verdict=fixes`, and run no finder.
+Run `gh pr checks <N> --watch`. A red required check is one **Important** finding with its run link: post it as `verdict=fixes` and run no finder.
 
 **Exit gate:** green head, or a posted red-pipeline finding.
 
@@ -67,9 +67,9 @@ Return `tag file:line failure remedy` lines, at most 10.
 Post one review per round on the exact head, an inline note per finding at its `file:line` starting **Important**, **Nit** or **Pre-existing**. Only verified Important findings block and go to `pr-fix`; at R0 you verify its evidence. The body carries `<!-- agent-review sha=<HEAD> round=<N> mode=<author|team> verdict=<ready|owner|fixes|cap|split> -->`.
 
 - **Author mode** posts `COMMENT`. With no open Important thread, `verdict=ready` hands the PR to `ship`. Round 3 or later with open Important threads is `verdict=cap`: keep the draft, replace the risk label with `risk:R2`, swap the issue's `lane:afk` for `lane:owner`, and comment on the issue what keeps failing, one line per open thread.
-- **Team mode** posts `REQUEST_CHANGES` while a verified Important thread is open, otherwise `APPROVE` with `verdict=ready`, or `verdict=owner` with `review:owner` where CODEOWNERS on base names the owner for a changed path (both sides of renames). Approve only when effective protection requires code-owner review and you are neither PR author nor latest pusher; otherwise report the gap.
+- **Team mode** posts `REQUEST_CHANGES` while a verified Important thread is open, otherwise `APPROVE` with `verdict=ready`, or `verdict=owner` with `review:owner` where CODEOWNERS on base names the owner for a changed path (both sides of renames). Approve only when effective protection requires code-owner review and you are neither PR author nor latest pusher; otherwise report the gap. Request the owner only on `verdict=owner` or a third failed round (round >= 3).
 
-On `verdict=ready` or `owner`, list your open Nit and Pre-existing threads on the issue as follow-ups and resolve them; they never block. Never dismiss reviews or resolve threads you did not open.
+On `verdict=ready` or `owner`, list your open Nit and Pre-existing threads on the issue as follow-ups and resolve them. Never dismiss reviews or resolve threads you did not open.
 
 Return at most 8 lines: verdict, PR, base/head, round, mode, tag counts, checks, next actor.
 

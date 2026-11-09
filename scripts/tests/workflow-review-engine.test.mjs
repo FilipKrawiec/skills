@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { afkMerge, afkMergedPrs, afkPlan, afkPrRecord } from '../../plugins/common/workflow/scripts/lib/afk-board.mjs';
 import { afkEndCards, afkOpenPrIssues } from '../../plugins/common/workflow/scripts/lib/afk-runs.mjs';
 import { ensureWorkflowLabels, workflowLabels } from '../../plugins/common/workflow/scripts/lib/core.mjs';
@@ -109,4 +110,17 @@ test('missing workflow labels are created, existing ones kept', () => {
 test('a run end reads which named issues still have a draft PR', () => {
   const { named, drafts } = afkOpenPrIssues([{ issues: [7], isDraft: true }, { issues: [8], isDraft: false }]);
   assert.deepEqual([[...named], [...drafts]], [[7, 8], [7]]);
+});
+
+test('ship runs the team-mode review before requesting reviewers and the owner only on verdict=owner or a third failed round', () => {
+  const skill = name => readFileSync(new URL(`../../plugins/common/workflow/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
+  const ship = skill('ship');
+  const review = ship.indexOf('Team review');
+  assert.ok(review >= 0 && ship.indexOf('Request reviewers') > review);
+  for (const text of [ship, skill('agent-review')]) {
+    assert.match(text, /verdict=owner/);
+    assert.match(text, /third failed round|round >= 3/);
+  }
+  assert.doesNotMatch(ship, /invites human review/);
+  assert.match(skill('vcs'), /team-mode pass/);
 });
