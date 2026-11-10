@@ -14,11 +14,11 @@ Exit 1 reports drift. `safety apply` changes repository permissions and branch p
 | --- | --- | --- |
 | Owner | Admin, owner decisions | Owner-only credentials |
 | Implementer | Write identity | Existing authorized mechanism; no owner/production fallback |
-| Reviewer | Distinct Write identity | Existing authorized mechanism for Reviewer decisions |
+| Reviewer | Distinct Write identity: reviews, `gh pr review <N> --approve`, `workflow.mjs pr auto-merge --pr <N>`, dismisses only its own outdated reviews; never pushes | Existing authorized mechanism for Reviewer decisions |
 
 Set implementer and Reviewer identities in `.agents/config.json`; configure path ownership in `.github/CODEOWNERS`. Verify Owner, Reviewer and the cached Project with `workflow.mjs cache show`. Missing identity or access is a setup gap; creating accounts or provisioning credentials needs separate owner authorization. Never give workers the owner's credentials.
 
-Use fresh native contexts for judgment and existing authorized credentials for posting. Shared hosts do not prove secret isolation or require separate OS accounts. Keep Craftsman from reviewer authority by assignment. Verify `gh api user --jq .login` matches the Reviewer without printing tokens. Push HTTPS; production credentials stay behind native controls.
+Use fresh native contexts for judgment and existing authorized credentials for posting. Keep Craftsman from reviewer authority by assignment. Verify `gh api user --jq .login` matches the Reviewer without printing tokens. Push HTTPS; production credentials stay behind native controls.
 
 ## Base protection
 

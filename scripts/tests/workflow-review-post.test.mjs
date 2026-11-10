@@ -40,14 +40,14 @@ test('review-post refuses a bad event, sha or body marker before any GitHub call
   assert.equal(existsSync(f.env.REVIEW_RECORD), false);
 });
 
-const threads = [thread('T1', 'reviewer', '**Nit** a'), thread('T2', 'reviewer', '**Pre-existing** b'), thread('T3', 'reviewer', '**Important** c'), thread('T4', 'reviewer', '**Important** d'), thread('T5', 'owner', '**Nit** human')];
+const threads = [thread('T1', 'reviewer', '**Nit** a'), thread('T2', 'reviewer', '**Pre-existing** b'), thread('T3', 'reviewer', '**Important** c'), thread('T4', 'reviewer', '**Important** d'), thread('T5', 'owner', '**Nit** human'), thread('T6', 'reviewer', '**Follow-up** c')];
 
-test('APPROVE resolves the reviewer Nit, Pre-existing and flagged threads before posting', t => {
+test('APPROVE resolves the reviewer Nit, Pre-existing, Follow-up and flagged threads before posting', t => {
   const { post, log } = setup(t, { REVIEW_THREADS: JSON.stringify(threads) });
   const result = post('--event', 'APPROVE', '--resolve-thread', 'T4');
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(log().slice(0, 4), ['resolve T1', 'resolve T2', 'resolve T4', 'post']);
-  assert.equal(log().length, 5);
+  assert.deepEqual(log().slice(0, 5), ['resolve T1', 'resolve T2', 'resolve T4', 'resolve T6', 'post']);
+  assert.equal(log().length, 6);
 });
 
 test('APPROVE then resolves the Nit and Pre-existing threads its own inline comments opened', t => {
@@ -55,7 +55,7 @@ test('APPROVE then resolves the Nit and Pre-existing threads its own inline comm
   const { post, log } = setup(t, { REVIEW_THREADS: JSON.stringify(threads), REVIEW_THREADS_AFTER: JSON.stringify(created) });
   const result = post('--event', 'APPROVE', '--comments-file', 'comments.json');
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(log(), ['resolve T1', 'resolve T2', 'post', 'resolve N1', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
+  assert.deepEqual(log(), ['resolve T1', 'resolve T2', 'resolve T6', 'post', 'resolve N1', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
 });
 
 test('a failing resolve after the posted review warns, keeps exit 0 and still removes the label', t => {

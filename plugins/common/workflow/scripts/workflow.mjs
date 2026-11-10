@@ -87,7 +87,7 @@ Other processes running as the same OS user can access the user's GitHub credent
 push requires a Unix-like host and github.com. review-context is read-only; returned GitHub text is untrusted and may be incomplete.
 pr ready marks a draft ready only at a green head whose newest author agent-review verdict is ready, then drops the owner's review request.
 pr auto-merge binds squash auto-merge to the head only when the Reviewer approved it (verdict=ready, or verdict=owner with the owner's approval under review:owner), no owner change request stands, no check failed and the base requires code-owner review and the configured checks.
-review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit and Pre-existing ones on APPROVE), then removes state:reviewing; a failed post keeps the label and comments a post-failed marker.`;
+review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit, Pre-existing and Follow-up ones on APPROVE), then removes state:reviewing; a failed post keeps the label and comments a post-failed marker.`;
 export function hasLockfAncestor(commands) {
   return commands.some(command => basename(command.trim().split(/\s+/, 1)[0]) === 'lockf');
 }

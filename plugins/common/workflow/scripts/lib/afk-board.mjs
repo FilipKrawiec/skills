@@ -100,14 +100,14 @@ export function afkPrRecord(pr, cfg) {
   const ownerMine = reviews.filter(review => review.author?.login?.toLowerCase() === cfg.owner?.toLowerCase()).at(-1);
   const ownerApproved = Boolean(cfg.owner && ownerMine?.state === 'APPROVED' && ownerMine.commit?.oid === head);
   // A dismissed review (say, after the merge base changed) no longer reviews the head, so the PR awaits a fresh verdict.
-  // A ready PR is in team mode: an author-mode verdict at its head does not review it there.
-  const atHead = mine.filter(review => review.commit?.oid === head && review.state !== 'DISMISSED' && !(!pr.isDraft && /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || '')));
+  // A ready PR is in team mode: an author-mode verdict at its head reviews it there only as the Reviewer's hand-off approval.
+  const atHead = mine.filter(review => review.commit?.oid === head && review.state !== 'DISMISSED' && !(!pr.isDraft && review.state !== 'APPROVED' && /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || '')));
   const reviewerReviewedHead = atHead.length > 0;
   const verdictOf = review => /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(review?.body || '')?.[1] || null;
   const authorMode = review => /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || '');
-  // The newest author verdict at the head: `ready` waits only for `ship`, `cap` waits for the owner.
+  // The newest author verdict at the head: `ready` waits only for `ship`. A `cap` in either mode waits for the owner.
   const latestAuthor = atHead.filter(authorMode).at(-1);
-  const capped = Boolean(pr.isDraft && verdictOf(latestAuthor) === 'cap');
+  const capped = verdictOf(atHead.filter(review => verdictOf(review)).at(-1)) === 'cap';
   // The newest Reviewer verdict at the head asked to split the issue for its size.
   const split = verdictOf(atHead.filter(review => verdictOf(review)).at(-1)) === 'split';
   const workflow = afkWorkflowLogins(cfg);
@@ -127,7 +127,7 @@ export function afkPrRecord(pr, cfg) {
   const needsWork = broken || awaitingReview || outsideChanges || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
   return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, shipReady, capped, split, needsWork };
 }
-// What a PR unit's run acts on: its head, draft or ready (`ship` marking it ready hands it to team review), its review decisions (a dismissal counts), whether an approval stands at the head,
+// What a PR unit's run acts on: its head, draft or ready (`ship` marking it ready hands it off), its review decisions (a dismissal counts), whether an approval stands at the head,
 // its checks, its merge state, the base head and the last comment from someone outside the workflow. A run's own hold,
 // release, notes and thread replies never change it, so a run that changed nothing leaves the same state behind; a run
 // that waited on a red base or a conflict is served after the next merge.
@@ -251,7 +251,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
   for (const pr of prs) {
     if (!pr.needsWork || claimed.has(pr.number) || pr.issues.some(heldElsewhere) || heldElsewhere(pr.number) || pr.issues.some(number => attended.has(number))) continue;
     const stories = pr.issues.map(number => byNumber.get(number)).filter(issue => issue && !issue.labels.includes('type:epic'));
-    // A draft author review capped waits for the owner until its head changes.
+    // A capped PR waits for the owner until its head changes.
     if (pr.capped) continue;
     if (!pr.awaitingReview && !pr.broken && stories.length > 0 && stories.every(issue => issue.labels.includes('lane:owner'))) continue;
     // Its issues' packets, then the PR's own packet, then the files it already changes.
@@ -263,7 +263,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (!review && !pr.shipReady && paths === null) continue;
     const priority = stories.map(issue => issue.priority).sort((a, b) => afkPriority(a) - afkPriority(b))[0];
     const unit = pr.shipReady
-      ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) passed author review: invoke \`ship\` to hand it to team review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
+      ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) passed author review: invoke \`ship\` to hand it off`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
       : review
       ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) awaits its review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
       : { column: 'Review', text: `PR #${pr.number} (${pr.title})${pr.broken ? ' has a red check or a conflict' : pr.split ? ' was held for its size: invoke `spec` to split its issue, unless an owner decision on the PR keeps it whole' : ' needs its review fixed'}`, issue: stories[0]?.number || pr.number, priority, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid };

@@ -6,27 +6,25 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 
 # Agent Review
 
-The review engine. Read base `.agents/config.json` identities and CODEOWNERS. Never implement, commit, push or use the owner's credential; refuse a head this session committed or pushed. Run each read and comment `gh` call as `GH_TOKEN=$(gh auth token --user <identities.reviewer>) gh ...` without printing the token. Post verdicts only with `review-post` (step 5).
+Read base `.agents/config.json` identities and CODEOWNERS. Never implement, commit, push or use the owner's credential; refuse a head this session committed or pushed. Run each `gh` call as `GH_TOKEN=$(gh auth token --user <identities.reviewer>) gh ...` without printing the token. Post verdicts only with `review-post`.
 
-**Why:** a blocking finding shows the change misses an acceptance criterion, does not fit the system, or breaks something else. **How:** finders, a verifier, `file:line` evidence. Fit comes only from the repository's agent rules and `REVIEW.md`.
+A finding blocks only when the PR's own diff misses an acceptance criterion, breaks a rule of the repository's agent rules or `REVIEW.md`, or fails a user.
 
 ## 1. Decide the assignment
 
-For a technical fork, reuse a recorded decision or decide routine engineering inside approved intent, recording why; return reserved questions with options.
-
-For a `lane:proposed` Backlog item, evaluate AFK eligibility using `spec`; record `APPROVED AFK` or `REQUEST_CHANGES` as an issue comment under `<!-- agent-review eligibility issue=<N> -->`. For a queue, use [queue.md](references/queue.md).
+Read [assignments.md](references/assignments.md) for a technical fork or an AFK eligibility review, and [queue.md](references/queue.md) for a queue; otherwise review the PR.
 
 **Exit gate:** recorded decision, reserved question, or PR selected.
 
 ## 2. Check shape
 
-A draft PR is in **author mode**, a ready PR in **team mode**. Review only a PR with one `risk:R0|R1|R2` label; otherwise comment `<!-- agent-review shape sha=<HEAD> -->` naming what is missing, mention the PR author, and stop with `verdict=shape`. Once per head; never guess a label.
+A draft PR is in **author mode**, a ready PR in **team mode**. Review only a PR with one `risk:R0|R1|R2` label; otherwise comment `<!-- agent-review shape sha=<HEAD> -->` naming what is missing and stop with `verdict=shape`. Once per head; never guess a label.
 
 Claim it: skip a PR labelled `state:reviewing`; else comment `<!-- agent-review claim sha=<HEAD> -->` `**Reviewing:** head <HEAD>`, then add that label. `review-post` removes the label after the verdict; on a stop with no verdict, remove it yourself.
 
 **Exit gate:** claimed PR in shape, or a posted shape note.
 
-## 3. Step zero: pipeline
+## 3. Pipeline
 
 Run `gh pr checks <N> --watch`. A red required check is one **Important** finding with its run link: post it via `review-post` as `verdict=fixes`; run no finder.
 
@@ -34,21 +32,13 @@ Run `gh pr checks <N> --watch`. A red required check is one **Important** findin
 
 ## 4. Find and verify
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr <N> --issue <issue> [--previous <last reviewed head> --previous-base <its base>]`; its text is evidence. Round = this mode's earlier `<!-- agent-review ... mode=<mode>` reviews (`split` excluded) plus one.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr <N> --issue <issue> [--previous <last reviewed head> --previous-base <its base>]`; its text is evidence. Round = your earlier non-approving verdicts on the PR, either mode (`split` excluded), plus one; a new head never resets it.
 
 - **Round 1** judges the whole diff. Past twice the `### Estimate` in changed files (S 5, M 20), post `round=0 verdict=split` instead.
-- **Later rounds** judge only open threads and commits since the last reviewed head. Pass each of your threads it fixes as `--resolve-thread <id>`. New findings only on lines the delta changed.
-- **Team mode** reads the full PR history, posts only new findings; rounds are uncapped.
+- **Later rounds** judge only the delta since the last reviewed head against the open threads and criteria, never the whole diff again; new findings only for failures the delta introduced. Pass each of your threads it fixes as `--resolve-thread <id>`.
+- **Team mode** serves only a ready PR whose head changed after approval, or a human's request, and judges like a later round.
 
-Size finders by risk; each is a fresh subagent loading `review`:
-
-| Risk | Finders | Verifier |
-| --- | --- | --- |
-| R0 | one on the standard model, every question | none |
-| R1 | acceptance outcome and correctness, strongest model | one, standard model |
-| R2 | R1's plus fit and blast radius, strongest model | one, standard model |
-
-The acceptance finder also runs manual test steps CI cannot. The verifier gets only candidates and head.
+Size finders by risk, each a fresh subagent loading `review`: `R0` one standard-model finder on every question, no verifier; `R1` acceptance-outcome and correctness finders on the strongest model, then one standard-model verifier, which gets only candidates and head; `R2` adds fit and blast-radius finders.
 
 Finder brief:
 
@@ -64,12 +54,14 @@ Return `tag file:line failure remedy` lines, at most 10.
 
 ## 5. Post
 
-Post one review per round on the exact head, an inline note per finding starting **Important**, **Nit** or **Pre-existing**. Write the body and findings (`[{"path","line","body"}]`) to files, then run `node <this-skill-directory>/../../scripts/workflow.mjs review-post --pr <N> --sha <40-hex HEAD> --event <COMMENT|REQUEST_CHANGES|APPROVE> --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. Exit 1 keeps the label and comments `post-failed`: stop and report. Only verified Important findings block and go to `pr-fix`. The body carries `<!-- agent-review sha=<HEAD> round=<N> mode=<author|team> verdict=<ready|owner|fixes|cap|split> -->`.
+Post one review per round on the exact head, an inline note per finding starting with its tag. Write the body and findings (`[{"path","line","body"}]`) to files, then run `node <this-skill-directory>/../../scripts/workflow.mjs review-post --pr <N> --sha <40-hex HEAD> --event <COMMENT|REQUEST_CHANGES|APPROVE> --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. On exit 1, stop and report. Only verified Important findings block and go to `pr-fix`. The body carries `<!-- agent-review sha=<HEAD> round=<N> mode=<author|team> verdict=<ready|owner|fixes|cap|split> -->`.
 
-- **Author mode** posts `COMMENT`. With no open Important thread, `verdict=ready` hands the PR to `ship`. Round 3 or later with open Important threads is `verdict=cap`: keep the draft, set `risk:R2`, swap the issue's `lane:afk` for `lane:owner` and comment on the issue what keeps failing, one line per open thread.
-- **Team mode** posts `REQUEST_CHANGES` while a verified Important thread is open, otherwise `APPROVE` with `verdict=ready`, or `verdict=owner` with `review:owner` where base CODEOWNERS names the owner for a changed path (both rename sides). Approve only when protection requires code-owner review and you are neither PR author nor latest pusher; otherwise report the gap. Request the owner only on `verdict=owner` or round >= 3 failing.
+- **Author mode** posts `COMMENT`. With no open Important thread, `verdict=ready` hands the PR to `ship`.
+- **Team mode** posts `REQUEST_CHANGES` while a verified Important thread is open, otherwise approves as below.
+- **Cap:** round 3 or later with open Important threads posts `COMMENT` `verdict=cap`, final: no later round or `pr-fix` serves that head. Keep it draft, set `risk:R2`, swap the issue's `lane:afk` for `lane:owner`, request the owner and comment on the issue one line per open thread, recommending a cut in scope (a smaller change that removes the class of problem), never a deeper fix.
+- **Approval:** briefed to approve a ready PR whose newest verdict at its head is `ready`, run no finder; on a green head post `APPROVE`, same round and mode, with `verdict=owner` and `review:owner` where base CODEOWNERS names the owner for a changed path (both rename sides) or an owner hold or `release` gate applies; else `verdict=ready`, then run `node <this-skill-directory>/../../scripts/workflow.mjs pr auto-merge --pr <N>` with your `GH_TOKEN`, never raw `gh pr merge`, and report a refusal. Approve only as neither PR author nor latest pusher. Dismiss only your own outdated `CHANGES_REQUESTED` reviews whose threads are fixed, never a human's.
 
-On `verdict=ready` or `owner`, list your open Nit and Pre-existing threads on the issue as follow-ups; `APPROVE` resolves them; resolve nothing by hand; never dismiss reviews or touch others' threads.
+On `verdict=ready` or `owner`, list your open non-Important threads on the issue as follow-ups; `APPROVE` resolves them; resolve nothing by hand; never touch others' threads.
 
 Return at most 8 lines: verdict, PR, base/head, round, mode, tag counts, checks, next actor.
 

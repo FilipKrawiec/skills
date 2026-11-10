@@ -56,7 +56,7 @@ test('a ready PR whose only verdict at its head is from author mode awaits its t
 
 test('a draft with an author verdict=ready at its head gets a ship unit, not a fix, while its checks pend', () => {
   const units = plain([pr(20, { isDraft: true, ...linked(5), statusCheckRollup: [{ status: 'IN_PROGRESS' }], reviews: [verdict('author', 'ready')] })]);
-  assert.deepEqual(units.map(unit => [unit.pr, unit.paths, unit.text]), [[20, [], 'PR #20 (PR 20) passed author review: invoke `ship` to hand it to team review']]);
+  assert.deepEqual(units.map(unit => [unit.pr, unit.paths, unit.text]), [[20, [], 'PR #20 (PR 20) passed author review: invoke `ship` to hand it off']]);
 });
 
 test('a human change request at an approved head gets a fix unit', () => {
@@ -67,7 +67,7 @@ test('a human change request at an approved head gets a fix unit', () => {
 
 test('a ship unit needs no scope, and a red check or a human change request outranks it', () => {
   const ready = { isDraft: true, ...linked(5), reviews: [verdict('author', 'ready')] };
-  assert.deepEqual(plain([pr(20, { ...ready, filesUnread: true })], [story(5, ['lane:afk'], { status: 'In progress', paths: null })]).map(unit => unit.text), ['PR #20 (PR 20) passed author review: invoke `ship` to hand it to team review']);
+  assert.deepEqual(plain([pr(20, { ...ready, filesUnread: true })], [story(5, ['lane:afk'], { status: 'In progress', paths: null })]).map(unit => unit.text), ['PR #20 (PR 20) passed author review: invoke `ship` to hand it off']);
   assert.match(plain([pr(20, { ...ready, statusCheckRollup: [{ conclusion: 'FAILURE' }] })])[0].text, /has a red check/);
   const human = { author: { login: 'teammate' }, state: 'CHANGES_REQUESTED', commit: { oid: 'abc' }, body: 'No.' };
   assert.match(plain([pr(20, { ...ready, reviews: [...ready.reviews, human] })])[0].text, /needs its review fixed/);
@@ -112,17 +112,35 @@ test('a run end reads which named issues still have a draft PR', () => {
   assert.deepEqual([[...named], [...drafts]], [[7, 8], [7]]);
 });
 
-test('ship runs the team-mode review before requesting reviewers and the owner only on verdict=owner or a third failed round', () => {
+test('a ready PR the Reviewer approved at its head with an author verdict is approved and served no review', () => {
+  const approval = { ...verdict('author', 'ready', 'APPROVED') };
+  const record = afkPrRecord(pr(20, { isDraft: false, ...linked(5), statusCheckRollup: [{ conclusion: 'SUCCESS' }], reviews: [verdict('author', 'ready'), approval] }), cfg);
+  assert.deepEqual([record.approved, record.awaitingReview, record.needsWork], [true, false, false]);
+  assert.deepEqual(plain([pr(20, { isDraft: false, ...linked(5), reviews: [verdict('author', 'ready'), approval] })]), []);
+});
+
+test('a ready PR whose newest verdict at its head is a team cap waits for the owner, not another fix', () => {
+  const cap = { ...verdict('team', 'cap'), body: '<!-- agent-review sha=abc round=3 mode=team verdict=cap -->' };
+  assert.deepEqual(plain([pr(20, { isDraft: false, ...linked(5), reviews: [cap] })]), []);
+});
+
+test('ship hands off through the Reviewer approval with no team-mode pass, and the cap is final', () => {
   const skill = name => readFileSync(new URL(`../../plugins/common/workflow/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
   const ship = skill('ship');
-  const review = ship.indexOf('Team review');
-  assert.ok(review >= 0 && ship.indexOf('Request reviewers') > review);
-  for (const text of [ship, skill('agent-review')]) {
-    assert.match(text, /verdict=owner/);
-    assert.match(text, /third failed round|round >= 3/);
-  }
+  assert.doesNotMatch(ship, /in team mode|Team review/);
+  assert.ok(ship.indexOf('Approve:') >= 0 && ship.indexOf('Request reviewers') > ship.indexOf('Approve:'));
+  assert.match(ship, /never start a team-mode review/);
   assert.match(ship, /workflow\.mjs pr ready --pr <N>` \(never raw `gh pr ready`\); it also drops the owner's CODEOWNERS request/);
   assert.match(skill('vcs'), /workflow\.mjs pr auto-merge --pr <number>`; never raw `gh pr merge`/);
-  assert.doesNotMatch(ship, /invites human review/);
-  assert.match(skill('vcs'), /team-mode pass/);
+  const review = skill('agent-review');
+  for (const text of [ship, review]) assert.match(text, /verdict=owner/);
+  assert.match(review, /workflow\.mjs pr auto-merge --pr <N>`/);
+  assert.doesNotMatch(review, /gh pr merge <N> --squash/);
+  assert.match(review, /verdict=cap`, final: no later round or `pr-fix`/);
+  assert.match(review, /never the whole diff again/);
+  assert.doesNotMatch(review, /rounds are uncapped/);
+  assert.match(skill('vcs'), /no team-mode pass/);
+  assert.match(skill('vcs'), /`cap` is final/);
+  assert.match(skill('pr-fix'), /add no capability/);
+  assert.match(skill('review'), /\*\*Follow-up:\*\*/);
 });

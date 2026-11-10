@@ -25,11 +25,14 @@ Answer only your assigned question; a finder assigned all of them answers each.
 
 Tag each candidate:
 
-- **Important:** a concrete failure scenario against a criterion, a cited rule or existing behaviour. Only these block.
+- **Important:** a defect the diff itself adds, with a concrete failure scenario that breaks an acceptance criterion, a cited rule or existing behaviour a user would hit. Only these block.
 - **Nit:** a real improvement that breaks nothing.
-- **Pre-existing:** a defect the diff did not introduce.
+- **Pre-existing:** a defect already on the base branch.
+- **Follow-up:** a real defect or gap outside the acceptance criteria.
 
-Never report lint, taste, or a rule the repository does not state. Never repeat a finding already posted, answered or resolved.
+Nit, Pre-existing and Follow-up never block; the Reviewer records them on the issue.
+
+Never report lint, taste, or a rule the repository does not state. Never repeat a finding already posted, answered or resolved. On a delta brief, report only failures the delta introduced and open threads it leaves unfixed; never hunt the rest of the diff for new edge cases.
 
 **Exit gate:** each candidate has a tag, a read `file:line`, a failure scenario and a remedy.
 
