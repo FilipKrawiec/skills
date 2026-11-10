@@ -42,6 +42,9 @@ if (args[0] === 'auth' && args[1] === 'token') {
     out({ data: { resolveReviewThread: { thread: { isResolved: true } } } });
   } else if (process.env.REVIEW_THREADS && args.some(arg => arg.includes('reviewThreads'))) out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: reviewThreads() } } } } });
   else out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [{ isResolved: false, isOutdated: false }] } } } } });
+} else if (args[0] === 'api' && args.some(arg => arg.startsWith('repos/acme/app/rules/branches/'))) {
+  if (!process.env.BRANCH_RULES) process.exit(1);
+  out(JSON.parse(process.env.BRANCH_RULES));
 } else if (args[0] === 'api') {
   if (process.env.GH_TOKEN !== 'SECRET_TOKEN') process.exit(1);
   const review = args.find(arg => /^repos\\/acme\\/app\\/pulls\\/\\d+\\/reviews$/.test(arg));
@@ -67,6 +70,11 @@ if (args[0] === 'auth' && args[1] === 'token') {
 } else if (args[0] === 'pr' && (args[1] === 'edit' || args[1] === 'comment')) {
   if (process.env.FAIL_PR_EDIT && args[1] === 'edit') process.exit(1);
   if (process.env.GH_LOG) fs.appendFileSync(process.env.GH_LOG, args.slice(0, 2).join(' ') + ' ' + args.slice(2).join(' ') + '\\n');
+} else if (args[0] === 'pr' && (args[1] === 'ready' || args[1] === 'merge')) {
+  if (process.env.GH_LOG) fs.appendFileSync(process.env.GH_LOG, args.join(' ') + '\\n');
+} else if (args[0] === 'pr' && args[1] === 'view' && process.env.PR_VIEW) {
+  const merged = process.env.GH_LOG && fs.existsSync(process.env.GH_LOG) && fs.readFileSync(process.env.GH_LOG, 'utf8').includes('pr merge');
+  out(JSON.parse(merged && process.env.PR_VIEW_AFTER ? process.env.PR_VIEW_AFTER : process.env.PR_VIEW));
 } else if (args[0] === 'pr' && args[1] === 'view') {
   out({ url: 'https://github.com/acme/app/pull/1', baseRefOid: process.env.BASE_SHA, headRefOid: process.env.HEAD_SHA, files: [], reviews: [], reviewDecision: 'REVIEW_REQUIRED', statusCheckRollup: [] });
 } else if (args[0] === 'pr' && args[1] === 'list') out(process.env.AUTO_MERGE ? [{ number: 4, autoMergeRequest: { enabledAt: 'now' } }] : JSON.parse(process.env.OPEN_PRS || '[]').filter(pr => pr.headRefName === args[args.indexOf('--head') + 1]));

@@ -130,10 +130,12 @@ test('ship hands off through the Reviewer approval with no team-mode pass, and t
   assert.doesNotMatch(ship, /in team mode|Team review/);
   assert.ok(ship.indexOf('Approve:') >= 0 && ship.indexOf('Request reviewers') > ship.indexOf('Approve:'));
   assert.match(ship, /never start a team-mode review/);
-  assert.match(ship, /gh pr ready <N>`, then drop its CODEOWNERS owner auto-request[^\n]*--remove-reviewer/);
+  assert.match(ship, /workflow\.mjs pr ready --pr <N>` \(never raw `gh pr ready`\); it also drops the owner's CODEOWNERS request/);
+  assert.match(skill('vcs'), /workflow\.mjs pr auto-merge --pr <number>`; never raw `gh pr merge`/);
   const review = skill('agent-review');
   for (const text of [ship, review]) assert.match(text, /verdict=owner/);
-  assert.match(review, /--match-head-commit <HEAD>/);
+  assert.match(review, /workflow\.mjs pr auto-merge --pr <N>`/);
+  assert.doesNotMatch(review, /gh pr merge <N> --squash/);
   assert.match(review, /verdict=cap`, final: no later round or `pr-fix`/);
   assert.match(review, /never the whole diff again/);
   assert.doesNotMatch(review, /rounds are uncapped/);
