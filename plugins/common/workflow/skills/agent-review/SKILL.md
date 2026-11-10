@@ -18,7 +18,7 @@ Read [assignments.md](references/assignments.md) for a technical fork or an AFK 
 
 ## 2. Check shape
 
-A draft PR is in **author mode**, a ready PR in **team mode**. Review only a PR with one `risk:R0|R1|R2` label; otherwise comment `<!-- agent-review shape sha=<HEAD> -->` naming what is missing, mention the PR author, and stop with `verdict=shape`. Once per head; never guess a label.
+A draft PR is in **author mode**, a ready PR in **team mode**. Review only a PR with one `risk:R0|R1|R2` label; otherwise comment `<!-- agent-review shape sha=<HEAD> -->` naming what is missing and stop with `verdict=shape`. Once per head; never guess a label.
 
 Claim it: skip a PR labelled `state:reviewing`; else comment `<!-- agent-review claim sha=<HEAD> -->` `**Reviewing:** head <HEAD>`, then add that label. `review-post` removes the label after the verdict; on a stop with no verdict, remove it yourself.
 
@@ -54,12 +54,12 @@ Return `tag file:line failure remedy` lines, at most 10.
 
 ## 5. Post
 
-Post one review per round on the exact head, an inline note per finding starting with its tag. Write the body and findings (`[{"path","line","body"}]`) to files, then run `node <this-skill-directory>/../../scripts/workflow.mjs review-post --pr <N> --sha <40-hex HEAD> --event <COMMENT|REQUEST_CHANGES|APPROVE> --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. Exit 1 keeps the label and comments `post-failed`: stop and report. Only verified Important findings block and go to `pr-fix`. The body carries `<!-- agent-review sha=<HEAD> round=<N> mode=<author|team> verdict=<ready|owner|fixes|cap|split> -->`.
+Post one review per round on the exact head, an inline note per finding starting with its tag. Write the body and findings (`[{"path","line","body"}]`) to files, then run `node <this-skill-directory>/../../scripts/workflow.mjs review-post --pr <N> --sha <40-hex HEAD> --event <COMMENT|REQUEST_CHANGES|APPROVE> --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. On exit 1, stop and report. Only verified Important findings block and go to `pr-fix`. The body carries `<!-- agent-review sha=<HEAD> round=<N> mode=<author|team> verdict=<ready|owner|fixes|cap|split> -->`.
 
 - **Author mode** posts `COMMENT`. With no open Important thread, `verdict=ready` hands the PR to `ship`.
 - **Team mode** posts `REQUEST_CHANGES` while a verified Important thread is open, otherwise approves as below.
 - **Cap:** round 3 or later with open Important threads posts `COMMENT` `verdict=cap`, final: no later round or `pr-fix` serves that head. Keep it draft, set `risk:R2`, swap the issue's `lane:afk` for `lane:owner`, request the owner and comment on the issue one line per open thread, recommending a cut in scope (a smaller change that removes the class of problem), never a deeper fix.
-- **Approval:** briefed to approve a ready PR whose newest verdict at its head is `ready`, run no finder; on a green head post `APPROVE`, same round and mode, with `verdict=owner` and `review:owner` where base CODEOWNERS names the owner for a changed path (both rename sides) or an owner hold or `release` gate applies; else `verdict=ready`, and turn on auto-merge: `gh pr merge <N> --squash --auto --match-head-commit <HEAD>`. Approve only as neither PR author nor latest pusher. Dismiss only your own outdated `CHANGES_REQUESTED` reviews whose threads are fixed, never a human's.
+- **Approval:** briefed to approve a ready PR whose newest verdict at its head is `ready`, run no finder; on a green head post `APPROVE`, same round and mode, with `verdict=owner` and `review:owner` where base CODEOWNERS names the owner for a changed path (both rename sides) or an owner hold or `release` gate applies; else `verdict=ready`, then run `node <this-skill-directory>/../../scripts/workflow.mjs pr auto-merge --pr <N>` with your `GH_TOKEN`, never raw `gh pr merge`, and report a refusal. Approve only as neither PR author nor latest pusher. Dismiss only your own outdated `CHANGES_REQUESTED` reviews whose threads are fixed, never a human's.
 
 On `verdict=ready` or `owner`, list your open non-Important threads on the issue as follow-ups; `APPROVE` resolves them; resolve nothing by hand; never touch others' threads.
 

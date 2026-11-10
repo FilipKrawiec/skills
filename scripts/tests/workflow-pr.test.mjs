@@ -43,6 +43,11 @@ test('pr auto-merge accepts a Reviewer approval at the head under code-owner pro
   assert.equal(prAutoMergeRefusal(ready({ statusCheckRollup: [{ name: 'verify', status: 'QUEUED' }] }), cfg, policy), null);
 });
 
+test('pr auto-merge accepts the Reviewer approval of an author-mode ready verdict, with no team-mode pass', () => {
+  const reviews = [verdict('author', 'ready', 'COMMENTED'), verdict('author', 'ready', 'APPROVED')];
+  assert.equal(prAutoMergeRefusal(ready({ reviews }), cfg, policy), null);
+});
+
 test('pr auto-merge refuses a draft, a missing or stale approval, an owner hold, a red check and missing protection', () => {
   const ownerLane = { labels: [{ name: 'review:owner' }], reviews: [verdict('team', 'owner', 'APPROVED')] };
   const refusals = {
