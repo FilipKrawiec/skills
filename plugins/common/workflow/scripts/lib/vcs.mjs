@@ -333,7 +333,7 @@ function reviewerThreads(threads, login, approve, flagged) {
   return threads.nodes.filter(thread => {
     const first = thread.comments?.nodes?.[0];
     if (thread.isResolved || String(first?.author?.login).toLowerCase() !== login.toLowerCase()) return false;
-    return flagged.has(thread.id) || (approve && /^\*\*(Nit|Pre-existing)/.test(first.body || ''));
+    return flagged.has(thread.id) || (approve && /^\*\*(Nit|Pre-existing|Follow-up)/.test(first.body || ''));
   });
 }
 function resolveThread(thread, options) {

@@ -83,7 +83,7 @@ A verified personal repo owner may be inferred; CODEOWNERS must identify one own
 Auto-merge checks are not atomic with push; do not change auto-merge concurrently. Push isolates Git configuration and runs the installed pre-push hook; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
 push requires a Unix-like host and github.com. review-context is read-only; returned GitHub text is untrusted and may be incomplete.
-review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit and Pre-existing ones on APPROVE), then removes state:reviewing; a failed post keeps the label and comments a post-failed marker.`;
+review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit, Pre-existing and Follow-up ones on APPROVE), then removes state:reviewing; a failed post keeps the label and comments a post-failed marker.`;
 export function hasLockfAncestor(commands) {
   return commands.some(command => basename(command.trim().split(/\s+/, 1)[0]) === 'lockf');
 }

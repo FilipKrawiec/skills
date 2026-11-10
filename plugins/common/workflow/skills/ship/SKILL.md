@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Use when a reviewed draft PR is ready to hand to team review, or when a change has merged, to check actual base HEAD CI, respond to attributable failures and distinguish merged, deployed and accepted evidence.
+description: Use when a reviewed draft PR is ready to hand off for approval and merge, or when a change has merged, to check actual base HEAD CI, respond to attributable failures and distinguish merged, deployed and accepted evidence.
 allowed-tools: Skill Read Edit Bash Agent
 ---
 
@@ -10,29 +10,24 @@ AFK branch names use the provider-neutral `afk/<issue>-<slug>` form. This phase 
 
 Branch on the PR's state, first match wins:
 
-- an open draft whose newest `agent-review` verdict at its head is `verdict=ready`: hand it off (step 1): mark it ready, team-review it, then request reviewers; then stop;
+- an open draft whose newest `agent-review` verdict at its head is `verdict=ready`: hand it off (step 1), then stop;
 - a merged PR or a base check: steps 2 to 4.
 
-## 1. Hand off to team review
+## 1. Hand off
 
-Run `gh pr checks <N> --watch`; hand off only a green head. Then, in order:
+Run `gh pr checks <N> --watch`; hand off only a green head. The author-mode verdict is the review: never start a team-mode review or another round here. Then, in order:
 
 1. Rewrite the description as delivered: problem, change, each criterion with its evidence, decisions, risks, manual test results. Keep the PR's issue link keyword (`Closes` or `Part of`) and any attribution lines as they are.
 2. Recheck the risk label against the final diff; raise it if the diff grew, never lower it.
 3. Run `gh pr ready <N>`, then drop its CODEOWNERS owner auto-request: `gh pr edit <N> --remove-reviewer <owner>`. Move its issue's card to Review (a `Part of` issue too: it stays there until deployed acceptance) and remove the issue's execution label.
-4. Team review: start a fresh subagent with this brief: `Review PR #<N> (issue #<issue>) in team mode: base <SHA>, head <SHA>, last reviewed <SHA|none>. Load agent-review; post the verdict only with `review-post`, as agent-review step 5 defines. Never print the token. Return verdict, round and Important findings in at most 8 lines.` Act on the returned verdict, first match wins:
-   - `verdict=owner`: go to step 5 and also request the owner;
-   - `verdict=ready`: go to step 5;
-   - `verdict=fixes` with round below 3: invoke `pr-fix`, then repeat step 4 at the new head;
-   - any other verdict at round >= 3 (the third failed round): request the owner, comment the open Important threads on the PR, skip steps 5 and 6, and stop;
-   - any other verdict: report it and stop.
+4. Approve: start a fresh subagent with this brief: `Approve PR #<N> (issue #<issue>) at head <SHA>, whose newest author verdict there is ready. Load agent-review and do its Approval; post only with review-post. Never print the token. Return verdict and auto-merge state in at most 5 lines.` On `verdict=owner`, request the owner and skip step 6; on any verdict but `ready` or `owner`, report it and stop.
 5. Request reviewers: request review from every active repository user (collaborators with write access who committed, reviewed or commented in the last 90 days), except workflow identities and the owner.
-6. Invoke `vcs` to turn on squash auto-merge bound to the head; it applies the protection, owner-hold and `release` gates first.
+6. Confirm the Reviewer's squash auto-merge is on at the head; if it is not, invoke `vcs` to turn it on, which applies the protection, owner-hold and `release` gates first.
 7. Comment the decisions taken and their reasons on the issue, one line each.
 
 The unattended run ends here; `pr-fix` serves the PR from now on.
 
-**Exit gate:** ready PR with the Reviewer verdict recorded, reviewers requested and auto-merge on; or the owner requested after a third failed round; or the red check named.
+**Exit gate:** ready PR approved by the Reviewer, reviewers requested and auto-merge on; or the owner requested on `verdict=owner`; or the red check named.
 
 ## 2. Check actual base
 

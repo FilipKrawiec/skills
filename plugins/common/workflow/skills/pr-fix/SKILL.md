@@ -17,7 +17,7 @@ Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr 
 - a red required check at the head;
 - a merge conflict with the base: merge the base through `vcs`, never rebase.
 
-Nit and Pre-existing threads are follow-ups the Reviewer records on the issue; fix nothing for them. A human asking a question gets an answer, not a commit.
+Nit, Pre-existing and Follow-up threads are follow-ups the Reviewer records on the issue; fix nothing for them. A PR whose newest verdict at its head is `verdict=cap` waits for the owner: fix nothing. A human asking a question gets an answer, not a commit.
 
 **Exit gate:** open work listed by thread URL, or none (end with nothing to fix).
 
@@ -29,8 +29,9 @@ Group threads by file; send each group to one fresh Craftsman subagent loading `
 Intent: fix PR #<N> (issue #<issue>) threads <URLs> only.
 Why: <criterion or rule each thread cites>. Plan: <link>.
 Checkout <worktree>; head <SHA>; scope <packet paths>.
-Load tdd: red test first where behaviour changes. Do not commit, push,
-reply to threads or touch other files. Return changed paths, red and green
+Load tdd: red test first where behaviour changes. Fix only these threads,
+with the smallest change; add no capability, option or refactor the issue
+did not ask for. Do not commit, push, reply to threads or touch other files. Return changed paths, red and green
 commands with exits, and any thread you judge wrong with evidence, in 8 lines.
 ```
 
@@ -38,7 +39,7 @@ commands with exits, and any thread you judge wrong with evidence, in 8 lines.
 
 ## 3. Verify and commit
 
-Before committing, read each change against its thread, confirm every path is in scope, and run the targeted tests the Craftsmen named, then `steps.test` once. A failure goes back to its Craftsman once; still failing, leave that thread open with the evidence. Commit through `vcs` with one Conventional Commit per round and push; in team mode `vcs` disables auto-merge first, so turn it back on through `vcs` bound to the new head.
+Before committing, read each change against its thread, confirm every path is in scope and that the diff adds no capability the issue did not ask for (cut it back if it does), and run the targeted tests the Craftsmen named, then `steps.test` once. A failure goes back to its Craftsman once; still failing, leave that thread open with the evidence. Commit through `vcs` with one Conventional Commit per round and push; in team mode `vcs` disables auto-merge first, so turn it back on through `vcs` bound to the new head.
 
 Reply on each fixed thread `Fixed in <SHA>: <one line>`. Resolve no thread: `agent-review` resolves its own once it verifies the fix; humans resolve theirs. Reply to a disputed thread with your evidence and leave it open.
 
