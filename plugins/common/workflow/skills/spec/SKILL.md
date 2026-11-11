@@ -28,7 +28,7 @@ Add a fenced `scope` JSON packet when the changed paths are known, such as `{"pa
 | `drive` | `state:started` | Exclusive assignment; In Progress. |
 | `drive` | remove execution label | PR marked ready; Review, the open PR still excludes reassignment. |
 | `drive` | one `risk:R*` on a PR | Set when the draft opens; raised, never lowered. |
-| Reviewer | add/remove own `review:owner` | Review capped or extra owner gate appears/clears; never erase an explicit owner hold. |
+| Reviewer | add/remove own `review:owner` | An approval with `verdict=owner` needs the owner, or that gate clears; never erase an explicit owner hold. |
 | Orchestrator | close routine slice | Merged evidence proves authorized criteria; Done. |
 | Orchestrator | close epic | Closed slices delivered to test cover every criterion; Done. |
 | Orchestrator | close product milestone | Exact release evidence proves deployed acceptance; Done. |

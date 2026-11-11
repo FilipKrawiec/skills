@@ -150,15 +150,25 @@ test('review-context --claim labels an unclaimed PR and refuses a claimed one', 
   assert.equal(log().length, 1);
 });
 
-test('a cap or owner verdict adds review:owner after the post; other verdicts do not', t => {
-  for (const [verdict, expected] of [['cap', true], ['owner', true], ['fixes', false]]) {
+test('only an APPROVE with verdict=owner adds review:owner after the post', t => {
+  for (const [verdict, event, expected] of [['owner', 'APPROVE', true], ['ready', 'APPROVE', false], ['cap', 'COMMENT', false], ['fixes', 'COMMENT', false]]) {
     const { f, post, log } = setup(t);
-    writeFileSync(join(f.repo, 'body.md'), `<!-- agent-review sha=${sha} round=3 verdict=${verdict} -->\nCapped`);
-    const result = post('--event', 'COMMENT');
+    writeFileSync(join(f.repo, 'body.md'), `<!-- agent-review sha=${sha} round=3 verdict=${verdict} -->\nVerdict`);
+    const result = post('--event', event);
     assert.equal(result.status, 0, result.stderr);
     const label = 'pr edit 5 --repo github.com/acme/app --add-label review:owner';
     assert.deepEqual(log(), expected ? ['post', label, 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing'] : ['post', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing'], verdict);
   }
+});
+
+test('review-post refuses verdict=owner on anything but an APPROVE, without posting', t => {
+  const { f, post, log } = setup(t);
+  writeFileSync(join(f.repo, 'body.md'), `<!-- agent-review sha=${sha} round=3 verdict=owner -->\nOwner decision`);
+  const result = post('--event', 'COMMENT');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /verdict=owner requires --event APPROVE/);
+  assert.deepEqual(log(), ['pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
+  assert.equal(existsSync(f.env.REVIEW_RECORD), false);
 });
 
 test('review-context groups files by area, lists pure renames as mechanical and compares against the last reviewed head', t => {

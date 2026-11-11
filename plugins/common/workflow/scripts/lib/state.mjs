@@ -9,20 +9,21 @@ export function ciState(checks = []) {
   return checks.every(check => passedStates.includes(checkState(check))) ? 'green' : 'pending';
 }
 const verdictOf = review => /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(review?.body || '')?.[1] || null;
-// What happens next on an open PR and who does it, first match wins. Only the risk label (and the round cap's
-// review:owner) brings in the owner; line count never does.
+// What happens next on an open PR and who does it, first match wins. The owner is asked only on a PR the Reviewer
+// approved at its head (risk R2, a review:owner hold, a release); line count and review rounds never ask them.
 function nextAction(pr, record, ci, verdict, owner) {
   if (pr.state === 'MERGED') return { action: 'done', actor: 'cli' };
   if (pr.state !== 'OPEN') return { action: 'none', actor: 'owner', reason: `PR is ${pr.state.toLowerCase()}` };
+  if (!record.issues.length) return { action: 'link-issue', actor: 'planner', reason: 'no linked issue: spec files one and the body links it' };
   if (pr.mergeable === 'CONFLICTING') return { action: 'fix', actor: 'implementer', reason: 'conflicts with its base' };
   if (ci === 'red') return { action: 'fix', actor: 'implementer', reason: 'a check failed' };
   if (record.awaitingReview) return ci === 'pending' ? { action: 'wait-ci', actor: 'cli' } : { action: 'review', actor: 'reviewer' };
   if (verdict === 'fixes') return { action: 'fix', actor: 'implementer', reason: 'blocking review findings' };
   if (verdict === 'split') return { action: 'split', actor: 'planner' };
-  if (['cap', 'owner'].includes(verdict) || (owner.needed && !record.ownerApproved)) return { action: 'owner-review', actor: 'owner', reason: owner.reason };
   // A draft whose newest verdict at its head is `ready` is handed off (`pr ready`); its approval follows on the ready PR.
   if (record.shipReady) return { action: 'ready', actor: 'cli', reason: 'verdict ready on a draft' };
   if (!record.approved) return { action: 'review', actor: 'reviewer', reason: 'no approval at the head' };
+  if (owner.needed && !record.ownerApproved) return { action: 'owner-review', actor: 'owner', reason: owner.reason };
   if (ci === 'pending') return { action: 'wait-ci', actor: 'cli' };
   return { action: 'merge', actor: 'cli' };
 }

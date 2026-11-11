@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, estimateRisk, matchesPattern,
-  modelFor, nextTarget, ownerPatterns, parseHandBack, pickSlice, reviewerCommand, riskFromPaths, staleReviewClaim,
+  modelFor, modelForStep, nextTarget, ownerPatterns, parseHandBack, pickSlice, plannerBrief, reviewerCommand, riskFromPaths, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 
 const head = 'a'.repeat(40);
@@ -70,13 +70,64 @@ test('drive releases a stale Reviewer claim, then dispatches the reviewer', () =
   assert.deepEqual([step.agent, step.mode], ['reviewer', 'review']);
 });
 
-test('only risk R2 or the round cap brings in the owner; line count never does', () => {
+test('the owner is asked only on an approved PR; the round cap and line count never ask', () => {
   const base = { issue: started, tree: tree({ commits: 1 }) };
   const approved = [review('ready', 'APPROVED')];
   assert.equal(decide({ ...base, pr: pr({ isDraft: false, labels: [label('risk:R2')], reviews: approved }) }).owner, 'risk R2');
-  assert.ok(decide({ ...base, pr: pr({ reviews: [review('cap')] }) }).owner);
+  assert.equal(decide({ ...base, pr: pr({ labels: [label('risk:R2')], reviews: [review('ready')] }) }).do, 'ready', 'an R2 draft goes to its approval first');
+  assert.equal(decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes')] }) }).owner, undefined);
   const huge = Array.from({ length: 5000 }, (_, i) => `src/file${i}.js`);
   assert.equal(decide({ ...base, diffPaths: huge, pr: pr({ isDraft: false, reviews: approved }) }).do, 'auto-merge');
+});
+
+test('from the third blocking verdict a fresh implementer on the strongest model fixes the whole open set', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  assert.equal(decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes')] }) }).resume, true);
+  const third = decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes')] }) });
+  assert.deepEqual([third.agent, third.mode, third.fresh, third.resume], ['implementer', 'fix', true, undefined]);
+  assert.equal(modelForStep(third, 'R0'), 'opus');
+  assert.equal(modelForStep({ agent: 'implementer', resume: true }, 'R0'), 'sonnet');
+});
+
+test('the fresh fix round runs once: a blocking verdict after it cuts scope through the planner, never the owner', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  const fourth = decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes'), review('fixes')] }) });
+  assert.deepEqual([fourth.agent, fourth.mode, fourth.owner], ['planner', 'replan', undefined]);
+  assert.match(fourth.reason, /narrow the issue to what the PR delivers/);
+});
+
+test('a cut after the fresh round keeps the PR: the planner narrows its issue and the Reviewer judges the same head again', () => {
+  const blocked = [review('fixes'), review('fixes'), review('fixes'), review('fixes')];
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, reviews: blocked })] });
+  const replan = drive(repo.io, 3, lanes, {});
+  assert.deepEqual([replan.agent, replan.mode], ['planner', 'replan']);
+  const brief = repo.writes[replan.brief];
+  assert.match(brief, /narrow this issue's criteria to what PR #5 delivers/);
+  assert.match(brief, /Never close the PR/);
+  // The planner narrows the issue and files the rest; the PR, its head and its verdicts stay.
+  const next = drive(repo.io, 3, lanes, { status: 'narrowed', slices: '4' });
+  assert.deepEqual(repo.calls, [], 'no new build, commit or push');
+  assert.deepEqual([next.agent, next.mode, next.pr], ['reviewer', 'review', 5]);
+  assert.equal(next.command.includes('review-5-r5'), true);
+  assert.match(repo.writes[next.brief], new RegExp(`at head ${head}`));
+  assert.match(repo.writes[next.brief], /Narrowed scope, same head/);
+  // A ready verdict at that head then readies the PR, which merges closing the narrowed issue.
+  repo.s.prs[0].reviews.push(review('ready'));
+  assert.deepEqual(drive(repo.io, 3, lanes, {}).agent, 'reviewer');
+  assert.deepEqual(repo.calls, [['ready']]);
+  // Without a PR, a cut splits the issue into an epic; a `sliced` hand-back on a story reports blocked, not another planner round.
+  assert.match(plannerBrief({ issue: started, pr: null, step: { mode: 'replan', reason: 'two seams' } }), /into an epic with one-PR sub-issues/);
+  assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: blocked }), handBack: { status: 'sliced' } }), { blocked: { issue: 3, reason: 'the planner handed back sliced, yet the issue is not an epic' } });
+});
+
+test('a PR found through its issue but linking none is linked by drive, never sent to the owner', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  assert.deepEqual(decide({ ...base, pr: pr({ body: 'Stacked work', closingIssuesReferences: [] }) }), { do: 'link-issue' });
+  assert.equal(decide({ ...base, pr: pr({ body: 'Closes #3', closingIssuesReferences: [] }) }).agent, 'reviewer', 'a stacked PR closing its issue in the body goes to review');
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, body: 'Stacked work', closingIssuesReferences: [] })] });
+  const step = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(repo.calls, [['link-issue', 5, 3]]);
+  assert.deepEqual([step.agent, step.mode], ['reviewer', 'review']);
 });
 
 test('risk: estimated from the issue, recomputed from the diff, and only ever rises', () => {
@@ -129,6 +180,7 @@ function fakeRepo(initial) {
     push: t => { calls.push(['push']); t.unpushed = false; },
     open: (i, t, risk) => { calls.push(['open', i.number, risk]); (s.prs ||= []).push(pr({ issue: i.number, number: 50 + i.number, labels: [label(`risk:${risk}`)] })); },
     reviewingSince: () => null,
+    linkIssue: (p, i) => { calls.push(['link-issue', p.number, i.number]); p.body = `Closes #${i.number}\n\n${p.body}`; },
     releaseReview: p => { calls.push(['release-review', p.number]); p.labels = p.labels.filter(l => l.name !== 'state:reviewing'); },
     risk: (p, from, to) => { calls.push(['risk', to]); p.labels = [label(`risk:${to}`)]; },
     ready: p => { calls.push(['ready']); p.isDraft = false; },
