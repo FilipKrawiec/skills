@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import {
   parseWorktreeList,
   prStates,
@@ -17,6 +18,7 @@ const now = Date.UTC(2026, 10, 7);
 const day = 86_400_000;
 const hour = 3_600_000;
 const aged = now - 2 * hour;
+const cli = fileURLToPath(new URL('../../plugins/common/workflow/scripts/workflow.mjs', import.meta.url));
 const idle = { path: '/r/.claude/worktrees/x', branch: 'x', touched: now - 3 * day };
 const verdict = facts => worktreeVerdict({ ...idle, ...facts }, { now, idleDays: 2 });
 
@@ -73,6 +75,28 @@ function fixture(t) {
   const tidy = facts => removeWorktree(facts, worktreeVerdict(facts, { now: Date.now() + 2 * hour, idleDays: 2 }), repo, context.baseRef);
   return { repo, git, add, addDetached, factsOf, tidy, context };
 }
+
+test('help and unknown flags never remove a removable worktree', t => {
+  const { repo, git, add } = fixture(t);
+  const tree = add('removable');
+  const gitDir = git(tree, 'rev-parse', '--absolute-git-dir').stdout.trim();
+  const old = new Date(Date.now() - 2 * hour);
+  for (const name of ['index', 'HEAD', 'logs/HEAD']) if (existsSync(join(gitDir, name))) utimesSync(join(gitDir, name), old, old);
+  for (const flag of ['--help', '-h', '--unknown']) {
+    const result = spawnSync(process.execPath, [cli, 'worktree', 'tidy', flag], { cwd: repo, encoding: 'utf8' });
+    assert.equal(result.status, flag === '--unknown' ? 1 : 0, result.stderr);
+    assert.match(result.stdout + result.stderr, /Usage:.*worktree tidy/);
+    assert.equal(existsSync(tree), true);
+  }
+  for (const command of ['push', 'commit', 'status', 'drive', 'release', 'project', 'issue', 'pr', 'check', 'safety', 'manifests', 'cache', 'labels', 'next', 'wait', 'nits', 'scratch', 'review-context', 'review-post']) {
+    for (const flag of ['--help', '-h']) {
+      const result = spawnSync(process.execPath, [cli, command, flag], { cwd: repo, encoding: 'utf8' });
+      assert.equal(result.status, 0, `${command} ${flag}: ${result.stderr}`);
+      assert.match(result.stdout, /Usage:/);
+      assert.equal(existsSync(tree), true);
+    }
+  }
+});
 
 test('worktree tidy deletes the ended branch of a clean tree and backs up a dirty tree\'s changes', t => {
   const { repo, git, add, factsOf, tidy } = fixture(t);
