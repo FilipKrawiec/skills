@@ -32,7 +32,7 @@ test('branch policy reads rulesets as well as classic protection', () => {
     { type: 'required_linear_history' }, { type: 'non_fast_forward' }, { type: 'deletion' },
   ];
   assert.deepEqual(effectiveBranchPolicy(null, rules), {
-    reviews: [1, true, true, true], checks: ['verify'], linearHistory: true, conversationResolution: true, forcePushesBlocked: true, deletionsBlocked: true, enforceAdmins: null,
+    reviews: [1, true, true, true], checks: ['verify'], strictChecks: [], linearHistory: true, conversationResolution: true, forcePushesBlocked: true, deletionsBlocked: true, enforceAdmins: null,
   });
   const classic = {
     required_pull_request_reviews: { required_approving_review_count: 1, require_code_owner_reviews: true, require_last_push_approval: true, dismiss_stale_reviews: true },
@@ -40,7 +40,7 @@ test('branch policy reads rulesets as well as classic protection', () => {
     allow_force_pushes: { enabled: false }, allow_deletions: { enabled: false }, enforce_admins: { enabled: false },
   };
   assert.deepEqual(effectiveBranchPolicy(classic, []), {
-    reviews: [1, true, true, true], checks: ['verify'], linearHistory: true, conversationResolution: true, forcePushesBlocked: true, deletionsBlocked: true, enforceAdmins: false,
+    reviews: [1, true, true, true], checks: ['verify'], strictChecks: [], linearHistory: true, conversationResolution: true, forcePushesBlocked: true, deletionsBlocked: true, enforceAdmins: false,
   });
   assert.equal(effectiveBranchPolicy(null, []), null);
 });
@@ -58,6 +58,14 @@ test('branch policy merges classic protection with rulesets', () => {
   assert.equal(policy.forcePushesBlocked, true);
   assert.equal(policy.deletionsBlocked, true);
   assert.equal(policy.linearHistory, false);
+});
+
+test('branch policy identifies checks protected by up-to-date enforcement', () => {
+  const classic = { required_status_checks: { strict: true, contexts: ['lint'] } };
+  const rules = [{ type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'verify' }] } },
+    { type: 'required_status_checks', parameters: { strict_required_status_checks_policy: false, required_status_checks: [{ context: 'other' }] } }];
+  assert.deepEqual(effectiveBranchPolicy(classic, rules).strictChecks, ['lint', 'verify']);
+  assert.deepEqual(effectiveBranchPolicy({ required_status_checks: { strict: false, contexts: ['lint'] } }, []).strictChecks, []);
 });
 
 test('branch rulesets may be bypassed by admins only', () => {

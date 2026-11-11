@@ -108,11 +108,14 @@ export function effectiveBranchPolicy(protection, rules) {
   const count = Math.max(classicReviews?.required_approving_review_count ?? 0, ...pr.map(parameters => parameters.required_approving_review_count ?? 0));
   const hasReviews = Boolean(classicReviews) || pr.length > 0;
   const checks = new Set(protection?.required_status_checks?.contexts || []);
+  const strictChecks = new Set(protection?.required_status_checks?.strict ? protection.required_status_checks.contexts || [] : []);
   for (const rule of rules) if (rule.type === 'required_status_checks') for (const item of rule.parameters?.required_status_checks || []) checks.add(item.context);
+  for (const rule of rules) if (rule.type === 'required_status_checks' && rule.parameters?.strict_required_status_checks_policy) for (const item of rule.parameters.required_status_checks || []) strictChecks.add(item.context);
   const has = type => rules.some(rule => rule.type === type);
   return {
     reviews: hasReviews ? [count, any(classicReviews?.require_code_owner_reviews, 'require_code_owner_review'), any(classicReviews?.require_last_push_approval, 'require_last_push_approval'), any(classicReviews?.dismiss_stale_reviews, 'dismiss_stale_reviews_on_push')] : null,
     checks: [...checks].sort(),
+    strictChecks: [...strictChecks].sort(),
     linearHistory: Boolean(protection?.required_linear_history?.enabled) || has('required_linear_history'),
     conversationResolution: Boolean(protection?.required_conversation_resolution?.enabled) || pr.some(parameters => parameters.required_review_thread_resolution),
     forcePushesBlocked: (protection ? protection.allow_force_pushes?.enabled === false : false) || has('non_fast_forward'),
