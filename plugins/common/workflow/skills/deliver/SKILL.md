@@ -63,6 +63,10 @@ Use `status: replan` when the issue contradicts the code or splits at a logical 
 - A merge that publishes to production waits for `release` and the owner's approval of that exact artifact; merge approval alone never promotes.
 - A base that turns red after a merge: report the failing run and the culprit (`git log --first-parent <green>..<red>` lists exactly one merge) to the owner. Never fix forward or revert without their authority.
 
+## Setup
+
+Read [setup.md](references/setup.md) when setting up a repository for `drive`.
+
 ## Output
 
 At most 5 lines: **Summary:** issue or epic, PR and state. **Decision:** the owner step with its link, or "Nothing needed."

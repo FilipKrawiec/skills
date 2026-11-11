@@ -43,6 +43,18 @@ test('retired orchestration material is absent', () => {
   }
 });
 
+test('the AFK watcher, its queues and its labels are gone', () => {
+  const workflow = join(commonRoot, 'workflow');
+  for (const path of ['skills/afk', 'skills/review/references/queue.md', 'skills/spec/references/afk-ready.md', 'skills/explore/references/idle.md', 'scripts/lib/afk-board.mjs', 'scripts/lib/afk-runs.mjs', 'scripts/lib/afk-watch.mjs']) {
+    assert.equal(existsSync(join(workflow, path)), false, path);
+  }
+  const files = readdirSync(workflow, { recursive: true }).filter(file => /\.(md|mjs|json)$/.test(String(file)));
+  for (const file of files) {
+    const text = readFileSync(join(workflow, String(file)), 'utf8');
+    assert.doesNotMatch(text, /lane:afk|lane:proposed|state:claimed|reviewQueue|Review queue|issue queue|workflow\.mjs afk|`afk`/, String(file));
+  }
+});
+
 test('agent marketplaces list only their common packages', () => {
   const claude = json('.claude-plugin/marketplace.json');
   const codex = json('.agents/plugins/marketplace.json');

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { effectiveBranchPolicy } from '../safety.mjs';
-import { afkPrRecord, afkReviewerApproved } from './afk-board.mjs';
+import { prRecord, reviewerApproved } from './board.mjs';
 import { jsonCommand, run } from './core.mjs';
 
 export const failedStates = ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'];
@@ -23,7 +23,7 @@ export function prReadyRefusal(pr, cfg) {
   const missing = (cfg.requiredChecks || []).filter(name => !checks.some(check => checkName(check) === name));
   if (missing.length) return `required checks missing at ${pr.headRefOid}: ${missing.join(', ')}`;
   if (pr.mergeable === 'CONFLICTING') return `PR #${pr.number} conflicts with its base`;
-  const record = afkPrRecord({ ...pr, labels: pr.labels || [] }, cfg);
+  const record = prRecord({ ...pr, labels: pr.labels || [] }, cfg);
   if (!record.shipReady) return `no agent-review verdict=ready at head ${pr.headRefOid}, or someone outside the workflow requests changes there`;
   return null;
 }
@@ -42,7 +42,7 @@ export function prAutoMergeRefusal(pr, cfg, policy) {
   if (failed.length) return `checks failed at ${pr.headRefOid}: ${failed.join(', ')}`;
   if (pr.mergeable === 'CONFLICTING') return `PR #${pr.number} conflicts with its base`;
   const ownerLane = (pr.labels || []).some(label => label.name === 'review:owner');
-  if (!afkReviewerApproved({ ...pr, labels: pr.labels || [] }, cfg)) return `no Reviewer approval with agent-review verdict=${ownerLane ? 'owner' : 'ready'} at head ${pr.headRefOid}`;
+  if (!reviewerApproved({ ...pr, labels: pr.labels || [] }, cfg)) return `no Reviewer approval with agent-review verdict=${ownerLane ? 'owner' : 'ready'} at head ${pr.headRefOid}`;
   const owner = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === cfg.owner?.toLowerCase() && review.state !== 'COMMENTED').at(-1);
   if (owner?.state === 'CHANGES_REQUESTED') return `the owner ${cfg.owner} requests changes`;
   if (ownerLane && !(owner?.state === 'APPROVED' && owner.commit?.oid === pr.headRefOid)) return `review:owner holds it until ${cfg.owner} approves head ${pr.headRefOid}`;

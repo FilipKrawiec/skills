@@ -8,10 +8,5 @@
     "process": null,
     "assemble": null,
     "test": ["just", "verify"]
-  },
-  "afk": {
-    "maxRuns": 8,
-    "model": "claude-sonnet-5-5",
-    "retros": "bugs-when-empty"
   }
 }

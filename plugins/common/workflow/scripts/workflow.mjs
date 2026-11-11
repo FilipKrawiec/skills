@@ -9,45 +9,19 @@ import { releaseCommand } from './release.mjs';
 import { safetyCommand } from './safety.mjs';
 import { lockTimeoutStatus, runWithLocks } from './locks.mjs';
 import {
-  afkMerge,
-  afkPrs,
-  afkReadLedger,
-} from './lib/afk-board.mjs';
-import {
-  afkActor,
-  afkCheckRun,
-  afkConfig,
-  afkEndRun,
-  afkFlags,
-  afkLoadEnvironment,
-  afkStartRun,
-  hasProcessAncestor,
-  processTable,
-} from './lib/afk-runs.mjs';
-import {
-  afkInstall,
-  afkReap,
-  afkSupervise,
-  afkUninstall,
-  afkWatch,
-} from './lib/afk-watch.mjs';
-import {
   cachedGithubMetadata,
   config,
   git,
   githubMetadataPath,
   heldWorkflowLocks,
-  run,
   workflowScratch,
   workflowDefaults,
 } from './lib/core.mjs';
 import {
-  issueClaim,
   issueClose,
   issueComment,
   issueCreate,
   issueEdit,
-  issueQueue,
   issueReopen,
   issueStatus,
   labelsCommand,
@@ -65,7 +39,7 @@ import { worktreeCommand } from './lib/worktrees.mjs';
 
 const help = `Usage:
   node workflow.mjs commit --message MESSAGE [-- PATH...]
-  node workflow.mjs push [--owner-bootstrap | --to BRANCH]
+  node workflow.mjs push [--owner-bootstrap]
   node workflow.mjs review-context --pr NUMBER [--claim] [--previous SHA --previous-base SHA] [--issue NUMBER]
   node workflow.mjs review-post --pr NUMBER --sha HEX --event APPROVE|REQUEST_CHANGES|COMMENT --body-file PATH|- [--comments-file PATH|-] [--resolve-thread ID]...
   node workflow.mjs scratch
@@ -76,21 +50,16 @@ const help = `Usage:
   node workflow.mjs check
   node workflow.mjs pr ready|auto-merge --pr NUMBER
   node workflow.mjs nits [--days N] [--done PR...]
-  node workflow.mjs issue claim|status|create|comment|edit|close|reopen|queue ...
+  node workflow.mjs issue status|create|comment|edit|close|reopen ...
   node workflow.mjs labels ensure
   node workflow.mjs worktree tidy [--dry-run] [--idle-days N]
   node workflow.mjs cache show|refresh
-  node workflow.mjs cache refresh
-  node workflow.mjs afk install|uninstall|watch|start|check|merge|end|runs|reap ...
-  node workflow.mjs afk start --me RUN_ID [--issue NUMBER]
-  node workflow.mjs afk watch [--issue NUMBER]
   node workflow.mjs manifests verify|sync
   node workflow.mjs project [--root DIR] [--strict-git] [TASK]
   node workflow.mjs release [auto|patch|minor|major] [--message TEXT] [--dry-run] [--root DIR]
   node workflow.mjs safety check|apply
 
 push reads implementer and Reviewer from the fetched default branch's .agents/config.json and derives Owner from origin and base .github/CODEOWNERS. For first-config bootstrap only, if base CODEOWNERS has no owner yet, it reads Owner from committed branch CODEOWNERS.
-push --to BRANCH pushes HEAD to BRANCH instead of the current branch; it requires an AFK run whose held number is an open same-repository PR with that head, an issue that PR closes, or the parent of an issue that PR closes.
 A verified personal repo owner may be inferred; CODEOWNERS must identify one owner account unambiguously.
 Auto-merge checks are not atomic with push; do not change auto-merge concurrently. Push isolates Git configuration and runs the installed pre-push hook; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
@@ -105,111 +74,16 @@ A body or comments file is - (stdin) or a path inside the worktree; scratch crea
 export function hasLockfAncestor(commands) {
   return commands.some(command => basename(command.trim().split(/\s+/, 1)[0]) === 'lockf');
 }
-function afkCommand(args) {
-  try {
-    const [action, ...rest] = args;
-    const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
-    const cfg = afkConfig();
-    afkLoadEnvironment(cfg);
-    if (action === 'install') { afkInstall(cfg); return 0; }
-    if (action === 'uninstall') { afkUninstall(cfg); return 0; }
-    if (action === 'watch') {
-      const flags = afkFlags(rest, ['--issue']);
-      const issue = flags['--issue'] === undefined ? null : Number(flags['--issue']);
-      if (issue !== null && (!Number.isSafeInteger(issue) || issue < 1)) throw new Error('afk watch --issue must be a positive issue number');
-      return afkWatch(cfg, common, issue);
-    }
-    if (action === 'supervise' || action === 'finish') {
-      const flags = afkFlags(rest, ['--me', '--note', '--why', '--spent']); const id = flags['--me'];
-      if (!/^[\w.-]+$/.test(id || '')) throw new Error(`Usage: afk ${action} --me RUN_ID`);
-      return action === 'supervise' ? afkSupervise(common, id) : afkEndRun(cfg, common, id, flags['--note'] || null, flags['--why'] ?? '', flags['--spent'] === 'yes');
-    }
-    if (action === 'reap') { afkLoadEnvironment(cfg); afkReap(cfg, common); return 0; }
-    if (action === 'runs') {
-      afkLoadEnvironment(cfg);
-      const agents = cfg.runsCommand ? JSON.parse(run(cfg.runsCommand[0], cfg.runsCommand.slice(1)) || '[]') : [];
-      console.log(agents.filter(a => a.kind === 'background' && (a.name || '').startsWith(cfg.runPrefix) && !['idle', 'done', 'stopped', 'failed'].includes(a.state || a.status)).map(a => a.name).join('\n')); return 0;
-    }
-    if (action === 'merge') {
-      afkActor(cfg);
-      const wanted = rest.map(v => { if (!/^[1-9]\d*$/.test(v)) throw new Error(`Invalid PR number: ${v}`); return Number(v); });
-      console.log(afkMerge(cfg, afkPrs(cfg), wanted.length ? new Set(wanted) : null).join('\n') || 'Merged nothing.'); return 0;
-    }
-    if (action === 'start') {
-      const flags = afkFlags(rest, ['--me', '--issue']); const id = flags['--me'];
-      if (!/^[\w.-]+$/.test(id || '')) throw new Error('Usage: afk start --me RUN_ID');
-      const issue = flags['--issue'] === undefined ? null : Number(flags['--issue']);
-      if (issue !== null && (!Number.isSafeInteger(issue) || issue < 1)) throw new Error('afk start --issue must be a positive issue number');
-      return afkStartRun(cfg, id, common, issue);
-    }
-    if (action === 'check') {
-      if (rest.some(value => value !== '--quiet')) throw new Error('Usage: afk check [--quiet]');
-      return afkCheckRun(cfg, common, rest.includes('--quiet'));
-    }
-    if (action === 'end') {
-      const id = afkFlags(rest, ['--me'])['--me'];
-      if (!/^[\w.-]+$/.test(id || '')) throw new Error('Usage: afk end --me RUN_ID');
-      return afkEndRun(cfg, common, id);
-    }
-    throw new Error('Usage: afk <install|uninstall|watch|start|check|merge|end|runs|reap|supervise|finish>');
-  } catch (error) { console.error(`Blocked: ${error.message}; resolve the cause and retry.`); return 2; }
-}
 function requiredLocks(command, args) {
   if (command === 'issue') {
-    if (args[0] === 'queue') return ['afk-queue'];
     if (args[0] === 'create') return ['issue-create'];
-    if (args[0] === 'status') return ['afk-start'];
-    if (args[0] === 'claim') {
-      const index = args.indexOf('--number');
-      return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`claim-${args[index + 1]}`] : [];
-    }
+    if (args[0] === 'status') return ['board-status'];
     if (['comment', 'edit', 'close', 'reopen'].includes(args[0])) {
       const index = args.indexOf('--number');
       return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`issue-${args[0]}-${args[index + 1]}`] : [];
     }
   }
-  if (command === 'afk') {
-    if (['start', 'check', 'merge', 'end', 'finish'].includes(args[0])) return ['afk-start'];
-    if (['install', 'uninstall'].includes(args[0])) return ['afk-watch-tree'];
-    if (args[0] === 'reap') return ['afk-reap'];
-    if (args[0] === 'watch') return ['afk-start', 'afk-reap', 'afk-watch-tree'];
-  }
   return [];
-}
-function oneShotLedgerRun(command, args) {
-  if (command !== 'afk' || !['start', 'end'].includes(args[0])) return null;
-  try {
-    const id = oneShotRunId(args[0], args.slice(1));
-    if (!/^[\w.-]+$/.test(id || '')) return null;
-    const { root, lanes } = config();
-    if (lanes.runsCommand) return null;
-    const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
-    return afkReadLedger(join(common, 'afk-holds.json'))[id]?.some(hold => hold.oneShot) ? id : null;
-  } catch { return null; }
-}
-export function oneShotRunId(action, args) {
-  if (action === 'start') return afkFlags(args, ['--me', '--issue'])['--me'];
-  if (action !== 'end') return null;
-  const indexes = args.flatMap((value, index) => value === '--me' ? [index] : []);
-  return indexes.length === 1 ? args[indexes[0] + 1] : null;
-}
-function oneShotWatcherActive(id) {
-  try {
-    const { root } = config();
-    const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
-    const hold = afkReadLedger(join(common, 'afk-holds.json'))[id]?.[0];
-    const ownerPid = hold?.watcherPid;
-    if (!hold?.oneShot || !Number.isSafeInteger(ownerPid)) return false;
-    const processes = processTable();
-    if (!processes?.get(ownerPid)?.command.includes(fileURLToPath(import.meta.url))) return false;
-    if (!hasProcessAncestor(processes, process.ppid, ownerPid)) return false;
-    if (processes.get(ownerPid).command.includes(' afk supervise ')) return true;
-    const lockPath = join(common, 'workflow-locks', 'afk-start.lock');
-    const probe = process.platform === 'darwin'
-      ? spawnSync('lockf', ['-t', '0', lockPath, 'true'], { stdio: 'ignore' })
-      : spawnSync('flock', ['-n', lockPath, 'true'], { stdio: 'ignore' });
-    return !probe.error && probe.status !== 0;
-  } catch { return false; }
 }
 function validInheritedLockContext(names) {
   const token = process.env.WORKFLOW_LOCK_TOKEN || '';
@@ -261,7 +135,7 @@ function cacheCommand(args) {
   if (args.length !== 1 || !['show', 'refresh'].includes(args[0])) throw new Error('Usage: cache show|refresh');
   const { lanes } = config();
   const metadata = cachedGithubMetadata(lanes.repo, args[0] === 'refresh');
-  console.log(JSON.stringify({ repository: lanes.repo, base: lanes.base, owner: lanes.owner, reviewer: lanes.reviewer, project: metadata.project, reviewQueue: metadata.reviewQueue, requiredChecks: lanes.requiredChecks, steps: lanes.steps, explore: workflowDefaults.explore, cache: githubMetadataPath() }));
+  console.log(JSON.stringify({ repository: lanes.repo, base: lanes.base, owner: lanes.owner, reviewer: lanes.reviewer, project: metadata.project, requiredChecks: lanes.requiredChecks, steps: lanes.steps, explore: workflowDefaults.explore, cache: githubMetadataPath() }));
 }
 async function execute(command, args) {
   if (!command || command === '--help' || command === 'help') console.log(help);
@@ -271,14 +145,12 @@ async function execute(command, args) {
   else if (command === 'review-post') reviewPost(args);
   else if (command === 'pr') { const { lanes } = config(); prCommand(args, lanes); }
   else if (command === 'nits') { const { lanes } = config(); nitsCommand(args, lanes); }
-  else if (command === 'issue' && args[0] === 'claim') { const { lanes } = config(); issueClaim(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'status') { const { lanes } = config(); issueStatus(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'create') { config(); issueCreate(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'comment') { config(); issueComment(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'edit') { config(); issueEdit(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'reopen') { config(); issueReopen(args.slice(1)); }
-  else if (command === 'issue' && args[0] === 'queue') { const { lanes } = config(); issueQueue(args.slice(1)); }
   else if (command === 'status') { const { lanes } = config(); statusCommand(args, lanes); }
   else if (command === 'wait') { const { lanes } = config(); process.exitCode = waitCommand(args, lanes); }
   else if (command === 'next') { const { lanes } = config(); nextCommand(args, lanes); }
@@ -288,7 +160,6 @@ async function execute(command, args) {
   else if (command === 'labels') labelsCommand(args);
   else if (command === 'worktree') worktreeCommand(args);
   else if (command === 'cache') cacheCommand(args);
-  else if (command === 'afk') process.exitCode = afkCommand(args);
   else if (command === 'manifests') manifestsCommand(args);
   else if (command === 'project') projectVerify(args);
   else if (command === 'release') process.exitCode = releaseCommand(args);
@@ -319,15 +190,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const [command, ...args] = process.argv.slice(2);
     const names = requiredLocks(command, args);
-    const oneShotRun = oneShotLedgerRun(command, args);
     const inherited = names.length && validInheritedLockContext(names);
-    if (oneShotRun && !inherited && args[0] === 'end' && oneShotWatcherActive(oneShotRun)) {
-      const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg);
-      console.log(`One-shot watcher will release run ${oneShotRun} when the agent exits.`);
-    } else if (oneShotRun && !inherited && args[0] === 'start') {
-      heldWorkflowLocks.add('afk-start');
-      await execute(command, args);
-    } else if (names.length && inherited) {
+    if (names.length && inherited) {
       names.forEach(name => heldWorkflowLocks.add(name));
       delete process.env.WORKFLOW_LOCK_NAMES;
       delete process.env.WORKFLOW_LOCK_TOKEN;

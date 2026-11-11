@@ -1,15 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import {
-  afkCheckQuiet,
-  afkToolingVersion,
-} from '../../plugins/common/workflow/scripts/lib/afk-runs.mjs';
 import {
   gitFailureLine,
 } from '../../plugins/common/workflow/scripts/lib/core.mjs';
@@ -41,70 +34,6 @@ test('repo, base, owner and reviewer are derived from origin and CODEOWNERS', t 
   const f = fixture(t);
   const result = f.cliRun('push');
   assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).repository, 'acme/app');
-});
-
-function holdLedger(f, run, number, watcherPid = process.pid) {
-  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
-  writeFileSync(join(common, 'afk-holds.json'), JSON.stringify({ [run]: [{ number, paths: null, oneShot: true, watcherPid }] }));
-}
-
-test('push refuses a PR another live AFK run holds, and lets the holder push', t => {
-  const f = fixture(t); holdLedger(f, 'afk-holder', 4);
-  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [] }]);
-  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
-  const refused = f.cliRun('push');
-  assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /A live AFK run holds #4/);
-  assert.doesNotMatch(refused.stderr, /afk-holder/, 'the refusal does not name the run a blocked caller could pose as');
-  assertNoPush(f);
-  f.env.WORKFLOW_RUN_ID = 'afk-holder';
-  const own = f.cliRun('push');
-  assert.equal(own.status, 0, own.stderr); assert.equal(existsSync(f.env.PUSH_RECORD), true);
-});
-
-test('push refuses a caller outside the holding run\'s process tree even with its WORKFLOW_RUN_ID', t => {
-  const f = fixture(t);
-  const supervisor = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
-  t.after(() => supervisor.kill('SIGKILL'));
-  holdLedger(f, 'afk-holder', 4, supervisor.pid);
-  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [] }]);
-  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
-  f.env.WORKFLOW_RUN_ID = 'afk-holder';
-  const posing = f.cliRun('push');
-  assert.notEqual(posing.status, 0);
-  assert.match(posing.stderr, /A live AFK run holds #4/);
-  assertNoPush(f);
-});
-
-test('push refuses a Part of slice PR whose issue another live AFK run holds', t => {
-  const f = fixture(t); holdLedger(f, 'afk-holder', 7);
-  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'Part of #7' }]);
-  f.env.HOLD_COMMENTS_ISSUE = '7';
-  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
-  const refused = f.cliRun('push');
-  assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /A live AFK run holds #7/);
-  assertNoPush(f);
-});
-
-test('push refuses a PR whose epic another live AFK run holds', t => {
-  const f = fixture(t); holdLedger(f, 'afk-holder', 7);
-  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [], body: 'Part of #7' }]);
-  f.env.HOLD_COMMENTS_ISSUE = '7';
-  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-epic-hold session=afk-holder -->' }]);
-  const refused = f.cliRun('push');
-  assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /A live AFK run holds #7/);
-  assertNoPush(f);
-});
-
-test('push goes through a hold whose run has ended', t => {
-  const f = fixture(t);
-  holdLedger(f, 'afk-holder', 4, Number(run(process.execPath, ['-e', 'console.log(process.pid)']).stdout.trim()));
-  f.env.OPEN_PRS = JSON.stringify([{ number: 4, headRefName: 'feature/test', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [] }]);
-  f.env.HOLD_COMMENTS = JSON.stringify([{ id: 1, body: '<!-- afk-issue-hold session=afk-holder -->' }]);
-  const stale = f.cliRun('push');
-  assert.equal(stale.status, 0, stale.stderr); assert.equal(existsSync(f.env.PUSH_RECORD), true);
 });
 
 test('push refuses when auto-merge is enabled', t => {
@@ -312,25 +241,6 @@ test('push failure reports a safe class and exit', t => {
 test('remote destination mismatch is rejected', t => {
   const f = fixture(t); f.linkedGit('remote', 'set-url', 'origin', 'https://github.com/other/project.git');
   assert.notEqual(f.cliRun('push').status, 0); assertNoPush(f);
-});
-
-test('a tooling update ends the quiet check window', () => {
-  const version = afkToolingVersion(), now = 1_000_000;
-  assert.equal(version, JSON.parse(readFileSync(new URL('../../plugins/common/workflow/plugin.json', import.meta.url), 'utf8')).version);
-  assert.equal(afkCheckQuiet({ signal: 's', at: now, version }, 's', version, now), true);
-  assert.equal(afkCheckQuiet({ signal: 's', at: now, version: '0.0.1' }, 's', version, now), false);
-  assert.equal(afkCheckQuiet({ signal: 's', at: now }, 's', version, now), false);
-  assert.equal(afkCheckQuiet({ signal: 'other', at: now, version }, 's', version, now), false);
-  assert.equal(afkCheckQuiet({ signal: 's', at: now - 1_800_000, version }, 's', version, now), false);
-});
-
-test('an in-place tooling update keeps the version the running code loaded', async t => {
-  const root = mkdtempSync(join(tmpdir(), 'workflow-version-')); t.after(() => rmSync(root, { recursive: true, force: true }));
-  cpSync(fileURLToPath(new URL('../../plugins/common/workflow/scripts', import.meta.url)), join(root, 'scripts'), { recursive: true });
-  writeFileSync(join(root, 'plugin.json'), JSON.stringify({ version: '1.0.0' }));
-  const copy = await import(new URL(`file://${join(root, 'scripts', 'lib', 'afk-runs.mjs')}`));
-  writeFileSync(join(root, 'plugin.json'), JSON.stringify({ version: '2.0.0' }));
-  assert.equal(copy.afkToolingVersion(), '1.0.0');
 });
 
 test('commit names unmerged paths a merge commit leaves out', t => {

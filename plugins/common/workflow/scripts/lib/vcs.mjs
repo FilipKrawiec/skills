@@ -4,22 +4,6 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
-  afkLiveHolds,
-  afkPathsWithinScope,
-  prLinkedIssues,
-} from './afk-board.mjs';
-import {
-  afkActor,
-  afkAssertPushScope,
-  afkBoundHold,
-  afkCallerInRun,
-  afkEnvironmentOnce,
-  afkHeldScope,
-  afkLive,
-  afkLoadEnvironment,
-  afkScopeHint,
-} from './afk-runs.mjs';
-import {
   assertDistinctPushRoles,
   cleanEnvironment,
   config,
@@ -30,7 +14,6 @@ import {
   parseRepo,
   requireLinkedWorktree,
   run,
-  workflowDefaults,
 } from './core.mjs';
 import { readWorkspaceText } from './issues.mjs';
 
@@ -56,17 +39,6 @@ export function commit(args) {
   if (realpathSync(process.cwd()) !== realpathSync(root)) throw new Error('Run commit from the repository root');
   const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: root, env: cleanEnvironment() }).status === 0;
   if (!merging && !paths.length) throw new Error('Usage: commit --message MESSAGE [-- PATH...]; paths are optional only while a merge is in progress');
-  const runId = process.env.WORKFLOW_RUN_ID;
-  let scope = null;
-  let hold = null;
-  let environment = null;
-  if (runId) {
-    hold = afkBoundHold(root, 'commit');
-    environment = afkEnvironmentOnce();
-    if (Array.isArray(hold.paths)) scope = merging ? hold.paths : afkHeldScope(hold, paths, environment);
-    if (scope && !merging && !afkPathsWithinScope(paths, scope)) throw new Error(`Commit paths exceed the assigned AFK scope${afkScopeHint(hold)}`);
-    afkActor(environment());
-  }
   const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
   // A merge commit records the whole merged index; the listed paths are the resolved conflicts.
   const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
@@ -80,17 +52,6 @@ export function commit(args) {
     const unmerged = spawnSync('git', ['diff', '--name-only', '--diff-filter=U', '-z', '--'], { cwd: root, env, encoding: 'utf8' });
     const conflicted = unmerged.status === 0 ? [...new Set(unmerged.stdout.split('\0').filter(Boolean))] : [];
     if (conflicted.length) throw new Error(`Unmerged paths remain: ${conflicted.join(', ')}; pass each resolved path after --`);
-  }
-  // Content taken unchanged from either parent is already base's or the branch's; only content new to the merge needs scope.
-  if (merging && scope) {
-    const changed = parent => {
-      const diff = spawnSync('git', ['diff', '--cached', '--name-only', '--no-renames', '-z', parent, '--'], { cwd: root, env, encoding: 'utf8' });
-      if (diff.error || diff.status !== 0) throw new Error('Cannot read the merge index; inspect repository status');
-      return diff.stdout.split('\0').filter(Boolean);
-    };
-    const fromBase = new Set(changed('MERGE_HEAD'));
-    const outside = changed('HEAD').filter(path => fromBase.has(path) && !afkPathsWithinScope([path], scope));
-    if (outside.length && !afkPathsWithinScope(outside, afkHeldScope(hold, outside, environment))) throw new Error(`Commit paths exceed the assigned AFK scope: ${outside.join(', ')} differ from both merge parents${afkScopeHint(hold)}`);
   }
   const result = spawnSync('git', merging ? ['commit', '-m', message] : ['--literal-pathspecs', 'commit', '--only', '-m', message, '--', ...paths], { cwd: root, env, encoding: 'utf8' });
   if (result.error || result.status !== 0) {
@@ -113,14 +74,10 @@ function pushRewroteHistory(branch, head) {
 }
 export async function push(args) {
   const ownerBootstrap = args.length === 1 && args[0] === '--owner-bootstrap';
-  const target = args.length === 2 && args[0] === '--to' ? args[1] : null;
-  if (args.length && !ownerBootstrap && target === null) throw new Error('Usage: push [--owner-bootstrap | --to BRANCH]');
+  if (args.length && !ownerBootstrap) throw new Error('Usage: push [--owner-bootstrap]');
   const { root, lanes, baseRef, configSource } = config(true, true, ownerBootstrap);
   if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
   requireLinkedWorktree();
-  afkAssertPushScope(root, baseRef);
-  if (target !== null && !process.env.WORKFLOW_RUN_ID) throw new Error('push --to requires an AFK run holding the PR');
-  const held = target === null ? null : afkBoundHold(root, 'push --to').number;
   if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from origin and Owner from CODEOWNERS');
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
@@ -130,7 +87,7 @@ export async function push(args) {
     if (![user, reviewer].every(value => typeof value === 'string' && /^[A-Za-z0-9-]+$/.test(value)) || user.toLowerCase() === reviewer.toLowerCase()) throw new Error('Configure distinct implementer, reviewer and owner accounts in trusted roles');
   } else assertDistinctPushRoles({ owner, implementer: user, reviewer });
   if (user.toLowerCase() === repo.split('/')[0].toLowerCase()) throw new Error('Implementer cannot be the repository owner');
-  const branch = target ?? git('symbolic-ref', '--quiet', '--short', 'HEAD');
+  const branch = git('symbolic-ref', '--quiet', '--short', 'HEAD');
   git('check-ref-format', '--branch', branch);
   const defaultBranch = baseRef.slice('refs/remotes/origin/'.length);
   if (lanes.base != null && lanes.base !== defaultBranch) throw new Error('Configured base differs from the verified default branch; role authority is unavailable');
@@ -151,7 +108,6 @@ export async function push(args) {
     const prefix = entry.slice(separator + 1);
     if (prefix && destination.startsWith(prefix)) throw new Error('Git URL rewrite may change the verified push');
   }
-  if (process.env.WORKFLOW_RUN_ID) afkLoadEnvironment({ ...workflowDefaults.afk, ...lanes, repo });
   const env = cleanEnvironment();
   if (ownerBootstrap && !owner) throw new Error('The trusted base CODEOWNERS must identify the owner for first-config bootstrap');
   const token = run('gh', ['auth', 'token', '--hostname', 'github.com', '--user', ownerBootstrap ? owner : user], { cwd: root, env });
@@ -174,25 +130,11 @@ export async function push(args) {
   if (metadata.default_branch !== defaultBranch) throw new Error('Fetched origin/HEAD does not match GitHub default branch; refresh origin');
   const remoteBase = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/branches/${encodeURIComponent(defaultBranch)}`], { cwd: root, env: metadataEnv });
   if (!/^[0-9a-f]{40,64}$/i.test(remoteBase?.commit?.sha || '') || git('rev-parse', baseRef) !== remoteBase.commit.sha) throw new Error('Fetched base is stale or unverifiable; refresh origin before pushing');
-  const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest,headRefName,isCrossRepository,closingIssuesReferences,body'], { cwd: root, env: { ...env, GH_TOKEN: token } });
+  const pulls = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--head', branch, '--limit', '100', '--json', 'number,autoMergeRequest'], { cwd: root, env: { ...env, GH_TOKEN: token } });
   if (!Array.isArray(pulls)) throw new Error('Cannot determine open PR auto-merge state');
-  if (held !== null) {
-    // A run that split its held issue builds the first sub-issue under the parent's hold, so that sub-issue's PR is the run's too.
-    const subIssues = () => jsonCommand('gh', ['api', '--paginate', '--slurp', `repos/${repo}/issues/${held}/sub_issues`], { cwd: root, env: metadataEnv }).flat().map(issue => issue.number);
-    if (!pushTargetAllowed(pulls, branch, repo, held, subIssues)) throw new Error(`push --to ${branch} is not the head of the held PR, of a PR closing or part of held issue #${held}, or of a PR closing one of its direct sub-issues`);
-  }
   if (pulls.some(pr => pr.autoMergeRequest != null)) throw new Error('Open PR has auto-merge enabled; disable it before pushing');
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
-  // Pushing over a PR that another live run works on strands that run's own push, so its hold never ends; only the holder pushes.
-  // A run id is public in its hold comment, so a caller is that run only from inside its process tree, and the refusal names no run.
-  const live = afkLive({ ...workflowDefaults.afk, ...lanes });
-  const claimed = process.env.WORKFLOW_RUN_ID || '';
   const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
-  const me = claimed && afkCallerInRun(common, claimed) ? claimed : '';
-  for (const pr of pulls) for (const number of new Set([pr.number, ...prLinkedIssues(pr, repo)])) {
-    const comments = jsonCommand('gh', ['api', '--paginate', '--slurp', `repos/${repo}/issues/${number}/comments`], { cwd: root, env: metadataEnv }).flat();
-    if (afkLiveHolds(comments, live, me).some(hold => hold.run !== me)) throw new Error(`A live AFK run holds #${number}; let it finish instead of pushing to PR #${pr.number}`);
-  }
   const head = git('rev-parse', 'HEAD');
   const helper = fileURLToPath(new URL('../git-askpass.mjs', import.meta.url));
   const hook = run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], { cwd: root, env });
@@ -227,14 +169,6 @@ export async function push(args) {
     }
     console.log(JSON.stringify({ result: 'pushed', actor, repository: repo, branch, head, configSource }));
   } finally { rmSync(temporary, { recursive: true, force: true }); }
-}
-// push --to may update a same-repository PR head that is the held PR, links the held issue or closes a direct sub-issue of it.
-export function pushTargetAllowed(pulls, branch, repo, held, subIssues) {
-  const heads = pulls.filter(pr => pr.headRefName === branch && pr.isCrossRepository === false);
-  if (heads.some(pr => pr.number === held || prLinkedIssues(pr, repo).includes(held))) return true;
-  if (!heads.length) return false;
-  const children = new Set(subIssues());
-  return heads.some(pr => prLinkedIssues(pr, repo).some(number => children.has(number)));
 }
 function parseOptions(args) {
   const options = {};

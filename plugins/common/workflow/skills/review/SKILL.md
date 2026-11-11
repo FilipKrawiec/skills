@@ -1,6 +1,6 @@
 ---
 name: review
-description: Use when reviewing a PR, diff, branch or whole area for whether it delivers its acceptance criteria, fits the system and breaks nothing else, when posting or approving a PR verdict as the Reviewer, or when assigned technical adjudication or AFK eligibility review.
+description: Use when reviewing a PR, diff, branch or whole area for whether it delivers its acceptance criteria, fits the system and breaks nothing else, when posting or approving a PR verdict as the Reviewer, or when assigned technical adjudication.
 allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 ---
 
@@ -12,8 +12,7 @@ A `<cli> drive` brief names PR, head, round and task.
 
 Branch on the assignment, first match wins:
 
-- a technical fork or AFK eligibility: read [assignments.md](references/assignments.md);
-- the review queue: read [queue.md](references/queue.md);
+- a technical fork: read [assignments.md](references/assignments.md);
 - approve a ready PR whose newest verdict at its head is `ready`: read [approval.md](references/approval.md);
 - an area, diff or branch with no PR: read [area-audit.md](references/area-audit.md) for a whole area, do steps 3 and 4 and return the step 5 envelope without posting;
 - a PR: steps 1 to 5.

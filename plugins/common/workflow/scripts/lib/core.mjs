@@ -6,13 +6,9 @@ import { homedir } from 'node:os';
 export const heldWorkflowLocks = new Set();
 export const workflowDefaults = {
   github: { requiredChecks: ['verify'], metadataCacheHours: 24 },
-  afk: {
-    runPrefix: 'afk-', maxRuns: 4, environmentFile: '~/.config/gh-agents/workflow-env.json',
-    watchIntervalSeconds: 60, startCommand: ['claude', '--print', '--output-format', 'json', '--plugin-dir', '{pluginDir}', '--name', '{runId}', '--worktree', '{runId}', '--permission-mode', '{permissionMode}', '{prompt}'],
-    permissionMode: 'auto', pluginUpdateCommands: [], maxRunMinutes: 60,
-    toolingRepository: 'https://github.com/FilipKrawiec/skills.git', toolingRef: 'main', toolingDirectory: '~/.local/share/workflow-cli/skills',
-  },
-  explore: { personas: '.agents/personas.md', maxIssues: 3, idleHours: 24, capturesBranch: 'explore-captures' },
+  // The implementer's GitHub environment for issue writes, and the repository skill and CLI follow-ups are filed in.
+  cli: { environmentFile: '~/.config/gh-agents/workflow-env.json', toolingRepository: 'https://github.com/FilipKrawiec/skills.git' },
+  explore: { personas: '.agents/personas.md', maxIssues: 3, capturesBranch: 'explore-captures' },
 };
 export function run(program, args, options = {}) {
   const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, ...options });
@@ -84,13 +80,14 @@ export function config(requireLanes = true, allowBootstrap = false, allowBootstr
     source = 'branch bootstrap';
   }
   const raw = configPath ? JSON.parse(git('show', configPath)) : null;
-  if (configPath && (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 || Object.hasOwn(raw, 'explore') || ![raw.identities ?? {}, raw.github ?? {}, raw.afk ?? {}, raw.steps ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration; use steps.process/assemble/test instead of an explore block');
+  if (configPath && (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 || Object.hasOwn(raw, 'explore') || ![raw.identities ?? {}, raw.github ?? {}, raw.steps ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration; use steps.process/assemble/test instead of an explore block');
   if (raw && source === 'branch bootstrap' && (['owner'].some(key => Object.hasOwn(raw.identities || {}, key))
     || ['repo', 'base'].some(key => Object.hasOwn(raw.github || {}, key))
     || Object.hasOwn(raw, 'labels'))) {
     throw new Error('Workflow roles and GitHub metadata come from CODEOWNERS/Git and the local cache; use CLI defaults for labels and repository scripts under steps');
   }
-  const lanes = raw ? { ...raw.github, ...raw.identities, ...raw.afk, steps: validateWorkflowSteps(raw.steps || {}) } : { steps: {} };
+  // Other top-level keys, such as the removed watcher's block, are ignored, so older configs still load.
+  const lanes = raw ? { ...raw.github, ...raw.identities, steps: validateWorkflowSteps(raw.steps || {}) } : { steps: {} };
   const remote = git('remote', 'get-url', 'origin');
   lanes.repo = githubRepoFromRemote(remote);
   lanes.base = baseRef.slice('refs/remotes/origin/'.length);
@@ -145,10 +142,6 @@ export function validateWorkflowSteps(steps) {
   }
   return steps;
 }
-export function requireTestStep(steps) {
-  if (!Array.isArray(steps?.test) || steps.test.length === 0) throw new Error('Configure steps.test as a non-empty argv array before running AFK');
-  return steps.test;
-}
 export function parseRepo(repo) {
   if (typeof repo !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) throw new Error('lanes.repo must be owner/repository on github.com');
   return repo;
@@ -170,11 +163,44 @@ export function githubPushRemoteMatches(remote, repo) {
   const match = /^(?:https:\/\/github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remote);
   return Boolean(match && match[1].toLowerCase() === String(repo).toLowerCase());
 }
-// AFK is deliberately a small set of deterministic GitHub operations. Product
-// decisions and implementation stay in the skills; this code only assigns,
-// tracks and closes work for the unattended runner.
-export const afkMarker = (kind, id) => `<!-- afk-${kind} session=${id} -->`;
-export const afkGh = args => jsonCommand('gh', args);
+export const gh = args => jsonCommand('gh', args);
+// Parses `--key value` pairs, each allowed key at most once.
+export function flags(args, allowed) {
+  const result = {};
+  for (let i = 0; i < args.length; i += 2) {
+    const key = args[i];
+    if (!allowed.includes(key) || !args[i + 1] || Object.hasOwn(result, key)) throw new Error(`Expected ${allowed.join(' ')}`);
+    result[key] = args[i + 1];
+  }
+  return result;
+}
+export function requireImplementer(cfg) {
+  const actor = gh(['api', 'user']).login;
+  if (!cfg.implementer || actor?.toLowerCase() !== cfg.implementer.toLowerCase()) throw new Error(`Authenticated as ${actor || 'unknown'}; workflow writes require ${cfg.implementer || 'a configured implementer'}`);
+}
+// The trusted roles with the CLI defaults, after a fetch, for commands that write to GitHub.
+export function writerConfig() {
+  git('fetch', '--quiet', 'origin');
+  const { lanes } = config();
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from Git and Owner from CODEOWNERS');
+  assertDistinctPushRoles({ owner: lanes.owner, implementer: lanes.implementer, reviewer: lanes.reviewer });
+  for (const [key, value] of Object.entries(workflowDefaults.cli)) lanes[key] ??= value;
+  return lanes;
+}
+// Replaces inherited GitHub and Git credentials with the implementer's environment file, then applies the cached board.
+export function loadEnvironment(cfg) {
+  for (const key of Object.keys(process.env)) {
+    if (/^(GH_TOKEN|GITHUB_TOKEN|GH_HOST|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_SSH|GIT_SSH_COMMAND|GIT_PROXY_COMMAND|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_NAMESPACE|GIT_CONFIG_PARAMETERS|GIT_CONFIG|GIT_EXEC_PATH|GIT_TRACE.*|GIT_CURL_VERBOSE|GIT_SSL_NO_VERIFY|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_INDEX_FILE|GIT_TEMPLATE_DIR)$/i.test(key)) delete process.env[key];
+  }
+  const file = expandedPath(cfg.environmentFile);
+  const value = JSON.parse(readFileSync(file, 'utf8'));
+  const env = value?.env;
+  if (!env || typeof env !== 'object' || Array.isArray(env)) throw new Error(`${file} must contain an env object`);
+  for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_HOST', 'GH_CONFIG_DIR', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']) {
+    if (typeof env[key] === 'string' && env[key]) process.env[key] = env[key];
+  }
+  if (cfg.repo) cfg.project ??= cachedGithubMetadata(cfg.repo).project;
+}
 export function readThroughLocalCache(path, key, load, { ttlMs = 86_400_000, now = Date.now(), refresh = false, expectedFields = [] } = {}) {
   let cache = {};
   try { cache = JSON.parse(readFileSync(path, 'utf8')); } catch {}
@@ -206,13 +232,13 @@ export function discoveredProject(projects) {
 }
 export function discoverGithubMetadata(repo) {
   const [owner, name] = repo.split('/');
-  const counts = new Map(); let after; let project; let reviewQueue;
+  const counts = new Map(); let after; let project;
   const query = 'query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){issues(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{projectItems(first:10){nodes{project{number title owner{... on Organization{login} ... on User{login}}}}}}}}}';
   try {
     do {
       const args = ['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `name=${name}`];
       if (after) args.push('-F', `after=${after}`);
-      const issues = afkGh(args).data.repository.issues;
+      const issues = gh(args).data.repository.issues;
       for (const item of issues.nodes.flatMap(issue => issue.projectItems.nodes)) {
         const current = counts.get(item.project.number) || { number: item.project.number, title: item.project.title, owner: item.project.owner?.login, count: 0 };
         current.count++;
@@ -222,33 +248,20 @@ export function discoverGithubMetadata(repo) {
     } while (after);
     const projects = [...counts.values()].sort((a, b) => b.count - a.count);
     project = discoveredProject(projects);
-  } catch { /* Project scope or API access can be unavailable; AFK remains usable without board priority. */ }
-  try {
-    const matches = afkGh(['issue', 'list', '--repo', repo, '--state', 'open', '--search', 'in:title "Review queue"', '--limit', '100', '--json', 'number,title'])
-      .filter(issue => issue.title.trim().toLowerCase() === 'review queue');
-    reviewQueue = matches.length === 1 ? matches[0].number : null;
-  } catch { /* A missing optional queue does not block implementation. */ }
-  return { ...(project !== undefined ? { project } : {}), ...(reviewQueue !== undefined ? { reviewQueue } : {}) };
+  } catch { /* Project scope or API access can be unavailable; the workflow runs without the board. */ }
+  return project !== undefined ? { project } : {};
 }
 export function cachedGithubMetadata(repo, refresh = false) {
   return readThroughLocalCache(githubMetadataPath(), repo, () => discoverGithubMetadata(repo), {
-    ttlMs: workflowDefaults.github.metadataCacheHours * 3_600_000, refresh, expectedFields: ['project', 'reviewQueue'],
+    ttlMs: workflowDefaults.github.metadataCacheHours * 3_600_000, refresh, expectedFields: ['project'],
   });
-}
-export function applyGithubMetadata(cfg, metadata) {
-  cfg.project ??= metadata.project;
-  cfg.reviewQueue ??= metadata.reviewQueue;
-  return cfg;
 }
 export function withRepoLock(name, action) {
   if (!heldWorkflowLocks.has(name)) throw new Error(`Workflow lock ${name} must be acquired by the CLI entry point`);
   return action();
 }
 export const workflowLabels = {
-  'lane:afk': ['1d76db', 'Approved for unattended work'],
-  'lane:proposed': ['8250df', 'Awaiting automated AFK eligibility review'],
   'lane:owner': ['d93f0b', 'Requires owner participation to decide or implement'],
-  'state:claimed': ['fbca04', 'An AFK run is working on this'],
   'state:started': ['fef2c0', 'An attended session is working on this'],
   'state:reviewing': ['0e8a16', 'The Reviewer is reviewing this PR'],
   'review:owner': ['e99695', 'PR is waiting for owner approval'],
@@ -272,7 +285,7 @@ export function ensureWorkflowLabels(repo, list = () => jsonCommand('gh', ['labe
   }
   return created;
 }
-export function afkExpandedPath(path) { return path.replace(/^~(?=\/|$)/, homedir()); }
+export function expandedPath(path) { return path.replace(/^~(?=\/|$)/, homedir()); }
 
 // Agents write bodies and briefs here: inside the worktree, so isolation and the body-file check accept them, and never committed.
 export function workflowScratch(root = git('rev-parse', '--show-toplevel')) {

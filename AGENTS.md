@@ -9,7 +9,6 @@ active_skills:
   - plan
   - improve
   - writing-great-skill
-  - afk
   - explore
   - milestone
   - release
@@ -66,7 +65,7 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 
 - Update the relevant skill and its references together.
 - Keep what every run needs in `SKILL.md`; move to `references/` only a branch some runs skip.
-- Change the board's Status columns, or which issues it holds, in the workflow skills and `plugins/common/workflow/skills/afk/references/setup.md` together with FilipKrawiec/devcontainer's `dev issuetracker`, which reads them, in a companion PR.
+- Change the board's Status columns, or which issues it holds, in the workflow skills, `plugins/common/workflow/skills/deliver/references/setup.md` and `plugins/common/workflow/scripts/lib/board.mjs` together with FilipKrawiec/devcontainer's `dev issuetracker`, which reads them, in a companion PR.
 - Preserve existing user changes outside the requested scope.
 
 ## Shipping

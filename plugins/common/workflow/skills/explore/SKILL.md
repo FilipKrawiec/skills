@@ -1,12 +1,12 @@
 ---
 name: explore
-description: Use when a scheduled task or the owner asks for an exploratory usability pass by driving the running app as a user and filing friction.
+description: Use when the owner asks for an exploratory usability pass by driving the running app as a user and filing friction.
 allowed-tools: Read Bash
 ---
 
 # Explore
 
-Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Run `workflow.mjs cache show` for the resolved project, step scripts, persona path, capture branch, issue limit, idle interval and base. Place the dedicated worktree at `.worktrees/explore` beside the Git common directory, so all linked worktrees share it without agent-specific paths. The project defines scripts in `.agents/config.json`; the workflow defines the phases.
+Explore as the configured persona; file reproducible friction. Never change product code, commit it or push it. Run `workflow.mjs cache show` for the resolved project, step scripts, persona path, capture branch, issue limit and base. Place the dedicated worktree at `.worktrees/explore` beside the Git common directory, so all linked worktrees share it without agent-specific paths. The project defines scripts in `.agents/config.json`; the workflow defines the phases.
 
 ## 1. Process
 
@@ -34,7 +34,7 @@ After each platform, including failures, stop only your launch processes, close 
 
 ## 4. File and report
 
-Merge findings across platforms and keep at most `maxIssues`. Search existing issues by screen and symptom. Comment new evidence once on an open match; file a regression linked to a match closed within 30 days; otherwise file a new issue. Use `type:bug` for a broken promise or lost data, otherwise `type:story`; only now read code to identify scope. Set `lane:afk` on a bug only once its cause is confirmed at `file:line`, a criterion requires a reproducing test and the packet is narrowed; otherwise `lane:proposed`. Each issue names the persona, user outcome, platform, steps, expected/observed result, observable acceptance, estimate and a scope packet. Include `<!-- explore-finding persona=<persona> journey=<journey> -->` in each new issue for readiness triage.
+Merge findings across platforms and keep at most `maxIssues`. Search existing issues by screen and symptom. Comment new evidence once on an open match; file a regression linked to a match closed within 30 days; otherwise file a new issue. Use `type:bug` for a broken promise or lost data, otherwise `type:story`; only now read code to identify scope. For a bug, confirm its cause at `file:line` and add a criterion requiring a reproducing test before narrowing the scope packet. Each issue names the persona, user outcome, platform, steps, expected/observed result, observable acceptance and a scope packet. Include `<!-- explore-finding persona=<persona> journey=<journey> -->` in each new issue for readiness triage.
 
 Save real screenshots under `runs/<date>-<persona>/` on the resolved capture branch and link them in the issue. If pushing that branch would trigger CI, describe the screens instead; never trigger CI for captures. Add issues to the discovered GitHub Project. Link each under an open epic for its area when one exists; otherwise leave it standalone. Append the date, persona, journey, platforms, issues, `notJudged` and outcome to `log.jsonl` on the capture branch only if it will not trigger CI; otherwise report the log write as pending.
 
@@ -42,4 +42,4 @@ Save real screenshots under `runs/<date>-<persona>/` on the resolved capture bra
 
 ## Output
 
-At most 8 lines: **Summary:** persona, journey, platforms, issue links, findings and `notJudged`. **Decision:** next action/actor or owner wait. Unattended, flag blockers and owner waits; otherwise archive.
+At most 8 lines: **Summary:** persona, journey, platforms, issue links, findings and `notJudged`. **Decision:** next action/actor or owner wait. Flag blockers and owner waits.

@@ -4,8 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
-import { afkPathsFromIssueBody, afkPrRecord } from './afk-board.mjs';
-import { afkStatus } from './afk-runs.mjs';
+import { boardStatus, pathsFromIssueBody, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { prFields } from './pr.mjs';
 import { prState } from './state.mjs';
@@ -38,7 +37,7 @@ export function riskFromPaths(paths, patterns = []) {
 }
 // At Start: the issue's risk label wins upward, then its scope packet's paths.
 export function estimateRisk(issue, patterns) {
-  return maxRisk(riskLabel(issue.labels || []), riskFromPaths(afkPathsFromIssueBody(issue.body || ''), patterns));
+  return maxRisk(riskLabel(issue.labels || []), riskFromPaths(pathsFromIssueBody(issue.body || ''), patterns));
 }
 
 // A hand-back is at most 5 `key: value` lines; a bare first word is the status.
@@ -250,7 +249,7 @@ export function githubIo(lanes) {
       const open = gh(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,body,closingIssuesReferences,labels,reviews,headRefOid,isDraft']);
       // A stacked PR's base is not the default branch, so GitHub links no closing issue; its body's `Closes #N` still does.
       const closes = new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #${n}\\b`, 'i');
-      const found = open.find(candidate => afkPrRecord({ ...candidate, labels: candidate.labels || [] }, lanes).issues.includes(n) || closes.test(candidate.body || ''));
+      const found = open.find(candidate => prRecord({ ...candidate, labels: candidate.labels || [] }, lanes).issues.includes(n) || closes.test(candidate.body || ''));
       return found ? gh(['pr', 'view', String(found.number), '--repo', repo, '--json', `${prFields},files,headRefName`]) : null;
     },
     tree: (n, branch) => {
@@ -315,7 +314,7 @@ export function githubIo(lanes) {
   };
 }
 function board(lanes, number, value) {
-  try { afkStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, number, value, true); } catch (error) { console.error(`drive: board status skipped for #${number}: ${error.message}`); }
+  try { boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, number, value, true); } catch (error) { console.error(`drive: board status skipped for #${number}: ${error.message}`); }
 }
 
 // ---- The driver: read, decide, act, until a terminal instruction comes out.

@@ -28,9 +28,9 @@ test('push ignores repository URL rewrites added after validation', t => {
   assert.notEqual(run(f.env.REAL_GIT, ['--git-dir', evil, 'rev-parse', '--verify', 'refs/heads/feature/test']).status, 0);
 });
 
-test('push reads workflow config from the base branch', t => {
+test('push reads workflow config from the base branch and ignores a leftover afk block', t => {
   const f = fixture(t);
-  const value = { ...config({ repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer', owner: 'owner' }), afk: { maxRuns: 2 } };
+  const value = { ...config({ repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer', owner: 'owner' }), afk: { maxRuns: 2, retros: 'bugs-when-empty' } };
   writeFileSync(join(f.repo, configPath), json(value));
   assert.equal(run(f.env.REAL_GIT, ['add', configPath], { cwd: f.repo }).status, 0);
   commitFixture(f);
@@ -74,12 +74,11 @@ test('push reports GitHub network failure without exposing diagnostics', t => {
   assertNoPush(f);
 });
 
-test('push --to outside an AFK run is refused', t => {
+test('push takes no target branch', t => {
   const f = fixture(t);
-  f.env.OPEN_PRS = JSON.stringify([{ number: 259, headRefName: 'feature/held', isCrossRepository: false, autoMergeRequest: null, closingIssuesReferences: [] }]);
   const result = f.cliRun('push', '--to', 'feature/held');
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /requires an AFK run/);
+  assert.match(result.stderr, /Usage: push \[--owner-bootstrap\]/);
   assertNoPush(f);
 });
 
@@ -253,24 +252,24 @@ test('issue status reports a repository without a board, and errors for tied boa
   const seed = fields => writeFileSync(join(f.main, '.git', 'workflow-metadata-cache.json'), JSON.stringify({ 'acme/app': { fields: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, { at: Date.now(), value }])) } }));
   const status = value => f.cliRun('issue', 'status', '--number', '4', '--value', value);
 
-  seed({ project: false, reviewQueue: null });
+  seed({ project: false });
   const none = status('Todo');
   assert.equal(none.status, 0, none.stderr);
   assert.match(none.stdout, /no GitHub Project board; status skipped \(use priority labels\)/);
   assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /project|graphql/);
 
-  seed({ project: { ambiguous: [5, 6] }, reviewQueue: null });
+  seed({ project: { ambiguous: [5, 6] } });
   const tied = status('Todo');
   assert.notEqual(tied.status, 0);
   assert.match(tied.stderr, /board is ambiguous: boards #5, #6 tie/);
   assert.doesNotMatch(tied.stderr, /scopes/);
 
-  seed({ project: null, reviewQueue: null });
+  seed({ project: null });
   const unknown = status('Todo');
   assert.notEqual(unknown.status, 0);
   assert.match(unknown.stderr, /check scopes or run `workflow\.mjs cache refresh`/);
 
-  seed({ project: false, reviewQueue: null });
+  seed({ project: false });
   const badValue = status('Sideways');
   assert.notEqual(badValue.status, 0);
   assert.match(badValue.stderr, /Unknown status SIDEWAYS; use one of: BACKLOG, TODO, PROGRESS, BLOCKED, REVIEW, DONE/);
@@ -293,7 +292,7 @@ function lockedIssueFixture(t) {
   const gh = join(f.root, 'bin', 'gh');
   writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='issue' && a[1]==='list') { out([{number:7,title:'Owner improvements'}]); process.exit(0); }\nif(a.some(x=>x.endsWith('/comments'))) { require('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n'); out({id:12}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('{}');\n`);
   chmodSync(gh, 0o755);
-  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { toolingRepository: 'https://github.com/acme/skills.git' } }));
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, github: { toolingRepository: 'https://github.com/acme/skills.git' } }));
   assert.equal(f.linkedGit('add', configPath).status, 0);
   commitFixture(f);
   writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
@@ -325,40 +324,6 @@ test('a locked issue command completes from a path ps cannot show literally', as
   assert.equal(result.timedOut, false, 'the command waited on its own lock or kept re-executing');
   assert.equal(result.status, 0, result.stderr);
   assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/app\/issues\/7\/comments -f body=Run evidence/);
-});
-
-test('afk rejects an afk.maxRunMinutes that is not a positive whole number', t => {
-  for (const maxRunMinutes of [0, 1.5, '30']) {
-    const f = fixture(t);
-    writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, afk: { maxRunMinutes } }));
-    assert.equal(f.linkedGit('add', configPath).status, 0);
-    commitFixture(f);
-    const result = f.cliRun('afk', 'runs');
-    assert.equal(result.status, 2, `${JSON.stringify(maxRunMinutes)}: ${result.stderr}`);
-    assert.match(result.stderr, /Configure afk\.maxRunMinutes as a positive integer/);
-  }
-});
-
-test('afk check reads the on-disk spent ledger and serves a PR again once its base moves', t => {
-  const f = fixture(t);
-  const gh = join(f.root, 'bin', 'gh');
-  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a[0]==='pr') { out([{number:2000,title:'Fix',body:'No linked issue.',headRefOid:'abc',labels:[],isDraft:false,mergeable:'MERGEABLE',statusCheckRollup:[],reviews:[{author:{login:'reviewer'},state:'CHANGES_REQUESTED',commit:{oid:'abc'},body:''}],closingIssuesReferences:[]}]); process.exit(0); }\nif(a[0]==='issue') { out([]); process.exit(0); }\nif(a.includes('rate_limit')) { console.log('5000 2000000000'); process.exit(0); }\nif(a.includes('graphql')) { out({data:{repository:{issues:{pageInfo:{hasNextPage:false},nodes:[]}}}}); process.exit(0); }\nif(a.some(x=>x.includes('/files'))) { out([[{filename:'src/a.js'}]]); process.exit(0); }\nif(a.some(x=>x.includes('/comments'))) { out([[]]); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({permissions:{}}); process.exit(0); }\nconsole.log('{}');\n`);
-  chmodSync(gh, 0o755);
-  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] } }));
-  assert.equal(f.linkedGit('add', configPath).status, 0);
-  commitFixture(f);
-  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
-  const common = f.linkedGit('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
-  const base = f.linkedGit('rev-parse', 'refs/remotes/origin/HEAD').stdout.trim();
-  writeFileSync(join(common, 'afk-spent.json'), JSON.stringify({ 2000: `abc:ready:1/0:green:mergeable:${base}::` }));
-  const spent = f.cliRun('afk', 'check');
-  assert.equal(spent.status, 3, `${spent.stdout}\n${spent.stderr}`);
-  assert.match(spent.stdout, /Unchanged: #2000 since its last run/);
-  assert.doesNotMatch(spent.stdout, /Next:/);
-  writeFileSync(join(common, 'afk-spent.json'), JSON.stringify({ 2000: 'abc:ready:1/0:green:mergeable:oldbase::' }));
-  const moved = f.cliRun('afk', 'check');
-  assert.doesNotMatch(moved.stdout, /Unchanged:/, moved.stderr);
-  assert.match(moved.stdout, /Next: Review: PR #2000 \(Fix\) needs its review fixed/);
 });
 
 test('a usage error on a locked command reports only the usage message', t => {

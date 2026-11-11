@@ -26,7 +26,7 @@ Production approval is separate: demonstrate a working test environment or insta
 
 | Dimension | Meaning |
 | --- | --- |
-| Lane | Whether implementation needs owner participation: authorized autonomous work (`lane:afk`), proposed authorization (`lane:proposed`), or required owner participation (`lane:owner`). |
+| Lane | Whether implementation needs owner participation: `lane:owner` marks it; an issue without it is delivered through `drive` from the owner's session. |
 | Milestone | A production deliverable or its linked engineering health iteration, titled `v<MAJOR>`; each merge in it is an `rc/v<MAJOR>.<MINOR>.<PATCH>` release candidate deployed to test, the candidate test runs becomes the nightly `v<MAJOR>.<MINOR>.<PATCH>` test release, and an owner-published release on a test release promotes it to production. |
 | Type | Story, bug, chore, bounded investigation/task or epic. |
 | Waiting reason | A temporary missing condition, recorded separately from lane authorization. |

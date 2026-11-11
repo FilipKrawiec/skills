@@ -1,4 +1,4 @@
-import { afkPrRecord } from './afk-board.mjs';
+import { prRecord } from './board.mjs';
 import { jsonCommand } from './core.mjs';
 import { checkState, failedStates, passedStates, prFields } from './pr.mjs';
 
@@ -28,7 +28,7 @@ function nextAction(pr, record, ci, verdict, owner) {
 }
 export function prState(pr, lanes) {
   const labels = (pr.labels || []).map(label => label.name);
-  const record = afkPrRecord({ ...pr, labels: pr.labels || [] }, lanes);
+  const record = prRecord({ ...pr, labels: pr.labels || [] }, lanes);
   const ci = ciState(pr.statusCheckRollup);
   const reviewer = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && verdictOf(review));
   const atHead = reviewer.filter(review => review.commit?.oid === pr.headRefOid && review.state !== 'DISMISSED');
@@ -48,7 +48,7 @@ function issueState(repo, number, lanes) {
   const base = { kind: 'issue', number: issue.number, url: issue.url, state: issue.state, labels, milestone: issue.milestone?.title || null };
   if (issue.state !== 'OPEN') return { ...base, next: { action: 'done', actor: 'cli' } };
   const open = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', prFields]);
-  const pr = open.find(candidate => afkPrRecord({ ...candidate, labels: candidate.labels || [] }, lanes).issues.includes(issue.number));
+  const pr = open.find(candidate => prRecord({ ...candidate, labels: candidate.labels || [] }, lanes).issues.includes(issue.number));
   if (pr) { const state = prState(pr, lanes); return { ...base, pr: state.number, next: state.next }; }
   const blockers = jsonCommand('gh', ['api', `repos/${repo}/issues/${number}/dependencies/blocked_by`]).filter(dep => dep.state === 'open').map(dep => dep.number);
   if (blockers.length) return { ...base, blockedBy: blockers, next: { action: 'wait', actor: 'cli', reason: `blocked by ${blockers.map(n => `#${n}`).join(', ')}` } };

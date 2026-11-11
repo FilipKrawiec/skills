@@ -31,7 +31,7 @@ test('manifest validator detects metadata drift in a package manifest', t => {
 
 test('manifest validator rejects broken relative links', t => {
   const root = fixture(t);
-  writeFileSync(join(root, 'plugins/common/workflow/skills/afk/references/broken.md'), '[missing](no-file.md)');
+  writeFileSync(join(root, 'plugins/common/workflow/skills/review/references/broken.md'), '[missing](no-file.md)');
   assert.throws(() => validateRepository(root), /contains broken relative link/);
 });
 

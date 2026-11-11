@@ -15,7 +15,7 @@ You approve milestone direction and production candidates. The team owns refinem
 | Package | Skills |
 | --- | --- |
 | Core | `ddd`, `hexagonal-architecture` |
-| Workflow | `milestone`, `spec`, `refine`, `plan`, `tdd`, `review`, `deliver`, `afk`, `release`, `health`, `improve`, `explore` |
+| Workflow | `milestone`, `spec`, `refine`, `plan`, `tdd`, `review`, `deliver`, `release`, `health`, `improve`, `explore` |
 | Authoring | `writing-great-skill` |
 
 The Product partner, Craftsman, Reviewer and Delivery steward are responsibilities assigned by the host. They use these skills; this library does not add a separate role registry, scheduler or workflow engine.
