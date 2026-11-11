@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { bumpType, nextVersion, performRelease, semver } from '../../plugins/common/workflow/scripts/release.mjs';
 
 function command(root, ...args) {
@@ -51,6 +52,15 @@ test('release preview uses the newest conventional bump without changing the wor
   command(root, 'git', 'commit', '-am', 'feat: add capability');
   assert.equal(performRelease({ dryRun: true, root }), '8.4.0');
   assert.equal(command(root, 'git', 'status', '--porcelain'), '');
+  assert.equal(command(root, 'git', 'tag', '--list'), 'v8.3.0');
+});
+
+test('release preview accepts a help-shaped short message value', t => {
+  const root = project(t);
+  const cli = fileURLToPath(new URL('../../plugins/common/workflow/scripts/workflow.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [cli, 'release', 'patch', '-m', '-h', '--dry-run', '--root', root], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Nothing to release: v8\.3\.0 is HEAD/);
   assert.equal(command(root, 'git', 'tag', '--list'), 'v8.3.0');
 });
 
