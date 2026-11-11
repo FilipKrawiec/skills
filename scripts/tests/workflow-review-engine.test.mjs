@@ -30,7 +30,7 @@ test('a verdict marker without a mode reads like the one review mode', () => {
   assert.equal(afkPrRecord(pr(20, { isDraft: false, reviews: [modeless('ready'), modeless('ready', 'APPROVED')] }), cfg).approved, true);
 });
 
-test('a green draft is left for ship to mark ready; the CLI never readies it', () => {
+test('a green draft is left for deliver to mark ready; the CLI never readies it', () => {
   const calls = [];
   const messages = afkMerge(cfg, [pr(20, { isDraft: true, statusCheckRollup: [{ conclusion: 'SUCCESS' }] })], null, args => { calls.push(args); return { status: 0 }; });
   assert.deepEqual([messages, calls], [[], []]);
@@ -51,7 +51,7 @@ test('a PR merged in the last week without lessons gets one improve unit, after 
   const plan = afkPlan(cfg, [], threads, 'run', { issues: [epic, story(6)], prs: [pr(20)], merged: merged.map(item => ({ ...item, files: [{ path: `src/${item.number}.js` }] })), now });
   assert.deepEqual(plan.units.map(unit => [unit.column, unit.pr ?? unit.issue]), [['Review', 20], ['Done', 30], ['Todo', 6]]);
   const improve = plan.units[1];
-  assert.deepEqual([improve.pr, improve.paths, improve.text], [30, ['src/30.js'], 'PR #30 (Done) merged: invoke `ship` on it to check base and record delivery, then `improve` on it alone and comment `## Lessons` on it']);
+  assert.deepEqual([improve.pr, improve.paths, improve.text], [30, ['src/30.js'], 'PR #30 (Done) merged: invoke `deliver` on it to check base and record delivery, then `improve` on it alone and comment `## Lessons` on it']);
 });
 
 test('an issue whose PR is still a draft stays In progress when its run ends; a ready PR goes to Review', () => {
@@ -67,9 +67,9 @@ test('a ready PR whose only verdict at its head is an older author-mode hand-off
   assert.deepEqual(units.map(unit => [unit.pr, Boolean(unit.review)]), [[20, true]]);
 });
 
-test('a draft with an author verdict=ready at its head gets a ship unit, not a fix, while its checks pend', () => {
+test('a draft with an author verdict=ready at its head gets a hand-off unit, not a fix, while its checks pend', () => {
   const units = plain([pr(20, { isDraft: true, ...linked(5), statusCheckRollup: [{ status: 'IN_PROGRESS' }], reviews: [verdict('author', 'ready')] })]);
-  assert.deepEqual(units.map(unit => [unit.pr, unit.paths, unit.text]), [[20, [], 'PR #20 (PR 20) passed author review: invoke `ship` to hand it off']]);
+  assert.deepEqual(units.map(unit => [unit.pr, unit.paths, unit.text]), [[20, [], 'PR #20 (PR 20) passed author review: invoke `deliver` to hand it off']]);
 });
 
 test('a human change request at an approved head gets a fix unit', () => {
@@ -78,9 +78,9 @@ test('a human change request at an approved head gets a fix unit', () => {
   assert.deepEqual(units.map(unit => [unit.pr, Boolean(unit.review), unit.text]), [[20, false, 'PR #20 (PR 20) needs its review fixed']]);
 });
 
-test('a ship unit needs no scope, and a red check or a human change request outranks it', () => {
+test('a hand-off unit needs no scope, and a red check or a human change request outranks it', () => {
   const ready = { isDraft: true, ...linked(5), reviews: [verdict('author', 'ready')] };
-  assert.deepEqual(plain([pr(20, { ...ready, filesUnread: true })], [story(5, ['lane:afk'], { status: 'In progress', paths: null })]).map(unit => unit.text), ['PR #20 (PR 20) passed author review: invoke `ship` to hand it off']);
+  assert.deepEqual(plain([pr(20, { ...ready, filesUnread: true })], [story(5, ['lane:afk'], { status: 'In progress', paths: null })]).map(unit => unit.text), ['PR #20 (PR 20) passed author review: invoke `deliver` to hand it off']);
   assert.match(plain([pr(20, { ...ready, statusCheckRollup: [{ conclusion: 'FAILURE' }] })])[0].text, /has a red check/);
   const human = { author: { login: 'teammate' }, state: 'CHANGES_REQUESTED', commit: { oid: 'abc' }, body: 'No.' };
   assert.match(plain([pr(20, { ...ready, reviews: [...ready.reviews, human] })])[0].text, /needs its review fixed/);
@@ -140,14 +140,12 @@ test('a ready PR whose newest verdict at its head is a team cap waits for the ow
 test('one review skill, one mode: one reviewer, no subagents, the cap is final and Nits never block', () => {
   const read = path => readFileSync(new URL(`../../plugins/common/workflow/${path}`, import.meta.url), 'utf8');
   const skill = name => read(`skills/${name}/SKILL.md`);
-  const ship = skill('ship');
-  assert.doesNotMatch(ship, /in team mode|Team review/);
-  assert.ok(ship.indexOf('Approve:') >= 0 && ship.indexOf('Request reviewers') > ship.indexOf('Approve:'));
-  assert.match(ship, /workflow\.mjs pr ready --pr <N>` \(never raw `gh pr ready`\); it also drops the owner's CODEOWNERS request/);
-  assert.match(skill('vcs'), /workflow\.mjs pr auto-merge --pr <number>`; never raw `gh pr merge`/);
+  const deliver = skill('deliver');
+  assert.match(deliver, /Never review or approve in this session/);
+  assert.match(deliver, /Nits never block/);
   const review = skill('review');
   const approval = read('skills/review/references/approval.md');
-  for (const text of [ship, approval]) assert.match(text, /verdict=owner/);
+  assert.match(approval, /verdict=owner/);
   assert.match(approval, /pr auto-merge --pr <N>`/);
   assert.match(review, /Never start a subagent, finder or verifier/);
   assert.match(review, /<!-- agent-review sha=<HEAD> round=<N> verdict=<ready\|fixes\|cap\|split> -->/);
@@ -156,8 +154,7 @@ test('one review skill, one mode: one reviewer, no subagents, the cap is final a
   assert.match(review, /never the whole diff again/);
   assert.match(review, /Nits never block and never earn another round/);
   assert.match(review, /\*\*Follow-up:\*\*/);
-  assert.match(skill('vcs'), /`cap` is final/);
-  assert.match(skill('pr-fix'), /add no capability/);
+  assert.match(deliver, /Add no capability, option or refactor the issue did not ask for/);
   const agent = read('agents/reviewer.md');
   assert.match(agent, /^name: reviewer$/m);
   assert.match(agent, /^skills:\n  - review$/m);
@@ -169,7 +166,7 @@ test('one review skill, one mode: one reviewer, no subagents, the cap is final a
   assert.match(implementer, /^name: implementer$/m);
   assert.match(implementer, /^model: sonnet$/m);
   assert.match(implementer, /^effort: \w+$/m);
-  assert.match(implementer, /^skills:\n  - tdd$/m);
+  assert.match(implementer, /^skills:\n  - deliver\n  - tdd$/m);
   assert.match(implementer, /^disallowedTools: Agent$/m);
   assert.match(implementer, /at most 5 lines/);
 });

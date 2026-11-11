@@ -14,7 +14,7 @@ A trusted direct owner request authorizes its specified work; otherwise use the 
 
 ## 2. Deliver
 
-Resume from actual issue decisions, worktree, PR head, checks, review and deployment evidence. Reuse existing records. Invoke the owning skills for refinement, implementation, review, VCS, shipping and release; use independent review and required GitHub protections for merge. Verify criteria, scope, decisions and prior findings from authoritative records; generated review context can omit information. Later review rounds judge only the delta, as `review` defines; bind GitHub approval to the actual head. Authors never approve their own work. Honor the repository's pre-push and hosted checks separately; review starts on a green pipeline.
+Resume from actual issue decisions, worktree, PR head, checks, review and deployment evidence. Reuse existing records. Deliver each issue through `drive <issue>` in the owner's session; refinement and release have their own skills; use independent review and required GitHub protections for merge. Verify criteria, scope, decisions and prior findings from authoritative records; generated review context can omit information. Later review rounds judge only the delta, as `review` defines; bind GitHub approval to the actual head. Authors never approve their own work. Honor the repository's pre-push and hosted checks separately; review starts on a green pipeline.
 
 Delegate when needed for independence or parallel work. Never hold an issue twice; shared files do not block parallel slices, and the later PR resolves conflicts. Use minimal fresh context where supported and include this brief:
 
@@ -34,7 +34,7 @@ Reconcile each result against GitHub. After two evidence-led failed repairs, rep
 
 ## 3. Accept and continue
 
-After merge, invoke `ship` to observe actual base health and `release` for test delivery and separately approved production. Close the product milestone only with exact deployed-and-accepted evidence. Invoke `health` for bounded maintenance; retain unfinished required migrations as prerequisites. Rank next product proposals without treating them as approved.
+After merge, check actual base health and invoke `release` for test delivery and separately approved production. Close the product milestone only with exact deployed-and-accepted evidence. Invoke `health` for bounded maintenance; retain unfinished required migrations as prerequisites. Rank next product proposals without treating them as approved.
 
 **Exit gate:** acceptance and health evidence recorded, or pending stage and actor named.
 

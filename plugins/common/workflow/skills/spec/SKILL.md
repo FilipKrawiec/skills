@@ -28,15 +28,15 @@ Read [afk-ready.md](references/afk-ready.md) for AFK readiness. Before AFK assig
 | Orchestrator | `lane:owner` | Owner participation required; record what agents can prepare. |
 | Orchestrator | owner lane to `lane:afk` | Participation resolved and authority covers the rest; recheck readiness. |
 | Product partner | one `type:*` | Actual outcome changes type; an epic has no work lane. |
-| VCS | `state:claimed` / `state:started` | Exclusive unattended / attended assignment; In Progress. |
-| Ship | remove execution label | PR marked ready; Review, the open PR still excludes reassignment. |
-| Risk subagent | one `risk:R*` on a PR | Set once the draft opens; `ship` raises, never lowers. |
+| `drive` | `state:claimed` / `state:started` | Exclusive unattended / attended assignment; In Progress. |
+| `drive` | remove execution label | PR marked ready; Review, the open PR still excludes reassignment. |
+| `drive` | one `risk:R*` on a PR | Set when the draft opens; raised, never lowered. |
 | Reviewer | `lane:afk` to `lane:owner`, PR `risk:R2` | Author review capped; PR stays draft. |
 | Reviewer | add/remove own `review:owner` | Extra owner gate appears/clears; never erase an explicit owner hold. |
 | Orchestrator | close routine slice | Merged evidence proves authorized criteria; Done. |
 | Orchestrator | close epic | Closed slices delivered to test cover every criterion; Done. |
 | Orchestrator | close product milestone | Exact release evidence proves deployed acceptance; Done. |
-| Ship | remove execution label | Completed, returned or reverted; record evidence or replan. |
+| `drive` | remove execution label | Completed, returned or reverted; record evidence or replan. |
 
 Temporary dependency, CI, capability or owner waits retain lane, milestone and assignment. Record cause, actor, resume condition and evidence; never overwrite active claims. Scope or authority changes need their own decision. With a board: Todo for ready AFK, In Progress for active work and draft PRs, Review once its PR is ready (`Part of` until deployed acceptance), Done for verified slices, delivered epics or accepted milestones. Draft epics stay in Backlog; approved ones are In Progress. Without a board use priority labels; status never grants authority.
 

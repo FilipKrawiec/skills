@@ -32,7 +32,7 @@ The workflow CLI entry `plugins/common/workflow/scripts/workflow.mjs` only parse
 
 Every package's `package-metadata.json` owns its identity/version. `just sync-manifests` generates common host manifests and marketplace catalogs. Keep versions unified; do not hand-edit generated manifests.
 
-Open a draft PR, have `review` review it in one pass, fix Blocker and Important findings with `pr-fix`, and let `ship` mark it ready, with verdicts, commands and exit codes in the description, and turn on squash auto-merge through `vcs`. Optional suggestions may remain follow-ups; merge approval is not production approval.
+Deliver through `drive <issue>` as the `deliver` skill describes: it opens the draft PR, one reviewer runs `review` in one pass, the implementer fixes Blocker and Important findings, and `drive` marks the PR ready and turns on squash auto-merge. Optional suggestions may remain follow-ups; merge approval is not production approval.
 
 ## Local installation
 

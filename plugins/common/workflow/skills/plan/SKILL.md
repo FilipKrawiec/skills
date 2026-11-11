@@ -1,7 +1,7 @@
 ---
 name: plan
 description: Use when an issue needs an implementation plan, when scoring or approving a plan, or when resuming work from a posted plan.
-allowed-tools: Skill Read Bash(gh:*,git:*)
+allowed-tools: Read Bash(gh:*,git:*)
 ---
 
 # Plan
@@ -16,7 +16,7 @@ Read the issue, scope packet, criteria and decisions, and the affected code, tes
 
 ## 2. Write it as a guide
 
-Write the plan for whoever executes it: a Craftsman subagent or the developer by hand. Each numbered step states:
+Write the plan for whoever executes it: the implementer agent or the developer by hand. Each numbered step states:
 
 - **Why:** the criterion or decision it serves.
 - **How:** the paths, interfaces, the failing test to write first, and the command proving it.
@@ -27,27 +27,18 @@ Plan the whole logical change as one PR, however many steps or lines it takes. P
 
 ## 3. Score reproducibility
 
-Give the plan alone, with the issue, to two fresh subagents on different models where the host offers them:
-
-```text
-Read plan <link> and issue #<N> only; do not edit.
-For each step, answer: why does it exist, and how would you do it
-(paths, test, command)? Mark a step `guess` where you had to guess either.
-Return one line per step: `<step> ok|guess <what you guessed>`.
-```
-
-The score is the share of steps both marked `ok` whose answers match the plan. Below 100%, sharpen each guessed step, asking the developer the why or how question it raised when attended, and score again. A plan below 100% after two revisions goes to the owner with the guessed steps.
+Score the plan yourself; start no scorer subagent. Reread it as an agent that has only the plan and the issue: for each step, answer why it exists and how you would do it (paths, test, command), and mark the step `guess` where the plan does not settle either. The score is the share of steps marked `ok`. Below 100%, sharpen each guessed step, asking the developer the why or how question it raised when attended, and score again. A plan below 100% after two revisions goes to the owner with the guessed steps.
 
 **Exit gate:** 100% score, recorded with the plan.
 
 ## 4. Approve and record
 
-Post one `## Plan` issue comment, or a compact in-chat plan for small direct work, with the steps, decisions, risks, manual test steps and `Reproducibility: 100% (<n> steps, 2 scorers)`. Update that exact comment by ID; never use `--edit-last`.
+Post one `## Plan` issue comment, or a compact in-chat plan for small direct work, with the steps, decisions, risks, manual test steps and `Reproducibility: 100% (<n> steps)`. Update that exact comment by ID; never use `--edit-last`.
 
 - **Attended:** the developer approves the scored plan.
 - **Unattended:** a 100% score on a `lane:afk` issue is the approval.
 
-After approval the main thread only orchestrates and never edits project files, attended or not. First invoke `vcs` to start the assignment, so the work runs in an isolated worktree and branch, never the main checkout; then brief a Craftsman subagent with `Intent:`, `Plan:` (the plan link), `Criteria and scope:` and `Checkout:` (that worktree path and base SHA) to execute the plan there through `tdd`, deliver the whole change unless it finds a logical seam (then it stops and proposes the split), and return paths, commands and exits; `vcs` opens the draft PR with its risk label, one fresh reviewer agent runs `review`, `pr-fix` fixes, and `ship` hands it off for approval and merge.
+After approval, delivery runs through `drive <issue>` in the owner's session: it starts the work in an isolated worktree, briefs the implementer with the issue and the plan link, opens the draft PR and runs review. Never edit project files from the planning session.
 
 **Exit gate:** approved plan linked, or the owner question it waits on.
 

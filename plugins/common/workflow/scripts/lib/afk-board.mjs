@@ -106,13 +106,13 @@ export function afkPrRecord(pr, cfg) {
   const handOff = review => review.state !== 'APPROVED' && (verdictOf(review) === 'ready' || /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || ''));
   const atHead = mine.filter(review => review.commit?.oid === head && review.state !== 'DISMISSED' && !(!pr.isDraft && handOff(review)));
   const reviewerReviewedHead = atHead.length > 0;
-  // The newest verdict at the head: `ready` on a draft waits only for `ship`; `cap` waits for the owner.
+  // The newest verdict at the head: `ready` on a draft waits only for `deliver`; `cap` waits for the owner.
   const latestVerdict = atHead.filter(review => verdictOf(review)).at(-1);
   const capped = verdictOf(atHead.filter(review => verdictOf(review)).at(-1)) === 'cap';
   // The newest Reviewer verdict at the head asked to split the issue at a logical seam.
   const split = verdictOf(atHead.filter(review => verdictOf(review)).at(-1)) === 'split';
   const workflow = afkWorkflowLogins(cfg);
-  // Someone outside the workflow whose newest review at the head requests changes has work for `pr-fix`, even under the Reviewer's approval.
+  // Someone outside the workflow whose newest review at the head requests changes has work for `deliver`, even under the Reviewer's approval.
   const outsideLatest = new Map();
   for (const review of reviews) {
     const login = review.author?.login?.toLowerCase();
@@ -122,13 +122,13 @@ export function afkPrRecord(pr, cfg) {
   const checks = pr.statusCheckRollup || [];
   const failed = checks.some(check => ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes((check.conclusion || check.state || '').toUpperCase()));
   const broken = pr.mergeable === 'CONFLICTING' || failed;
-  // `ship` waits on pending checks itself; a red check or a conflict, or someone's change request, comes first.
+  // `deliver` waits on pending checks itself; a red check or a conflict, or someone's change request, comes first.
   const shipReady = Boolean(pr.isDraft && !broken && !outsideChanges && verdictOf(latestVerdict) === 'ready');
   const awaitingReview = !reviewerReviewedHead;
   const needsWork = broken || awaitingReview || outsideChanges || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
   return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, shipReady, capped, split, needsWork };
 }
-// What a PR unit's run acts on: its head, draft or ready (`ship` marking it ready hands it off), its review decisions (a dismissal counts), whether an approval stands at the head,
+// What a PR unit's run acts on: its head, draft or ready (`deliver` marking it ready hands it off), its review decisions (a dismissal counts), whether an approval stands at the head,
 // its checks, its merge state, the base head and the last comment from someone outside the workflow. A run's own hold,
 // release, notes and thread replies never change it, so a run that changed nothing leaves the same state behind; a run
 // that waited on a red base or a conflict is served after the next merge.
@@ -264,7 +264,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (!review && !pr.shipReady && paths === null) continue;
     const priority = stories.map(issue => issue.priority).sort((a, b) => afkPriority(a) - afkPriority(b))[0];
     const unit = pr.shipReady
-      ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) passed author review: invoke \`ship\` to hand it off`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
+      ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) passed author review: invoke \`deliver\` to hand it off`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
       : review
       ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) awaits its review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
       : { column: 'Review', text: `PR #${pr.number} (${pr.title})${pr.broken ? ' has a red check or a conflict' : pr.split ? ' was held as several logical changes: invoke `spec` to split its issue, unless an owner decision on the PR keeps it whole' : ' needs its review fixed'}`, issue: stories[0]?.number || pr.number, priority, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid };
@@ -276,9 +276,9 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
     if (!(now - Date.parse(pr.mergedAt || '') < afkImproveWindowMs) || heldElsewhere(pr.number)) continue;
     const comments = threads(pr.number);
     if (comments.some(comment => /^## Lessons\b/m.test(comment.body || ''))) continue;
-    // Its files scope a revert `ship` may prepare when the merge turned base red.
+    // Its files scope a revert `deliver` may prepare when the merge turned base red.
     const files = (pr.files || []).map(file => file.path).filter(Boolean);
-    offer({ column: 'Done', text: `PR #${pr.number} (${pr.title}) merged: invoke \`ship\` on it to check base and record delivery, then \`improve\` on it alone and comment \`## Lessons\` on it`, issue: pr.number, priority: 'P9', paths: files, pr: pr.number, input: afkOutsideInput(comments, cfg) }, pr.number, `improve:${pr.mergedAt}:${afkOutsideInput(comments, cfg)}`);
+    offer({ column: 'Done', text: `PR #${pr.number} (${pr.title}) merged: invoke \`deliver\` on it to check base and record delivery, then \`improve\` on it alone and comment \`## Lessons\` on it`, issue: pr.number, priority: 'P9', paths: files, pr: pr.number, input: afkOutsideInput(comments, cfg) }, pr.number, `improve:${pr.mergedAt}:${afkOutsideInput(comments, cfg)}`);
   }
   units.sort((a, b) => afkColumns.indexOf(a.column) - afkColumns.indexOf(b.column) || afkPriority(a.priority) - afkPriority(b.priority) || (a.pr ?? a.issue) - (b.pr ?? b.issue));
   return { units, prs, byNumber, threads, unchanged, orphans, released, staleClaims };
@@ -366,7 +366,7 @@ export function afkMerge(cfg, prs, wanted = null, gh = args => spawnSync('gh', a
     if (wanted && !wanted.has(pr.number)) continue;
     const checks = pr.statusCheckRollup || [];
     const passed = checks.length && checks.every(c => ['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes((c.conclusion || c.state || '').toUpperCase()));
-    // A draft is in author review; only `ship` marks it ready.
+    // A draft is in author review; only `deliver` marks it ready.
     if (pr.isDraft) continue;
     const head = pr.headRefOid;
     const ownerLane = pr.labels?.some(l => l.name === 'review:owner');

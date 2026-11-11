@@ -41,7 +41,7 @@ A skill is a system-prompt fragment: direct orders to an agent that already know
 
 Bad, a pointer the agent may never follow: "Then run board.md's Merge gate."
 
-Good, the step itself: "Run `gh pr checks <pr>`; fix failing checks and conflicts before asking the owner to merge."
+Good, the step itself: "Run `git merge --no-ff --no-commit origin/<base>`; resolve conflicts, then commit through the workflow CLI."
 
 ## Context pointer
 

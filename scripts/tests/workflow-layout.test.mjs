@@ -96,3 +96,37 @@ test('repository tests and verification no longer depend on Python', () => {
   assert.doesNotMatch(justfile, /python3|pip install/);
   assert.doesNotMatch(workflow, /setup-python|python3|pip install/);
 });
+
+const skillText = name => readFileSync(join(commonRoot, 'workflow/skills', name, 'SKILL.md'), 'utf8');
+const instructionFiles = () => packages.flatMap(name => ['skills', 'agents'].flatMap(dir => {
+  const path = join(commonRoot, name, dir);
+  return existsSync(path) ? readdirSync(path, { recursive: true }).map(String).filter(file => file.endsWith('.md')).map(file => join(path, file)) : [];
+}));
+
+test('deliver replaces vcs, ship and pr-fix, and no skill edits workflow state with gh', () => {
+  for (const name of ['vcs', 'ship', 'pr-fix']) assert.equal(existsSync(join(commonRoot, 'workflow/skills', name)), false, name);
+  const deliver = skillText('deliver');
+  for (const step of ['drive <issue|epic>', '--hand-back <file>', 'session: "separate"', '`wait`', '`owner`']) assert.ok(deliver.includes(step), step);
+  for (const file of instructionFiles()) {
+    const text = readFileSync(file, 'utf8');
+    assert.doesNotMatch(text, /gh (pr (ready|merge|checks|edit)|project item-|run watch)|gh issue edit[^\n`]*--(add|remove)-label/, relative(root, file));
+  }
+});
+
+test('no doctrine: no skill or agent rule mandates a skill by path or by a rule list', () => {
+  assert.doesNotMatch(readFileSync(join(root, 'AGENTS.md'), 'utf8'), /^## Doctrine/m);
+  for (const file of instructionFiles()) assert.doesNotMatch(readFileSync(file, 'utf8'), /invoke the (craft|design|ux)[\w, ]* skills|skills the project's agent rules name|^## Doctrine/im, relative(root, file));
+});
+
+test('delivery skills keep one plain command per Bash call, inline plan scoring, epic-wide improve and a single tdd gate', () => {
+  for (const name of ['deliver', 'review']) assert.match(skillText(name), /one plain command per Bash call/, name);
+  const plan = skillText('plan');
+  assert.match(plan, /start no scorer subagent/);
+  assert.doesNotMatch(plan, /fresh subagents|2 scorers/);
+  const improve = skillText('improve');
+  assert.match(improve, /once per delivered epic/);
+  assert.match(improve, /<cli> nits --done/);
+  const tdd = skillText('tdd');
+  assert.match(tdd, /full gate once through `[^`]*workflow\.mjs check`/);
+  assert.match(tdd, /without a fake clock/);
+});

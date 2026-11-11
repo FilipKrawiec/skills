@@ -45,5 +45,5 @@ An epic whose sub-issues are all closed is served with the same `Work:` line. Th
 
 1. Delivered: tick each criterion and link its slice, the candidate and the deployment run. Comment `## Delivered` with that list, close with `issue close --number N`, and confirm the card is in Done.
 2. No slice covers a criterion, or the base, beside its binding design, lacks it: create the missing slice.
-3. The test deployment is pending: comment the wait without editing the body (an edit serves it again); the CLI serves it after the next base merge. If it failed, report that to `ship` and wait the same way.
+3. The test deployment is pending: comment the wait without editing the body (an edit serves it again); the CLI serves it after the next base merge. If it failed, tell the owner and wait the same way.
 4. A criterion needs the owner: keep the epic open, put `lane:owner` back on it, queue the question and comment it.

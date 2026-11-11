@@ -330,13 +330,13 @@ test('dead run holds expire after the grace period while live holds persist', ()
   assert.equal('dead' in ledger, false);
 });
 
-test('a PR `ship` marked ready is served for its approval though its head, reviews and checks did not change', () => {
+test('a PR `deliver` marked ready is served for its approval though its head, reviews and checks did not change', () => {
   const workflowCfg = { ...cfg, implementer: 'builder' };
   const authorReady = { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc round=1 mode=author verdict=ready -->' };
   const pr = extra => afkPrRecord({ number: 9, title: 'Fix', body: 'No linked issue.', headRefOid: 'abc', isDraft: true, labels: [{ name: 'risk:R1' }], reviews: [authorReady], statusCheckRollup: [{ conclusion: 'SUCCESS' }], mergeable: 'MERGEABLE', files: [{ path: 'src/a.js' }], ...extra }, workflowCfg);
   const spent = { 9: afkPrState(pr(), [], workflowCfg, 'base1') };
   const units = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr({ isDraft: false })], spent, base: 'base1' }).units;
-  assert.deepEqual(units.map(unit => unit.text), ['PR #9 (Fix) awaits its review'], 'the ship run spent the draft; the ready PR needs the Reviewer approval');
+  assert.deepEqual(units.map(unit => unit.text), ['PR #9 (Fix) awaits its review'], 'the deliver run spent the draft; the ready PR needs the Reviewer approval');
 });
 
 test('a PR a finished run left unchanged gets no new run until its head, reviews, checks, merge state, base or an outside comment change', () => {

@@ -42,3 +42,15 @@ test('manifest validator accepts only tool-call guard hooks', t => {
   writeFileSync(path, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'cat rules.md' }] }] } }));
   assert.throws(() => validateRepository(root), /may only guard tool calls/);
 });
+
+test('manifest validator rejects an invocation or agent preload of a removed skill', t => {
+  const root = fixture(t);
+  assert.doesNotThrow(() => validateRepository(root));
+  const skill = join(root, 'plugins/common/workflow/skills/improve/SKILL.md');
+  writeFileSync(skill, readFileSync(skill, 'utf8').replace('## Output', 'Then invoke `ship` to hand it off.\n\n## Output'));
+  assert.throws(() => validateRepository(root), /invokes unknown skill 'ship'/);
+  cpSync(join(ROOT, 'plugins/common/workflow/skills/improve/SKILL.md'), skill);
+  const agent = join(root, 'plugins/common/workflow/agents/implementer.md');
+  writeFileSync(agent, readFileSync(agent, 'utf8').replace('  - tdd\n', '  - tdd\n  - vcs\n'));
+  assert.throws(() => validateRepository(root), /preloads unknown skill 'vcs'/);
+});
