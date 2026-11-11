@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fixture } from './support/workflow-cli-fixture.mjs';
 
 const sha = 'a'.repeat(40);
@@ -30,13 +31,13 @@ test('review-post sends one review as the reviewer, then removes the label', t =
   assert.deepEqual(log(), ['post', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
 });
 
-test('review-post refuses a bad event, sha or body marker before any GitHub call', t => {
+test('review-post refuses a bad event, sha or body marker without posting, and releases the claim', t => {
   const { f, post, log } = setup(t);
   assert.notEqual(post('--event', 'MERGE').status, 0);
   assert.notEqual(f.cliRun('review-post', '--pr', '5', '--sha', 'HEAD', '--event', 'COMMENT', '--body-file', 'body.md').status, 0);
   writeFileSync(join(f.repo, 'plain.md'), 'no marker');
   assert.notEqual(f.cliRun('review-post', '--pr', '5', '--sha', sha, '--event', 'COMMENT', '--body-file', 'plain.md').status, 0);
-  assert.deepEqual(log(), []);
+  assert.deepEqual(log(), ['pr edit 5 --repo github.com/acme/app --remove-label state:reviewing', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
   assert.equal(existsSync(f.env.REVIEW_RECORD), false);
 });
 
@@ -76,24 +77,26 @@ test('COMMENT resolves only flagged threads', t => {
   assert.deepEqual(flagged.log().slice(0, 2), ['resolve T3', 'post']);
 });
 
-test('a failing resolve blocks the post, keeps the label and leaves a failure comment', t => {
+test('a failing resolve blocks the post, releases the claim and leaves a failure comment', t => {
   const { post, log, f } = setup(t, { REVIEW_THREADS: JSON.stringify(threads), FAIL_RESOLVE: '1' });
   const result = post('--event', 'APPROVE');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Blocked:/);
   assert.equal(existsSync(f.env.REVIEW_RECORD), false);
-  assert.equal(log().length, 1);
+  assert.equal(log().length, 2);
   assert.match(log()[0], /^pr comment 5 --repo github.com\/acme\/app --body <!-- agent-review post-failed sha=a{40} -->/);
+  assert.equal(log()[1], 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing');
 });
 
-test('a failed post keeps the label, comments the failure and never prints the token', t => {
+test('a failed post releases the claim, comments the failure and never prints the token', t => {
   const { post, log } = setup(t, { FAIL_REVIEW_POST: '1' });
   const result = post('--event', 'REQUEST_CHANGES');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Blocked:/);
   assert.doesNotMatch(result.stdout + result.stderr + log().join('\n'), /SECRET_TOKEN/);
-  assert.equal(log().length, 1);
+  assert.equal(log().length, 2);
   assert.match(log()[0], /post-failed sha=a{40} -->.*REQUEST_CHANGES/);
+  assert.equal(log()[1], 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing');
 });
 
 test('a failed label removal warns and still exits 0', t => {
@@ -101,4 +104,48 @@ test('a failed label removal warns and still exits 0', t => {
   const result = post('--event', 'COMMENT');
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stderr, /state:reviewing/);
+});
+
+test('review-post reads the body from stdin', t => {
+  const { f, log, record } = setup(t);
+  const body = `<!-- agent-review sha=${sha} verdict=ready -->\nFrom stdin`;
+  const result = f.cliRun('review-post', '--pr', '5', '--sha', sha, '--event', 'COMMENT', '--body-file', '-', { input: body });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(record().payload.body, body);
+  assert.deepEqual(log(), ['post', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
+});
+
+test('a body file outside the worktree is refused with the way out, and the claim is released', t => {
+  const { f, log } = setup(t);
+  const outside = join(f.root, 'outside.md');
+  writeFileSync(outside, `<!-- agent-review sha=${sha} verdict=ready -->`);
+  const result = f.cliRun('review-post', '--pr', '5', '--sha', sha, '--event', 'COMMENT', '--body-file', outside);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /under \.wf\/ \(run `scratch`\) or pass - to read stdin/);
+  assert.deepEqual(log(), ['pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
+});
+
+test('scratch creates a git-ignored .wf directory inside the worktree', t => {
+  const { f } = setup(t);
+  const result = f.cliRun('scratch');
+  assert.equal(result.status, 0, result.stderr);
+  const { path } = JSON.parse(result.stdout);
+  assert.equal(existsSync(path), true);
+  writeFileSync(join(path, 'body.md'), 'x');
+  const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: f.repo, encoding: 'utf8' });
+  assert.doesNotMatch(status.stdout, /\.wf/);
+  assert.equal(f.cliRun('scratch').status, 0);
+});
+
+test('review-context --claim labels an unclaimed PR and refuses a claimed one', t => {
+  const { f, log } = setup(t);
+  const claimed = f.cliRun('review-context', '--pr', '5', '--claim');
+  assert.equal(claimed.status, 0, claimed.stderr);
+  assert.equal(JSON.parse(claimed.stdout).claimed, true);
+  assert.deepEqual(log(), ['pr edit 5 --repo github.com/acme/app --add-label state:reviewing']);
+  f.env.PR_VIEW = JSON.stringify({ labels: [{ name: 'state:reviewing' }], headRefOid: sha });
+  const refused = f.cliRun('review-context', '--pr', '5', '--claim');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /already claimed/);
+  assert.equal(log().length, 1);
 });

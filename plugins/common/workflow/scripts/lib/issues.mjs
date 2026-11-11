@@ -36,11 +36,15 @@ export function workspaceFilePath(root, path) {
   const canonicalRoot = realpathSync(root);
   const canonicalFile = realpathSync(resolve(path));
   const fromRoot = relative(canonicalRoot, canonicalFile);
-  if (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new Error('Issue comment body file must be inside the current worktree');
+  if (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new Error('Body file must be inside the current worktree: write it under .wf/ (run `scratch`) or pass - to read stdin');
   const file = statSync(canonicalFile);
   if (!file.isFile()) throw new Error('Issue comment body path must be a regular file');
   if (file.nlink > 1) throw new Error('Issue comment body file must not have multiple hard links');
   return canonicalFile;
+}
+// `-` reads stdin, so an agent whose scratch files live outside the worktree can pipe the text in.
+export function readWorkspaceText(root, path) {
+  return path === '-' ? readFileSync(0, 'utf8') : readFileSync(workspaceFilePath(root, path), 'utf8');
 }
 export function issueClaim(args, lanes) {
   const o = afkFlags(args, ['--number', '--run', '--note']);
@@ -122,7 +126,7 @@ export function issueCreate(args) {
   const title = (o['--title'] || '').trim();
   if (!title || !o['--body-file']) throw new Error('Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--unique] [--check] [--retro]');
   const root = git('rev-parse', '--show-toplevel');
-  const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
+  const body = validateIssueCommentBody(readWorkspaceText(root, o['--body-file']));
   const cfg = afkConfig(); afkLoadEnvironment(cfg);
   const repo = issueWriteRepo(cfg, o['--repo']);
   afkActor(cfg);
@@ -161,7 +165,7 @@ export function issueComment(args) {
   const n = Number(o['--number']);
   if (!Number.isInteger(n) || n < 1 || !o['--body-file']) throw new Error('Usage: issue comment --number N --body-file PATH [--repo OWNER/NAME]');
   const root = git('rev-parse', '--show-toplevel');
-  const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
+  const body = validateIssueCommentBody(readWorkspaceText(root, o['--body-file']));
   const cfg = afkConfig(); afkLoadEnvironment(cfg);
   const repo = issueWriteRepo(cfg, o['--repo']);
   afkActor(cfg);
@@ -176,7 +180,7 @@ export function issueEdit(args) {
   const n = Number(o['--number']);
   if (!Number.isInteger(n) || n < 1 || !o['--body-file']) throw new Error('Usage: issue edit --number N --body-file PATH');
   const root = git('rev-parse', '--show-toplevel');
-  const body = validateIssueCommentBody(readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8'));
+  const body = validateIssueCommentBody(readWorkspaceText(root, o['--body-file']));
   const cfg = afkConfig(); afkLoadEnvironment(cfg); afkActor(cfg);
   return withRepoLock(`issue-edit-${n}`, () => {
     const result = afkGh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, '-f', `body=${body}`]);

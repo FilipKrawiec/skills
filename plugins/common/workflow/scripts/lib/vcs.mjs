@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +32,7 @@ import {
   run,
   workflowDefaults,
 } from './core.mjs';
-import { workspaceFilePath } from './issues.mjs';
+import { readWorkspaceText } from './issues.mjs';
 
 // Commits carry the implementer's GitHub identity, never the machine's Git user, so the owner can approve them.
 function implementerCommitIdentity(root) {
@@ -240,6 +240,7 @@ function parseOptions(args) {
   const options = {};
   while (args.length) {
     const key = args.shift();
+    if (key === '--claim' && !Object.hasOwn(options, key)) { options[key] = true; continue; }
     if (!['--pr', '--previous', '--previous-base', '--issue'].includes(key) || !args.length || Object.hasOwn(options, key)) throw new Error('Invalid review-context arguments');
     options[key] = args.shift();
   }
@@ -272,8 +273,13 @@ export function reviewContext(args) {
   const { root, lanes, configAvailable } = config(false);
   const repo = resolveRepo(lanes);
   const pr = jsonCommand('gh', ['pr', 'view', options['--pr'], '--repo', `github.com/${repo}`, '--json', 'url,title,isDraft,labels,baseRefOid,headRefOid,files,reviews,reviewDecision,statusCheckRollup,comments'], { cwd: root });
+  // The claim keeps a second reviewer off the PR; review-post releases it whatever the outcome.
+  if (options['--claim']) {
+    if ((pr.labels || []).some(label => label.name === 'state:reviewing')) throw new Error(`#${options['--pr']} is already claimed (state:reviewing); skip it`);
+    run('gh', ['pr', 'edit', options['--pr'], '--repo', `github.com/${repo}`, '--add-label', 'state:reviewing'], { cwd: root });
+  }
   const threads = readThreads(repo, options['--pr'], { cwd: root });
-  const output = { untrustedGithubData: true, ...pr, baseConfigurationAvailable: configAvailable, filesMayBeIncomplete: true, reviewThreads: threads.nodes, threadsTruncated: threads.pageInfo.hasNextPage };
+  const output = { untrustedGithubData: true, claimed: Boolean(options['--claim']), ...pr, baseConfigurationAvailable: configAvailable, filesMayBeIncomplete: true, reviewThreads: threads.nodes, threadsTruncated: threads.pageInfo.hasNextPage };
   if (options['--previous']) {
     const previous = options['--previous'];
     const head = pr.headRefOid;
@@ -313,11 +319,12 @@ function reviewPostOptions(args, root) {
   if (!reviewEvents.includes(o['--event'])) throw new Error(`--event must be one of ${reviewEvents.join(', ')}`);
   if (o['--resolve-thread'].some(id => !/^[\w=-]+$/.test(id))) throw new Error('--resolve-thread requires a thread id');
   if (!o['--body-file']) throw new Error('--body-file is required');
-  o.body = readFileSync(workspaceFilePath(root, o['--body-file']), 'utf8');
+  o.body = readWorkspaceText(root, o['--body-file']);
   if (!o.body.includes(`<!-- agent-review sha=${o['--sha']}`)) throw new Error('Review body must contain <!-- agent-review sha=<sha> ...');
   o.comments = [];
   if (o['--comments-file']) {
-    o.comments = JSON.parse(readFileSync(workspaceFilePath(root, o['--comments-file']), 'utf8'));
+    if (o['--comments-file'] === '-' && o['--body-file'] === '-') throw new Error('Only one of --body-file and --comments-file can read stdin');
+    o.comments = JSON.parse(readWorkspaceText(root, o['--comments-file']));
     const valid = Array.isArray(o.comments) && o.comments.every(c => c && typeof c.path === 'string' && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === 'string' && c.body);
     if (!valid) throw new Error('Comments file must be a JSON array of {path, line, body}');
   }
@@ -340,13 +347,22 @@ function resolveThread(thread, options) {
   run('gh', ['api', 'graphql', '--hostname', 'github.com', '-f', `query=${resolveMutation}`, '-f', `threadId=${thread.id}`], options);
 }
 // Posts the Reviewer's verdict as one call, resolves the Reviewer's own non-blocking threads first, and releases state:reviewing only after the post.
+// Releasing the claim on every exit keeps a failed or abandoned review from hiding the PR from the next reviewer.
+function releaseClaim(pr, repo, options) {
+  try { run('gh', ['pr', 'edit', pr, '--repo', `github.com/${repo}`, '--remove-label', 'state:reviewing'], options); return true; } catch { console.error(`Warning: could not remove state:reviewing from #${pr}; remove it by hand.`); return false; }
+}
 export function reviewPost(args) {
   const { root, lanes } = config();
-  const o = reviewPostOptions(args, root);
   const login = lanes.reviewer;
   if (typeof login !== 'string' || !/^[A-Za-z0-9-]+$/.test(login)) throw new Error('Configure identities.reviewer before posting a review');
   const repo = resolveRepo(lanes);
-  const pr = o['--pr'];
+  const prIndex = args.indexOf('--pr');
+  const pr = prIndex >= 0 && /^[1-9]\d*$/.test(args[prIndex + 1] || '') ? args[prIndex + 1] : null;
+  let o;
+  try { o = reviewPostOptions(args, root); } catch (error) {
+    if (pr) releaseClaim(pr, repo, { cwd: root, env: { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) } });
+    throw error;
+  }
   const env = { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) };
   const options = { cwd: root, env };
   const approve = o['--event'] === 'APPROVE';
@@ -368,9 +384,10 @@ export function reviewPost(args) {
   } catch (error) {
     const reason = String(error.message).replace(/\s+/g, ' ').slice(0, 300);
     try { run('gh', ['pr', 'comment', pr, '--repo', `github.com/${repo}`, '--body', `<!-- agent-review post-failed sha=${o['--sha']} --> Review post failed (${o['--event']}): ${reason}`], options); } catch { /* the exit code still signals failure */ }
-    console.error(`Blocked: review post failed (${reason}); state:reviewing kept, retry.`);
+    releaseClaim(pr, repo, options);
+    console.error(`Blocked: review post failed (${reason}); claim released, retry.`);
     process.exitCode = 1;
     return;
   }
-  try { run('gh', ['pr', 'edit', pr, '--repo', `github.com/${repo}`, '--remove-label', 'state:reviewing'], options); } catch { console.error(`Warning: could not remove state:reviewing from #${pr}; remove it by hand.`); }
+  releaseClaim(pr, repo, options);
 }

@@ -20,7 +20,7 @@ Read [assignments.md](references/assignments.md) for a technical fork or an AFK 
 
 A draft PR is in **author mode**, a ready PR in **team mode**. Review only a PR with one `risk:R0|R1|R2` label; otherwise comment `<!-- agent-review shape sha=<HEAD> -->` naming what is missing and stop with `verdict=shape`. Once per head; never guess a label.
 
-Claim it: skip a PR labelled `state:reviewing`; else comment `<!-- agent-review claim sha=<HEAD> -->` `**Reviewing:** head <HEAD>`, then add that label. `review-post` removes the label after the verdict; on a stop with no verdict, remove it yourself.
+Claim it: comment `<!-- agent-review claim sha=<HEAD> -->` `**Reviewing:** head <HEAD>` and pass `--claim` to `review-context`; skip a PR it refuses as claimed. `review-post` releases the claim; stopping earlier, remove `state:reviewing`.
 
 **Exit gate:** claimed PR in shape, or a posted shape note.
 
@@ -54,7 +54,7 @@ Return `tag file:line failure remedy` lines, at most 10.
 
 ## 5. Post
 
-Post one review per round on the exact head, an inline note per finding starting with its tag. Write the body and findings (`[{"path","line","body"}]`) to files, then run `node <this-skill-directory>/../../scripts/workflow.mjs review-post --pr <N> --sha <40-hex HEAD> --event <COMMENT|REQUEST_CHANGES|APPROVE> --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. On exit 1, stop and report. Only verified Important findings block and go to `pr-fix`. The body carries `<!-- agent-review sha=<HEAD> round=<N> mode=<author|team> verdict=<ready|owner|fixes|cap|split> -->`.
+Post one review per round on the exact head, an inline note per finding starting with its tag. Write the body and findings (`[{"path","line","body"}]`) under `scratch` (or pipe it: `--body-file -`), then run `node <this-skill-directory>/../../scripts/workflow.mjs review-post --pr <N> --sha <40-hex HEAD> --event <COMMENT|REQUEST_CHANGES|APPROVE> --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. On exit 1, stop and report. Only verified Important findings block and go to `pr-fix`. The body carries `<!-- agent-review sha=<HEAD> round=<N> mode=<author|team> verdict=<ready|owner|fixes|cap|split> -->`.
 
 - **Author mode** posts `COMMENT`. With no open Important thread, `verdict=ready` hands the PR to `ship`.
 - **Team mode** posts `REQUEST_CHANGES` while a verified Important thread is open, otherwise approves as below.
