@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
 import { boardStatus, pathsFromIssueBody, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
+import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { prFields } from './pr.mjs';
 import { prState } from './state.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
@@ -69,14 +70,16 @@ const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...ext
 // One issue's next step from what was read about it, first match wins: a mechanical `do` for drive to perform, or a
 // terminal `agent`, `wait`, `owner`, `blocked` or `done`. Pure, so re-running on unchanged state repeats it.
 export function decideIssue(facts, lanes) {
-  const { issue, pr, tree, handBack: hb = {}, blockers = [] } = facts;
+  const { issue, pr, tree, handBack: hb = {}, blockers = [], dropped = [] } = facts;
   if (issue.state !== 'OPEN') return tree && pr?.state !== 'OPEN' ? { do: 'remove-worktree' } : { done: { issue: issue.number } };
   if (pr?.state === 'MERGED') return { do: 'close' };
+  // Unmet dependencies stop the item in every phase and touch nothing; a dropped one needs the owner.
+  if (dropped.length) return { owner: droppedReason(issue.number, dropped), url: issue.url };
+  if (blockers.length) return { blocked: { issue: issue.number, by: blockers } };
   if (hb.status === 'replan') return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
   if (hb.status === 'blocked') return { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}` };
   const claimed = (issue.labels || []).some(label => (label.name ?? label) === 'state:started');
   if (!pr || pr.state !== 'OPEN') {
-    if (!claimed && blockers.length) return { blocked: { issue: issue.number, by: blockers } };
     if (!claimed || !tree) return { do: 'start' };
     if (hb.status !== 'done') return agent('implementer', 'build');
     if (tree.dirty) return hb.commit && hb.paths?.length ? { do: 'commit' } : agent('implementer', 'build', { reason: 'uncommitted changes and no commit/paths in the hand-back' });
@@ -122,6 +125,10 @@ export function decideEpic({ epic, slices }) {
   if (epic.state !== 'OPEN') return { done: { epic: epic.number } };
   if ((epic.labels || []).some(label => (label.name ?? label) === 'lane:owner')) return { owner: `epic #${epic.number} waits for the owner's approval`, url: epic.url };
   if (!slices.length) return agent('planner', 'slice', { reason: 'the epic has no slices' });
+  const dropped = slices.filter(slice => slice.state === 'OPEN' && slice.dropped?.length);
+  if (dropped.length) return { owner: `epic #${epic.number}: ${dropped.map(slice => droppedReason(slice.number, slice.dropped)).join('; ')}`, url: epic.url };
+  const cycle = findCycle(slices.filter(slice => slice.state === 'OPEN'));
+  if (cycle) return { owner: `epic #${epic.number}: dependency cycle ${cycle.map(n => `#${n}`).join(' → ')}`, url: epic.url };
   const ordered = dependencyOrder(slices);
   if (!ordered.length) return { do: 'close-epic' };
   const ready = ordered.filter(slice => !slice.blockers.length).map(slice => slice.number);
@@ -252,8 +259,8 @@ export function githubIo(lanes) {
   const trees = () => parseWorktreeList(git('worktree', 'list', '--porcelain'));
   return {
     issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees']),
-    blockers: n => gh(['api', `repos/${repo}/issues/${n}/dependencies/blocked_by`]).filter(dep => dep.state === 'open').map(dep => dep.number),
-    subIssues: n => gh(['api', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).map(sub => ({ number: sub.number, state: sub.state.toUpperCase() })),
+    dependencies: issue => readDependencies(repo, issue),
+    subIssues: n => gh(['api', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).map(sub => ({ number: sub.number, state: sub.state.toUpperCase(), body: sub.body || '' })),
     pr: n => {
       const open = gh(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,body,closingIssuesReferences,labels,reviews,headRefOid,isDraft']);
       // A stacked PR's base is not the default branch, so GitHub links no closing issue; its body's `Closes #N` still does.
@@ -326,7 +333,7 @@ export function githubIo(lanes) {
     },
     scratch: tree => workflowScratch(tree?.path),
     write: (path, text) => writeFileSync(path, text),
-    openIssues: () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,labels']),
+    openIssues: () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,labels,body']),
   };
 }
 function board(lanes, number, value) {
@@ -340,11 +347,11 @@ function readIssueFacts(io, n, handBack) {
   if (issue.state !== 'OPEN') return { issue, tree: io.tree(n), pr: null };
   const pr = io.pr(n);
   const tree = io.tree(n, pr?.headRefName);
-  const blockers = pr ? [] : io.blockers(n);
+  const { blockers, dropped } = splitDependencies(io.dependencies(issue));
   const diffPaths = [...new Set([...(tree?.diffPaths || []), ...(pr?.files || []).map(file => file.path)])];
   const claimed = (pr?.labels || []).some(label => label.name === 'state:reviewing');
   const reviewingSince = claimed ? io.reviewingSince(pr) : null;
-  return { issue, pr, tree, blockers, handBack, diffPaths, patterns: io.patterns(), reviewingSince, now: io.now?.() ?? Date.now() };
+  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, patterns: io.patterns(), reviewingSince, now: io.now?.() ?? Date.now() };
 }
 function instruction(io, facts, step, lanes) {
   const { issue, pr, tree } = facts;
@@ -385,7 +392,10 @@ export function driveIssue(io, n, lanes, handBack = {}) {
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
 }
 export function driveEpic(io, epic, lanes) {
-  const slices = io.subIssues(epic.number).map(slice => ({ ...slice, blockers: slice.state === 'OPEN' ? io.blockers(slice.number) : [] }));
+  const { blockers, dropped } = splitDependencies(io.dependencies(epic));
+  if (dropped.length) return { owner: droppedReason(epic.number, dropped), url: epic.url };
+  if (blockers.length) return { blocked: { issue: epic.number, by: blockers } };
+  const slices = io.subIssues(epic.number).map(slice => ({ ...slice, ...(slice.state === 'OPEN' ? splitDependencies(io.dependencies(slice)) : { blockers: [], dropped: [] }) }));
   const step = decideEpic({ epic, slices });
   if (step.do === 'close-epic') { io.closeEpic(epic); return { done: { epic: epic.number } }; }
   if (!step.slices) return finish(instruction(io, { issue: epic, pr: null, tree: null }, step, lanes));
@@ -400,12 +410,14 @@ export function drive(io, n, lanes, handBack) {
   // An epic advances from GitHub state alone: the planner's hand-back changes nothing drive reads.
   return isEpic(issue) ? driveEpic(io, issue, lanes) : driveIssue(io, n, lanes, handBack);
 }
-// --next: issues already started first, then approved epics (no lane:owner), lowest number first.
-export function nextTarget(issues) {
+// --next: the lowest-numbered item that is ready, started issues first, then approved epics and standalone issues.
+// An item with an unmet or dropped dependency never qualifies; `depsOf` reads them lazily, in that order.
+export function nextTarget(issues, depsOf = () => ({ blockers: [], dropped: [] })) {
   const names = issue => issue.labels.map(label => label.name ?? label);
-  const started = issues.filter(issue => names(issue).includes('state:started') && !names(issue).includes('type:epic'));
-  const epics = issues.filter(issue => names(issue).includes('type:epic') && !names(issue).includes('lane:owner'));
-  return [...started, ...epics].sort((a, b) => Number(names(b).includes('state:started')) - Number(names(a).includes('state:started')) || a.number - b.number)[0]?.number ?? null;
+  const candidates = issues.filter(issue => !names(issue).includes('lane:owner'));
+  const rank = issue => Number(!names(issue).includes('state:started'));
+  const ordered = [...candidates].sort((a, b) => rank(a) - rank(b) || a.number - b.number);
+  return ordered.find(issue => { const { blockers, dropped } = depsOf(issue); return !blockers.length && !dropped.length; })?.number ?? null;
 }
 
 export function driveCommand(args, lanes, io = githubIo(lanes)) {
@@ -420,8 +432,8 @@ export function driveCommand(args, lanes, io = githubIo(lanes)) {
   if (args.length !== 1) throw new Error(usage);
   let n;
   if (args[0] === '--next') {
-    n = nextTarget(io.openIssues());
-    if (n === null) { console.log(JSON.stringify({ done: { reason: 'nothing started and no approved epic is open' } })); return; }
+    n = nextTarget(io.openIssues(), issue => splitDependencies(io.dependencies(issue)));
+    if (n === null) { console.log(JSON.stringify({ done: { reason: 'no started issue, approved epic or standalone issue is ready' } })); return; }
   } else if (/^[1-9]\d*$/.test(args[0])) n = Number(args[0]);
   else throw new Error(usage);
   console.log(JSON.stringify(drive(io, n, lanes, handBack)));

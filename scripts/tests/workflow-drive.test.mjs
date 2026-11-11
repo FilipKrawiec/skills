@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, estimateRisk, matchesPattern,
-  modelFor, nextTarget, ownerPatterns, parseHandBack, pickSlice, reviewerCommand, riskFromPaths, staleReviewClaim,
+  driveCommand, modelFor, nextTarget, ownerPatterns, parseHandBack, pickSlice, reviewerCommand, riskFromPaths, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
+import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
 
 const head = 'a'.repeat(40);
 const lanes = { repo: 'acme/app', base: 'main', implementer: 'builder', reviewer: 'reviewer', owner: 'owner', steps: { test: ['just', 'verify'] } };
@@ -121,7 +123,7 @@ test('epics: slice when empty, deliver slices in dependency order, close when al
 function fakeRepo(initial) {
   const s = structuredClone(initial); const calls = []; const writes = {};
   const io = {
-    issue: n => s.issues[n], blockers: n => s.blockers?.[n] || [], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state })),
+    issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: 'OPEN' })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state, body: s.issues[m].body })),
     pr: n => (s.prs || []).find(p => p.issue === n && p.state === 'OPEN') || null, tree: n => s.trees?.[n] || null, patterns: () => [],
     openIssues: () => Object.values(s.issues).filter(i => i.state === 'OPEN'),
     start: (i, risk) => { calls.push(['start', i.number, risk]); i.labels = [label('state:started'), label(`risk:${risk}`)]; (s.trees ||= {})[i.number] = tree({ path: `/w/${i.number}`, branch: `${i.number}-x` }); },
@@ -201,10 +203,106 @@ test('drive <epic> plans, drives the first ready slice, lists the others and clo
   assert.deepEqual(repo.calls.at(-1), ['close-epic', 9]);
 });
 
-test('--next prefers started issues, then approved epics', () => {
+test('--next prefers started issues, then approved epics and standalone issues by number', () => {
   assert.equal(nextTarget([{ number: 4, labels: [label('type:epic')] }, { number: 7, labels: [label('state:started')] }]), 7);
   assert.equal(nextTarget([{ number: 4, labels: [label('type:epic'), label('lane:owner')] }, { number: 6, labels: [label('type:epic')] }]), 6);
-  assert.equal(nextTarget([{ number: 2, labels: [] }]), null);
+  assert.equal(nextTarget([{ number: 8, labels: [] }, { number: 5, labels: [label('type:epic')] }, { number: 2, labels: [label('lane:owner')] }]), 5);
+  assert.equal(nextTarget([{ number: 2, labels: [label('lane:owner')] }]), null);
+  assert.equal(nextTarget([]), null);
+});
+
+const open = number => ({ number, kind: 'issue', state: 'OPEN' });
+const closed = (number, extra = {}) => ({ number, kind: 'issue', state: 'CLOSED', reason: 'completed', merged: true, ...extra });
+
+test('a dependency is met only once its change merged; unmet and dropped ones are told apart', () => {
+  const split = deps => splitDependencies(deps);
+  assert.deepEqual(split([open(4), { number: 5, kind: 'pr', state: 'OPEN' }]), { blockers: [4, 5], dropped: [] });
+  assert.deepEqual(split([{ number: 5, kind: 'pr', state: 'MERGED', merged: true }, closed(6), closed(7, { merged: false, needsNoCode: true })]), { blockers: [], dropped: [] });
+  assert.deepEqual(split([{ number: 5, kind: 'pr', state: 'CLOSED', merged: false }, closed(6, { reason: 'not_planned', merged: false }), closed(7, { merged: false })]), { blockers: [], dropped: [5, 6, 7] });
+  assert.deepEqual(dependenciesFromIssueBody('```scope\n{"paths":["a/"],"dependencies":[12,"#13",12,"x"]}\n```'), [12, 13]);
+  assert.deepEqual(dependenciesFromIssueBody('no packet'), []);
+});
+
+test('readDependencies unions blocked-by links with packet dependencies, issues and PRs', () => {
+  const calls = [];
+  const read = args => {
+    calls.push(args.join(' '));
+    const [kind, path] = args;
+    if (path?.endsWith('/dependencies/blocked_by')) return [{ number: 12 }, { number: 20 }];
+    if (path === 'repos/acme/app/issues/12') return { state: 'closed', state_reason: 'not_planned', labels: [], body: '' };
+    if (path === 'repos/acme/app/issues/20') return { state: 'open', labels: [] };
+    if (path === 'repos/acme/app/issues/30') return { state: 'open', pull_request: {} };
+    if (kind === 'pr' && path === 'view') return { state: 'MERGED' };
+    throw new Error(`unexpected ${args.join(' ')}`);
+  };
+  const deps = readDependencies('acme/app', { number: 3, body: '```scope\n{"dependencies":[30]}\n```' }, read);
+  assert.deepEqual(splitDependencies(deps), { blockers: [20], dropped: [12] });
+  assert.deepEqual(deps.find(dep => dep.number === 30), { number: 30, kind: 'pr', state: 'MERGED', merged: true });
+  const done = args => (args[0] === 'pr' && args[1] === 'list' ? [{ number: 9, body: 'Closes #7', closingIssuesReferences: [] }] : args[0] === 'api' && args[1].endsWith('blocked_by') ? [{ number: 7 }, { number: 8 }] : { state: 'closed', state_reason: 'completed', labels: [], body: '' });
+  assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 3, body: '' }, done)), { blockers: [], dropped: [8] }, 'closed as completed with no merged PR is dropped');
+});
+
+test('an unmet dependency stops an item in every phase and keeps its worktree and PR', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }), blockers: [2] };
+  const stop = { blocked: { issue: 3, by: [2] } };
+  assert.deepEqual(decide({ issue: issue(), blockers: [2] }), stop, 'start');
+  assert.deepEqual(decide({ issue: started, tree: tree(), blockers: [2] }), stop, 'build');
+  assert.deepEqual(decide({ ...base, handBack: { status: 'done', commit: 'x', paths: ['a'] } }), stop, 'open');
+  assert.deepEqual(decide({ ...base, pr: pr() }), stop, 'review');
+  assert.deepEqual(decide({ ...base, pr: pr({ isDraft: false, reviews: [review('ready', 'APPROVED')] }) }), stop, 'merge');
+  assert.deepEqual(decide({ ...base, pr: pr({ state: 'MERGED' }) }), { do: 'close' }, 'a merged PR still closes');
+});
+
+test('drive stops a started item that gains a blocker without touching its worktree or PR', () => {
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, isDraft: false, reviews: [review('ready', 'APPROVED')] })], blockers: { 3: [2] }, });
+  assert.deepEqual(drive(repo.io, 3, lanes, {}), { blocked: { issue: 3, by: [2] } });
+  assert.deepEqual(repo.calls, []);
+  repo.s.blockers = {};
+  assert.deepEqual(drive(repo.io, 3, lanes, {}).wait, { pr: 5, until: 'merged' }, 'unblocked, it merges again');
+  assert.deepEqual(repo.calls.at(-1), ['auto-merge']);
+});
+
+test('a dropped dependency returns an owner step naming the dependent and the dependency', () => {
+  const dropped = { 2: [closed(2, { reason: 'not_planned', merged: false })] };
+  const repo = fakeRepo({ issues: { 3: issue(), 9: issue({ number: 9, labels: [label('type:epic')] }) }, deps: { 3: dropped[2], 9: dropped[2] } });
+  const step = drive(repo.io, 3, lanes, {});
+  assert.match(step.owner, /^#3 depends on #2, closed as not planned/);
+  assert.equal(step.url, 'https://github.com/acme/app/issues/3');
+  assert.deepEqual(repo.calls, []);
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /^#9 depends on #2/);
+});
+
+test('a dependency cycle in an epic returns an owner step naming it', () => {
+  assert.deepEqual(findCycle([{ number: 12, blockers: [14] }, { number: 14, blockers: [12] }, { number: 15, blockers: [] }]), [12, 14, 12]);
+  assert.equal(findCycle([{ number: 1, blockers: [2] }, { number: 2, blockers: [] }]), null);
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const slices = [{ number: 12, state: 'OPEN', blockers: [14] }, { number: 14, state: 'OPEN', blockers: [12] }];
+  assert.equal(decideEpic({ epic, slices }).owner, 'epic #9: dependency cycle #12 → #14 → #12');
+  const repo = fakeRepo({ issues: { 9: epic, 12: issue({ number: 12 }), 14: issue({ number: 14 }) }, subs: { 9: [12, 14] }, blockers: { 12: [14], 14: [12] } });
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#12 → #14 → #12/);
+  assert.deepEqual(repo.calls, []);
+});
+
+test('a slice with a dropped dependency or an epic blocked by an epic is not driven', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const slices = [{ number: 12, state: 'OPEN', blockers: [], dropped: [7] }];
+  assert.match(decideEpic({ epic, slices }).owner, /#12 depends on #7/);
+  const repo = fakeRepo({ issues: { 9: epic, 8: issue({ number: 8, labels: [label('type:epic')] }), 10: issue({ number: 10 }) }, subs: { 9: [10] }, blockers: { 9: [8] } });
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { blocked: { issue: 9, by: [8] } });
+});
+
+test('--next takes the lowest-numbered ready item and skips unmet or dropped dependencies', () => {
+  const items = [{ number: 2, labels: [] }, { number: 4, labels: [label('type:epic')] }, { number: 6, labels: [label('state:started')] }, { number: 7, labels: [] }];
+  const deps = table => item => splitDependencies(table[item.number] || []);
+  assert.equal(nextTarget(items, deps({})), 6, 'a ready started issue first');
+  assert.equal(nextTarget(items, deps({ 6: [open(1)] })), 2, 'a started issue with a blocker yields to standalone issues');
+  assert.equal(nextTarget(items, deps({ 6: [open(1)], 2: [open(4)] })), 4, 'an issue blocked by an epic waits for it');
+  assert.equal(nextTarget(items, deps({ 6: [open(1)], 2: [open(4)], 4: [open(9)], 7: [closed(8, { reason: 'not_planned', merged: false })] })), null);
+  const repo = fakeRepo({ issues: { 2: issue({ number: 2 }), 4: issue({ number: 4, labels: [label('type:epic')] }) }, blockers: { 2: [4] } });
+  let said = '';
+  const log = console.log; console.log = text => { said = text; };
+  try { driveCommand(['--next'], lanes, repo.io); } finally { console.log = log; }
+  assert.deepEqual([JSON.parse(said).agent, JSON.parse(said).issue], ['planner', 4], 'drive --next picks the epic the issue waits for, not the blocked issue');
 });
 
 test('the reviewer runs as a separate non-interactive session', () => {

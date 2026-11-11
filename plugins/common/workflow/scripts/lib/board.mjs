@@ -13,6 +13,12 @@ export function pathsFromIssueBody(body = '') {
   if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) return parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
   return null;
 }
+// The issue or PR numbers the scope packet lists as `dependencies` (`12` or `"#12"`).
+export function dependenciesFromIssueBody(body = '') {
+  const listed = scopePacket(body)?.dependencies;
+  if (!Array.isArray(listed)) return [];
+  return [...new Set(listed.map(value => Number(String(value).replace(/^#/, ''))).filter(n => Number.isInteger(n) && n > 0))];
+}
 export function pathsWithinScope(paths, scope) {
   if (!Array.isArray(paths)) return false;
   if (scope === null) return true;
