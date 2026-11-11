@@ -48,9 +48,10 @@ function resolveDependency(repo, number, read) {
   const needsNoCode = (item.labels || []).some(label => (label.name ?? label) === 'type:epic') || pathsFromIssueBody(item.body || '')?.length === 0;
   let merged = false;
   if (item.state_reason === 'completed' && !needsNoCode) {
-    const closes = new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #${number}\\b`, 'i');
-    merged = read(['pr', 'list', '--repo', repo, '--state', 'merged', '--limit', '200', '--json', 'number,body,closingIssuesReferences'])
-      .some(pr => (pr.closingIssuesReferences || []).some(ref => ref.number === number) || closes.test(pr.body || ''));
+    const [owner, name] = repo.split('/');
+    const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){closedByPullRequestsReferences(first:50,includeClosedPrs:true){nodes{merged}}}}}';
+    const found = read(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${number}`]);
+    merged = (found.data?.repository?.issue?.closedByPullRequestsReferences?.nodes || []).some(node => node.merged);
   }
   return { number, kind: 'issue', state, reason: item.state_reason, merged, needsNoCode };
 }

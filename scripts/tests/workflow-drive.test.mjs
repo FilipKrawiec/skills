@@ -238,8 +238,10 @@ test('readDependencies unions blocked-by links with packet dependencies, issues 
   const deps = readDependencies('acme/app', { number: 3, body: '```scope\n{"dependencies":[30]}\n```' }, read);
   assert.deepEqual(splitDependencies(deps), { blockers: [20], dropped: [12] });
   assert.deepEqual(deps.find(dep => dep.number === 30), { number: 30, kind: 'pr', state: 'MERGED', merged: true });
-  const done = args => (args[0] === 'pr' && args[1] === 'list' ? [{ number: 9, body: 'Closes #7', closingIssuesReferences: [] }] : args[0] === 'api' && args[1].endsWith('blocked_by') ? [{ number: 7 }, { number: 8 }] : { state: 'closed', state_reason: 'completed', labels: [], body: '' });
-  assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 3, body: '' }, done)), { blockers: [], dropped: [8] }, 'closed as completed with no merged PR is dropped');
+  const closer = nodes => args => (args[1] === 'graphql' ? { data: { repository: { issue: { closedByPullRequestsReferences: { nodes } } } } } : args[0] === 'api' && args[1].endsWith('blocked_by') ? [{ number: 7 }] : { state: 'closed', state_reason: 'completed', labels: [], body: '' });
+  assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 3, body: '' }, closer([{ merged: false }]))), { blockers: [], dropped: [7] }, 'closed as completed with no merged PR is dropped');
+  assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 3, body: '' }, closer([{ merged: false }, { merged: true }]))), { blockers: [], dropped: [] }, 'asks GitHub about the issue itself, however old its PR'
+  );
 });
 
 test('an unmet dependency stops an item in every phase and keeps its worktree and PR', () => {

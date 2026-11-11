@@ -17,7 +17,7 @@ Branch on your role, first match wins:
 
 ## 1. Dispatch
 
-Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next started issue or approved epic. It prints one JSON line. Act on exactly that instruction, first match wins:
+Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the lowest-numbered ready item: a started issue, an approved epic or a standalone issue, never one with an unmet dependency. It prints one JSON line. Act on exactly that instruction, first match wins:
 
 - `agent` with `session: "subagent"` (implementer or planner): start one subagent of that agent type on its `model` with the prompt `Follow your brief at <brief>. Return at most 5 lines.`; with `resume`, resume that same implementer instead. Write its hand-back unchanged to a file under the `.wf/` directory `<cli> scratch` prints, then run `<cli> drive <issue> --hand-back <file>`.
 - `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session: the session that wrote a PR never approves it. When it exits, run `<cli> drive <issue>`.
