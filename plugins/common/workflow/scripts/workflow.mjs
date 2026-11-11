@@ -189,6 +189,15 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, ...args] = process.argv.slice(2);
+    const valueOptions = new Set(['-m', '--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--timeout', '--interval', '--hand-back', '--days', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root']);
+    let wantsHelp = command === '-h';
+    for (let i = 0; i < args.length && args[i] !== '--'; i++) {
+      if (valueOptions.has(args[i])) { i++; continue; }
+      if (args[i] === '--help' || args[i] === '-h') wantsHelp = true;
+    }
+    if (wantsHelp) {
+      console.log(command === 'worktree' ? 'Usage: worktree tidy [--dry-run] [--idle-days N]' : help);
+    } else {
     const names = requiredLocks(command, args);
     const inherited = names.length && validInheritedLockContext(names);
     if (names.length && inherited) {
@@ -204,6 +213,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       if (result.status === lockTimeoutStatus) console.error(`workflow: lock timed out while acquiring ${names.join(', ')}`);
       process.exitCode = result.status ?? 1;
     } else await execute(command, args);
+    }
   } catch (error) {
     console.error(`workflow: ${error.message}`);
     process.exitCode = 1;
