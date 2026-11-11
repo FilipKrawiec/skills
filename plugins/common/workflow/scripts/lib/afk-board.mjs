@@ -108,7 +108,7 @@ export function afkPrRecord(pr, cfg) {
   // The newest author verdict at the head: `ready` waits only for `ship`. A `cap` in either mode waits for the owner.
   const latestAuthor = atHead.filter(authorMode).at(-1);
   const capped = verdictOf(atHead.filter(review => verdictOf(review)).at(-1)) === 'cap';
-  // The newest Reviewer verdict at the head asked to split the issue for its size.
+  // The newest Reviewer verdict at the head asked to split the issue at a logical seam.
   const split = verdictOf(atHead.filter(review => verdictOf(review)).at(-1)) === 'split';
   const workflow = afkWorkflowLogins(cfg);
   // Someone outside the workflow whose newest review at the head requests changes has work for `pr-fix`, even under the Reviewer's approval.
@@ -266,7 +266,7 @@ export function afkPlan(cfg, live, threads, me = '', data = null) {
       ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) passed author review: invoke \`ship\` to hand it off`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
       : review
       ? { column: 'Review', text: `PR #${pr.number} (${pr.title}) awaits its review`, issue: pr.number, priority, paths: [], review: true, pr: pr.number, head: pr.headRefOid }
-      : { column: 'Review', text: `PR #${pr.number} (${pr.title})${pr.broken ? ' has a red check or a conflict' : pr.split ? ' was held for its size: invoke `spec` to split its issue, unless an owner decision on the PR keeps it whole' : ' needs its review fixed'}`, issue: stories[0]?.number || pr.number, priority, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid };
+      : { column: 'Review', text: `PR #${pr.number} (${pr.title})${pr.broken ? ' has a red check or a conflict' : pr.split ? ' was held as several logical changes: invoke `spec` to split its issue, unless an owner decision on the PR keeps it whole' : ' needs its review fixed'}`, issue: stories[0]?.number || pr.number, priority, paths, ...(scopedByFiles ? { scopedByFiles } : {}), pr: pr.number, head: pr.headRefOid };
     offer(unit, pr.number, afkPrState(pr, threads(pr.number), cfg, base));
   }
   // Each PR merged in the last week gets one `improve` run until a `## Lessons` comment records it.

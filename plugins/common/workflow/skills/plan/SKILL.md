@@ -21,7 +21,7 @@ Write the plan for whoever executes it: a Craftsman subagent or the developer by
 - **Why:** the criterion or decision it serves.
 - **How:** the paths, interfaces, the failing test to write first, and the command proving it.
 
-Add the risks, the decisions taken with their reasons, and the manual test steps CI cannot run. Preserve shared interface inputs, outputs, errors and compatibility. Reserve product intent, paid services, budgets, authority, credentials, release or quality gates for the owner; new interactions need owner prototype direction. Return a technical-adjudication question with options, evidence and a recommendation.
+Plan the whole logical change as one PR, however many steps or lines it takes. Propose a split only at a logical seam: a prerequisite whole and useful on its own, or an outcome the owner asked to deliver separately; never by size, estimate or layer. Add the risks, the decisions taken with their reasons, and the manual test steps CI cannot run. Preserve shared interface inputs, outputs, errors and compatibility. Reserve product intent, paid services, budgets, authority, credentials, release or quality gates for the owner; new interactions need owner prototype direction. Return a technical-adjudication question with options, evidence and a recommendation.
 
 **Exit gate:** every step has a why and a how.
 
@@ -47,7 +47,7 @@ Post one `## Plan` issue comment, or a compact in-chat plan for small direct wor
 - **Attended:** the developer approves the scored plan.
 - **Unattended:** a 100% score on a `lane:afk` issue is the approval.
 
-After approval the main thread only orchestrates and never edits project files, attended or not. First invoke `vcs` to start the assignment, so the work runs in an isolated worktree and branch, never the main checkout; then brief a Craftsman subagent with `Intent:`, `Plan:` (the plan link), `Criteria and scope:` and `Checkout:` (that worktree path and base SHA) to execute the plan there through `tdd` and return paths, commands and exits; `vcs` opens the draft PR with its risk label, a fresh subagent runs `agent-review`, `pr-fix` fixes, and `ship` hands it off for approval and merge.
+After approval the main thread only orchestrates and never edits project files, attended or not. First invoke `vcs` to start the assignment, so the work runs in an isolated worktree and branch, never the main checkout; then brief a Craftsman subagent with `Intent:`, `Plan:` (the plan link), `Criteria and scope:` and `Checkout:` (that worktree path and base SHA) to execute the plan there through `tdd`, deliver the whole change unless it finds a logical seam (then it stops and proposes the split), and return paths, commands and exits; `vcs` opens the draft PR with its risk label, a fresh subagent runs `agent-review`, `pr-fix` fixes, and `ship` hands it off for approval and merge.
 
 **Exit gate:** approved plan linked, or the owner question it waits on.
 

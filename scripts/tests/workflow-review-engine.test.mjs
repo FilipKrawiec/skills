@@ -82,7 +82,7 @@ test('only a human change request at the head counts, and their later approval c
 
 test('a split verdict at the head routes its PR to spec', () => {
   const split = { author: { login: 'reviewer' }, state: 'CHANGES_REQUESTED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc round=0 verdict=split -->' };
-  assert.match(plain([pr(20, { ...linked(5), reviews: [split] })])[0].text, /was held for its size: invoke `spec` to split its issue/);
+  assert.match(plain([pr(20, { ...linked(5), reviews: [split] })])[0].text, /was held as several logical changes: invoke `spec` to split its issue/);
 });
 
 test('the improve unit skips a merged PR a live run holds, and a spent one is not offered again', () => {
