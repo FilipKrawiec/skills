@@ -27,11 +27,11 @@ Waiting: #14 on the payment sandbox; next: #15.
 
 ## Slice
 
-An approved epic with no sub-issues is served as `Work: epic #N is in Todo: slice it if it has no sub-issues, otherwise verify its delivery and close it`. Create one sub-issue per logical change, never per layer, each with a type, the epic's milestone, a lane, criteria and a scope packet. Together their criteria must cover every epic criterion; leave the card In progress. When the body leaves a reserved question open, put `lane:owner` back on the epic, queue it the same way and comment the question.
+An approved epic with no sub-issues is served as `Work: epic #N is in Todo: slice it if it has no sub-issues, otherwise verify its delivery and close it`. Create one sub-issue per logical change, never per layer, each with a type, the epic's milestone, a lane, criteria and a scope packet. Their criteria together cover every epic criterion; leave the card In progress. When the body leaves a reserved question open, put `lane:owner` back on the epic, queue it the same way and comment the question.
 
 ## Update
 
-Re-read the body, then edit it with `issue edit --number N --body-file PATH` only on a meaningful change:
+Re-read the body; edit it with `issue edit --number N --body-file PATH` only on a meaningful change:
 
 - A binding decision or a new design: record it under Decisions. Re-run Decided on each open slice: amend criteria within approved intent, record substantive contradictions for replanning, and notify claimed runs. Each slice names the designs that bind it, or says none do.
 - A scope change, a split, or a new or withdrawn slice: update Acceptance criteria so the slices still cover them.
@@ -41,7 +41,7 @@ A merged or closed slice needs no edit. An unchanged epic is served again only a
 
 ## Close
 
-An epic whose sub-issues are all closed is served with the same `Work:` line. The epic is delivered once every epic criterion is covered by a closed slice whose closing merge is in a candidate the test environment successfully deployed. Without a configured test delivery, a closing merge on a green base counts.
+An epic whose sub-issues are all closed is served with the same `Work:` line. The epic is delivered once every epic criterion is covered by a closed slice whose closing merge is in a candidate the test environment successfully deployed. Without a configured test delivery, a closing merge on a base with green required checks counts.
 
 1. Delivered: tick each criterion and link its slice, the candidate and the deployment run. Comment `## Delivered` with that list, close with `issue close --number N`, and confirm the card is in Done.
 2. No slice covers a criterion, or the base, beside its binding design, lacks it: create the missing slice.
