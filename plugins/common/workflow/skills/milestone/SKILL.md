@@ -34,7 +34,7 @@ Reconcile each result against GitHub. After two evidence-led failed repairs, rep
 
 ## 3. Accept and continue
 
-After merge, check actual base health and invoke `release` for test delivery and separately approved production. Close the product milestone only with exact deployed-and-accepted evidence. Invoke `health` for bounded maintenance; retain unfinished required migrations as prerequisites. Rank next product proposals without treating them as approved.
+After each merge, run `node <this-skill-directory>/../../scripts/workflow.mjs wait <PR> --until base`; exit 1 is a red base at the merge commit: report its failing run and culprit (`git log --first-parent <green>..<red>` lists exactly one merge) to the owner, never fixing forward or reverting without their authority. Invoke `release` for test delivery and separately approved production. Close the product milestone only with exact deployed-and-accepted evidence. Invoke `health` for bounded maintenance; retain unfinished required migrations as prerequisites. Rank next product proposals without treating them as approved.
 
 **Exit gate:** acceptance and health evidence recorded, or pending stage and actor named.
 

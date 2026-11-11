@@ -43,6 +43,13 @@ test('pr auto-merge accepts a Reviewer approval at the head under code-owner pro
   assert.equal(prAutoMergeRefusal(ready({ statusCheckRollup: [{ name: 'verify', status: 'QUEUED' }] }), cfg, policy), null);
 });
 
+test('pr auto-merge holds a PR whose merge publishes to production until the owner approves its head', () => {
+  const publishing = { ...cfg, publishOnMerge: true };
+  assert.match(prAutoMergeRefusal(ready(), publishing, policy), /publishes to production: release holds it/);
+  const ownerApproved = { author: { login: 'owner' }, state: 'APPROVED', body: '', commit: { oid: head } };
+  assert.equal(prAutoMergeRefusal(ready({ reviews: [verdict('team', 'ready', 'APPROVED'), ownerApproved] }), publishing, policy), null);
+});
+
 test('a ready verdict without a mode counts for pr ready and, approved, for pr auto-merge', () => {
   const plain = (value, state) => ({ author: { login: 'reviewer' }, state, body: `<!-- agent-review sha=${head} round=1 verdict=${value} -->`, commit: { oid: head } });
   assert.equal(prReadyRefusal(draft({ reviews: [plain('ready', 'COMMENTED')] }), cfg), null);

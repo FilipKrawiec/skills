@@ -44,7 +44,7 @@ const help = `Usage:
   node workflow.mjs review-post --pr NUMBER --sha HEX --event APPROVE|REQUEST_CHANGES|COMMENT --body-file PATH|- [--comments-file PATH|-] [--resolve-thread ID]...
   node workflow.mjs scratch
   node workflow.mjs status NUMBER
-  node workflow.mjs wait NUMBER --until ci|reviewed|merged [--timeout MINUTES] [--interval SECONDS]
+  node workflow.mjs wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]
   node workflow.mjs next [--owner]
   node workflow.mjs drive NUMBER [--hand-back FILE|-] | drive --next
   node workflow.mjs check

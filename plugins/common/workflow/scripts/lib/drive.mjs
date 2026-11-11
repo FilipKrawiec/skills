@@ -54,6 +54,15 @@ export function parseHandBack(text) {
   return result;
 }
 
+// A Reviewer claim older than this with no review posted since is stale: its session never started or died.
+export const staleReviewMinutes = 60;
+// Whether `state:reviewing`, labelled at `since` (ms), is stale at `now`: old enough and no Reviewer review after it.
+export function staleReviewClaim(pr, lanes, since, now) {
+  if (!since || now - since < staleReviewMinutes * 60_000) return false;
+  const reviewer = lanes.reviewer?.toLowerCase();
+  return !(pr.reviews || []).some(review => review.author?.login?.toLowerCase() === reviewer && Date.parse(review.submittedAt || '') > since);
+}
+
 const isEpic = issue => (issue.labels || []).some(label => (label.name ?? label) === 'type:epic');
 const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...extra });
 
@@ -82,7 +91,7 @@ export function decideIssue(facts, lanes) {
   }
   const risk = maxRisk(state.risk, riskLabel(issue.labels || []), riskFromPaths(facts.diffPaths, facts.patterns));
   if (risk !== state.risk && risks.indexOf(risk) > risks.indexOf(state.risk)) return { do: 'risk', risk };
-  if (state.labels.includes('state:reviewing')) return { wait: { pr: pr.number, until: 'reviewed' } };
+  if (state.labels.includes('state:reviewing')) return staleReviewClaim(pr, lanes, facts.reviewingSince, facts.now ?? Date.now()) ? { do: 'release-review' } : { wait: { pr: pr.number, until: 'reviewed' } };
   const next = state.next;
   if (next.action === 'fix') return tree ? agent('implementer', 'fix', { reason: next.reason, resume: true }) : { do: 'start' };
   if (next.action === 'wait-ci') return { wait: { pr: pr.number, until: 'ci' } };
@@ -291,6 +300,13 @@ export function githubIo(lanes) {
       try { run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--add-reviewer', lanes.reviewer]); } catch { console.error(`drive: could not request ${lanes.reviewer}'s review on #${pr.number}`); }
       board(lanes, issue.number, 'REVIEW');
     },
+    // When `state:reviewing` was last added to the PR, from its timeline; null when it never was.
+    reviewingSince: pr => {
+      const events = gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${pr.number}/timeline?per_page=100`]).flat();
+      const at = events.filter(event => event.event === 'labeled' && event.label?.name === 'state:reviewing').at(-1)?.created_at;
+      return at ? Date.parse(at) : null;
+    },
+    releaseReview: pr => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--remove-label', 'state:reviewing']),
     risk: (pr, from, to) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, ...(from ? ['--remove-label', `risk:${from}`] : []), '--add-label', `risk:${to}`]),
     ready: (pr, tree) => self(['pr', 'ready', '--pr', String(pr.number)], tree?.path || process.cwd()),
     autoMerge: (pr, tree) => self(['pr', 'auto-merge', '--pr', String(pr.number)], tree?.path || process.cwd()),
@@ -326,7 +342,9 @@ function readIssueFacts(io, n, handBack) {
   const tree = io.tree(n, pr?.headRefName);
   const blockers = pr ? [] : io.blockers(n);
   const diffPaths = [...new Set([...(tree?.diffPaths || []), ...(pr?.files || []).map(file => file.path)])];
-  return { issue, pr, tree, blockers, handBack, diffPaths, patterns: io.patterns() };
+  const claimed = (pr?.labels || []).some(label => label.name === 'state:reviewing');
+  const reviewingSince = claimed ? io.reviewingSince(pr) : null;
+  return { issue, pr, tree, blockers, handBack, diffPaths, patterns: io.patterns(), reviewingSince, now: io.now?.() ?? Date.now() };
 }
 function instruction(io, facts, step, lanes) {
   const { issue, pr, tree } = facts;
@@ -357,6 +375,7 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
     else if (step.do === 'push') io.push(tree);
     else if (step.do === 'open') io.open(issue, tree, maxRisk(riskLabel(issue.labels), riskFromPaths(facts.diffPaths, facts.patterns)), handBack);
+    else if (step.do === 'release-review') io.releaseReview(pr);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
     else if (step.do === 'ready') io.ready(pr, tree);
     else if (step.do === 'auto-merge') io.autoMerge(pr, tree);

@@ -53,6 +53,14 @@ test('one review skill, one mode: one reviewer, no subagents, the cap is final a
   const deliver = skill('deliver');
   assert.match(deliver, /Never review or approve in this session/);
   assert.match(deliver, /Nits never block/);
+  // What `ship` covered: production publication goes through release, the base is checked at the merge commit, and
+  // delivery evidence belongs to release and milestone.
+  assert.match(deliver, /goes through `release` first: with `github\.publishOnMerge` set/);
+  assert.match(deliver, /`pr auto-merge` also keeps every `review:owner` hold/);
+  assert.match(deliver, /wait <pr> --until base/);
+  assert.match(deliver, /`## Shipped #M` evidence belong to `release` and `milestone`/);
+  assert.match(skill('release'), /comment `## Shipped #M` on each issue/);
+  assert.match(skill('milestone'), /wait <PR> --until base/);
   const review = skill('review');
   const approval = read('skills/review/references/approval.md');
   assert.match(approval, /verdict=owner/);

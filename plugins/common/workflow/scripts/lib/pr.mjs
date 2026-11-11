@@ -45,7 +45,9 @@ export function prAutoMergeRefusal(pr, cfg, policy) {
   if (!reviewerApproved({ ...pr, labels: pr.labels || [] }, cfg)) return `no Reviewer approval with agent-review verdict=${ownerLane ? 'owner' : 'ready'} at head ${pr.headRefOid}`;
   const owner = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === cfg.owner?.toLowerCase() && review.state !== 'COMMENTED').at(-1);
   if (owner?.state === 'CHANGES_REQUESTED') return `the owner ${cfg.owner} requests changes`;
-  if (ownerLane && !(owner?.state === 'APPROVED' && owner.commit?.oid === pr.headRefOid)) return `review:owner holds it until ${cfg.owner} approves head ${pr.headRefOid}`;
+  const ownerApprovedHead = owner?.state === 'APPROVED' && owner.commit?.oid === pr.headRefOid;
+  if (ownerLane && !ownerApprovedHead) return `review:owner holds it until ${cfg.owner} approves head ${pr.headRefOid}`;
+  if (cfg.publishOnMerge && !ownerApprovedHead) return `merging #${pr.number} publishes to production: release holds it until ${cfg.owner} approves head ${pr.headRefOid}`;
   return null;
 }
 
