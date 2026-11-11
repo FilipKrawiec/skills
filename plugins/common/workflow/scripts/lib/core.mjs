@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -272,3 +272,14 @@ export function ensureWorkflowLabels(repo, list = () => jsonCommand('gh', ['labe
   return created;
 }
 export function afkExpandedPath(path) { return path.replace(/^~(?=\/|$)/, homedir()); }
+
+// Agents write bodies and briefs here: inside the worktree, so isolation and the body-file check accept them, and never committed.
+export function workflowScratch() {
+  const root = git('rev-parse', '--show-toplevel');
+  const exclude = join(realpathSync(resolve(root, git('rev-parse', '--git-common-dir'))), 'info', 'exclude');
+  const ignored = existsSync(exclude) && readFileSync(exclude, 'utf8').split('\n').includes('/.wf/');
+  if (!ignored) { mkdirSync(dirname(exclude), { recursive: true }); appendFileSync(exclude, '/.wf/\n'); }
+  const path = join(root, '.wf');
+  mkdirSync(path, { recursive: true });
+  return path;
+}

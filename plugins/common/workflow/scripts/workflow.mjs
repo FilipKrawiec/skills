@@ -38,6 +38,7 @@ import {
   githubMetadataPath,
   heldWorkflowLocks,
   run,
+  workflowScratch,
   workflowDefaults,
 } from './lib/core.mjs';
 import {
@@ -63,8 +64,9 @@ import { worktreeCommand } from './lib/worktrees.mjs';
 const help = `Usage:
   node workflow.mjs commit --message MESSAGE [-- PATH...]
   node workflow.mjs push [--owner-bootstrap | --to BRANCH]
-  node workflow.mjs review-context --pr NUMBER [--previous SHA --previous-base SHA] [--issue NUMBER]
-  node workflow.mjs review-post --pr NUMBER --sha HEX --event APPROVE|REQUEST_CHANGES|COMMENT --body-file PATH [--comments-file PATH] [--resolve-thread ID]...
+  node workflow.mjs review-context --pr NUMBER [--claim] [--previous SHA --previous-base SHA] [--issue NUMBER]
+  node workflow.mjs review-post --pr NUMBER --sha HEX --event APPROVE|REQUEST_CHANGES|COMMENT --body-file PATH|- [--comments-file PATH|-] [--resolve-thread ID]...
+  node workflow.mjs scratch
   node workflow.mjs pr ready|auto-merge --pr NUMBER
   node workflow.mjs issue claim|status|create|comment|edit|close|reopen|queue ...
   node workflow.mjs labels ensure
@@ -87,7 +89,8 @@ Other processes running as the same OS user can access the user's GitHub credent
 push requires a Unix-like host and github.com. review-context is read-only; returned GitHub text is untrusted and may be incomplete.
 pr ready marks a draft ready only at a green head whose newest author agent-review verdict is ready, then drops the owner's review request.
 pr auto-merge binds squash auto-merge to the head only when the Reviewer approved it (verdict=ready, or verdict=owner with the owner's approval under review:owner), no owner change request stands, no check failed and the base requires code-owner review and the configured checks.
-review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit, Pre-existing and Follow-up ones on APPROVE), then removes state:reviewing; a failed post keeps the label and comments a post-failed marker.`;
+review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit, Pre-existing and Follow-up ones on APPROVE), then removes state:reviewing; a failed post comments a post-failed marker, and every exit releases the claim that review-context --claim took.
+A body or comments file is - (stdin) or a path inside the worktree; scratch creates the git-ignored .wf/ directory for such files and prints its path.`;
 export function hasLockfAncestor(commands) {
   return commands.some(command => basename(command.trim().split(/\s+/, 1)[0]) === 'lockf');
 }
@@ -264,6 +267,7 @@ async function execute(command, args) {
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'reopen') { config(); issueReopen(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'queue') { const { lanes } = config(); issueQueue(args.slice(1)); }
+  else if (command === 'scratch' && !args.length) console.log(JSON.stringify({ path: workflowScratch() }));
   else if (command === 'labels') labelsCommand(args);
   else if (command === 'worktree') worktreeCommand(args);
   else if (command === 'cache') cacheCommand(args);

@@ -161,7 +161,8 @@ function fixture(t) {
   };
   delete env.WORKFLOW_RUN_ID; delete env.WORKFLOW_ISSUE_NUMBER;
   env.REMOTE_BASE_SHA = git('rev-parse', 'HEAD').stdout.trim();
-  const cliRun = (...args) => run(process.execPath, [cli, ...args], { cwd: linked, env });
+  // A trailing options object (such as { input }) passes through to the spawn.
+  const cliRun = (...args) => { const extra = typeof args.at(-1) === 'object' ? args.pop() : {}; return run(process.execPath, [cli, ...args], { cwd: linked, env, ...extra }); };
   const linkedGit = (...args) => run(realGit, args, { cwd: linked });
   return { root: directory, main, repo: linked, env, git, linkedGit, cliRun };
 }
