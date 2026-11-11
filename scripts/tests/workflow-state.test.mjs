@@ -85,6 +85,30 @@ test('wait treats no checks as pending while required checks are configured', ()
   assert.equal(waitWith({ ...lanes, requiredChecks: [] }, [{ statusCheckRollup: [] }], '--until', 'ci').code, 0);
 });
 
+test('a repo whose merge publishes to production sends an approved PR to the owner through release', () => {
+  const publishing = { ...lanes, publishOnMerge: true };
+  assert.deepEqual(prState(pr({ reviews: [review('ready', 'APPROVED')] }), publishing).next, { action: 'owner-review', actor: 'owner', reason: 'merge publishes to production: invoke release' });
+  const ownerApproved = { author: { login: 'owner' }, state: 'APPROVED', body: '', commit: { oid: head } };
+  assert.equal(prState(pr({ reviews: [review('ready', 'APPROVED'), ownerApproved] }), publishing).next.action, 'merge');
+});
+
+test('wait --until base waits for the merge, then exits 1 on a red base at the merge commit', () => {
+  const merged = { state: 'MERGED', mergeCommit: { oid: 'c'.repeat(40) } };
+  const run = (checks, states) => {
+    const lines = []; const log = console.log; console.log = line => lines.push(JSON.parse(line));
+    let index = 0; const asked = [];
+    try {
+      const code = waitCommand(['5', '--until', 'base'], { ...lanes, requiredChecks: ['verify'] }, { read: () => pr(states[Math.min(index++, states.length - 1)]), checksAt: (repo, sha) => { asked.push(sha); return checks.shift() ?? []; }, pause: () => {}, now: () => 0 });
+      return { code, lines, asked };
+    } finally { console.log = log; }
+  };
+  const red = run([[], [{ name: 'verify', conclusion: 'FAILURE' }]], [{}, merged]);
+  assert.equal(red.code, 1);
+  assert.deepEqual(red.lines.map(line => line.base ?? null), [null, 'none', 'red']);
+  assert.equal(red.asked[0], 'c'.repeat(40));
+  assert.equal(run([[{ name: 'verify', conclusion: 'SUCCESS' }]], [merged]).code, 0);
+});
+
 test('wait ends on a verdict, on merge, on a closed PR and on timeout', () => {
   assert.equal(waitOn([{}, { reviews: [review('fixes')] }], '--until', 'reviewed').code, 0);
   assert.equal(waitOn([{ state: 'MERGED' }], '--until', 'merged').code, 0);

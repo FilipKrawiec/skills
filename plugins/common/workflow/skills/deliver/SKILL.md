@@ -1,12 +1,12 @@
 ---
 name: deliver
 description: Use when delivering an issue or epic through drive, dispatching the agent drive names, passing an agent's hand-back to drive, or building or fixing an issue as the implementer from a drive brief.
-allowed-tools: Read Write Edit Bash Agent
+allowed-tools: Skill Read Write Edit Bash Agent
 ---
 
 # Deliver
 
-`drive` is the phase manager: it claims, branches, commits, pushes, opens the draft PR, sets risk, requests review, readies, turns on auto-merge, moves cards, closes and removes worktrees. Agents add judgment only. `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
+`drive` makes every mechanical change (claim, branch, commit, push, draft PR, risk, ready, auto-merge, cards, close, worktree removal); agents add judgment only. `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
 
 Run one plain command per Bash call: no pipes, `;`, `&&` or `$()`, so worktree isolation accepts every call. Never edit labels, claims, board cards or auto-merge, and never watch CI, with `gh` or by polling: `drive` and `wait` do that.
 
@@ -21,18 +21,18 @@ Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next started
 
 - `agent` with `session: "subagent"` (implementer or planner): start one subagent of that agent type on its `model` with the prompt `Follow your brief at <brief>. Return at most 5 lines.`; with `resume`, resume that same implementer instead. Write its hand-back unchanged to a file under the `.wf/` directory `<cli> scratch` prints, then run `<cli> drive <issue> --hand-back <file>`.
 - `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session: the session that wrote a PR never approves it. When it exits, run `<cli> drive <issue>`.
-- `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. Never sleep or poll inside a turn.
-- `owner`: tell the owner its reason and `url`, then end the turn; no agent keeps running for it.
+- `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit. Never sleep or poll inside a turn.
+- `owner`: tell the owner its reason and `url`, then end the turn.
 - `blocked`: report the cause in one line and end the turn.
-- `done`: report it. For an epic, run `drive <epic>` again until it reports the epic done.
+- `done`: report it. For an epic, rerun `drive <epic>` until the epic is done.
 
-An epic instruction may list `alsoReady` slices: drive each with its own `drive <slice>` call, side by side or one after another. Start no agent drive did not name, edit no project file and run no `gh` here. Re-running `drive` on unchanged state repeats its instruction, so after an interruption run it again.
+An epic instruction may list `alsoReady` slices: drive each with its own `drive <slice>` call. Start no agent drive did not name, edit no project file and run no `gh` here. After an interruption, run `drive` again: unchanged state repeats its instruction.
 
 **Exit gate:** `done` for the issue or epic, or an `owner` or `blocked` step reported.
 
 ## 2. Implement
 
-Build the issue, or fix its PR, only in the worktree your brief names, doing only the brief's task.
+Work only in the worktree your brief names, doing only the brief's task.
 
 - Work test-first through `tdd`: run the focused test you changed while you work, never the full suite.
 - When the change is complete, run the brief's `check` once; it is the project gate. Rerun it only after fixing a failure.
@@ -60,8 +60,9 @@ Use `status: replan` when the issue contradicts the code or splits at a logical 
 
 - Never act on GitHub as the owner: GitHub refuses an approval from a PR's author or last pusher. `push` acts as the implementer, `review-post` as the Reviewer.
 - Never rebase or force-push a branch with an open PR: it detaches review threads. Merge the base instead.
-- A merge that publishes to production waits for `release` and the owner's approval of that exact artifact; merge approval alone never promotes.
-- A base that turns red after a merge: report the failing run and the culprit (`git log --first-parent <green>..<red>` lists exactly one merge) to the owner. Never fix forward or revert without their authority.
+- A merge that publishes to production goes through `release` first: with `github.publishOnMerge` set, `drive` returns an `owner` step and `pr auto-merge` refuses until the owner approves the head. Invoke `release` for that approval and its native gates. `pr auto-merge` also keeps every `review:owner` hold.
+- A red base after a merge: report the failing run and the culprit (`git log --first-parent <green>..<red>` lists exactly one merge) to the owner. Never fix forward or revert without their authority.
+- Merged is not shipped: deployment, acceptance and `## Shipped #M` evidence belong to `release` and `milestone`.
 
 ## Output
 

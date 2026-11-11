@@ -34,7 +34,9 @@ export function prState(pr, lanes) {
   const atHead = reviewer.filter(review => review.commit?.oid === pr.headRefOid && review.state !== 'DISMISSED');
   const verdict = verdictOf(atHead.at(-1));
   const risk = labels.find(label => /^risk:R\d$/.test(label))?.slice(5) || null;
-  const owner = labels.includes('review:owner') ? { needed: true, reason: 'review:owner' } : risk === 'R2' ? { needed: true, reason: 'risk R2' } : { needed: false };
+  // In a repo whose merge publishes to production (`github.publishOnMerge`), `release` needs the owner's approval of the head first.
+  const owner = labels.includes('review:owner') ? { needed: true, reason: 'review:owner' } : risk === 'R2' ? { needed: true, reason: 'risk R2' }
+    : lanes.publishOnMerge ? { needed: true, reason: 'merge publishes to production: invoke release' } : { needed: false };
   // A round is one blocking-or-hand-off verdict; the approval posted in the same round and a split never add one.
   const rounds = reviewer.filter(review => review.state !== 'APPROVED' && verdictOf(review) !== 'split').length;
   return {
@@ -43,7 +45,13 @@ export function prState(pr, lanes) {
     issues: record.issues, next: nextAction(pr, record, ci, verdict, owner),
   };
 }
-function readPr(repo, number) { return jsonCommand('gh', ['pr', 'view', String(number), '--repo', repo, '--json', prFields]); }
+function readPr(repo, number) { return jsonCommand('gh', ['pr', 'view', String(number), '--repo', repo, '--json', `${prFields},mergeCommit`]); }
+// The check runs and commit statuses on one commit, in the shape `ciState` reads.
+function readChecksAt(repo, sha) {
+  const runs = jsonCommand('gh', ['api', `repos/${repo}/commits/${sha}/check-runs?per_page=100`]).check_runs.map(run => ({ name: run.name, conclusion: run.conclusion, status: run.status }));
+  const statuses = jsonCommand('gh', ['api', `repos/${repo}/commits/${sha}/status`]).statuses.map(status => ({ context: status.context, state: status.state === 'pending' ? 'PENDING' : status.state }));
+  return [...runs, ...statuses];
+}
 function issueState(repo, number, lanes) {
   const issue = jsonCommand('gh', ['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,labels,milestone']);
   const labels = issue.labels.map(label => label.name);
@@ -65,28 +73,33 @@ export function statusCommand(args, lanes) {
 }
 const sleep = seconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
 // Whether the condition holds (true), failed for good (false) or still pending (null). No checks right after a push
-// means GitHub has not registered them yet, so `none` settles only in a repo without required checks.
+// means GitHub has not registered them yet, so `none` settles only in a repo without required checks. `base` is the
+// base branch's checks at the merge commit, once the PR has merged.
 function settled(until, state, lanes) {
   if (state.state === 'CLOSED' && until !== 'reviewed') return false;
   if (until === 'merged') return state.state === 'MERGED' ? true : null;
-  if (until === 'ci') return state.ci === 'red' ? false : state.ci === 'green' || (state.ci === 'none' && !lanes.requiredChecks?.length) ? true : null;
+  const ci = until === 'base' ? state.base : state.ci;
+  if (until === 'ci' || until === 'base') return ci === 'red' ? false : ci === 'green' || (ci === 'none' && !lanes.requiredChecks?.length) ? true : null;
   return state.verdict ? true : null;
 }
 // Blocks in the CLI, not in an agent: a session runs it in the background and is woken once, when it exits.
-export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = readPr } = {}) {
-  const usage = 'Usage: wait NUMBER --until ci|reviewed|merged [--timeout MINUTES] [--interval SECONDS]';
+export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = readPr, checksAt = readChecksAt } = {}) {
+  const usage = 'Usage: wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]';
   const [value, ...rest] = args;
   const o = {};
   while (rest.length) { const key = rest.shift(); if (!['--until', '--timeout', '--interval'].includes(key) || !rest.length || Object.hasOwn(o, key)) throw new Error(usage); o[key] = rest.shift(); }
-  if (!['ci', 'reviewed', 'merged'].includes(o['--until'])) throw new Error(usage);
+  if (!['ci', 'reviewed', 'merged', 'base'].includes(o['--until'])) throw new Error(usage);
   const n = number(value);
   const timeout = Number(o['--timeout'] ?? 120), interval = Number(o['--interval'] ?? 30);
   if (!(timeout > 0) || !(interval >= 1)) throw new Error(usage);
   const deadline = now() + timeout * 60_000;
   let last = '';
   for (;;) {
-    const state = prState(read(lanes.repo, n), lanes);
-    const line = JSON.stringify({ number: n, state: state.state, ci: state.ci, verdict: state.verdict, head: state.head });
+    const pr = read(lanes.repo, n);
+    const state = prState(pr, lanes);
+    const merge = o['--until'] === 'base' && state.state === 'MERGED' ? pr.mergeCommit?.oid : null;
+    if (merge) state.base = ciState(checksAt(lanes.repo, merge));
+    const line = JSON.stringify({ number: n, state: state.state, ci: state.ci, verdict: state.verdict, head: state.head, ...(merge ? { merge, base: state.base } : {}) });
     if (line !== last) { console.log(line); last = line; }
     const done = settled(o['--until'], state, lanes);
     if (done !== null) return done ? 0 : 1;
