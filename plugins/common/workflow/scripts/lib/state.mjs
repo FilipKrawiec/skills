@@ -35,9 +35,11 @@ export function prState(pr, lanes) {
   const verdict = verdictOf(atHead.at(-1));
   const risk = labels.find(label => /^risk:R\d$/.test(label))?.slice(5) || null;
   const owner = labels.includes('review:owner') ? { needed: true, reason: 'review:owner' } : risk === 'R2' ? { needed: true, reason: 'risk R2' } : { needed: false };
+  // A round is one blocking-or-hand-off verdict; the approval posted in the same round and a split never add one.
+  const rounds = reviewer.filter(review => review.state !== 'APPROVED' && verdictOf(review) !== 'split').length;
   return {
     kind: 'pr', number: pr.number, url: pr.url, state: pr.state, draft: pr.isDraft, head: pr.headRefOid, ci, verdict,
-    round: reviewer.filter(review => verdictOf(review) !== 'split').length, labels, mergeable: pr.mergeable, risk,
+    round: rounds, labels, mergeable: pr.mergeable, risk,
     issues: record.issues, next: nextAction(pr, record, ci, verdict, owner),
   };
 }

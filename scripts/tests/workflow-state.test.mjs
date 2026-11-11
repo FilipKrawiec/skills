@@ -18,7 +18,13 @@ test('ciState reads red over pending over green, and none without checks', () =>
 
 test('status reports verdict, round, risk and linked issues of a PR', () => {
   const state = prState(pr({ labels: [{ name: 'risk:R1' }], reviews: [review('fixes', 'COMMENTED', 'b'.repeat(40)), review('ready', 'APPROVED')] }), lanes);
-  assert.deepEqual([state.verdict, state.round, state.risk, state.issues, state.ci], ['ready', 2, 'R1', [3], 'green']);
+  assert.deepEqual([state.verdict, state.round, state.risk, state.issues, state.ci], ['ready', 1, 'R1', [3], 'green']);
+});
+
+test('the round counts verdicts that are not approvals or splits', () => {
+  const old = 'b'.repeat(40);
+  const reviews = [review('split', 'COMMENTED', old), review('fixes', 'COMMENTED', old), review('ready'), review('ready', 'APPROVED')];
+  assert.equal(prState(pr({ reviews }), lanes).round, 2);
 });
 
 test('the next action follows the PR state, first match wins', () => {
