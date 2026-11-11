@@ -296,10 +296,7 @@ export function reviewContext(args) {
   const repo = resolveRepo(lanes);
   const pr = jsonCommand('gh', ['pr', 'view', options['--pr'], '--repo', `github.com/${repo}`, '--json', 'url,title,isDraft,labels,baseRefOid,headRefOid,files,reviews,reviewDecision,statusCheckRollup,comments'], { cwd: root });
   // The claim keeps a second reviewer off the PR; review-post releases it whatever the outcome.
-  if (options['--claim']) {
-    if ((pr.labels || []).some(label => label.name === 'state:reviewing')) throw new Error(`#${options['--pr']} is already claimed (state:reviewing); skip it`);
-    run('gh', ['pr', 'edit', options['--pr'], '--repo', `github.com/${repo}`, '--add-label', 'state:reviewing'], { cwd: root });
-  }
+  if (options['--claim'] && (pr.labels || []).some(label => label.name === 'state:reviewing')) throw new Error(`#${options['--pr']} is already claimed (state:reviewing); skip it`);
   const threads = readThreads(repo, options['--pr'], { cwd: root });
   const output = { untrustedGithubData: true, claimed: Boolean(options['--claim']), ...pr, baseConfigurationAvailable: configAvailable, filesMayBeIncomplete: true, ...reviewAreas(pr.files), reviewThreads: threads.nodes, threadsTruncated: threads.pageInfo.hasNextPage };
   const previous = options['--previous'] || previousReviewedHead(pr.reviews, lanes.reviewer, pr.headRefOid);
@@ -321,6 +318,8 @@ export function reviewContext(args) {
     const comments = (issue.comments || []).filter(comment => /\b(decision|adjudicat|criteria|acceptance)\b/i.test(comment.body || '')).map(comment => ({ url: comment.url, body: (comment.body || '').slice(0, 4000), bodyTruncated: (comment.body || '').length > 4000 }));
     output.issue = { url: issue.url, body: (issue.body || '').slice(0, 8000), bodyTruncated: (issue.body || '').length > 8000, decisions: comments.slice(-20), decisionsMayBeIncomplete: true };
   }
+  // Claimed only after every read succeeded, so a failed read never leaves a label no review-post will release.
+  if (options['--claim']) run('gh', ['pr', 'edit', options['--pr'], '--repo', `github.com/${repo}`, '--add-label', 'state:reviewing'], { cwd: root });
   console.log(JSON.stringify(output));
 }
 
@@ -382,7 +381,8 @@ export function reviewPost(args) {
   const pr = prIndex >= 0 && /^[1-9]\d*$/.test(args[prIndex + 1] || '') ? args[prIndex + 1] : null;
   let o;
   try { o = reviewPostOptions(args, root); } catch (error) {
-    if (pr) releaseClaim(pr, repo, { cwd: root, env: { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) } });
+    // A missing reviewer credential must not hide the argument error the caller has to fix.
+    if (pr) { try { releaseClaim(pr, repo, { cwd: root, env: { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) } }); } catch { /* the original error still stands */ } }
     throw error;
   }
   const env = { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) };

@@ -199,3 +199,18 @@ test('nits --done labels each named PR nits:swept and prints one JSON line', t =
   assert.deepEqual(log(), ['pr edit 3 --repo acme/app --add-label nits:swept', 'pr edit 4 --repo acme/app --add-label nits:swept']);
   assert.notEqual(f.cliRun('nits', '--days', 'many').status, 0);
 });
+
+test('review-context --claim takes no claim when a read fails', t => {
+  const { f, log } = setup(t, { REVIEW_THREADS: 'not json' });
+  const result = f.cliRun('review-context', '--pr', '5', '--claim');
+  assert.notEqual(result.status, 0);
+  assert.deepEqual(log(), []);
+});
+
+test('review-post reads inline comments from stdin', t => {
+  const { f, record } = setup(t);
+  const comments = JSON.stringify([{ path: 'a.txt', line: 2, body: '**Nit** stdin' }]);
+  const result = f.cliRun('review-post', '--pr', '5', '--sha', sha, '--event', 'COMMENT', '--body-file', 'body.md', '--comments-file', '-', { input: comments });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(record().payload.comments[0].body, '**Nit** stdin');
+});
