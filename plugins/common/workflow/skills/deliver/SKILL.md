@@ -26,7 +26,7 @@ Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next started
 - `blocked`: report the cause; end the turn.
 - `done`: report it. For an epic, rerun `drive <epic>` until the epic is done.
 
-An epic instruction may list `alsoReady` slices: drive each with its own `drive <slice>` call. Start no agent drive did not name; edit no file; run no `gh`. After an interruption, run `drive` again: unchanged state repeats its instruction.
+An epic instruction may list `alsoReady` slices: drive each with its own `drive <slice>` call. Start no agent drive did not name; edit no project file; run no `gh`. After an interruption, run `drive` again: unchanged state repeats its instruction.
 
 **Exit gate:** `done` for the issue or epic, or an `owner` or `blocked` step reported.
 

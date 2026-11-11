@@ -89,6 +89,23 @@ test('from the third blocking verdict a fresh implementer on the strongest model
   assert.equal(modelForStep({ agent: 'implementer', resume: true }, 'R0'), 'sonnet');
 });
 
+test('the fresh fix round runs once: a blocking verdict after it cuts scope through the planner, never the owner', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  const fourth = decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes'), review('fixes')] }) });
+  assert.deepEqual([fourth.agent, fourth.mode, fourth.owner], ['planner', 'replan', undefined]);
+  assert.match(fourth.reason, /cut the scope/);
+});
+
+test('a PR found through its issue but linking none is linked by drive, never sent to the owner', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  assert.deepEqual(decide({ ...base, pr: pr({ body: 'Stacked work', closingIssuesReferences: [] }) }), { do: 'link-issue' });
+  assert.equal(decide({ ...base, pr: pr({ body: 'Closes #3', closingIssuesReferences: [] }) }).agent, 'reviewer', 'a stacked PR closing its issue in the body goes to review');
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, body: 'Stacked work', closingIssuesReferences: [] })] });
+  const step = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(repo.calls, [['link-issue', 5, 3]]);
+  assert.deepEqual([step.agent, step.mode], ['reviewer', 'review']);
+});
+
 test('risk: estimated from the issue, recomputed from the diff, and only ever rises', () => {
   const patterns = ownerPatterns('* @reviewer\n/.github/CODEOWNERS @owner\n/.agents/config.json @owner\n', 'owner');
   assert.deepEqual(patterns, ['/.github/CODEOWNERS', '/.agents/config.json']);
@@ -139,6 +156,7 @@ function fakeRepo(initial) {
     push: t => { calls.push(['push']); t.unpushed = false; },
     open: (i, t, risk) => { calls.push(['open', i.number, risk]); (s.prs ||= []).push(pr({ issue: i.number, number: 50 + i.number, labels: [label(`risk:${risk}`)] })); },
     reviewingSince: () => null,
+    linkIssue: (p, i) => { calls.push(['link-issue', p.number, i.number]); p.body = `Closes #${i.number}\n\n${p.body}`; },
     releaseReview: p => { calls.push(['release-review', p.number]); p.labels = p.labels.filter(l => l.name !== 'state:reviewing'); },
     risk: (p, from, to) => { calls.push(['risk', to]); p.labels = [label(`risk:${to}`)]; },
     ready: p => { calls.push(['ready']); p.isDraft = false; },

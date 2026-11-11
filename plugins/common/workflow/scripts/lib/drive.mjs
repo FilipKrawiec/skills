@@ -15,8 +15,9 @@ const risks = ['R0', 'R1', 'R2'];
 export const maxRisk = (...values) => risks[Math.max(...values.filter(Boolean).map(value => risks.indexOf(value)), 0)];
 // Models follow risk for both the implementer and the Reviewer: Opus only for R2.
 export const modelFor = risk => (risk === 'R2' ? 'opus' : 'sonnet');
-// From the third blocking verdict on, narrow fixes have stopped converging: a fresh implementer on the strongest model
-// takes the whole open set. The rounds never hand an unapproved PR to the owner.
+// From the third blocking verdict on, narrow fixes have stopped converging: one fresh implementer on the strongest model
+// takes the whole open set. A blocking verdict after that fresh round cuts scope through the planner (`spec`), never a
+// further fix round. The rounds never hand an unapproved PR to the owner.
 export const freshFixRound = 3;
 export const modelForStep = (step, risk) => (step.agent === 'planner' || step.fresh ? 'opus' : modelFor(risk));
 const riskLabel = labels => labels.map(label => label.name ?? label).find(name => /^risk:R\d$/.test(name))?.slice(5) || null;
@@ -99,7 +100,8 @@ export function decideIssue(facts, lanes) {
   const next = state.next;
   if (next.action === 'fix') {
     if (!tree) return { do: 'start' };
-    const fresh = state.verdict === 'fixes' && state.round >= freshFixRound;
+    if (state.verdict === 'fixes' && state.round > freshFixRound) return agent('planner', 'replan', { reason: `round ${state.round}: the fresh fix round left blocking findings; cut the scope at a logical seam` });
+    const fresh = state.verdict === 'fixes' && state.round === freshFixRound;
     return agent('implementer', 'fix', fresh ? { reason: `round ${state.round}: the whole open set, fresh`, fresh: true } : { reason: next.reason, resume: true });
   }
   if (next.action === 'wait-ci') return { wait: { pr: pr.number, until: 'ci' } };
@@ -108,6 +110,8 @@ export function decideIssue(facts, lanes) {
     const approve = !pr.isDraft && state.verdict === 'ready';
     return agent('reviewer', approve ? 'approve' : 'review', { reason: approve ? 'no approval at the head' : next.reason || 'no verdict at the head', round: approve ? state.round : state.round + 1 });
   }
+  // The PR was found through this issue, so drive links it in the body; never an owner step.
+  if (next.action === 'link-issue') return { do: 'link-issue' };
   if (next.action === 'split' ) return agent('planner', 'split', { reason: 'the Reviewer asked to split the change' });
   if (next.action === 'ready') return { do: 'ready' };
   if (next.action === 'merge') return pr.autoMergeRequest ? { wait: { pr: pr.number, until: 'merged' } } : { do: 'auto-merge' };
@@ -264,9 +268,8 @@ export function githubIo(lanes) {
     subIssues: n => gh(['api', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).map(sub => ({ number: sub.number, state: sub.state.toUpperCase() })),
     pr: n => {
       const open = gh(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,body,closingIssuesReferences,labels,reviews,headRefOid,isDraft']);
-      // A stacked PR's base is not the default branch, so GitHub links no closing issue; its body's `Closes #N` still does.
-      const closes = new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #${n}\\b`, 'i');
-      const found = open.find(candidate => prRecord({ ...candidate, labels: candidate.labels || [] }, lanes).issues.includes(n) || closes.test(candidate.body || ''));
+      // `prLinkedIssues` also reads a stacked PR's `Closes #N`, which GitHub links no closing issue for.
+      const found = open.find(candidate => prRecord({ ...candidate, labels: candidate.labels || [] }, lanes).issues.includes(n));
       return found ? gh(['pr', 'view', String(found.number), '--repo', repo, '--json', `${prFields},files,headRefName`]) : null;
     },
     tree: (n, branch) => {
@@ -314,6 +317,7 @@ export function githubIo(lanes) {
       const at = events.filter(event => event.event === 'labeled' && event.label?.name === 'state:reviewing').at(-1)?.created_at;
       return at ? Date.parse(at) : null;
     },
+    linkIssue: (pr, issue) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--body', `Closes #${issue.number}\n\n${pr.body || ''}`]),
     releaseReview: pr => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--remove-label', 'state:reviewing']),
     risk: (pr, from, to) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, ...(from ? ['--remove-label', `risk:${from}`] : []), '--add-label', `risk:${to}`]),
     ready: (pr, tree) => self(['pr', 'ready', '--pr', String(pr.number)], tree?.path || process.cwd()),
@@ -384,6 +388,7 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     else if (step.do === 'push') io.push(tree);
     else if (step.do === 'open') io.open(issue, tree, maxRisk(riskLabel(issue.labels), riskFromPaths(facts.diffPaths, facts.patterns)), handBack);
     else if (step.do === 'release-review') io.releaseReview(pr);
+    else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
     else if (step.do === 'ready') io.ready(pr, tree);
     else if (step.do === 'auto-merge') io.autoMerge(pr, tree);

@@ -39,6 +39,7 @@ test('the next action follows the PR state, first match wins', () => {
 
 test('an open PR that links no issue goes to the planner before anything else', () => {
   assert.deepEqual(next({ body: 'Bump a dependency', closingIssuesReferences: [] }), { action: 'link-issue', actor: 'planner', reason: 'no linked issue: spec files one and the body links it' });
+  assert.deepEqual(next({ body: 'Closes #6', closingIssuesReferences: [] }), { action: 'review', actor: 'reviewer' }, 'a stacked PR closing its issue in the body is linked');
 });
 
 test('a ready verdict without a mode hands a draft to deliver and a ready PR to its approval', () => {
