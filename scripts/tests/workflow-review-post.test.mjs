@@ -149,3 +149,18 @@ test('review-context --claim labels an unclaimed PR and refuses a claimed one', 
   assert.match(refused.stderr, /already claimed/);
   assert.equal(log().length, 1);
 });
+
+test('review-context --claim takes no claim when a read fails', t => {
+  const { f, log } = setup(t, { REVIEW_THREADS: 'not json' });
+  const result = f.cliRun('review-context', '--pr', '5', '--claim');
+  assert.notEqual(result.status, 0);
+  assert.deepEqual(log(), []);
+});
+
+test('review-post reads inline comments from stdin', t => {
+  const { f, record } = setup(t);
+  const comments = JSON.stringify([{ path: 'a.txt', line: 2, body: '**Nit** stdin' }]);
+  const result = f.cliRun('review-post', '--pr', '5', '--sha', sha, '--event', 'COMMENT', '--body-file', 'body.md', '--comments-file', '-', { input: comments });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(record().payload.comments[0].body, '**Nit** stdin');
+});
