@@ -96,6 +96,26 @@ test('the fresh fix round runs once: a blocking verdict after it cuts scope thro
   assert.match(fourth.reason, /cut the scope/);
 });
 
+test('a cut after the fresh round ends: the planner splits the issue into an epic and drive moves to its slice', () => {
+  const blocked = [review('fixes'), review('fixes'), review('fixes'), review('fixes')];
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, reviews: blocked })] });
+  const replan = drive(repo.io, 3, lanes, {});
+  assert.deepEqual([replan.agent, replan.mode], ['planner', 'replan']);
+  const brief = repo.writes[replan.brief];
+  assert.match(brief, /into an epic with one-PR sub-issues/);
+  assert.match(brief, /close PR #5/);
+  assert.doesNotMatch(brief, /or a revised scope/);
+  // The planner follows the brief: the story becomes an epic with a slice, and the blocked PR closes.
+  Object.assign(repo.s.issues[3], { labels: [label('type:epic')] });
+  repo.s.issues[4] = issue({ number: 4 });
+  repo.s.subs = { 3: [4] };
+  repo.s.prs[0].state = 'CLOSED';
+  const next = drive(repo.io, 3, lanes, { status: 'sliced', slices: '4' });
+  assert.deepEqual([next.agent, next.mode, next.issue, next.epic], ['implementer', 'build', 4, 3]);
+  // A planner that hands back `sliced` without the split gets a blocked report, not another planner round.
+  assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: blocked }), handBack: { status: 'sliced' } }), { blocked: { issue: 3, reason: 'the planner handed back sliced, yet the issue is not an epic' } });
+});
+
 test('a PR found through its issue but linking none is linked by drive, never sent to the owner', () => {
   const base = { issue: started, tree: tree({ commits: 1 }) };
   assert.deepEqual(decide({ ...base, pr: pr({ body: 'Stacked work', closingIssuesReferences: [] }) }), { do: 'link-issue' });

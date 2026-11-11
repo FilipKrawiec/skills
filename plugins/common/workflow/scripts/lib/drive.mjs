@@ -79,6 +79,9 @@ export function decideIssue(facts, lanes) {
   if (pr?.state === 'MERGED') return { do: 'close' };
   if (hb.status === 'replan') return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
   if (hb.status === 'blocked') return { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}` };
+  // A planner split makes the issue an epic, which `drive` routes to `driveEpic`; still a story, the split did not happen,
+  // and dispatching the planner again would loop on the same blocking verdict.
+  if (hb.status === 'sliced') return { blocked: { issue: issue.number, reason: 'the planner handed back sliced, yet the issue is not an epic' } };
   const claimed = (issue.labels || []).some(label => (label.name ?? label) === 'state:started');
   if (!pr || pr.state !== 'OPEN') {
     if (!claimed && blockers.length) return { blocked: { issue: issue.number, by: blockers } };
@@ -202,9 +205,9 @@ verdict, PR, head, round, tag counts.
 export function plannerBrief(f) {
   return `# Planner brief: #${f.issue.number} ${f.issue.title}
 
-Task: ${f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices' : `${f.step.reason}; reshape the issue at its logical seam into sub-issues or a revised scope`}. Invoke the \`spec\` skill for the issue form.
+Task: ${f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices' : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first), the part that kept the PR blocked in a slice of its own${f.pr ? `, then close PR #${f.pr.number} with a comment naming the sub-issue that takes it over` : ''}. A revised scope on the same issue is no answer: its PR would keep the blocking verdict and come back here`}. Invoke the \`spec\` skill for the issue form.
 Issue: ${f.issue.url}
-Commands: \`node ${cli} issue create ...\`, \`node ${cli} issue edit ...\`, \`gh api\` to link sub-issues and blocked-by dependencies.
+Commands: \`node ${cli} issue create ...\`, \`node ${cli} issue edit ...\`, \`gh api\` to link sub-issues and blocked-by dependencies${f.pr ? `, \`gh pr close ${f.pr.number} --comment ...\`` : ''}.
 Never write code and never start an agent. Agree each slice with the owner.
 
 ## Hand-back, at most 5 lines
