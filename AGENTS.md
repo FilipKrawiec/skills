@@ -11,7 +11,6 @@ active_skills:
   - improve
   - writing-great-skill
   - afk
-  - agent-review
   - pr-fix
   - explore
   - milestone
@@ -82,9 +81,9 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 ## Shipping
 
 - Work happens in an isolated worktree on a short-lived branch made from the fetched base branch; the main checkout stays as it is. The start, open-PR and tidy steps are in `plugins/common/workflow/skills/vcs/SKILL.md`.
-- Open a draft PR; `agent-review` reviews it in author mode with finders sized by its `risk:R*` label, `pr-fix` fixes verified Important findings, and `ship` marks it ready once the verdict is `ready` and checks pass.
+- Open a draft PR; one reviewer agent runs `review` in a single pass (Blocker and Important findings block, Nits never do, a third blocking round goes to the owner), `pr-fix` fixes blocking findings, and `ship` marks it ready once the verdict is `ready` and checks pass.
 - Committed changes stay within the issue's scope packet when it has one. After verification, an agent pushes the branch and opens or updates its PR, linking the `## Plan` comment when one was posted. Use `Closes #<N>` when that issue's bounded outcome completes on merge. Use `Part of #<N>` only for a product-milestone issue that stays open through production acceptance; split work needing several PRs into sub-issues, each closed by its own PR.
 - Tell the owner only once `ship` marked the PR ready and turned on squash auto-merge bound to the reviewed head; it waits for required independent approvals and checks. Wait for a prerequisite PR instead of opening stacked drafts. Optional review suggestions do not block delivery.
-- A fresh Reviewer is the engineering merge gate; `agent-review` records its exact-head decision through the configured GitHub reviewer identity. Routine eligible merges are delegated. Owner rules add approval for reserved effects; they never replace independent review. Force-pushing protected/default branches still requires explicit owner authority. Preserve GitHub protections; never claim they enforce a named reviewer without inspecting effective rules.
+- A fresh Reviewer is the engineering merge gate; `review` records its exact-head decision through the configured GitHub reviewer identity. Routine eligible merges are delegated. Owner rules add approval for reserved effects; they never replace independent review. Force-pushing protected/default branches still requires explicit owner authority. Preserve GitHub protections; never claim they enforce a named reviewer without inspecting effective rules.
 
 - Production requires owner approval of the demonstrated artifact and configuration, not merely merge approval. Keep stable publication held until native promotion controls exist.

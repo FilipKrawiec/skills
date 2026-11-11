@@ -45,7 +45,7 @@ Use version 1; read it from base.
 | `lane:owner` | Owner participation is required to implement. |
 | `state:claimed`, `state:started` | An AFK run, or another session, is on it. `state:started` over 30 minutes old is released when no live session sits on branch `<issue>-…`. |
 | `state:reviewing` | The Reviewer's claim on a PR. |
-| `review:owner` | PR for the owner; `agent-review` withholds approval. |
+| `review:owner` | PR for the owner; `review` withholds approval. |
 | `risk:R0`, `risk:R1`, `risk:R2` | One per PR; sizes review. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue. |
 

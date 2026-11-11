@@ -10,17 +10,17 @@ AFK branch names use the provider-neutral `afk/<issue>-<slug>` form. This phase 
 
 Branch on the PR's state, first match wins:
 
-- an open draft whose newest `agent-review` verdict at its head is `verdict=ready`: hand it off (step 1), then stop;
+- an open draft whose newest Reviewer verdict at its head is `verdict=ready`: hand it off (step 1), then stop;
 - a merged PR or a base check: steps 2 to 4.
 
 ## 1. Hand off
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs wait <N> --until ci`; hand off only a green head. The author-mode verdict is the review: never start a team-mode review or another round here. Then, in order:
+Run `node <this-skill-directory>/../../scripts/workflow.mjs wait <N> --until ci`; hand off only a green head. That verdict is the review: never start another review round here. Then, in order:
 
 1. Rewrite the description as delivered: problem, change, each criterion with its evidence, decisions, risks, manual test results. Keep the PR's issue link keyword (`Closes` or `Part of`) and any attribution lines as they are.
 2. Recheck the risk label against the final diff; raise it if the diff grew, never lower it.
 3. Run `node <this-skill-directory>/../../scripts/workflow.mjs pr ready --pr <N>` (never raw `gh pr ready`); it also drops the owner's CODEOWNERS request. Report a refusal. Move its issue's card to Review (a `Part of` issue too: it stays there until deployed acceptance) and remove the issue's execution label.
-4. Approve: start a fresh subagent with this brief: `Approve PR #<N> (issue #<issue>) at head <SHA>, whose newest author verdict there is ready. Load agent-review and do its Approval; post only with review-post. Never print the token. Return verdict and auto-merge state in at most 5 lines.` On `verdict=owner`, request the owner and skip step 6; on any verdict but `ready` or `owner`, report it and stop.
+4. Approve: start a fresh subagent with this brief: `Approve PR #<N> (issue #<issue>) at head <SHA>, whose newest verdict there is ready. Load review and do its approval branch; post only with review-post. Never print the token. Return verdict and auto-merge state in at most 5 lines.` On `verdict=owner`, request the owner and skip step 6; on any verdict but `ready` or `owner`, report it and stop.
 5. Request reviewers: request review from every active repository user (collaborators with write access who committed, reviewed or commented in the last 90 days), except workflow identities and the owner.
 6. Confirm the Reviewer's squash auto-merge is on at the head; if it is not, invoke `vcs` to turn it on, which applies the protection, owner-hold and `release` gates first.
 7. Comment the decisions taken and their reasons on the issue, one line each.

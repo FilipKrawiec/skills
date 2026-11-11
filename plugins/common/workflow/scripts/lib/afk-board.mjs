@@ -99,14 +99,15 @@ export function afkPrRecord(pr, cfg) {
   const approved = afkReviewerApproved(pr, cfg);
   const ownerMine = reviews.filter(review => review.author?.login?.toLowerCase() === cfg.owner?.toLowerCase()).at(-1);
   const ownerApproved = Boolean(cfg.owner && ownerMine?.state === 'APPROVED' && ownerMine.commit?.oid === head);
-  // A dismissed review (say, after the merge base changed) no longer reviews the head, so the PR awaits a fresh verdict.
-  // A ready PR is in team mode: an author-mode verdict at its head reviews it there only as the Reviewer's hand-off approval.
-  const atHead = mine.filter(review => review.commit?.oid === head && review.state !== 'DISMISSED' && !(!pr.isDraft && review.state !== 'APPROVED' && /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || '')));
-  const reviewerReviewedHead = atHead.length > 0;
   const verdictOf = review => /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(review?.body || '')?.[1] || null;
-  const authorMode = review => /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || '');
-  // The newest author verdict at the head: `ready` waits only for `ship`. A `cap` in either mode waits for the owner.
-  const latestAuthor = atHead.filter(authorMode).at(-1);
+  // A dismissed review (say, after the merge base changed) no longer reviews the head, so the PR awaits a fresh verdict.
+  // Once a PR is ready, an unapproved `ready` verdict at its head was the hand-off, so the PR awaits the Reviewer's approval.
+  // Older markers carry `mode=author`, which counts the same way; a marker without a mode is the one review mode.
+  const handOff = review => review.state !== 'APPROVED' && (verdictOf(review) === 'ready' || /<!-- agent-review\b[^>]*\bmode=author\b/.test(review.body || ''));
+  const atHead = mine.filter(review => review.commit?.oid === head && review.state !== 'DISMISSED' && !(!pr.isDraft && handOff(review)));
+  const reviewerReviewedHead = atHead.length > 0;
+  // The newest verdict at the head: `ready` on a draft waits only for `ship`; `cap` waits for the owner.
+  const latestVerdict = atHead.filter(review => verdictOf(review)).at(-1);
   const capped = verdictOf(atHead.filter(review => verdictOf(review)).at(-1)) === 'cap';
   // The newest Reviewer verdict at the head asked to split the issue at a logical seam.
   const split = verdictOf(atHead.filter(review => verdictOf(review)).at(-1)) === 'split';
@@ -122,7 +123,7 @@ export function afkPrRecord(pr, cfg) {
   const failed = checks.some(check => ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes((check.conclusion || check.state || '').toUpperCase()));
   const broken = pr.mergeable === 'CONFLICTING' || failed;
   // `ship` waits on pending checks itself; a red check or a conflict, or someone's change request, comes first.
-  const shipReady = Boolean(pr.isDraft && !broken && !outsideChanges && verdictOf(latestAuthor) === 'ready');
+  const shipReady = Boolean(pr.isDraft && !broken && !outsideChanges && verdictOf(latestVerdict) === 'ready');
   const awaitingReview = !reviewerReviewedHead;
   const needsWork = broken || awaitingReview || outsideChanges || (!pr.labels.some(label => label.name === 'review:owner') && !approved);
   return { ...pr, issues, approved, ownerApproved, awaitingReview, failed, broken, shipReady, capped, split, needsWork };
@@ -170,7 +171,7 @@ export function afkColumn(issue) { return issue.status || (issue.labels.includes
 // The job each column gives its run.
 function afkUnitText(column, issue) {
   if (column === 'Blocked') return `#${issue.number} is Blocked: invoke \`refine\` on it alone to clear its blocker and move it to Todo; if it cannot be cleared yet, comment why and leave it Blocked`;
-  if (column === 'Backlog') return `#${issue.number} is in Backlog: invoke \`refine\` on it alone, with \`agent-review\` eligibility for \`lane:proposed\`, to make it ready and move it to Todo`;
+  if (column === 'Backlog') return `#${issue.number} is in Backlog: invoke \`refine\` on it alone, with \`review\` eligibility for \`lane:proposed\`, to make it ready and move it to Todo`;
   if (issue.labels.includes('type:epic')) return `epic #${issue.number} is in Todo: slice it if it has no sub-issues, otherwise verify its delivery and close it`;
   if (issue.paths === null) return `#${issue.number} is in Todo without a valid scope packet: invoke \`refine\` on it alone to add one`;
   return `#${issue.number} is ready`;

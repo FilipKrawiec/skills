@@ -26,11 +26,12 @@ test('all plugin definitions share the repository release version', () => {
   assert.deepEqual([...versions], [expected]);
 });
 
-test('common packages contain no agent-native rules or agents', () => {
+test('common packages contain no agent-native rules, and agents only as role definitions', () => {
   for (const name of packages) {
     const path = join(commonRoot, name);
     assert.equal(existsSync(join(path, 'rules')), false, `${name}/rules`);
-    assert.equal(existsSync(join(path, 'agents')), false, `${name}/agents`);
+    // A role's agent definition (such as the workflow's reviewer) preloads only the skills that role needs.
+    if (existsSync(join(path, 'agents'))) assert.ok(readdirSync(join(path, 'agents')).every(file => /^[a-z][a-z0-9-]*\.md$/.test(file)), `${name}/agents`);
     const files = readdirSync(path, { recursive: true });
     assert.equal(files.some(file => String(file).endsWith('agents/openai.yaml')), false, name);
   }

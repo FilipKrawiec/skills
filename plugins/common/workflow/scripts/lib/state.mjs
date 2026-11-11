@@ -20,6 +20,8 @@ function nextAction(pr, record, ci, verdict, owner) {
   if (verdict === 'fixes') return { action: 'fix', actor: 'implementer', reason: 'blocking review findings' };
   if (verdict === 'split') return { action: 'split', actor: 'planner' };
   if (['cap', 'owner'].includes(verdict) || (owner.needed && !record.ownerApproved)) return { action: 'owner-review', actor: 'owner', reason: owner.reason };
+  // A draft whose newest verdict at its head is `ready` is handed off (`pr ready`); its approval follows on the ready PR.
+  if (record.shipReady) return { action: 'ready', actor: 'cli', reason: 'verdict ready on a draft' };
   if (!record.approved) return { action: 'review', actor: 'reviewer', reason: 'no approval at the head' };
   if (ci === 'pending') return { action: 'wait-ci', actor: 'cli' };
   return { action: 'merge', actor: 'cli' };

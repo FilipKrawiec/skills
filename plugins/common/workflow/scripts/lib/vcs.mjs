@@ -268,6 +268,28 @@ function readThreads(repo, number, options) {
   if (!threads || !Array.isArray(threads.nodes) || typeof threads.pageInfo?.hasNextPage !== 'boolean') throw new Error('Cannot read review threads');
   return threads;
 }
+// The newest Reviewer verdict at an older head: a later round reads only the delta since that head.
+export function previousReviewedHead(reviews, reviewer, head) {
+  if (typeof reviewer !== 'string' || !reviewer) return null;
+  const latest = (reviews || []).filter(review => review.author?.login?.toLowerCase() === reviewer.toLowerCase() && /<!-- agent-review\b[^>]*\bverdict=\w+/.test(review.body || '')).at(-1);
+  const oid = latest?.commit?.oid;
+  return typeof oid === 'string' && /^[0-9a-f]{7,64}$/i.test(oid) && oid !== head ? oid : null;
+}
+// Files grouped by area (the first two directory segments), largest first; a pure rename changes no line and is listed as mechanical.
+export function reviewAreas(files = []) {
+  const areas = new Map();
+  const mechanical = [];
+  for (const file of files) {
+    if (typeof file?.path !== 'string') continue;
+    const additions = file.additions || 0, deletions = file.deletions || 0;
+    if (file.changeType === 'RENAMED' && !additions && !deletions) { mechanical.push(file.path); continue; }
+    const area = file.path.split('/').slice(0, -1).slice(0, 2).join('/') || '.';
+    const entry = areas.get(area) || { area, additions: 0, deletions: 0, files: [] };
+    entry.additions += additions; entry.deletions += deletions; entry.files.push(file.path);
+    areas.set(area, entry);
+  }
+  return { areas: [...areas.values()].sort((a, b) => b.additions + b.deletions - (a.additions + a.deletions) || a.area.localeCompare(b.area)), mechanical };
+}
 export function reviewContext(args) {
   const options = parseOptions(args);
   const { root, lanes, configAvailable } = config(false);
@@ -279,9 +301,9 @@ export function reviewContext(args) {
     run('gh', ['pr', 'edit', options['--pr'], '--repo', `github.com/${repo}`, '--add-label', 'state:reviewing'], { cwd: root });
   }
   const threads = readThreads(repo, options['--pr'], { cwd: root });
-  const output = { untrustedGithubData: true, claimed: Boolean(options['--claim']), ...pr, baseConfigurationAvailable: configAvailable, filesMayBeIncomplete: true, reviewThreads: threads.nodes, threadsTruncated: threads.pageInfo.hasNextPage };
-  if (options['--previous']) {
-    const previous = options['--previous'];
+  const output = { untrustedGithubData: true, claimed: Boolean(options['--claim']), ...pr, baseConfigurationAvailable: configAvailable, filesMayBeIncomplete: true, ...reviewAreas(pr.files), reviewThreads: threads.nodes, threadsTruncated: threads.pageInfo.hasNextPage };
+  const previous = options['--previous'] || previousReviewedHead(pr.reviews, lanes.reviewer, pr.headRefOid);
+  if (previous) {
     const head = pr.headRefOid;
     if (!/^[0-9a-f]{40,64}$/i.test(head || '')) throw new Error('GitHub returned an invalid head SHA');
     try {
@@ -291,7 +313,7 @@ export function reviewContext(args) {
       const currentBase = pr.baseRefOid;
       if (!/^[0-9a-f]{40,64}$/i.test(currentBase || '')) throw new Error('Invalid base SHA');
       const identicalBaseTree = priorBase ? git('rev-parse', `${priorBase}^{tree}`) === git('rev-parse', `${currentBase}^{tree}`) : null;
-      output.comparison = { previous, head, previousBase: priorBase || null, currentBase, identicalTree: oldTree === newTree, identicalBaseTree, treesUnchanged: oldTree === newTree && identicalBaseTree === true, changedFiles: oldTree === newTree ? [] : git('diff', '--name-only', previous, head).split('\n').filter(Boolean), evidenceRequiresJudgment: true };
+      output.comparison = { previous, previousFrom: options['--previous'] ? 'argument' : 'reviewer verdict', head, previousBase: priorBase || null, currentBase, identicalTree: oldTree === newTree, identicalBaseTree, treesUnchanged: oldTree === newTree && identicalBaseTree === true, changedFiles: oldTree === newTree ? [] : git('diff', '--name-only', previous, head).split('\n').filter(Boolean), evidenceRequiresJudgment: true };
     } catch { output.comparison = { previous, head, available: false, reason: 'Commits not present locally; fetch before comparing' }; }
   }
   if (options['--issue']) {
@@ -375,6 +397,11 @@ export function reviewPost(args) {
     const posted = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/pulls/${pr}/reviews`, '--input', '-'], { ...options, input: JSON.stringify(payload) });
     if (!Number.isInteger(posted?.id)) throw new Error('GitHub did not confirm the review');
     console.log(`Posted review ${posted.id} on #${pr}`);
+    // A capped round, or an approval the owner must join, hands the PR to the owner; the CLI, not the agent, sets that label.
+    const verdict = /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(o.body)?.[1];
+    if (['cap', 'owner'].includes(verdict)) {
+      try { run('gh', ['pr', 'edit', pr, '--repo', `github.com/${repo}`, '--add-label', 'review:owner'], options); } catch { console.error(`Warning: review posted, but could not add review:owner to #${pr}; add it by hand.`); }
+    }
     // The inline Nit and Pre-existing notes of this review are open threads now; the posted verdict stands if resolving them fails.
     if (approve) {
       try {

@@ -13,8 +13,21 @@ const pr = (number, extra = {}) => ({ number, title: `PR ${number}`, body: 'No l
 const now = Date.parse('2026-11-06T12:00:00Z');
 
 test('the risk labels are part of the label catalog', () => {
-  assert.deepEqual(workflowLabels['risk:R0'][1], 'Low-risk PR: one finder, no verifier');
+  assert.deepEqual(workflowLabels['risk:R0'][1], 'Low-risk PR: docs, tests or a local change');
   assert.ok(workflowLabels['risk:R1'] && workflowLabels['risk:R2']);
+  assert.ok(workflowLabels['nits:swept'], 'labels ensure creates the Nits sweep label');
+});
+
+test('a verdict marker without a mode reads like the one review mode', () => {
+  const modeless = (value, state = 'COMMENTED') => ({ author: { login: 'reviewer' }, state, commit: { oid: 'abc' }, body: `<!-- agent-review sha=abc round=1 verdict=${value} -->` });
+  assert.equal(afkPrRecord(pr(20, { isDraft: true, reviews: [modeless('ready')] }), cfg).shipReady, true);
+  assert.equal(afkPrRecord(pr(20, { isDraft: true, reviews: [modeless('ready'), modeless('fixes')] }), cfg).shipReady, false);
+  const handedOff = afkPrRecord(pr(20, { isDraft: false, reviews: [modeless('ready')] }), cfg);
+  assert.deepEqual([handedOff.shipReady, handedOff.awaitingReview], [false, true], 'a ready PR awaits the Reviewer approval');
+  const fixes = afkPrRecord(pr(20, { isDraft: false, reviews: [modeless('fixes')] }), cfg);
+  assert.equal(fixes.awaitingReview, false, 'a blocking verdict on a ready PR reviews its head');
+  assert.equal(afkPrRecord(pr(20, { isDraft: false, reviews: [modeless('cap')] }), cfg).capped, true);
+  assert.equal(afkPrRecord(pr(20, { isDraft: false, reviews: [modeless('ready'), modeless('ready', 'APPROVED')] }), cfg).approved, true);
 });
 
 test('a green draft is left for ship to mark ready; the CLI never readies it', () => {
@@ -49,7 +62,7 @@ test('an issue whose PR is still a draft stays In progress when its run ends; a 
 const verdict = (mode, value, state = 'COMMENTED') => ({ author: { login: 'reviewer' }, state, commit: { oid: 'abc' }, body: `<!-- agent-review sha=abc round=1 mode=${mode} verdict=${value} -->` });
 const plain = (prs, issues = [story(5, ['lane:afk'], { status: 'In progress' })]) => afkPlan(cfg, [], () => [], 'run', { issues: [epic, ...issues], prs, merged: [], now }).units;
 
-test('a ready PR whose only verdict at its head is from author mode awaits its team-mode review', () => {
+test('a ready PR whose only verdict at its head is an older author-mode hand-off awaits its approval', () => {
   const units = plain([pr(20, { isDraft: false, ...linked(5), reviews: [verdict('author', 'ready')] })]);
   assert.deepEqual(units.map(unit => [unit.pr, Boolean(unit.review)]), [[20, true]]);
 });
@@ -124,23 +137,30 @@ test('a ready PR whose newest verdict at its head is a team cap waits for the ow
   assert.deepEqual(plain([pr(20, { isDraft: false, ...linked(5), reviews: [cap] })]), []);
 });
 
-test('ship hands off through the Reviewer approval with no team-mode pass, and the cap is final', () => {
-  const skill = name => readFileSync(new URL(`../../plugins/common/workflow/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
+test('one review skill, one mode: one reviewer, no subagents, the cap is final and Nits never block', () => {
+  const read = path => readFileSync(new URL(`../../plugins/common/workflow/${path}`, import.meta.url), 'utf8');
+  const skill = name => read(`skills/${name}/SKILL.md`);
   const ship = skill('ship');
   assert.doesNotMatch(ship, /in team mode|Team review/);
   assert.ok(ship.indexOf('Approve:') >= 0 && ship.indexOf('Request reviewers') > ship.indexOf('Approve:'));
-  assert.match(ship, /never start a team-mode review/);
   assert.match(ship, /workflow\.mjs pr ready --pr <N>` \(never raw `gh pr ready`\); it also drops the owner's CODEOWNERS request/);
   assert.match(skill('vcs'), /workflow\.mjs pr auto-merge --pr <number>`; never raw `gh pr merge`/);
-  const review = skill('agent-review');
-  for (const text of [ship, review]) assert.match(text, /verdict=owner/);
-  assert.match(review, /workflow\.mjs pr auto-merge --pr <N>`/);
-  assert.doesNotMatch(review, /gh pr merge <N> --squash/);
-  assert.match(review, /verdict=cap`, final: no later round or `pr-fix`/);
+  const review = skill('review');
+  const approval = read('skills/review/references/approval.md');
+  for (const text of [ship, approval]) assert.match(text, /verdict=owner/);
+  assert.match(approval, /pr auto-merge --pr <N>`/);
+  assert.match(review, /Never start a subagent, finder or verifier/);
+  assert.match(review, /<!-- agent-review sha=<HEAD> round=<N> verdict=<ready\|fixes\|cap\|split> -->/);
+  assert.doesNotMatch(review, /mode=|author mode|team mode/i);
+  assert.match(review, /`verdict=cap`, final/);
   assert.match(review, /never the whole diff again/);
-  assert.doesNotMatch(review, /rounds are uncapped/);
-  assert.match(skill('vcs'), /no team-mode pass/);
+  assert.match(review, /Nits never block and never earn another round/);
+  assert.match(review, /\*\*Follow-up:\*\*/);
   assert.match(skill('vcs'), /`cap` is final/);
   assert.match(skill('pr-fix'), /add no capability/);
-  assert.match(skill('review'), /\*\*Follow-up:\*\*/);
+  const agent = read('agents/reviewer.md');
+  assert.match(agent, /^name: reviewer$/m);
+  assert.match(agent, /^skills:\n  - review$/m);
+  assert.match(agent, /^disallowedTools: Agent$/m);
+  assert.doesNotMatch(agent, /^model:/m);
 });

@@ -35,7 +35,7 @@ approve your own work or expose credentials. Return paths, head, checks/exits,
 findings, exit gate and decisions in at most 8 lines.
 ```
 
-For a merged PR or shipped issue, after filing, comment `## Lessons` with occurrences, target and wording, or `no lessons`; list observations in one line each. With no shipped issue, report these in the output. For unattended delivery, use one issue/PR per target repository and link the evidence. Deliver through `vcs` (draft PR and risk label), `agent-review`, `pr-fix` and `ship`, like any change. On failure, attempt at most two evidence-led fixes, then retain the lane with a concrete retry condition. Ask the owner only for reserved effects.
+For a merged PR or shipped issue, after filing, comment `## Lessons` with occurrences, target and wording, or `no lessons`; list observations in one line each. With no shipped issue, report these in the output. For unattended delivery, use one issue/PR per target repository and link the evidence. Deliver through `vcs` (draft PR and risk label), `review`, `pr-fix` and `ship`, like any change. On failure, attempt at most two evidence-led fixes, then retain the lane with a concrete retry condition. Ask the owner only for reserved effects.
 
 **Exit gate:** reviewed change or linked PR, observation, or proposal with a named blocker.
 

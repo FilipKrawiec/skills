@@ -31,6 +31,12 @@ test('the next action follows the PR state, first match wins', () => {
   assert.deepEqual(next({ reviews: [review('ready', 'APPROVED')] }), { action: 'merge', actor: 'cli' });
 });
 
+test('a ready verdict without a mode hands a draft to ship and a ready PR to its approval', () => {
+  assert.deepEqual(next({ isDraft: true, reviews: [review('ready')] }), { action: 'ready', actor: 'cli', reason: 'verdict ready on a draft' });
+  assert.deepEqual(next({ reviews: [review('ready')] }), { action: 'review', actor: 'reviewer' });
+  assert.equal(next({ reviews: [review('ready'), review('fixes')] }).actor, 'implementer', 'a later blocking verdict on a ready PR counts');
+});
+
 test('only risk R2 or the round cap brings in the owner', () => {
   assert.deepEqual(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready', 'APPROVED')] }), { action: 'owner-review', actor: 'owner', reason: 'risk R2' });
   assert.equal(next({ labels: [{ name: 'risk:R1' }], reviews: [review('ready', 'APPROVED')] }).action, 'merge');

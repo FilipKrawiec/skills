@@ -1,12 +1,12 @@
 ---
 name: pr-fix
-description: Use when a PR has open verified Important review threads, human review comments or a red pipeline to fix, in author or team mode.
+description: Use when a PR has open verified Important review threads, human review comments or a red pipeline to fix.
 allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 ---
 
 # PR Fix
 
-The only fixer of a PR, in both modes. You orchestrate: Craftsman subagents edit, you verify and commit. Never review or approve.
+The only fixer of a PR. You orchestrate: Craftsman subagents edit, you verify and commit. Never review or approve.
 
 ## 1. Collect open work
 
@@ -39,15 +39,15 @@ commands with exits, and any thread you judge wrong with evidence, in 8 lines.
 
 ## 3. Verify and commit
 
-Before committing, read each change against its thread, confirm every path is in scope and that the diff adds no capability the issue did not ask for (cut it back if it does), and run the targeted tests the Craftsmen named, then `steps.test` once. A failure goes back to its Craftsman once; still failing, leave that thread open with the evidence. Commit through `vcs` with one Conventional Commit per round and push; in team mode `vcs` disables auto-merge first, so turn it back on through `vcs` bound to the new head.
+Before committing, read each change against its thread, confirm every path is in scope and that the diff adds no capability the issue did not ask for (cut it back if it does), and run the targeted tests the Craftsmen named, then `steps.test` once. A failure goes back to its Craftsman once; still failing, leave that thread open with the evidence. Commit through `vcs` with one Conventional Commit per round and push; on a ready PR `vcs` disables auto-merge first, and the new head needs a new review round before auto-merge returns.
 
-Reply on each fixed thread `Fixed in <SHA>: <one line>`. Resolve no thread: `agent-review` resolves its own once it verifies the fix; humans resolve theirs. Reply to a disputed thread with your evidence and leave it open.
+Reply on each fixed thread `Fixed in <SHA>: <one line>`. Resolve no thread: the Reviewer (`review`) resolves its own once it verifies the fix; humans resolve theirs. Reply to a disputed thread with your evidence and leave it open.
 
 **Exit gate:** pushed head with a reply on every handled thread.
 
 ## 4. Hand off the pipeline
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs wait <N> --until ci` in the background; it exits 0 on green, 1 on red, with no agent watching. Red goes back to step 2 as work; green hands the head to `agent-review` for the next round.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs wait <N> --until ci` in the background; it exits 0 on green, 1 on red, with no agent watching. Red goes back to step 2 as work; green hands the head to `review` for the next round.
 
 **Exit gate:** green head handed to review, or red checks queued as work.
 

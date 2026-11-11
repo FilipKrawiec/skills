@@ -173,7 +173,7 @@ test('one-shot AFK runs are counted from live watcher PIDs', t => {
 test('workflow label catalog is centralized in the CLI', () => {
   assert.deepEqual(Object.keys(workflowLabels), [
     'lane:afk', 'lane:proposed', 'lane:owner', 'state:claimed', 'state:started', 'state:reviewing',
-    'review:owner', 'risk:R0', 'risk:R1', 'risk:R2', 'type:epic', 'type:story', 'type:bug', 'type:chore', 'type:task',
+    'review:owner', 'risk:R0', 'risk:R1', 'risk:R2', 'nits:swept', 'type:epic', 'type:story', 'type:bug', 'type:chore', 'type:task',
   ]);
 });
 
@@ -330,13 +330,13 @@ test('dead run holds expire after the grace period while live holds persist', ()
   assert.equal('dead' in ledger, false);
 });
 
-test('a PR `ship` marked ready is served for team review though its head, reviews and checks did not change', () => {
+test('a PR `ship` marked ready is served for its approval though its head, reviews and checks did not change', () => {
   const workflowCfg = { ...cfg, implementer: 'builder' };
   const authorReady = { author: { login: 'reviewer' }, state: 'COMMENTED', commit: { oid: 'abc' }, body: '<!-- agent-review sha=abc round=1 mode=author verdict=ready -->' };
   const pr = extra => afkPrRecord({ number: 9, title: 'Fix', body: 'No linked issue.', headRefOid: 'abc', isDraft: true, labels: [{ name: 'risk:R1' }], reviews: [authorReady], statusCheckRollup: [{ conclusion: 'SUCCESS' }], mergeable: 'MERGEABLE', files: [{ path: 'src/a.js' }], ...extra }, workflowCfg);
   const spent = { 9: afkPrState(pr(), [], workflowCfg, 'base1') };
   const units = afkPlan(workflowCfg, [], () => [], 'new-run', { issues: [epic], prs: [pr({ isDraft: false })], spent, base: 'base1' }).units;
-  assert.deepEqual(units.map(unit => unit.text), ['PR #9 (Fix) awaits its review'], 'the ship run spent the draft; the ready PR needs its team-mode review');
+  assert.deepEqual(units.map(unit => unit.text), ['PR #9 (Fix) awaits its review'], 'the ship run spent the draft; the ready PR needs the Reviewer approval');
 });
 
 test('a PR a finished run left unchanged gets no new run until its head, reviews, checks, merge state, base or an outside comment change', () => {
@@ -800,7 +800,7 @@ test('every ping serves Blocked, then Review, then Todo, then Backlog, by Priori
   const named = reviewPr(21, { body: 'Closes #6', closingIssuesReferences: [{ number: 6, repository: { name: 'app', owner: { login: 'acme' } } }] });
   const open = afkPlan(cfg, [], () => [], 'new-run', { issues, prs: [named] });
   assert.deepEqual(open.units.filter(unit => unit.column !== 'Todo' && unit.column !== 'Backlog').map(unit => [unit.column, unit.pr ?? unit.issue, Boolean(unit.refine)]), [['Review', 21, false]], 'a Blocked card its open PR names gets no refine run; the PR unit serves it');
-  assert.match(plan.units[4].text, /#9 is in Backlog: invoke `refine` on it alone, with `agent-review` eligibility/);
+  assert.match(plan.units[4].text, /#9 is in Backlog: invoke `refine` on it alone, with `review` eligibility/);
   assert.deepEqual([...afkCandidates(plan.units, [{ number: 6 }, { number: 20, pr: 20 }])].map(item => item.number), [7, 8, 9], 'held units are skipped');
 });
 
@@ -1004,7 +1004,8 @@ test('a run that splits its held issue builds the first sub-issue while its hold
 
 test('AFK eligibility records post as the configured Reviewer, not through the credential-stripping CLI', () => {
   const skill = name => readFileSync(new URL(`../../plugins/common/workflow/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
-  assert.match(skill('agent-review'), /Run each `gh` call as `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh \.\.\.`[^\n]*Post verdicts only with `review-post`/);
+  const assignments = readFileSync(new URL('../../plugins/common/workflow/skills/review/references/assignments.md', import.meta.url), 'utf8');
+  assert.match(assignments, /Run each `gh` call as `GH_TOKEN=\$\(gh auth token --user <identities.reviewer>\) gh \.\.\.`[^\n]*Post verdicts only with `review-post`/);
   assert.match(skill('afk'), /Write implementer records through the workflow CLI/);
 });
 

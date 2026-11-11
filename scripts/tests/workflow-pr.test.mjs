@@ -43,7 +43,15 @@ test('pr auto-merge accepts a Reviewer approval at the head under code-owner pro
   assert.equal(prAutoMergeRefusal(ready({ statusCheckRollup: [{ name: 'verify', status: 'QUEUED' }] }), cfg, policy), null);
 });
 
-test('pr auto-merge accepts the Reviewer approval of an author-mode ready verdict, with no team-mode pass', () => {
+test('a ready verdict without a mode counts for pr ready and, approved, for pr auto-merge', () => {
+  const plain = (value, state) => ({ author: { login: 'reviewer' }, state, body: `<!-- agent-review sha=${head} round=1 verdict=${value} -->`, commit: { oid: head } });
+  assert.equal(prReadyRefusal(draft({ reviews: [plain('ready', 'COMMENTED')] }), cfg), null);
+  assert.ok(prReadyRefusal(draft({ reviews: [plain('ready', 'COMMENTED'), plain('fixes', 'COMMENTED')] }), cfg));
+  assert.equal(prAutoMergeRefusal(ready({ reviews: [plain('ready', 'COMMENTED'), plain('ready', 'APPROVED')] }), cfg, policy), null);
+  assert.ok(prAutoMergeRefusal(ready({ reviews: [plain('ready', 'COMMENTED')] }), cfg, policy), 'a hand-off verdict is no approval');
+});
+
+test('pr auto-merge accepts the Reviewer approval of an older author-mode ready verdict', () => {
   const reviews = [verdict('author', 'ready', 'COMMENTED'), verdict('author', 'ready', 'APPROVED')];
   assert.equal(prAutoMergeRefusal(ready({ reviews }), cfg, policy), null);
 });
@@ -89,7 +97,7 @@ test('workflow pr ready refuses with the reason and changes nothing', t => {
   const { f, log } = setup(t, draft({ reviews: [] }));
   const result = f.cliRun('pr', 'ready', '--pr', '5');
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /pr ready refused: no author-mode agent-review verdict=ready/);
+  assert.match(result.stderr, /pr ready refused: no agent-review verdict=ready/);
   assert.deepEqual(log(), []);
 });
 

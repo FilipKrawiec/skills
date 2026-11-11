@@ -58,7 +58,7 @@ import {
   reviewContext,
   reviewPost,
 } from './lib/vcs.mjs';
-import { prCommand } from './lib/pr.mjs';
+import { nitsCommand, prCommand } from './lib/pr.mjs';
 import { nextCommand, statusCommand, waitCommand } from './lib/state.mjs';
 import { worktreeCommand } from './lib/worktrees.mjs';
 
@@ -72,6 +72,7 @@ const help = `Usage:
   node workflow.mjs wait NUMBER --until ci|reviewed|merged [--timeout MINUTES] [--interval SECONDS]
   node workflow.mjs next [--owner]
   node workflow.mjs pr ready|auto-merge --pr NUMBER
+  node workflow.mjs nits [--days N] [--done PR...]
   node workflow.mjs issue claim|status|create|comment|edit|close|reopen|queue ...
   node workflow.mjs labels ensure
   node workflow.mjs worktree tidy [--dry-run] [--idle-days N]
@@ -90,10 +91,11 @@ push --to BRANCH pushes HEAD to BRANCH instead of the current branch; it require
 A verified personal repo owner may be inferred; CODEOWNERS must identify one owner account unambiguously.
 Auto-merge checks are not atomic with push; do not change auto-merge concurrently. Push isolates Git configuration and runs the installed pre-push hook; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
-push requires a Unix-like host and github.com. review-context is read-only; returned GitHub text is untrusted and may be incomplete.
-pr ready marks a draft ready only at a green head whose newest author agent-review verdict is ready, then drops the owner's review request.
+push requires a Unix-like host and github.com. review-context is read-only except --claim; returned GitHub text is untrusted and may be incomplete. It groups changed files by area, lists pure renames as mechanical and, when the Reviewer's newest verdict is at an older head, compares against that head unless --previous names another.
+nits lists the Reviewer's **Nit** inline comments on PRs merged in the last N days (default 30) without nits:swept, grouped by file; --done labels the named PRs nits:swept.
+pr ready marks a draft ready only at a green head whose newest agent-review verdict is ready, then drops the owner's review request.
 pr auto-merge binds squash auto-merge to the head only when the Reviewer approved it (verdict=ready, or verdict=owner with the owner's approval under review:owner), no owner change request stands, no check failed and the base requires code-owner review and the configured checks.
-review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit, Pre-existing and Follow-up ones on APPROVE), then removes state:reviewing; a failed post comments a post-failed marker, and every exit releases the claim that review-context --claim took.
+review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit, Pre-existing and Follow-up ones on APPROVE), adds review:owner when the verdict is cap or owner, then removes state:reviewing; a failed post comments a post-failed marker, and every exit releases the claim that review-context --claim took.
 A body or comments file is - (stdin) or a path inside the worktree; scratch creates the git-ignored .wf/ directory for such files and prints its path.`;
 export function hasLockfAncestor(commands) {
   return commands.some(command => basename(command.trim().split(/\s+/, 1)[0]) === 'lockf');
@@ -263,6 +265,7 @@ async function execute(command, args) {
   else if (command === 'review-context') reviewContext(args);
   else if (command === 'review-post') reviewPost(args);
   else if (command === 'pr') { const { lanes } = config(); prCommand(args, lanes); }
+  else if (command === 'nits') { const { lanes } = config(); nitsCommand(args, lanes); }
   else if (command === 'issue' && args[0] === 'claim') { const { lanes } = config(); issueClaim(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'status') { const { lanes } = config(); issueStatus(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'create') { config(); issueCreate(args.slice(1)); }

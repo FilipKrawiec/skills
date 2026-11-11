@@ -8,7 +8,7 @@ export const passedStates = ['SUCCESS', 'NEUTRAL', 'SKIPPED'];
 export const checkState = check => (check.conclusion || check.state || '').toUpperCase();
 const checkName = check => check.name || check.context || '';
 
-// Why `pr ready` may not hand the draft to team review, or null: it targets the configured base, the newest author verdict at
+// Why `pr ready` may not hand the draft to the Reviewer's approval, or null: it targets the configured base, the newest verdict at
 // its head is `ready`, every check at that head passed, the configured required checks among them, and no conflict or outside
 // change request stands.
 export function prReadyRefusal(pr, cfg) {
@@ -24,7 +24,7 @@ export function prReadyRefusal(pr, cfg) {
   if (missing.length) return `required checks missing at ${pr.headRefOid}: ${missing.join(', ')}`;
   if (pr.mergeable === 'CONFLICTING') return `PR #${pr.number} conflicts with its base`;
   const record = afkPrRecord({ ...pr, labels: pr.labels || [] }, cfg);
-  if (!record.shipReady) return `no author-mode agent-review verdict=ready at head ${pr.headRefOid}, or someone outside the workflow requests changes there`;
+  if (!record.shipReady) return `no agent-review verdict=ready at head ${pr.headRefOid}, or someone outside the workflow requests changes there`;
   return null;
 }
 
@@ -78,4 +78,45 @@ export function prCommand(args, lanes) {
   if (after.state === 'MERGED') console.log(`PR #${number} merged at ${pr.headRefOid}`);
   else if (after.autoMergeRequest && after.headRefOid === pr.headRefOid) console.log(`PR #${number} auto-merge on at ${pr.headRefOid}`);
   else throw new Error(`GitHub did not accept auto-merge for #${number} at ${pr.headRefOid}${merge.status === 0 ? '' : ` (${(merge.stderr || '').trim().split('\n').at(-1)})`}`);
+}
+
+// Nits never block a PR; the Reviewer's `**Nit**` inline comments on merged PRs collect here for a retrospective sweep.
+export const nitsSwept = 'nits:swept';
+export function nitsLedger(prs, commentsOf, reviewer) {
+  const files = new Map();
+  const listed = [];
+  for (const pr of prs) {
+    if ((pr.labels || []).some(label => label.name === nitsSwept)) continue;
+    const nits = commentsOf(pr.number).filter(comment => comment.user?.login?.toLowerCase() === reviewer.toLowerCase() && /^\*\*Nit\*\*/.test(comment.body || ''));
+    if (!nits.length) continue;
+    listed.push({ number: pr.number, url: pr.url, title: pr.title, mergedAt: pr.mergedAt });
+    for (const comment of nits) {
+      const path = comment.path || '(no file)';
+      if (!files.has(path)) files.set(path, []);
+      files.get(path).push({ pr: pr.number, line: comment.line ?? comment.original_line ?? null, body: (comment.body || '').slice(0, 2000), url: comment.html_url || null });
+    }
+  }
+  return { prs: listed, files: [...files].sort(([a], [b]) => a.localeCompare(b)).map(([path, nits]) => ({ path, nits })) };
+}
+const nitsUsage = 'Usage: nits [--days N] [--done PR...]';
+export function nitsCommand(args, lanes, { now = Date.now, gh = (ghArgs, options) => jsonCommand('gh', ghArgs, options), edit = ghArgs => run('gh', ghArgs) } = {}) {
+  if (typeof lanes.reviewer !== 'string' || !lanes.reviewer) throw new Error('Configure identities.reviewer');
+  let days = 30;
+  const done = [];
+  const list = [...args];
+  while (list.length) {
+    const key = list.shift();
+    if (key === '--days' && /^[1-9]\d{0,3}$/.test(list[0] || '')) days = Number(list.shift());
+    else if (key === '--done' && /^[1-9]\d*$/.test(list[0] || '')) { while (/^[1-9]\d*$/.test(list[0] || '')) done.push(Number(list.shift())); }
+    else throw new Error(nitsUsage);
+  }
+  if (done.length) {
+    for (const number of done) edit(['pr', 'edit', String(number), '--repo', lanes.repo, '--add-label', nitsSwept]);
+    console.log(JSON.stringify({ swept: done }));
+    return;
+  }
+  const since = new Date(now() - days * 86_400_000).toISOString().slice(0, 10);
+  const merged = gh(['pr', 'list', '--repo', lanes.repo, '--state', 'merged', '--search', `merged:>=${since}`, '--limit', '1000', '--json', 'number,url,title,mergedAt,labels']);
+  const commentsOf = number => gh(['api', '--hostname', 'github.com', '--paginate', '--slurp', `repos/${lanes.repo}/pulls/${number}/comments`]).flat();
+  console.log(JSON.stringify({ days, since, ...nitsLedger(merged, commentsOf, lanes.reviewer) }));
 }

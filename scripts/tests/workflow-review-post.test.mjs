@@ -149,3 +149,53 @@ test('review-context --claim labels an unclaimed PR and refuses a claimed one', 
   assert.match(refused.stderr, /already claimed/);
   assert.equal(log().length, 1);
 });
+
+test('a cap or owner verdict adds review:owner after the post; other verdicts do not', t => {
+  for (const [verdict, expected] of [['cap', true], ['owner', true], ['fixes', false]]) {
+    const { f, post, log } = setup(t);
+    writeFileSync(join(f.repo, 'body.md'), `<!-- agent-review sha=${sha} round=3 verdict=${verdict} -->\nCapped`);
+    const result = post('--event', 'COMMENT');
+    assert.equal(result.status, 0, result.stderr);
+    const label = 'pr edit 5 --repo github.com/acme/app --add-label review:owner';
+    assert.deepEqual(log(), expected ? ['post', label, 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing'] : ['post', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing'], verdict);
+  }
+});
+
+test('review-context groups files by area, lists pure renames as mechanical and compares against the last reviewed head', t => {
+  const { f } = setup(t);
+  const previous = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  writeFileSync(join(f.repo, 'changed.txt'), 'x');
+  assert.equal(f.linkedGit('add', 'changed.txt').status, 0);
+  assert.equal(f.linkedGit('-c', 'user.name=T', '-c', 'user.email=t@example.test', 'commit', '-qm', 'fix').status, 0);
+  const head = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  const files = [
+    { path: 'src/app/a.js', additions: 5, deletions: 1, changeType: 'MODIFIED' },
+    { path: 'src/app/deep/b.js', additions: 2, deletions: 0, changeType: 'ADDED' },
+    { path: 'docs/x.md', additions: 1, deletions: 1, changeType: 'MODIFIED' },
+    { path: 'src/lib/moved.js', additions: 0, deletions: 0, changeType: 'RENAMED' },
+  ];
+  const reviews = [{ author: { login: 'reviewer' }, state: 'COMMENTED', body: `<!-- agent-review sha=${previous} round=1 verdict=fixes -->`, commit: { oid: previous } }];
+  f.env.PR_VIEW = JSON.stringify({ headRefOid: head, baseRefOid: previous, files, reviews, labels: [] });
+  const result = f.cliRun('review-context', '--pr', '5');
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual(output.areas, [
+    { area: 'src/app', additions: 7, deletions: 1, files: ['src/app/a.js', 'src/app/deep/b.js'] },
+    { area: 'docs', additions: 1, deletions: 1, files: ['docs/x.md'] },
+  ]);
+  assert.deepEqual(output.mechanical, ['src/lib/moved.js']);
+  assert.deepEqual([output.comparison.previous, output.comparison.previousFrom, output.comparison.changedFiles], [previous, 'reviewer verdict', ['changed.txt']]);
+  f.env.PR_VIEW = JSON.stringify({ headRefOid: head, baseRefOid: previous, files, reviews: [{ ...reviews[0], commit: { oid: head } }], labels: [] });
+  assert.equal(JSON.parse(f.cliRun('review-context', '--pr', '5').stdout).comparison, undefined, 'a verdict at the head leaves no delta');
+  f.env.PR_VIEW = JSON.stringify({ headRefOid: head, baseRefOid: previous, files, reviews: [{ ...reviews[0], author: { login: 'teammate' } }], labels: [] });
+  assert.equal(JSON.parse(f.cliRun('review-context', '--pr', '5').stdout).comparison, undefined, 'only the Reviewer verdict counts');
+});
+
+test('nits --done labels each named PR nits:swept and prints one JSON line', t => {
+  const { f, log } = setup(t);
+  const result = f.cliRun('nits', '--done', '3', '4');
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { swept: [3, 4] });
+  assert.deepEqual(log(), ['pr edit 3 --repo acme/app --add-label nits:swept', 'pr edit 4 --repo acme/app --add-label nits:swept']);
+  assert.notEqual(f.cliRun('nits', '--days', 'many').status, 0);
+});

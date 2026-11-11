@@ -10,7 +10,7 @@ const REFERENCE_NAME = /^[a-z0-9][a-z0-9-]*\.md$/;
 const ALLOWED_FRONTMATTER = new Set(['name', 'description', 'license', 'compatibility', 'metadata', 'disable-model-invocation', 'allowed-tools']);
 const CODEX_FIELDS = ['author', 'homepage', 'repository', 'license', 'keywords', 'interface'];
 const AGY_FIELDS = ['author', 'homepage', 'repository', 'license', 'keywords'];
-const ROOT_ENTRIES = new Set(['.claude-plugin', '.codex-plugin', 'hooks', 'package-metadata.json', 'plugin.json', 'scripts', 'skills']);
+const ROOT_ENTRIES = new Set(['.claude-plugin', '.codex-plugin', 'agents', 'hooks', 'package-metadata.json', 'plugin.json', 'scripts', 'skills']);
 const PROVIDER = /\b(claude|anthropic|codex|openai|chatgpt|gpt-?\d|gemini|antigravity|copilot|cursor)\b/i;
 
 export function fail(message) { throw new Error(message); }
