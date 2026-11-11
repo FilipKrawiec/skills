@@ -15,7 +15,7 @@ Branch on the PR's state, first match wins:
 
 ## 1. Hand off
 
-Run `gh pr checks <N> --watch`; hand off only a green head. The author-mode verdict is the review: never start a team-mode review or another round here. Then, in order:
+Run `node <this-skill-directory>/../../scripts/workflow.mjs wait <N> --until ci`; hand off only a green head. The author-mode verdict is the review: never start a team-mode review or another round here. Then, in order:
 
 1. Rewrite the description as delivered: problem, change, each criterion with its evidence, decisions, risks, manual test results. Keep the PR's issue link keyword (`Closes` or `Part of`) and any attribution lines as they are.
 2. Recheck the risk label against the final diff; raise it if the diff grew, never lower it.

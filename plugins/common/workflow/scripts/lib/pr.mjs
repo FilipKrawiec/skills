@@ -3,9 +3,9 @@ import { effectiveBranchPolicy } from '../safety.mjs';
 import { afkPrRecord, afkReviewerApproved } from './afk-board.mjs';
 import { jsonCommand, run } from './core.mjs';
 
-const failedStates = ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'];
-const passedStates = ['SUCCESS', 'NEUTRAL', 'SKIPPED'];
-const checkState = check => (check.conclusion || check.state || '').toUpperCase();
+export const failedStates = ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'];
+export const passedStates = ['SUCCESS', 'NEUTRAL', 'SKIPPED'];
+export const checkState = check => (check.conclusion || check.state || '').toUpperCase();
 const checkName = check => check.name || check.context || '';
 
 // Why `pr ready` may not hand the draft to team review, or null: it targets the configured base, the newest author verdict at
@@ -49,7 +49,7 @@ export function prAutoMergeRefusal(pr, cfg, policy) {
   return null;
 }
 
-const prFields = 'number,state,isDraft,baseRefName,headRefOid,labels,reviews,statusCheckRollup,mergeable,body,closingIssuesReferences,autoMergeRequest';
+export const prFields = 'number,url,state,isDraft,baseRefName,headRefOid,labels,reviews,statusCheckRollup,mergeable,body,closingIssuesReferences,autoMergeRequest';
 function readPr(repo, number) { return jsonCommand('gh', ['pr', 'view', number, '--repo', repo, '--json', prFields]); }
 function readPolicy(repo, base) {
   const read = endpoint => { try { return jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/${endpoint}`]); } catch { return null; } };
