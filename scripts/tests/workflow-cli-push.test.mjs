@@ -8,6 +8,37 @@ import {
 } from '../../plugins/common/workflow/scripts/lib/core.mjs';
 import { configPath, json, config, run, runCliAsync, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, hookPath, assertNoPush } from './support/workflow-cli-fixture.mjs';
 
+test('a successful push updates the tracking ref for drive', t => {
+  const f = fixture(t);
+  const remote = nativeRemote(f);
+  writeFileSync(join(f.repo, 'new.txt'), 'change');
+  assert.equal(f.linkedGit('add', 'new.txt').status, 0);
+  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'feat: change').status, 0);
+  const head = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  const result = f.cliRun('push');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(run(f.env.REAL_GIT, ['--git-dir', remote, 'rev-parse', 'refs/heads/feature/test']).stdout.trim(), head);
+  assert.equal(f.linkedGit('rev-parse', 'refs/remotes/origin/feature/test').stdout.trim(), head);
+  assert.equal(f.linkedGit('log', '--oneline', 'HEAD', '--not', '--remotes').stdout.trim(), '');
+});
+
+test('push preserves a tracking ref changed concurrently', t => {
+  const f = fixture(t);
+  const remote = nativeRemote(f);
+  writeFileSync(join(f.repo, 'new.txt'), 'change');
+  assert.equal(f.linkedGit('add', 'new.txt').status, 0);
+  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'feat: change').status, 0);
+  const head = f.linkedGit('rev-parse', 'HEAD').stdout.trim();
+  const hook = hookPath(f);
+  writeFileSync(hook, '#!/bin/sh\n"$REAL_GIT" update-ref refs/remotes/origin/feature/test "$REMOTE_BASE_SHA"\n');
+  chmodSync(hook, 0o755);
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Push succeeded, but the tracking ref changed/);
+  assert.equal(f.linkedGit('rev-parse', 'refs/remotes/origin/feature/test').stdout.trim(), f.env.REMOTE_BASE_SHA);
+  assert.equal(run(f.env.REAL_GIT, ['--git-dir', remote, 'rev-parse', 'refs/heads/feature/test']).stdout.trim(), head);
+});
+
 test('push ignores uncommitted identity configuration', t => {
   const f = fixture(t);
   writeFileSync(join(f.repo, configPath), json(config({ repo: 'acme/app', implementer: 'reviewer', reviewer: 'builder', owner: 'owner' })));

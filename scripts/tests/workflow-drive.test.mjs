@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, estimateRisk, matchesPattern,
   modelFor, modelForStep, nextTarget, ownerPatterns, parseHandBack, pickSlice, plannerBrief, reviewerCommand, riskFromPaths, staleReviewClaim,
@@ -193,6 +196,27 @@ function fakeRepo(initial) {
   };
   return { s, io, calls, writes };
 }
+
+test('drive pushes a real commit once and opens its PR in the same call', t => {
+  const f = fixture(t);
+  const remote = nativeRemote(f);
+  writeFileSync(join(f.repo, 'change.txt'), 'change');
+  assert.equal(f.linkedGit('add', 'change.txt').status, 0);
+  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'feat: change').status, 0);
+  const repo = fakeRepo({ issues: { 3: started } });
+  repo.io.tree = () => tree({ path: f.repo, branch: 'feature/test', commits: 1, unpushed: Boolean(f.linkedGit('log', '--oneline', 'HEAD', '--not', '--remotes').stdout.trim()) });
+  let pushed = false;
+  repo.io.push = () => {
+    assert.equal(pushed, false, 'drive must make progress after the push');
+    pushed = true;
+    const result = f.cliRun('push');
+    assert.equal(result.status, 0, result.stderr);
+  };
+  const result = drive(repo.io, 3, lanes, { status: 'done' });
+  assert.equal(run(f.env.REAL_GIT, ['--git-dir', remote, 'rev-parse', 'refs/heads/feature/test']).stdout.trim(), f.linkedGit('rev-parse', 'HEAD').stdout.trim());
+  assert.equal(repo.s.prs[0].issue, 3);
+  assert.equal(result.agent, 'reviewer');
+});
 
 test('drive performs the mechanical steps and stops at one instruction; re-running repeats it', () => {
   const repo = fakeRepo({ issues: { 3: issue({ body: '```scope\n{"paths":["docs/a.md"]}\n```' }) } });
