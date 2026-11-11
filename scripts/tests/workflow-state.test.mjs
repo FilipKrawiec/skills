@@ -37,6 +37,11 @@ test('a ready verdict without a mode hands a draft to ship and a ready PR to its
   assert.equal(next({ reviews: [review('ready'), review('fixes')] }).actor, 'implementer', 'a later blocking verdict on a ready PR counts');
 });
 
+test('an author-mode ready verdict hands a draft off instead of reviewing it again', () => {
+  const authorReady = { ...review('ready'), body: `<!-- agent-review sha=${head} round=1 mode=author verdict=ready -->` };
+  assert.deepEqual(next({ isDraft: true, reviews: [authorReady] }), { action: 'ready', actor: 'cli', reason: 'verdict ready on a draft' });
+});
+
 test('only risk R2 or the round cap brings in the owner', () => {
   assert.deepEqual(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready', 'APPROVED')] }), { action: 'owner-review', actor: 'owner', reason: 'risk R2' });
   assert.equal(next({ labels: [{ name: 'risk:R1' }], reviews: [review('ready', 'APPROVED')] }).action, 'merge');
@@ -45,11 +50,12 @@ test('only risk R2 or the round cap brings in the owner', () => {
   assert.equal(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready', 'APPROVED'), ownerApproved] }).action, 'merge');
 });
 
-function waitOn(states, ...args) {
+function waitOn(states, ...args) { return waitWith(lanes, states, ...args); }
+function waitWith(cfg, states, ...args) {
   const lines = []; const log = console.log; console.log = line => lines.push(JSON.parse(line));
   let index = 0; let clock = 0; let pauses = 0;
   try {
-    const code = waitCommand(['5', ...args], lanes, { read: () => pr(states[Math.min(index++, states.length - 1)]), pause: () => { pauses++; clock += 60_000; }, now: () => clock });
+    const code = waitCommand(['5', ...args], cfg, { read: () => pr(states[Math.min(index++, states.length - 1)]), pause: () => { pauses++; clock += 60_000; }, now: () => clock });
     return { code, lines, pauses };
   } finally { console.log = log; }
 }
@@ -61,6 +67,16 @@ test('wait blocks until CI settles, printing each state change once', () => {
   assert.equal(result.pauses, 2);
   assert.deepEqual(result.lines.map(line => line.ci), ['pending', 'green']);
   assert.equal(waitOn([{ statusCheckRollup: [{ name: 'verify', conclusion: 'FAILURE' }] }], '--until', 'ci').code, 1);
+});
+
+test('wait treats no checks as pending while required checks are configured', () => {
+  const pending = { statusCheckRollup: [{ name: 'verify', status: 'QUEUED' }] };
+  const required = { ...lanes, requiredChecks: ['verify'] };
+  const result = waitWith(required, [{ statusCheckRollup: [] }, pending, {}], '--until', 'ci');
+  assert.equal(result.code, 0);
+  assert.deepEqual(result.lines.map(line => line.ci), ['none', 'pending', 'green']);
+  assert.equal(waitWith(required, [{ statusCheckRollup: [] }], '--until', 'ci', '--timeout', '2').code, 1);
+  assert.equal(waitWith({ ...lanes, requiredChecks: [] }, [{ statusCheckRollup: [] }], '--until', 'ci').code, 0);
 });
 
 test('wait ends on a verdict, on merge, on a closed PR and on timeout', () => {
