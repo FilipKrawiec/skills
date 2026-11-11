@@ -35,9 +35,11 @@ export function prState(pr, lanes) {
   const verdict = verdictOf(atHead.at(-1));
   const risk = labels.find(label => /^risk:R\d$/.test(label))?.slice(5) || null;
   const owner = labels.includes('review:owner') ? { needed: true, reason: 'review:owner' } : risk === 'R2' ? { needed: true, reason: 'risk R2' } : { needed: false };
+  // A round is one blocking-or-hand-off verdict; the approval posted in the same round and a split never add one.
+  const rounds = reviewer.filter(review => review.state !== 'APPROVED' && verdictOf(review) !== 'split').length;
   return {
     kind: 'pr', number: pr.number, url: pr.url, state: pr.state, draft: pr.isDraft, head: pr.headRefOid, ci, verdict,
-    round: reviewer.filter(review => verdictOf(review) !== 'split').length, labels, mergeable: pr.mergeable, risk,
+    round: rounds, labels, mergeable: pr.mergeable, risk,
     issues: record.issues, next: nextAction(pr, record, ci, verdict, owner),
   };
 }
@@ -62,11 +64,12 @@ export function statusCommand(args, lanes) {
   console.log(JSON.stringify(isPr ? prState(readPr(lanes.repo, n), lanes) : issueState(lanes.repo, n, lanes)));
 }
 const sleep = seconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
-// Whether the condition holds (true), failed for good (false) or still pending (null).
-function settled(until, state) {
+// Whether the condition holds (true), failed for good (false) or still pending (null). No checks right after a push
+// means GitHub has not registered them yet, so `none` settles only in a repo without required checks.
+function settled(until, state, lanes) {
   if (state.state === 'CLOSED' && until !== 'reviewed') return false;
   if (until === 'merged') return state.state === 'MERGED' ? true : null;
-  if (until === 'ci') return state.ci === 'red' ? false : ['green', 'none'].includes(state.ci) ? true : null;
+  if (until === 'ci') return state.ci === 'red' ? false : state.ci === 'green' || (state.ci === 'none' && !lanes.requiredChecks?.length) ? true : null;
   return state.verdict ? true : null;
 }
 // Blocks in the CLI, not in an agent: a session runs it in the background and is woken once, when it exits.
@@ -85,7 +88,7 @@ export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read =
     const state = prState(read(lanes.repo, n), lanes);
     const line = JSON.stringify({ number: n, state: state.state, ci: state.ci, verdict: state.verdict, head: state.head });
     if (line !== last) { console.log(line); last = line; }
-    const done = settled(o['--until'], state);
+    const done = settled(o['--until'], state, lanes);
     if (done !== null) return done ? 0 : 1;
     if (now() >= deadline) { console.error(`workflow: timed out after ${timeout} minutes waiting for ${o['--until']} on #${n}`); return 1; }
     pause(interval);
