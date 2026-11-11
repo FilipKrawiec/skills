@@ -75,7 +75,7 @@ function apply(cfg, base) {
   if (userExists(cfg.implementer) && userExists(cfg.reviewer)) {
     for (const login of [cfg.implementer, cfg.reviewer]) api(repo, `collaborators/${login}`, { method: 'PUT', body: { permission: 'push' } });
     api(repo, `branches/${encodeURIComponent(base)}/protection`, { method: 'PUT', body: {
-      required_status_checks: { strict: false, contexts: cfg.requiredChecks }, enforce_admins: false,
+      required_status_checks: { strict: true, contexts: cfg.requiredChecks }, enforce_admins: false,
       required_pull_request_reviews: { required_approving_review_count: 1, require_code_owner_reviews: true, require_last_push_approval: true, dismiss_stale_reviews: true },
       restrictions: null, required_linear_history: true, allow_force_pushes: false, allow_deletions: false, required_conversation_resolution: true,
     } });
@@ -144,6 +144,7 @@ function check(cfg, base) {
   }
   compare(`${base} reviews`, policy?.reviews ? csv(policy.reviews) : 'missing', '1,true,true,true', drift);
   compare(`${base} status checks`, (policy?.checks || []).join(','), [...cfg.requiredChecks].sort().join(','), drift);
+  compare(`${base} up-to-date status checks`, (policy?.strictChecks || []).filter(name => cfg.requiredChecks.includes(name)).sort().join(','), [...cfg.requiredChecks].sort().join(','), drift);
   compare(`${base} history and threads`, policy ? csv([policy.linearHistory, policy.conversationResolution]) : 'missing', 'true,true', drift);
   compare(`${base} force pushes and deletions blocked`, policy ? csv([policy.forcePushesBlocked, policy.deletionsBlocked]) : 'missing', 'true,true', drift);
   if (policy?.enforceAdmins !== null) compare(`${base} admins excluded`, String(policy?.enforceAdmins ?? 'missing'), 'false', drift);
