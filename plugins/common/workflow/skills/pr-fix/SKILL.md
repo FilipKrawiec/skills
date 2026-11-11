@@ -47,7 +47,7 @@ Reply on each fixed thread `Fixed in <SHA>: <one line>`. Resolve no thread: `age
 
 ## 4. Hand off the pipeline
 
-Spawn a pipeline-monitor subagent on the standard model: it runs `gh pr checks <N> --watch` on the new head and returns green, or each red check with its failing step and log line. Red goes back to step 2 as work; green hands the head to `agent-review` for the next round.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs wait <N> --until ci` in the background; it exits 0 on green, 1 on red, with no agent watching. Red goes back to step 2 as work; green hands the head to `agent-review` for the next round.
 
 **Exit gate:** green head handed to review, or red checks queued as work.
 

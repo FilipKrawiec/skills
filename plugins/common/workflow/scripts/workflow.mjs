@@ -59,6 +59,7 @@ import {
   reviewPost,
 } from './lib/vcs.mjs';
 import { prCommand } from './lib/pr.mjs';
+import { nextCommand, statusCommand, waitCommand } from './lib/state.mjs';
 import { worktreeCommand } from './lib/worktrees.mjs';
 
 const help = `Usage:
@@ -67,6 +68,9 @@ const help = `Usage:
   node workflow.mjs review-context --pr NUMBER [--claim] [--previous SHA --previous-base SHA] [--issue NUMBER]
   node workflow.mjs review-post --pr NUMBER --sha HEX --event APPROVE|REQUEST_CHANGES|COMMENT --body-file PATH|- [--comments-file PATH|-] [--resolve-thread ID]...
   node workflow.mjs scratch
+  node workflow.mjs status NUMBER
+  node workflow.mjs wait NUMBER --until ci|reviewed|merged [--timeout MINUTES] [--interval SECONDS]
+  node workflow.mjs next [--owner]
   node workflow.mjs pr ready|auto-merge --pr NUMBER
   node workflow.mjs issue claim|status|create|comment|edit|close|reopen|queue ...
   node workflow.mjs labels ensure
@@ -267,6 +271,9 @@ async function execute(command, args) {
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'reopen') { config(); issueReopen(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'queue') { const { lanes } = config(); issueQueue(args.slice(1)); }
+  else if (command === 'status') { const { lanes } = config(); statusCommand(args, lanes); }
+  else if (command === 'wait') { const { lanes } = config(); process.exitCode = waitCommand(args, lanes); }
+  else if (command === 'next') { const { lanes } = config(); nextCommand(args, lanes); }
   else if (command === 'scratch' && !args.length) console.log(JSON.stringify({ path: workflowScratch() }));
   else if (command === 'labels') labelsCommand(args);
   else if (command === 'worktree') worktreeCommand(args);

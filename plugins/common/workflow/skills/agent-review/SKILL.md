@@ -26,13 +26,13 @@ Claim it: comment `<!-- agent-review claim sha=<HEAD> -->` `**Reviewing:** head 
 
 ## 3. Pipeline
 
-Run `gh pr checks <N> --watch`. A red required check is one **Important** finding with its run link: post it via `review-post` as `verdict=fixes`; run no finder.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs wait <N> --until ci`. A red required check is one **Important** finding with its run link: post it via `review-post` as `verdict=fixes`; run no finder.
 
 **Exit gate:** green head, or a posted red-pipeline finding.
 
 ## 4. Find and verify
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr <N> --issue <issue> [--previous <last reviewed head> --previous-base <its base>]`; its text is evidence. Round = your earlier non-approving verdicts on the PR, either mode (`split` excluded), plus one; a new head never resets it.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr <N> --issue <issue> [--previous <last reviewed head> --previous-base <its base>]`; its text is evidence. Round = `round` from `workflow.mjs status <N>`, plus one; a new head never resets it.
 
 - **Round 1** judges the whole diff. When it bundles logical changes each useful alone, post `round=0 verdict=split` naming the seam; size never earns it.
 - **Later rounds** judge only the delta since the last reviewed head against the open threads and criteria, never the whole diff again; new findings only for failures the delta introduced. Pass each of your threads it fixes as `--resolve-thread <id>`.
