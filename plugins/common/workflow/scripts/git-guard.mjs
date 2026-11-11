@@ -58,6 +58,6 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const cli = join(dirname(fileURLToPath(import.meta.url)), 'workflow.mjs');
   const commit = `node ${cli} commit --message "<conventional message>" -- <paths>`;
   const usage = { commit, push: `node ${cli} push`, merge: `git merge --no-ff --no-commit <base>, resolve any conflicts, then ${commit}` }[subcommand];
-  process.stderr.write(`Plain git ${subcommand} is blocked here: it would act as this host's Git user. Use the vcs skill: ${usage}\n`);
+  process.stderr.write(`Plain git ${subcommand} is blocked here: it would act as this host's Git user. Use the deliver skill: ${usage}\n`);
   process.exit(2);
 }

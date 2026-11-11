@@ -10,7 +10,7 @@ const REFERENCE_NAME = /^[a-z0-9][a-z0-9-]*\.md$/;
 const ALLOWED_FRONTMATTER = new Set(['name', 'description', 'license', 'compatibility', 'metadata', 'disable-model-invocation', 'allowed-tools']);
 const CODEX_FIELDS = ['author', 'homepage', 'repository', 'license', 'keywords', 'interface'];
 const AGY_FIELDS = ['author', 'homepage', 'repository', 'license', 'keywords'];
-const ROOT_ENTRIES = new Set(['.claude-plugin', '.codex-plugin', 'hooks', 'package-metadata.json', 'plugin.json', 'scripts', 'skills']);
+const ROOT_ENTRIES = new Set(['.claude-plugin', '.codex-plugin', 'agents', 'hooks', 'package-metadata.json', 'plugin.json', 'scripts', 'skills']);
 const PROVIDER = /\b(claude|anthropic|codex|openai|chatgpt|gpt-?\d|gemini|antigravity|copilot|cursor)\b/i;
 
 export function fail(message) { throw new Error(message); }
@@ -193,6 +193,23 @@ export function syncManifests(root = ROOT) {
   if (existsSync(dirname(agy))) { writeFileSync(agy, `${JSON.stringify({ entries: [{ path: 'plugins/common' }] }, null, 2)}\n`); synced++; }
   console.log(`Synchronized ${synced} manifest files to release version ${version}.`);
 }
+// A skill named by an invocation or preloaded by an agent definition must exist, so removing a skill cannot leave a dangling call.
+function validateSkillReferences(packages, root) {
+  const skillDirs = packages.flatMap(metadataPath => {
+    const skillRoot = resolve(dirname(metadataPath), 'skills');
+    return readdirSync(skillRoot, { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => resolve(skillRoot, entry.name));
+  });
+  const known = new Set(skillDirs.map(dir => dir.split(sep).at(-1)));
+  for (const path of skillDirs.flatMap(dir => walk(dir)).filter(file => file.endsWith('.md'))) {
+    for (const match of readFileSync(path, 'utf8').matchAll(/\b[Ii]nvok(?:e|es|ing)\s+`([a-z0-9-]+)`/g)) if (!known.has(match[1])) fail(`${rel(path, root)} invokes unknown skill '${match[1]}'`);
+  }
+  for (const metadataPath of packages) {
+    for (const path of walk(resolve(dirname(metadataPath), 'agents')).filter(file => file.endsWith('.md'))) {
+      const skills = frontmatter(path).data.skills || [];
+      for (const name of Array.isArray(skills) ? skills : [skills]) if (!known.has(name)) fail(`${rel(path, root)} preloads unknown skill '${name}'`);
+    }
+  }
+}
 export function validateRepository(root = ROOT) {
   const packages = commonPackages(root);
   for (const metadataPath of packages) {
@@ -204,6 +221,7 @@ export function validateRepository(root = ROOT) {
     if (!skills.length) fail(`${rel(skillRoot, root)} has no valid skills`);
     for (const skill of skills) validateSkill(resolve(skillRoot, skill.name), root);
   }
+  validateSkillReferences(packages, root);
   for (const retired of [resolve(root, 'plugins/common/orchestration'), resolve(root, 'spec/autonomous-sdlc'), resolve(root, 'archive/autonomous-sdlc')]) if (existsSync(retired)) fail(`retired orchestration material remains at ${rel(retired, root)}`);
   const agy = resolve(root, '.agents/plugins.json');
   if (!existsSync(agy) || !Array.isArray(json(agy).entries) || !json(agy).entries.some(entry => entry?.path === 'plugins/common' || entry?.path === './plugins/common')) fail(`${rel(agy, root)} must declare 'plugins/common' in entries`);

@@ -3,16 +3,12 @@ active_skills:
   - ddd
   - hexagonal-architecture
   - tdd
-  - vcs
+  - deliver
   - review
   - spec
   - plan
-  - ship
   - improve
   - writing-great-skill
-  - afk
-  - agent-review
-  - pr-fix
   - explore
   - milestone
   - release
@@ -34,7 +30,7 @@ build_tools:
 - Before editing, name the targeted test or validator; run it while you work. Run a full suite before starting only to reproduce a bug or set a baseline.
 - Run the verify gate (`just verify`) once when the change is done. Never re-run it on unchanged code; a second pass proves nothing.
 - Read-only analysis, plan-only work and doc edits without runnable scripts need no verification.
-- Make a small change asked for in chat in place, with focused tests, without a plan. Open issues or write plans only when asked or when the work spans several slices; once a plan is approved, `plan` hands execution to Craftsman subagents.
+- Make a small change asked for in chat in place, with focused tests, without a plan. Open issues or write plans only when asked or when the work spans several slices; once a plan is approved, `drive <issue>` delivers it.
 
 ## Output
 
@@ -47,13 +43,6 @@ build_tools:
 ## Diagrams
 
 Use ASCII or Unicode box drawings and Markdown tables in portable skills and docs. GitHub issue bodies, plan comments and PR descriptions may use fenced `mermaid` diagrams when a flow or relationship needs explanation; include a text explanation. Literal GitHub output examples inside fenced code blocks may show that syntax.
-
-## Doctrine
-
-- Writing domain logic, entities or value objects under `domain/`: invoke `ddd`.
-- Defining ports or adapters under `infrastructure/` or `api/`: invoke `hexagonal-architecture`.
-- Writing tests under `tests/`: invoke `tdd`.
-- Editing anything under `plugins/`: invoke `writing-great-skill` first; it is the standard every skill, description and envelope here follows.
 
 ## Goal
 
@@ -76,15 +65,14 @@ See `CONTRIBUTING.md` for maintainer and skill authoring workflows.
 
 - Update the relevant skill and its references together.
 - Keep what every run needs in `SKILL.md`; move to `references/` only a branch some runs skip.
-- Change the board's Status columns, or which issues it holds, in the workflow skills and `plugins/common/workflow/skills/afk/references/setup.md` together with FilipKrawiec/devcontainer's `dev issuetracker`, which reads them, in a companion PR.
+- Change the board's Status columns, or which issues it holds, in the workflow skills, `plugins/common/workflow/skills/deliver/references/setup.md` and `plugins/common/workflow/scripts/lib/board.mjs` together with FilipKrawiec/devcontainer's `dev issuetracker`, which reads them, in a companion PR.
 - Preserve existing user changes outside the requested scope.
 
 ## Shipping
 
-- Work happens in an isolated worktree on a short-lived branch made from the fetched base branch; the main checkout stays as it is. The start, open-PR and tidy steps are in `plugins/common/workflow/skills/vcs/SKILL.md`.
-- Open a draft PR; `agent-review` reviews it in author mode with finders sized by its `risk:R*` label, `pr-fix` fixes verified Important findings, and `ship` marks it ready once the verdict is `ready` and checks pass.
-- Committed changes stay within the issue's scope packet when it has one. After verification, an agent pushes the branch and opens or updates its PR, linking the `## Plan` comment when one was posted. Use `Closes #<N>` when that issue's bounded outcome completes on merge. Use `Part of #<N>` only for a product-milestone issue that stays open through production acceptance; split work needing several PRs into sub-issues, each closed by its own PR.
-- Tell the owner only once `ship` marked the PR ready and turned on squash auto-merge bound to the reviewed head; it waits for required independent approvals and checks. Wait for a prerequisite PR instead of opening stacked drafts. Optional review suggestions do not block delivery.
-- A fresh Reviewer is the engineering merge gate; `agent-review` records its exact-head decision through the configured GitHub reviewer identity. Routine eligible merges are delegated. Owner rules add approval for reserved effects; they never replace independent review. Force-pushing protected/default branches still requires explicit owner authority. Preserve GitHub protections; never claim they enforce a named reviewer without inspecting effective rules.
+- Deliver through `drive <issue|epic>` from the owner's session, as the `deliver` skill describes: it starts the work in an isolated worktree on a short-lived branch from the fetched base, opens the draft PR, runs one reviewer agent per round (Blocker and Important findings block, Nits never do, a third blocking round goes to the owner), readies the PR and turns on squash auto-merge. The main checkout stays as it is.
+- Committed changes stay within the issue's scope packet when it has one. After the gate passes, `drive` pushes the branch and opens its PR. Use `Closes #<N>` when that issue's bounded outcome completes on merge. Use `Part of #<N>` only for a product-milestone issue that stays open through production acceptance; split work needing several PRs into sub-issues, each closed by its own PR.
+- Tell the owner only when `drive` returns an owner step or the PR is ready with auto-merge on. Optional review suggestions do not block delivery.
+- A fresh Reviewer is the engineering merge gate; `review` records its exact-head decision through the configured GitHub reviewer identity. Routine eligible merges are delegated. Owner rules add approval for reserved effects; they never replace independent review. Force-pushing protected/default branches still requires explicit owner authority. Preserve GitHub protections; never claim they enforce a named reviewer without inspecting effective rules.
 
 - Production requires owner approval of the demonstrated artifact and configuration, not merely merge approval. Keep stable publication held until native promotion controls exist.

@@ -18,7 +18,13 @@ test('ciState reads red over pending over green, and none without checks', () =>
 
 test('status reports verdict, round, risk and linked issues of a PR', () => {
   const state = prState(pr({ labels: [{ name: 'risk:R1' }], reviews: [review('fixes', 'COMMENTED', 'b'.repeat(40)), review('ready', 'APPROVED')] }), lanes);
-  assert.deepEqual([state.verdict, state.round, state.risk, state.issues, state.ci], ['ready', 2, 'R1', [3], 'green']);
+  assert.deepEqual([state.verdict, state.round, state.risk, state.issues, state.ci], ['ready', 1, 'R1', [3], 'green']);
+});
+
+test('the round counts verdicts that are not approvals or splits', () => {
+  const old = 'b'.repeat(40);
+  const reviews = [review('split', 'COMMENTED', old), review('fixes', 'COMMENTED', old), review('ready'), review('ready', 'APPROVED')];
+  assert.equal(prState(pr({ reviews }), lanes).round, 2);
 });
 
 test('the next action follows the PR state, first match wins', () => {
@@ -29,6 +35,12 @@ test('the next action follows the PR state, first match wins', () => {
   assert.deepEqual(next({}), { action: 'review', actor: 'reviewer' });
   assert.equal(next({ reviews: [review('fixes')] }).actor, 'implementer');
   assert.deepEqual(next({ reviews: [review('ready', 'APPROVED')] }), { action: 'merge', actor: 'cli' });
+});
+
+test('a ready verdict without a mode hands a draft to deliver and a ready PR to its approval', () => {
+  assert.deepEqual(next({ isDraft: true, reviews: [review('ready')] }), { action: 'ready', actor: 'cli', reason: 'verdict ready on a draft' });
+  assert.deepEqual(next({ reviews: [review('ready')] }), { action: 'review', actor: 'reviewer' });
+  assert.equal(next({ reviews: [review('ready'), review('fixes')] }).actor, 'implementer', 'a later blocking verdict on a ready PR counts');
 });
 
 test('an author-mode ready verdict hands a draft off instead of reviewing it again', () => {
@@ -71,6 +83,30 @@ test('wait treats no checks as pending while required checks are configured', ()
   assert.deepEqual(result.lines.map(line => line.ci), ['none', 'pending', 'green']);
   assert.equal(waitWith(required, [{ statusCheckRollup: [] }], '--until', 'ci', '--timeout', '2').code, 1);
   assert.equal(waitWith({ ...lanes, requiredChecks: [] }, [{ statusCheckRollup: [] }], '--until', 'ci').code, 0);
+});
+
+test('a repo whose merge publishes to production sends an approved PR to the owner through release', () => {
+  const publishing = { ...lanes, publishOnMerge: true };
+  assert.deepEqual(prState(pr({ reviews: [review('ready', 'APPROVED')] }), publishing).next, { action: 'owner-review', actor: 'owner', reason: 'merge publishes to production: invoke release' });
+  const ownerApproved = { author: { login: 'owner' }, state: 'APPROVED', body: '', commit: { oid: head } };
+  assert.equal(prState(pr({ reviews: [review('ready', 'APPROVED'), ownerApproved] }), publishing).next.action, 'merge');
+});
+
+test('wait --until base waits for the merge, then exits 1 on a red base at the merge commit', () => {
+  const merged = { state: 'MERGED', mergeCommit: { oid: 'c'.repeat(40) } };
+  const run = (checks, states) => {
+    const lines = []; const log = console.log; console.log = line => lines.push(JSON.parse(line));
+    let index = 0; const asked = [];
+    try {
+      const code = waitCommand(['5', '--until', 'base'], { ...lanes, requiredChecks: ['verify'] }, { read: () => pr(states[Math.min(index++, states.length - 1)]), checksAt: (repo, sha) => { asked.push(sha); return checks.shift() ?? []; }, pause: () => {}, now: () => 0 });
+      return { code, lines, asked };
+    } finally { console.log = log; }
+  };
+  const red = run([[], [{ name: 'verify', conclusion: 'FAILURE' }]], [{}, merged]);
+  assert.equal(red.code, 1);
+  assert.deepEqual(red.lines.map(line => line.base ?? null), [null, 'none', 'red']);
+  assert.equal(red.asked[0], 'c'.repeat(40));
+  assert.equal(run([[{ name: 'verify', conclusion: 'SUCCESS' }]], [merged]).code, 0);
 });
 
 test('wait ends on a verdict, on merge, on a closed PR and on timeout', () => {

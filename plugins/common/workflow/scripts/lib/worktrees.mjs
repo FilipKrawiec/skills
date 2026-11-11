@@ -2,7 +2,6 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { afkRunAlive } from './afk-watch.mjs';
 import { cleanEnvironment, config } from './core.mjs';
 
 const day = 86_400_000;
@@ -14,7 +13,6 @@ const graceMs = 3_600_000;
 export function worktreeVerdict(tree, { now, idleDays }) {
   if (tree.main) return { action: 'keep', why: 'main checkout' };
   if (tree.current) return { action: 'keep', why: 'this checkout' };
-  if (tree.watcher) return { action: 'keep', why: 'AFK watcher' };
   if (tree.busy) return { action: 'keep', why: 'a process works in it' };
   if (tree.live) return { action: 'keep', why: 'a live session holds it' };
   if (tree.pr === 'OPEN') return { action: 'keep', why: 'its PR is open' };
@@ -50,7 +48,7 @@ function gitIn(cwd, args, extraEnv = {}) {
   return spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...cleanEnvironment(), GIT_OPTIONAL_LOCKS: '0', ...extraEnv } });
 }
 
-function busyPaths() {
+export function busyPaths() {
   const listed = spawnSync('lsof', ['-a', '-d', 'cwd', '-Fn'], { encoding: 'utf8' });
   return listed.error ? null : listed.stdout.split('\n').filter(line => line.startsWith('n')).map(line => line.slice(1));
 }
@@ -61,11 +59,10 @@ function touched(path) {
   return stamps.length ? Math.max(...stamps) : 0;
 }
 
-// A tree is live while its lock names a running pid or an AFK job of its name still runs; a dead pid's lock is stale.
-function liveSession(tree, root) {
+// A tree is live while its lock names a running pid; a dead pid's lock is stale.
+function liveSession(tree) {
   const pidAlive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
-  if (tree.lockPid && pidAlive(tree.lockPid)) return true;
-  try { return afkRunAlive(join(root, '.git'), null, basename(tree.path)); } catch { return false; }
+  return Boolean(tree.lockPid && pidAlive(tree.lockPid));
 }
 
 // Reads what the verdict needs; a fact that cannot be read keeps the tree.
@@ -78,8 +75,7 @@ export function worktreeFacts(tree, { root, current, baseRef, prs, busy }) {
     ...tree,
     main: treePath === real(root),
     current: treePath === real(current),
-    watcher: treePath === join(real(root), '.worktrees', 'afk-watch'),
-    live: liveSession(tree, root),
+    live: liveSession(tree),
     busy: busy === null || status.status !== 0 || busy.map(real).some(path => path === treePath || path.startsWith(`${treePath}/`)),
     pr: tree.branch ? prs.get(tree.branch) ?? null : null,
     dirty: status.stdout.trim() !== '',

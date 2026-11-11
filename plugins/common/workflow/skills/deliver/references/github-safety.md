@@ -1,6 +1,6 @@
 # GitHub Safety Setup
 
-GitHub and the host enforce authority; skill text is not a security boundary. From the installed `afk` skill directory run:
+GitHub and the host enforce authority; skill text is not a security boundary. From the installed `deliver` skill directory run:
 
 ```text
 node <this-skill-directory>/../../scripts/workflow.mjs safety check

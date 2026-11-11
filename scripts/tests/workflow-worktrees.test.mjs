@@ -20,10 +20,9 @@ const aged = now - 2 * hour;
 const idle = { path: '/r/.claude/worktrees/x', branch: 'x', touched: now - 3 * day };
 const verdict = facts => worktreeVerdict({ ...idle, ...facts }, { now, idleDays: 2 });
 
-test('worktree tidy keeps the main checkout, this checkout, the watcher, a busy or live tree and an open PR\'s tree', () => {
+test('worktree tidy keeps the main checkout, this checkout, a busy or live tree and an open PR\'s tree', () => {
   assert.equal(verdict({ main: true, pr: 'MERGED' }).why, 'main checkout');
   assert.equal(verdict({ current: true, pr: 'MERGED' }).why, 'this checkout');
-  assert.equal(verdict({ watcher: true, inBase: true }).why, 'AFK watcher');
   assert.equal(verdict({ busy: true, pr: 'MERGED' }).why, 'a process works in it');
   assert.equal(verdict({ live: true, pr: 'MERGED' }).why, 'a live session holds it');
   assert.deepEqual(verdict({ pr: 'OPEN', dirty: true }), { action: 'keep', why: 'its PR is open' });

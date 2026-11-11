@@ -28,11 +28,11 @@ just sync-manifests
 
 Run `just verify` once on completed changes. CI runs the same unit fixtures and plugin validation once, checks tracked/untracked hygiene, then scans secrets. Use `node plugins/common/workflow/scripts/workflow.mjs project status` to inspect the nearest `AGENTS.md` when needed.
 
-The workflow CLI entry `plugins/common/workflow/scripts/workflow.mjs` only parses commands and takes locks. Its modules in `scripts/lib/` import downward only: `core` (process, Git, config, GitHub metadata) ← `afk-board` (issues, PRs, the board-order plan, merges) ← `afk-runs` (holds, start/check/end, scope) ← `afk-watch` (launchd watcher, supervisor, tooling); `vcs` (commit, push, review context) and `issues` build on `afk-runs`. Tests import each name on its own line from the module that defines it.
+The workflow CLI entry `plugins/common/workflow/scripts/workflow.mjs` only parses commands and takes locks. Its modules in `scripts/lib/` import downward only: `core` (process, Git, config, GitHub metadata, flags, the implementer check) ← `board` (scope packets, PR records, Reviewer approval, board status) ← `pr` ← `state` ← `drive`; `issues` builds on `board`, `vcs` (commit, push, review context) on `issues`, and `worktrees` on `core`. Tests import each name on its own line from the module that defines it.
 
 Every package's `package-metadata.json` owns its identity/version. `just sync-manifests` generates common host manifests and marketplace catalogs. Keep versions unified; do not hand-edit generated manifests.
 
-Open a draft PR, have `agent-review` review it in author mode, fix verified Important findings with `pr-fix`, and let `ship` mark it ready, with verdicts, commands and exit codes in the description, and turn on squash auto-merge through `vcs`. Optional suggestions may remain follow-ups; merge approval is not production approval.
+Deliver through `drive <issue>` as the `deliver` skill describes: it opens the draft PR, one reviewer runs `review` in one pass, the implementer fixes Blocker and Important findings, and `drive` marks the PR ready and turns on squash auto-merge. Optional suggestions may remain follow-ups; merge approval is not production approval.
 
 ## Local installation
 

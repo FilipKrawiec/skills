@@ -31,7 +31,7 @@ test('manifest validator detects metadata drift in a package manifest', t => {
 
 test('manifest validator rejects broken relative links', t => {
   const root = fixture(t);
-  writeFileSync(join(root, 'plugins/common/workflow/skills/afk/references/broken.md'), '[missing](no-file.md)');
+  writeFileSync(join(root, 'plugins/common/workflow/skills/review/references/broken.md'), '[missing](no-file.md)');
   assert.throws(() => validateRepository(root), /contains broken relative link/);
 });
 
@@ -41,4 +41,16 @@ test('manifest validator accepts only tool-call guard hooks', t => {
   assert.doesNotThrow(() => validateRepository(root));
   writeFileSync(path, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'cat rules.md' }] }] } }));
   assert.throws(() => validateRepository(root), /may only guard tool calls/);
+});
+
+test('manifest validator rejects an invocation or agent preload of a removed skill', t => {
+  const root = fixture(t);
+  assert.doesNotThrow(() => validateRepository(root));
+  const skill = join(root, 'plugins/common/workflow/skills/improve/SKILL.md');
+  writeFileSync(skill, readFileSync(skill, 'utf8').replace('## Output', 'Then invoke `ship` to hand it off.\n\n## Output'));
+  assert.throws(() => validateRepository(root), /invokes unknown skill 'ship'/);
+  cpSync(join(ROOT, 'plugins/common/workflow/skills/improve/SKILL.md'), skill);
+  const agent = join(root, 'plugins/common/workflow/agents/implementer.md');
+  writeFileSync(agent, readFileSync(agent, 'utf8').replace('  - tdd\n', '  - tdd\n  - vcs\n'));
+  assert.throws(() => validateRepository(root), /preloads unknown skill 'vcs'/);
 });
