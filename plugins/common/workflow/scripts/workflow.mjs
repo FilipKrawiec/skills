@@ -189,7 +189,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, ...args] = process.argv.slice(2);
-    const valueOptions = new Set(['--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--timeout', '--interval', '--hand-back', '--days', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root']);
+    const valueOptions = new Set(['-m', '--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--timeout', '--interval', '--hand-back', '--days', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root']);
     let wantsHelp = command === '-h';
     for (let i = 0; i < args.length && args[i] !== '--'; i++) {
       if (valueOptions.has(args[i])) { i++; continue; }
