@@ -64,6 +64,15 @@ test('commit includes only assigned paths', t => {
   assert.equal(JSON.parse(result.stdout).result, 'committed');
 });
 
+test('commit validates a help-shaped message as a value', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.repo, 'assigned.txt'), 'assigned');
+  const result = f.cliRun('commit', '--message', '-h', '--', 'assigned.txt');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Conventional Commit/);
+  assert.equal(existsSync(join(f.repo, 'assigned.txt')), true);
+});
+
 test('push reports GitHub network failure without exposing diagnostics', t => {
   const f = fixture(t);
   f.env.FAIL_GH_NETWORK = '1';

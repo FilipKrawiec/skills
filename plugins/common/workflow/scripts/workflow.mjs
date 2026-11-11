@@ -189,8 +189,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, ...args] = process.argv.slice(2);
-    const options = args.slice(0, args.indexOf('--') < 0 ? args.length : args.indexOf('--'));
-    if (command === '-h' || options.includes('--help') || options.includes('-h')) {
+    const valueOptions = new Set(['--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--timeout', '--interval', '--hand-back', '--days', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root']);
+    let wantsHelp = command === '-h';
+    for (let i = 0; i < args.length && args[i] !== '--'; i++) {
+      if (valueOptions.has(args[i])) { i++; continue; }
+      if (args[i] === '--help' || args[i] === '-h') wantsHelp = true;
+    }
+    if (wantsHelp) {
       console.log(command === 'worktree' ? 'Usage: worktree tidy [--dry-run] [--idle-days N]' : help);
     } else {
     const names = requiredLocks(command, args);
