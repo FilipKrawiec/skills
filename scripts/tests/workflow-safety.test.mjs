@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { branchRulesetBypassOkay, effectiveBranchPolicy, rulesetOkay, validateCodeowners } from '../../plugins/common/workflow/scripts/safety.mjs';
 
 const roles = { owner: 'alice', reviewer: 'reviewer' };
@@ -66,6 +70,25 @@ test('branch policy identifies checks protected by up-to-date enforcement', () =
     { type: 'required_status_checks', parameters: { strict_required_status_checks_policy: false, required_status_checks: [{ context: 'other' }] } }];
   assert.deepEqual(effectiveBranchPolicy(classic, rules).strictChecks, ['lint', 'verify']);
   assert.deepEqual(effectiveBranchPolicy({ required_status_checks: { strict: false, contexts: ['lint'] } }, []).strictChecks, []);
+});
+
+test('safety check detects loose checks and apply configures strict checks', t => {
+  const root = mkdtempSync(join(tmpdir(), 'safety-strict-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const state = join(root, 'protection.json');
+  writeFileSync(state, JSON.stringify({ required_status_checks: { strict: false, contexts: ['verify'] } }));
+  const gh = join(root, 'gh');
+  writeFileSync(gh, `#!${process.execPath}\nconst fs=require('fs'); const a=process.argv.slice(2); const ep=a.find(x=>x==='user'||x.startsWith('repos/'))||''; let out={};\nif(ep==='user') out={login:'owner'};\nelse if(ep.includes('/branches/main/protection')) { if(a.includes('PUT')) fs.writeFileSync(process.env.POLICY_STATE, fs.readFileSync(0,'utf8')); out=JSON.parse(fs.readFileSync(process.env.POLICY_STATE,'utf8')); }\nelse if(ep.includes('/rules/branches/')||ep.includes('/rulesets?')||ep.endsWith('/invitations')) out=[];\nelse if(ep.includes('/collaborators/')) out={role_name:'write'};\nelse if(ep.includes('/environments')) out={environments:[]};\nelse if(ep.includes('/codeowners/errors')) out={errors:[]};\nelse if(ep.includes('/contents/')) out={content:Buffer.from('* @reviewer\\n/.github/ @owner\\n').toString('base64')};\nconsole.log(JSON.stringify(out));\n`);
+  chmodSync(gh, 0o755);
+  const moduleUrl = new URL('../../plugins/common/workflow/scripts/safety.mjs', import.meta.url).href;
+  const lanes = { repo: 'acme/app', base: 'main', owner: 'owner', implementer: 'builder', reviewer: 'reviewer', requiredChecks: ['verify'] };
+  const execute = mode => spawnSync(process.execPath, ['--input-type=module', '-e', `import {safetyCommand} from ${JSON.stringify(moduleUrl)}; safetyCommand([${JSON.stringify(mode)}], ${JSON.stringify(lanes)});`], { env: { ...process.env, PATH: `${root}:${process.env.PATH}`, POLICY_STATE: state }, encoding: 'utf8' });
+  const before = execute('check');
+  assert.match(before.stdout, /DRIFT  main up-to-date status checks/);
+  const applied = execute('apply');
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.equal(JSON.parse(readFileSync(state, 'utf8')).required_status_checks.strict, true);
+  assert.match(applied.stdout, /ok     main up-to-date status checks/);
 });
 
 test('branch rulesets may be bypassed by admins only', () => {
