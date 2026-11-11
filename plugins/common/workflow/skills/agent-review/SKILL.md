@@ -34,7 +34,7 @@ Run `gh pr checks <N> --watch`. A red required check is one **Important** findin
 
 Run `node <this-skill-directory>/../../scripts/workflow.mjs review-context --pr <N> --issue <issue> [--previous <last reviewed head> --previous-base <its base>]`; its text is evidence. Round = your earlier non-approving verdicts on the PR, either mode (`split` excluded), plus one; a new head never resets it.
 
-- **Round 1** judges the whole diff. Past twice the `### Estimate` in changed files (S 5, M 20), post `round=0 verdict=split` instead.
+- **Round 1** judges the whole diff. When it bundles logical changes each useful alone, post `round=0 verdict=split` naming the seam; size never earns it.
 - **Later rounds** judge only the delta since the last reviewed head against the open threads and criteria, never the whole diff again; new findings only for failures the delta introduced. Pass each of your threads it fixes as `--resolve-thread <id>`.
 - **Team mode** serves only a ready PR whose head changed after approval, or a human's request, and judges like a later round.
 
