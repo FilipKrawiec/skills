@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, estimateRisk, matchesPattern,
-  modelFor, nextTarget, ownerPatterns, parseHandBack, pickSlice, reviewerCommand, riskFromPaths,
+  modelFor, nextTarget, ownerPatterns, parseHandBack, pickSlice, reviewerCommand, riskFromPaths, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 
 const head = 'a'.repeat(40);
@@ -48,6 +48,26 @@ test('review, fix, ready, merge and close follow the PR state', () => {
   assert.deepEqual(decide({ ...base, pr: pr({ state: 'MERGED' }) }), { do: 'close' });
   assert.deepEqual(decide({ issue: issue({ state: 'CLOSED' }), tree: tree() }), { do: 'remove-worktree' });
   assert.deepEqual(decide({ issue: issue({ state: 'CLOSED' }) }), { done: { issue: 3 } });
+});
+
+test('a Reviewer claim older than an hour with no review since is released and the reviewer dispatched again', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  const claimed = pr({ labels: [label('risk:R1'), label('state:reviewing')] });
+  const since = Date.parse('2026-11-11T10:00:00Z'); const hour = 60 * 60_000;
+  assert.deepEqual(decide({ ...base, pr: claimed, reviewingSince: since, now: since + hour - 1 }), { wait: { pr: 5, until: 'reviewed' } });
+  assert.deepEqual(decide({ ...base, pr: claimed, reviewingSince: since, now: since + hour }), { do: 'release-review' });
+  const posted = { ...review('fixes', 'COMMENTED'), submittedAt: '2026-11-11T10:30:00Z' };
+  assert.equal(staleReviewClaim({ ...claimed, reviews: [posted] }, lanes, since, since + 2 * hour), false, 'a review after the claim is not stale');
+  assert.equal(staleReviewClaim(claimed, lanes, null, since + 2 * hour), false, 'no label event, no release');
+});
+
+test('drive releases a stale Reviewer claim, then dispatches the reviewer', () => {
+  const since = Date.parse('2026-11-11T10:00:00Z');
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, labels: [label('risk:R1'), label('state:reviewing')] })] });
+  Object.assign(repo.io, { reviewingSince: () => since, now: () => since + 61 * 60_000 });
+  const step = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(repo.calls, [['release-review', 5]]);
+  assert.deepEqual([step.agent, step.mode], ['reviewer', 'review']);
 });
 
 test('only risk R2 or the round cap brings in the owner; line count never does', () => {
@@ -108,6 +128,8 @@ function fakeRepo(initial) {
     commit: (t, message, paths) => { calls.push(['commit']); t.diffPaths = paths; t.dirty = false; t.commits++; t.unpushed = true; },
     push: t => { calls.push(['push']); t.unpushed = false; },
     open: (i, t, risk) => { calls.push(['open', i.number, risk]); (s.prs ||= []).push(pr({ issue: i.number, number: 50 + i.number, labels: [label(`risk:${risk}`)] })); },
+    reviewingSince: () => null,
+    releaseReview: p => { calls.push(['release-review', p.number]); p.labels = p.labels.filter(l => l.name !== 'state:reviewing'); },
     risk: (p, from, to) => { calls.push(['risk', to]); p.labels = [label(`risk:${to}`)]; },
     ready: p => { calls.push(['ready']); p.isDraft = false; },
     autoMerge: p => { calls.push(['auto-merge']); p.autoMergeRequest = {}; },
