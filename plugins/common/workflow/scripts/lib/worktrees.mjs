@@ -50,7 +50,7 @@ function gitIn(cwd, args, extraEnv = {}) {
   return spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...cleanEnvironment(), GIT_OPTIONAL_LOCKS: '0', ...extraEnv } });
 }
 
-function busyPaths() {
+export function busyPaths() {
   const listed = spawnSync('lsof', ['-a', '-d', 'cwd', '-Fn'], { encoding: 'utf8' });
   return listed.error ? null : listed.stdout.split('\n').filter(line => line.startsWith('n')).map(line => line.slice(1));
 }

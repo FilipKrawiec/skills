@@ -1,6 +1,8 @@
 ---
 name: reviewer
 description: Reviews one pull request at its head in a single pass covering standards and spec, verifies its own findings and posts one verdict through the workflow CLI. Use for a PR review round or an approval.
+model: sonnet
+effort: medium
 skills:
   - review
 disallowedTools: Agent

@@ -275,9 +275,8 @@ export function ensureWorkflowLabels(repo, list = () => jsonCommand('gh', ['labe
 export function afkExpandedPath(path) { return path.replace(/^~(?=\/|$)/, homedir()); }
 
 // Agents write bodies and briefs here: inside the worktree, so isolation and the body-file check accept them, and never committed.
-export function workflowScratch() {
-  const root = git('rev-parse', '--show-toplevel');
-  const exclude = join(realpathSync(resolve(root, git('rev-parse', '--git-common-dir'))), 'info', 'exclude');
+export function workflowScratch(root = git('rev-parse', '--show-toplevel')) {
+  const exclude = join(realpathSync(git('rev-parse', '--path-format=absolute', '--git-common-dir')), 'info', 'exclude');
   const ignored = existsSync(exclude) && readFileSync(exclude, 'utf8').split('\n').includes('/.wf/');
   if (!ignored) { mkdirSync(dirname(exclude), { recursive: true }); appendFileSync(exclude, '/.wf/\n'); }
   const path = join(root, '.wf');

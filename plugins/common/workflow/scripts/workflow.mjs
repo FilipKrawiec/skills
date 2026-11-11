@@ -60,6 +60,7 @@ import {
 } from './lib/vcs.mjs';
 import { nitsCommand, prCommand } from './lib/pr.mjs';
 import { nextCommand, statusCommand, waitCommand } from './lib/state.mjs';
+import { checkCommand, driveCommand } from './lib/drive.mjs';
 import { worktreeCommand } from './lib/worktrees.mjs';
 
 const help = `Usage:
@@ -71,6 +72,8 @@ const help = `Usage:
   node workflow.mjs status NUMBER
   node workflow.mjs wait NUMBER --until ci|reviewed|merged [--timeout MINUTES] [--interval SECONDS]
   node workflow.mjs next [--owner]
+  node workflow.mjs drive NUMBER [--hand-back FILE|-] | drive --next
+  node workflow.mjs check
   node workflow.mjs pr ready|auto-merge --pr NUMBER
   node workflow.mjs nits [--days N] [--done PR...]
   node workflow.mjs issue claim|status|create|comment|edit|close|reopen|queue ...
@@ -96,6 +99,8 @@ nits lists the Reviewer's **Nit** inline comments on PRs merged in the last N da
 pr ready marks a draft ready only at a green head whose newest agent-review verdict is ready, then drops the owner's review request.
 pr auto-merge binds squash auto-merge to the head only when the Reviewer approved it (verdict=ready, or verdict=owner with the owner's approval under review:owner), no owner change request stands, no check failed and the base requires code-owner review and the configured checks.
 review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit, Pre-existing and Follow-up ones on APPROVE), adds review:owner when the verdict is cap or owner, then removes state:reviewing; a failed post comments a post-failed marker, and every exit releases the claim that review-context --claim took.
+drive advances an issue or epic from GitHub state: it performs every mechanical step (claim, worktree, commit and push from a hand-back, draft PR, risk, ready, auto-merge, close, worktree removal) and prints one JSON instruction: an agent to start with its model and brief, a wait command to run in the background, an owner step, or done. Re-running it on unchanged state repeats the instruction.
+check runs steps.test under a machine-wide lock with two slots, so at most two gates run at once.
 A body or comments file is - (stdin) or a path inside the worktree; scratch creates the git-ignored .wf/ directory for such files and prints its path.`;
 export function hasLockfAncestor(commands) {
   return commands.some(command => basename(command.trim().split(/\s+/, 1)[0]) === 'lockf');
@@ -277,6 +282,8 @@ async function execute(command, args) {
   else if (command === 'status') { const { lanes } = config(); statusCommand(args, lanes); }
   else if (command === 'wait') { const { lanes } = config(); process.exitCode = waitCommand(args, lanes); }
   else if (command === 'next') { const { lanes } = config(); nextCommand(args, lanes); }
+  else if (command === 'drive') { const { lanes } = config(); driveCommand(args, lanes); }
+  else if (command === 'check') { const { lanes } = config(); process.exitCode = checkCommand(args, lanes); }
   else if (command === 'scratch' && !args.length) console.log(JSON.stringify({ path: workflowScratch() }));
   else if (command === 'labels') labelsCommand(args);
   else if (command === 'worktree') worktreeCommand(args);

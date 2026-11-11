@@ -8,6 +8,8 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 
 One reviewer, one pass: cover the standards and the spec, verify your own findings, post one review on the head. Never start a subagent, finder or verifier. Never implement, commit or push; refuse a head this session committed or pushed. Post only with `review-post`: it acts as the configured Reviewer and never prints the token. Run one plain command per Bash call. `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
 
+A `<cli> drive` brief names PR, head, round and task.
+
 Branch on the assignment, first match wins:
 
 - a technical fork or AFK eligibility: read [assignments.md](references/assignments.md);
@@ -42,8 +44,6 @@ Round = `round` from `<cli> status <N>`, plus one; a new head never resets it. T
 
 ## 4. Find and verify
 
-Answer every question yourself:
-
 - **Acceptance outcome:** trace each criterion to an observable outcome and a production call site; code reached only from tests proves nothing. Run the manual steps CI cannot. Flag hollow tests, weakened thresholds and scope creep.
 - **Correctness:** edge cases, failure paths, security, concurrency, cleanup and data loss in the changed code.
 - **Fit:** breaches of the repository's own rules, each citing the rule's `file:line`.
@@ -57,7 +57,7 @@ Tag each candidate:
 - **Pre-existing:** a defect already on the base branch.
 - **Follow-up:** a real gap outside the acceptance criteria.
 
-Only Blocker and Important block. Verify each candidate against the head before posting: read the cited line, reproduce or trace the failure, and drop what you cannot confirm. Never report lint, taste or an unstated rule, or repeat a posted finding.
+Only Blocker and Important block. Verify each candidate at the head: read the cited line, reproduce or trace the failure, drop what you cannot confirm. Never report lint, taste or an unstated rule, or repeat a posted finding.
 
 **Exit gate:** each kept finding has a tag, a read `file:line`, a failure scenario and a remedy.
 
@@ -69,7 +69,7 @@ Write the body and the inline findings (`[{"path","line","body"}]`, each body st
 - a Blocker or Important finding: `verdict=fixes`.
 - otherwise: `verdict=ready`.
 
-Nits never block and never earn another round; they stay as inline comments for the `<cli> nits` sweep. List Pre-existing and Follow-up findings in the body for the caller to file.
+Nits never block and never earn another round; they stay inline for the `<cli> nits` sweep. List Pre-existing and Follow-up findings in the body for the caller to file.
 
 Return at most 5 lines: verdict, PR, head, round, tag counts.
 
