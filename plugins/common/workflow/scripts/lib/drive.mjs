@@ -16,8 +16,8 @@ export const maxRisk = (...values) => risks[Math.max(...values.filter(Boolean).m
 // Models follow risk for both the implementer and the Reviewer: Opus only for R2.
 export const modelFor = risk => (risk === 'R2' ? 'opus' : 'sonnet');
 // From the third blocking verdict on, narrow fixes have stopped converging: one fresh implementer on the strongest model
-// takes the whole open set. A blocking verdict after that fresh round cuts scope through the planner (`spec`), never a
-// further fix round. The rounds never hand an unapproved PR to the owner.
+// takes the whole open set. A blocking verdict after that fresh round cuts scope through the planner (`spec`), who narrows
+// the issue to what the PR delivers, never a further fix round. The rounds never hand an unapproved PR to the owner.
 export const freshFixRound = 3;
 export const modelForStep = (step, risk) => (step.agent === 'planner' || step.fresh ? 'opus' : modelFor(risk));
 const riskLabel = labels => labels.map(label => label.name ?? label).find(name => /^risk:R\d$/.test(name))?.slice(5) || null;
@@ -80,7 +80,7 @@ export function decideIssue(facts, lanes) {
   if (hb.status === 'replan') return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
   if (hb.status === 'blocked') return { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}` };
   // A planner split makes the issue an epic, which `drive` routes to `driveEpic`; still a story, the split did not happen,
-  // and dispatching the planner again would loop on the same blocking verdict.
+  // and dispatching the planner again would loop on the same blocking verdict. A narrowed issue is handled with its PR.
   if (hb.status === 'sliced') return { blocked: { issue: issue.number, reason: 'the planner handed back sliced, yet the issue is not an epic' } };
   const claimed = (issue.labels || []).some(label => (label.name ?? label) === 'state:started');
   if (!pr || pr.state !== 'OPEN') {
@@ -101,9 +101,11 @@ export function decideIssue(facts, lanes) {
   if (risk !== state.risk && risks.indexOf(risk) > risks.indexOf(state.risk)) return { do: 'risk', risk };
   if (state.labels.includes('state:reviewing')) return staleReviewClaim(pr, lanes, facts.reviewingSince, facts.now ?? Date.now()) ? { do: 'release-review' } : { wait: { pr: pr.number, until: 'reviewed' } };
   const next = state.next;
+  // A narrowed issue changes what the head is judged against: the Reviewer judges the same head again, no new build.
+  if (hb.status === 'narrowed' && state.verdict === 'fixes') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
   if (next.action === 'fix') {
     if (!tree) return { do: 'start' };
-    if (state.verdict === 'fixes' && state.round > freshFixRound) return agent('planner', 'replan', { reason: `round ${state.round}: the fresh fix round left blocking findings; cut the scope at a logical seam` });
+    if (state.verdict === 'fixes' && state.round > freshFixRound) return agent('planner', 'replan', { reason: `round ${state.round}: the fresh fix round left blocking findings; narrow the issue to what the PR delivers` });
     const fresh = state.verdict === 'fixes' && state.round === freshFixRound;
     return agent('implementer', 'fix', fresh ? { reason: `round ${state.round}: the whole open set, fresh`, fresh: true } : { reason: next.reason, resume: true });
   }
@@ -188,12 +190,12 @@ export function reviewerBrief(f) {
 
 Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
-${f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`.\n' : ''}
+${f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 
 - \`node ${cli} review-context --pr ${f.pr.number} --issue ${f.issue.number} --claim\`
 - \`node ${cli} wait ${f.pr.number} --until ci\`, \`node ${cli} status ${f.pr.number}\`, \`node ${cli} scratch\`
-- \`node ${cli} review-post --pr ${f.pr.number} --sha ${f.pr.headRefOid} --event COMMENT|APPROVE --body-file <F> [--comments-file <C>]\`
+- \`node ${cli} review-post --pr ${f.pr.number} --sha ${f.pr.headRefOid} --event COMMENT|APPROVE --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...\`
 ${f.step.mode === 'approve' ? `- \`node ${cli} pr auto-merge --pr ${f.pr.number}\` as the Reviewer\n` : ''}
 Never edit, commit or push, never start an agent and never print a token.
 
@@ -205,15 +207,15 @@ verdict, PR, head, round, tag counts.
 export function plannerBrief(f) {
   return `# Planner brief: #${f.issue.number} ${f.issue.title}
 
-Task: ${f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices' : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first), the part that kept the PR blocked in a slice of its own${f.pr ? `, then close PR #${f.pr.number} with a comment naming the sub-issue that takes it over` : ''}. A revised scope on the same issue is no answer: its PR would keep the blocking verdict and come back here`}. Invoke the \`spec\` skill for the issue form.
+Task: ${f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices' : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first) and hand back \`sliced\``}. Invoke the \`spec\` skill for the issue form.
 Issue: ${f.issue.url}
-Commands: \`node ${cli} issue create ...\`, \`node ${cli} issue edit ...\`, \`gh api\` to link sub-issues and blocked-by dependencies${f.pr ? `, \`gh pr close ${f.pr.number} --comment ...\`` : ''}.
+Commands: \`node ${cli} issue create ...\`, \`node ${cli} issue edit ...\`, \`gh api\` to link sub-issues and blocked-by dependencies.
 Never write code and never start an agent. Agree each slice with the owner.
 
 ## Hand-back, at most 5 lines
 
-status: sliced | blocked
-slices: <issue numbers>
+status: sliced | narrowed | blocked
+slices: <issue numbers, or the new issue when narrowed>
 note: <one line>
 
 ## Issue

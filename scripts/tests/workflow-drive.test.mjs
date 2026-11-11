@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, estimateRisk, matchesPattern,
-  modelFor, modelForStep, nextTarget, ownerPatterns, parseHandBack, pickSlice, reviewerCommand, riskFromPaths, staleReviewClaim,
+  modelFor, modelForStep, nextTarget, ownerPatterns, parseHandBack, pickSlice, plannerBrief, reviewerCommand, riskFromPaths, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 
 const head = 'a'.repeat(40);
@@ -93,26 +93,30 @@ test('the fresh fix round runs once: a blocking verdict after it cuts scope thro
   const base = { issue: started, tree: tree({ commits: 1 }) };
   const fourth = decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes'), review('fixes')] }) });
   assert.deepEqual([fourth.agent, fourth.mode, fourth.owner], ['planner', 'replan', undefined]);
-  assert.match(fourth.reason, /cut the scope/);
+  assert.match(fourth.reason, /narrow the issue to what the PR delivers/);
 });
 
-test('a cut after the fresh round ends: the planner splits the issue into an epic and drive moves to its slice', () => {
+test('a cut after the fresh round keeps the PR: the planner narrows its issue and the Reviewer judges the same head again', () => {
   const blocked = [review('fixes'), review('fixes'), review('fixes'), review('fixes')];
   const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, reviews: blocked })] });
   const replan = drive(repo.io, 3, lanes, {});
   assert.deepEqual([replan.agent, replan.mode], ['planner', 'replan']);
   const brief = repo.writes[replan.brief];
-  assert.match(brief, /into an epic with one-PR sub-issues/);
-  assert.match(brief, /close PR #5/);
-  assert.doesNotMatch(brief, /or a revised scope/);
-  // The planner follows the brief: the story becomes an epic with a slice, and the blocked PR closes.
-  Object.assign(repo.s.issues[3], { labels: [label('type:epic')] });
-  repo.s.issues[4] = issue({ number: 4 });
-  repo.s.subs = { 3: [4] };
-  repo.s.prs[0].state = 'CLOSED';
-  const next = drive(repo.io, 3, lanes, { status: 'sliced', slices: '4' });
-  assert.deepEqual([next.agent, next.mode, next.issue, next.epic], ['implementer', 'build', 4, 3]);
-  // A planner that hands back `sliced` without the split gets a blocked report, not another planner round.
+  assert.match(brief, /narrow this issue's criteria to what PR #5 delivers/);
+  assert.match(brief, /Never close the PR/);
+  // The planner narrows the issue and files the rest; the PR, its head and its verdicts stay.
+  const next = drive(repo.io, 3, lanes, { status: 'narrowed', slices: '4' });
+  assert.deepEqual(repo.calls, [], 'no new build, commit or push');
+  assert.deepEqual([next.agent, next.mode, next.pr], ['reviewer', 'review', 5]);
+  assert.equal(next.command.includes('review-5-r5'), true);
+  assert.match(repo.writes[next.brief], new RegExp(`at head ${head}`));
+  assert.match(repo.writes[next.brief], /Narrowed scope, same head/);
+  // A ready verdict at that head then readies the PR, which merges closing the narrowed issue.
+  repo.s.prs[0].reviews.push(review('ready'));
+  assert.deepEqual(drive(repo.io, 3, lanes, {}).agent, 'reviewer');
+  assert.deepEqual(repo.calls, [['ready']]);
+  // Without a PR, a cut splits the issue into an epic; a `sliced` hand-back on a story reports blocked, not another planner round.
+  assert.match(plannerBrief({ issue: started, pr: null, step: { mode: 'replan', reason: 'two seams' } }), /into an epic with one-PR sub-issues/);
   assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: blocked }), handBack: { status: 'sliced' } }), { blocked: { issue: 3, reason: 'the planner handed back sliced, yet the issue is not an epic' } });
 });
 
