@@ -88,6 +88,10 @@ test('help and unknown flags never remove a removable worktree', t => {
     assert.match(result.stdout + result.stderr, /Usage:.*worktree tidy/);
     assert.equal(existsSync(tree), true);
   }
+  const duplicate = spawnSync(process.execPath, [cli, 'worktree', 'tidy', '--idle-days', '0', '--idle-days', '--unknown'], { cwd: repo, encoding: 'utf8' });
+  assert.notEqual(duplicate.status, 0);
+  assert.match(duplicate.stderr, /Usage:.*worktree tidy/);
+  assert.equal(existsSync(tree), true);
   for (const command of ['push', 'commit', 'status', 'drive', 'release', 'project', 'issue', 'pr', 'check', 'safety', 'manifests', 'cache', 'labels', 'next', 'wait', 'nits', 'scratch', 'review-context', 'review-post']) {
     for (const flag of ['--help', '-h']) {
       const result = spawnSync(process.execPath, [cli, command, flag], { cwd: repo, encoding: 'utf8' });
