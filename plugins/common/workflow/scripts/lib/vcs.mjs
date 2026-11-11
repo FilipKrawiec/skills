@@ -136,6 +136,10 @@ export async function push(args) {
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
   const head = git('rev-parse', 'HEAD');
+  const trackingRef = `refs/remotes/origin/${branch}`;
+  const tracked = spawnSync('git', ['rev-parse', '--verify', '--quiet', trackingRef], { cwd: root, env, encoding: 'utf8' });
+  if (tracked.status !== 0 && tracked.status !== 1) throw new Error('Cannot read the remote tracking ref');
+  const oldTracking = tracked.status === 0 ? tracked.stdout.trim() : '0'.repeat(head.length);
   const helper = fileURLToPath(new URL('../git-askpass.mjs', import.meta.url));
   const hook = run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], { cwd: root, env });
   const temporary = mkdtempSync(join(tmpdir(), 'workflow-push-'));
@@ -167,6 +171,8 @@ export async function push(args) {
         : 'unclassified Git failure';
       throw new Error(`Push failed (exit ${result.status ?? 'unknown'}): ${reason}; Git output withheld to protect credentials`);
     }
+    const updated = spawnSync('git', ['update-ref', trackingRef, head, oldTracking], { cwd: root, env, encoding: 'utf8' });
+    if (updated.status !== 0) throw new Error('Push succeeded, but the tracking ref changed or could not be updated; fetch origin before retrying');
     console.log(JSON.stringify({ result: 'pushed', actor, repository: repo, branch, head, configSource }));
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 }
