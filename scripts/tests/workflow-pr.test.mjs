@@ -9,7 +9,7 @@ const head = 'a'.repeat(40);
 const cfg = { repo: 'acme/app', base: 'main', implementer: 'builder', reviewer: 'reviewer', owner: 'owner', requiredChecks: ['verify'] };
 const verdict = (mode, value, state, extra = {}) => ({ author: { login: 'reviewer' }, state, body: `<!-- agent-review sha=${head} round=1 mode=${mode} verdict=${value} -->`, commit: { oid: head }, ...extra });
 const green = [{ name: 'verify', conclusion: 'SUCCESS' }];
-const draft = (extra = {}) => ({ number: 5, state: 'OPEN', isDraft: true, baseRefName: 'main', headRefOid: head, labels: [], mergeable: 'MERGEABLE', statusCheckRollup: green, reviews: [verdict('author', 'ready', 'COMMENTED')], ...extra });
+const draft = (extra = {}) => ({ number: 5, state: 'OPEN', isDraft: true, baseRefName: 'main', headRefOid: head, labels: [], mergeable: 'MERGEABLE', statusCheckRollup: green, reviews: [verdict('author', 'ready', 'COMMENTED')], body: 'Closes #3', closingIssuesReferences: [{ number: 3, repository: { owner: { login: 'acme' }, name: 'app' } }], ...extra });
 const ready = (extra = {}) => draft({ isDraft: false, reviews: [verdict('team', 'ready', 'APPROVED')], ...extra });
 const policy = { reviews: [1, true, true, true], checks: ['verify'] };
 
@@ -63,6 +63,13 @@ test('pr auto-merge accepts the Reviewer approval of an older author-mode ready 
   assert.equal(prAutoMergeRefusal(ready({ reviews }), cfg, policy), null);
 });
 
+test('every PR delivers an issue: pr ready and pr auto-merge refuse an orphan, and Part of #N links one', () => {
+  const orphan = { body: 'Bump a dependency', closingIssuesReferences: [] };
+  assert.match(prReadyRefusal(draft(orphan), cfg), /links no issue/);
+  assert.match(prAutoMergeRefusal(ready(orphan), cfg, policy), /links no issue/);
+  assert.equal(prReadyRefusal(draft({ body: 'Part of #9', closingIssuesReferences: [] }), cfg), null);
+});
+
 test('pr auto-merge refuses a draft, a missing or stale approval, an owner hold, a red check and missing protection', () => {
   const ownerLane = { labels: [{ name: 'review:owner' }], reviews: [verdict('team', 'owner', 'APPROVED')] };
   const refusals = {
@@ -79,6 +86,7 @@ test('pr auto-merge refuses a draft, a missing or stale approval, an owner hold,
     'unreadable protection': [ready(), null],
     'no code-owner review': [ready(), { reviews: [1, false, true, true], checks: ['verify'] }],
     'check not required': [ready(), { reviews: [1, true, true, true], checks: [] }],
+    'no linked issue': [ready({ body: 'Fixes a thing', closingIssuesReferences: [] }), policy],
   };
   for (const [name, [pr, rules]] of Object.entries(refusals)) assert.ok(prAutoMergeRefusal(pr, cfg, rules), name);
 });

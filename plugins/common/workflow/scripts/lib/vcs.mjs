@@ -258,6 +258,7 @@ export function reviewContext(args) {
 }
 
 const reviewEvents = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
+const verdictIn = body => /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(body)?.[1];
 function reviewPostOptions(args, root) {
   const o = { '--resolve-thread': [] };
   const list = [...args];
@@ -276,6 +277,8 @@ function reviewPostOptions(args, root) {
   if (!o['--body-file']) throw new Error('--body-file is required');
   o.body = readWorkspaceText(root, o['--body-file']);
   if (!o.body.includes(`<!-- agent-review sha=${o['--sha']}`)) throw new Error('Review body must contain <!-- agent-review sha=<sha> ...');
+  // The owner is asked only on an approved head: `verdict=owner` is an approval, never a comment or a change request.
+  if (verdictIn(o.body) === 'owner' && o['--event'] !== 'APPROVE') throw new Error('verdict=owner requires --event APPROVE: the owner sees only a PR the Reviewer approved');
   o.comments = [];
   if (o['--comments-file']) {
     if (o['--comments-file'] === '-' && o['--body-file'] === '-') throw new Error('Only one of --body-file and --comments-file can read stdin');
@@ -331,9 +334,8 @@ export function reviewPost(args) {
     const posted = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/pulls/${pr}/reviews`, '--input', '-'], { ...options, input: JSON.stringify(payload) });
     if (!Number.isInteger(posted?.id)) throw new Error('GitHub did not confirm the review');
     console.log(`Posted review ${posted.id} on #${pr}`);
-    // A capped round, or an approval the owner must join, hands the PR to the owner; the CLI, not the agent, sets that label.
-    const verdict = /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(o.body)?.[1];
-    if (['cap', 'owner'].includes(verdict)) {
+    // Only an approval the owner must join hands the PR to the owner; the CLI, not the agent, sets that label.
+    if (approve && verdictIn(o.body) === 'owner') {
       try { run('gh', ['pr', 'edit', pr, '--repo', `github.com/${repo}`, '--add-label', 'review:owner'], options); } catch { console.error(`Warning: review posted, but could not add review:owner to #${pr}; add it by hand.`); }
     }
     // The inline Nit and Pre-existing notes of this review are open threads now; the posted verdict stands if resolving them fails.

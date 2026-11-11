@@ -15,6 +15,10 @@ const risks = ['R0', 'R1', 'R2'];
 export const maxRisk = (...values) => risks[Math.max(...values.filter(Boolean).map(value => risks.indexOf(value)), 0)];
 // Models follow risk for both the implementer and the Reviewer: Opus only for R2.
 export const modelFor = risk => (risk === 'R2' ? 'opus' : 'sonnet');
+// From the third blocking verdict on, narrow fixes have stopped converging: a fresh implementer on the strongest model
+// takes the whole open set. The rounds never hand an unapproved PR to the owner.
+export const freshFixRound = 3;
+export const modelForStep = (step, risk) => (step.agent === 'planner' || step.fresh ? 'opus' : modelFor(risk));
 const riskLabel = labels => labels.map(label => label.name ?? label).find(name => /^risk:R\d$/.test(name))?.slice(5) || null;
 
 // The CODEOWNERS patterns the owner holds; those paths need the owner's judgment.
@@ -93,7 +97,11 @@ export function decideIssue(facts, lanes) {
   if (risk !== state.risk && risks.indexOf(risk) > risks.indexOf(state.risk)) return { do: 'risk', risk };
   if (state.labels.includes('state:reviewing')) return staleReviewClaim(pr, lanes, facts.reviewingSince, facts.now ?? Date.now()) ? { do: 'release-review' } : { wait: { pr: pr.number, until: 'reviewed' } };
   const next = state.next;
-  if (next.action === 'fix') return tree ? agent('implementer', 'fix', { reason: next.reason, resume: true }) : { do: 'start' };
+  if (next.action === 'fix') {
+    if (!tree) return { do: 'start' };
+    const fresh = state.verdict === 'fixes' && state.round >= freshFixRound;
+    return agent('implementer', 'fix', fresh ? { reason: `round ${state.round}: the whole open set, fresh`, fresh: true } : { reason: next.reason, resume: true });
+  }
   if (next.action === 'wait-ci') return { wait: { pr: pr.number, until: 'ci' } };
   // An unapproved `ready` verdict on a ready PR asks only for the approval; anything else is a review round.
   if (next.action === 'review') {
@@ -137,14 +145,14 @@ export function implementerBrief(f) {
   const fix = f.step.mode === 'fix';
   return `# Implementer brief: #${f.issue.number} ${f.issue.title}
 
-Mode: ${f.step.mode}${f.step.reason ? ` (${f.step.reason})` : ''}. Risk ${f.risk}. Model ${modelFor(f.risk)}.
+Mode: ${f.step.mode}${f.step.reason ? ` (${f.step.reason})` : ''}. Risk ${f.risk}. Model ${modelForStep(f.step, f.risk)}.
 Issue: ${f.issue.url}
 Worktree: ${f.tree.path} (branch ${f.tree.branch}, base origin/${f.base})
 PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}, round ${f.round}` : 'none yet; drive opens it'}
 
 ## Task
 
-${fix ? 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.' : 'Deliver the issue below so every acceptance criterion holds, with focused tests.'} Work only in the worktree. Run one plain command per Bash call.
+${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focused tests.' : f.step.fresh ? 'Earlier fix rounds did not converge. Read every open Blocker and Important thread `review-context` lists and the issue\'s criteria, find their shared cause and fix it whole, with the neighbouring cases the same cause breaks, each with a focused test. Fix nothing outside the criteria; Nits never block.' : 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.'} Work only in the worktree. Run one plain command per Bash call.
 
 ## Commands you may run
 
@@ -350,7 +358,7 @@ function instruction(io, facts, step, lanes) {
   const { issue, pr, tree } = facts;
   if (!step.agent) return step;
   const risk = maxRisk(riskLabel(pr?.labels || []), riskLabel(issue.labels || []), step.agent === 'planner' ? 'R2' : null);
-  const model = step.agent === 'planner' ? 'opus' : modelFor(risk);
+  const model = modelForStep(step, risk);
   const brief = join(io.scratch(tree), `drive-${issue.number}-${step.agent}.md`);
   const round = pr ? prState(pr, lanes).round : 0;
   const context = { issue, pr, tree, step, risk, round, base: lanes.base };

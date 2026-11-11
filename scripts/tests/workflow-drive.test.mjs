@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, estimateRisk, matchesPattern,
-  modelFor, nextTarget, ownerPatterns, parseHandBack, pickSlice, reviewerCommand, riskFromPaths, staleReviewClaim,
+  modelFor, modelForStep, nextTarget, ownerPatterns, parseHandBack, pickSlice, reviewerCommand, riskFromPaths, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 
 const head = 'a'.repeat(40);
@@ -70,13 +70,23 @@ test('drive releases a stale Reviewer claim, then dispatches the reviewer', () =
   assert.deepEqual([step.agent, step.mode], ['reviewer', 'review']);
 });
 
-test('only risk R2 or the round cap brings in the owner; line count never does', () => {
+test('the owner is asked only on an approved PR; the round cap and line count never ask', () => {
   const base = { issue: started, tree: tree({ commits: 1 }) };
   const approved = [review('ready', 'APPROVED')];
   assert.equal(decide({ ...base, pr: pr({ isDraft: false, labels: [label('risk:R2')], reviews: approved }) }).owner, 'risk R2');
-  assert.ok(decide({ ...base, pr: pr({ reviews: [review('cap')] }) }).owner);
+  assert.equal(decide({ ...base, pr: pr({ labels: [label('risk:R2')], reviews: [review('ready')] }) }).do, 'ready', 'an R2 draft goes to its approval first');
+  assert.equal(decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes')] }) }).owner, undefined);
   const huge = Array.from({ length: 5000 }, (_, i) => `src/file${i}.js`);
   assert.equal(decide({ ...base, diffPaths: huge, pr: pr({ isDraft: false, reviews: approved }) }).do, 'auto-merge');
+});
+
+test('from the third blocking verdict a fresh implementer on the strongest model fixes the whole open set', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  assert.equal(decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes')] }) }).resume, true);
+  const third = decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes')] }) });
+  assert.deepEqual([third.agent, third.mode, third.fresh, third.resume], ['implementer', 'fix', true, undefined]);
+  assert.equal(modelForStep(third, 'R0'), 'opus');
+  assert.equal(modelForStep({ agent: 'implementer', resume: true }, 'R0'), 'sonnet');
 });
 
 test('risk: estimated from the issue, recomputed from the diff, and only ever rises', () => {
