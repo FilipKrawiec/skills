@@ -119,7 +119,7 @@ test('a cut after the fresh round keeps the PR: the planner narrows its issue an
   // A ready verdict at that head then readies the PR, which merges closing the narrowed issue.
   repo.s.prs[0].reviews.push(review('ready'));
   assert.deepEqual(drive(repo.io, 3, lanes, {}).agent, 'reviewer');
-  assert.deepEqual(repo.calls, [['ready']]);
+  assert.deepEqual(repo.calls, [['ready'], ['unclaim', 3]]);
   // Without a PR, a cut splits the issue into an epic; a `sliced` hand-back on a story reports blocked, not another planner round.
   assert.match(plannerBrief({ issue: started, pr: null, step: { mode: 'replan', reason: 'two seams' } }), /into an epic with one-PR sub-issues/);
   assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: blocked }), handBack: { status: 'sliced' } }), { blocked: { issue: 3, reason: 'the planner handed back sliced, yet the issue is not an epic' } });
@@ -195,12 +195,14 @@ function fakeRepo(initial) {
     releaseReview: p => { calls.push(['release-review', p.number]); p.labels = p.labels.filter(l => l.name !== 'state:reviewing'); },
     risk: (p, from, to) => { calls.push(['risk', to]); p.labels = [label(`risk:${to}`)]; },
     ready: p => { calls.push(['ready']); p.isDraft = false; },
+    unclaim: i => { calls.push(['unclaim', i.number]); i.labels = i.labels.filter(l => !l.name.startsWith('state:')); },
     autoMerge: p => { calls.push(['auto-merge']); p.autoMergeRequest = {}; },
     close: i => { calls.push(['close', i.number]); i.state = 'CLOSED'; },
     closeEpic: e => { calls.push(['close-epic', e.number]); e.state = 'CLOSED'; },
     removeTree: t => { calls.push(['remove', t.path]); },
     scratch: t => `${t?.path || '/repo'}/.wf`,
     write: (path, text) => { writes[path] = text; },
+    board: (n, value) => { (s.board ||= {})[n] = value; },
   };
   return { s, io, calls, writes };
 }
@@ -240,6 +242,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   repo.s.trees[3].dirty = true;
   const reviewer = drive(repo.io, 3, lanes, { status: 'done', commit: 'docs(a): b', paths: ['docs/a.md'] });
   assert.deepEqual(repo.calls.slice(1), [['commit'], ['push'], ['open', 3, 'R0']]);
+  assert.equal(repo.s.board[3], 'PROGRESS', 'a draft PR keeps its issue In progress');
   assert.equal(reviewer.agent, 'reviewer');
   assert.equal(reviewer.session, 'separate');
   assert.equal(reviewer.pr, 53);
@@ -247,8 +250,10 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   assert.deepEqual(drive(repo.io, 3, lanes, { status: 'done', commit: 'docs(a): b', paths: ['docs/a.md'] }), reviewer, 'a repeated hand-back changes nothing');
   repo.s.prs[0].reviews = [review('ready')];
   const approve = drive(repo.io, 3, lanes, {});
-  assert.deepEqual(repo.calls.at(-1), ['ready']);
+  assert.deepEqual(repo.calls.slice(-2), [['ready'], ['unclaim', 3]]);
+  assert.equal(repo.s.board[3], 'REVIEW', 'Review starts once the PR is ready');
   assert.equal(approve.mode, 'approve');
+  assert.deepEqual(repo.s.issues[3].labels.map(l => l.name), ['risk:R0'], 'a ready PR drops the claim; the open PR excludes reassignment');
   repo.s.prs[0].reviews = [review('ready', 'APPROVED')];
   const wait = drive(repo.io, 3, lanes, {});
   assert.deepEqual(repo.calls.at(-1), ['auto-merge']);
@@ -269,6 +274,22 @@ test('an R2 issue runs Opus for both roles and stops for the owner after approva
   assert.ok(reviewer.command.includes('opus'));
   Object.assign(repo.s.prs[0], { isDraft: false, reviews: [review('owner', 'APPROVED')], labels: [label('risk:R2'), label('review:owner')] });
   assert.equal(drive(repo.io, 3, lanes, {}).owner, 'review:owner');
+});
+
+test('a closed issue still carrying a state label drops it before anything else', () => {
+  const claimed = issue({ state: 'CLOSED', labels: [label('state:started'), label('risk:R1')] });
+  assert.deepEqual(decide({ issue: claimed, tree: tree() }), { do: 'unclaim' });
+  assert.deepEqual(decide({ issue: claimed }), { do: 'unclaim' });
+  assert.deepEqual(decide({ issue: issue({ state: 'CLOSED', labels: [label('risk:R1')] }) }), { done: { issue: 3 } });
+});
+
+test('drive closes an issue after its PR merged and leaves it with no state label', () => {
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, state: 'MERGED' })] });
+  repo.io.pr = n => repo.s.prs.find(p => p.issue === n) || null;
+  assert.deepEqual(drive(repo.io, 3, lanes, {}), { done: { issue: 3 } });
+  assert.deepEqual(repo.calls, [['close', 3], ['unclaim', 3], ['remove', '/repo/.worktrees/3-add-a-thing']]);
+  assert.equal(repo.s.issues[3].state, 'CLOSED');
+  assert.deepEqual(repo.s.issues[3].labels.map(l => l.name), ['risk:R1']);
 });
 
 test('drive <epic> plans, drives the first ready slice, lists the others and closes the epic', () => {
