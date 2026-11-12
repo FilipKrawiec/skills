@@ -29,6 +29,8 @@ When slicing an approved epic, create exactly one final refinement slice with na
 - Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.
 - Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.
 
+Slicing ends here: the sub-issues are the record, so skip steps 3 and 4.
+
 **Exit gate:** every step has a why and a how; an epic has its final refinement slice and native blockers.
 
 ## 3. Score reproducibility
