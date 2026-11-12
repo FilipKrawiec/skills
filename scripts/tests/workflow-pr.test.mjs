@@ -11,7 +11,12 @@ const verdict = (mode, value, state, extra = {}) => ({ author: { login: 'reviewe
 const green = [{ name: 'verify', conclusion: 'SUCCESS' }];
 const draft = (extra = {}) => ({ number: 5, state: 'OPEN', isDraft: true, baseRefName: 'main', headRefOid: head, labels: [], mergeable: 'MERGEABLE', statusCheckRollup: green, reviews: [verdict('author', 'ready', 'COMMENTED')], body: 'Closes #3', closingIssuesReferences: [{ number: 3, repository: { owner: { login: 'acme' }, name: 'app' } }], ...extra });
 const ready = (extra = {}) => draft({ isDraft: false, reviews: [verdict('team', 'ready', 'APPROVED')], ...extra });
-const policy = { reviews: [1, true, true, true], checks: ['verify'] };
+const policy = { reviews: [1, true, true, true], checks: ['verify'], strictChecks: ['verify'] };
+
+test('auto-merge requires the configured checks to enforce an up-to-date base', () => {
+  assert.match(prAutoMergeRefusal(ready(), cfg, { ...policy, strictChecks: [] }), /up.to.date/);
+  assert.equal(prAutoMergeRefusal(ready(), cfg, { ...policy, strictChecks: ['verify'] }), null);
+});
 
 test('pr ready accepts a green draft whose newest author verdict at its head is ready', () => {
   assert.equal(prReadyRefusal(draft(), cfg), null);
@@ -95,7 +100,7 @@ function setup(t, view, extra = {}) {
   const f = fixture(t);
   f.env.GH_LOG = join(f.root, 'gh.log');
   f.env.PR_VIEW = JSON.stringify(view);
-  f.env.BRANCH_RULES = JSON.stringify([{ type: 'pull_request', parameters: { required_approving_review_count: 1, require_code_owner_review: true } }, { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'verify' }] } }]);
+  f.env.BRANCH_RULES = JSON.stringify([{ type: 'pull_request', parameters: { required_approving_review_count: 1, require_code_owner_review: true } }, { type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'verify' }] } }]);
   Object.assign(f.env, extra);
   return { f, log: () => (existsSync(f.env.GH_LOG) ? readFileSync(f.env.GH_LOG, 'utf8').split('\n').filter(Boolean) : []) };
 }

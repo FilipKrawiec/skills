@@ -42,6 +42,8 @@ export function prAutoMergeRefusal(pr, cfg, policy) {
   if (!policy?.reviews?.[1]) return `${cfg.base} does not visibly require code-owner review`;
   const unprotected = (cfg.requiredChecks || []).filter(name => !policy.checks.includes(name));
   if (unprotected.length) return `${cfg.base} does not require checks: ${unprotected.join(', ')}`;
+  const checks = cfg.requiredChecks || [];
+  if (!checks.length || checks.some(name => !(policy.strictChecks || []).includes(name))) return `${cfg.base} must require configured checks on an up-to-date branch`;
   const failed = (pr.statusCheckRollup || []).filter(check => failedStates.includes(checkState(check))).map(checkName);
   if (failed.length) return `checks failed at ${pr.headRefOid}: ${failed.join(', ')}`;
   if (pr.mergeable === 'CONFLICTING') return `PR #${pr.number} conflicts with its base`;
