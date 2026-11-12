@@ -192,7 +192,7 @@ note: <one line: what changed, or why replan or blocked>
 ${f.issue.body || '(no body)'}
 `;
 }
-export function improverBrief(f) {
+function improverBrief(f) {
   return `# Improvement brief: epic #${f.issue.number} ${f.issue.title}
 
 Invoke the \`improve\` skill for process lessons from the delivered epic ${f.issue.url}. Follow its idempotency and recording steps; the refinement PR has merged. Return its output in at most 5 lines.
