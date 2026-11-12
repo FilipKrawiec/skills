@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ciState, prState, waitCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
+import { ciState, nextCommand, prState, statusCommand, waitCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 
 const head = 'a'.repeat(40);
 const lanes = { repo: 'acme/app', base: 'main', implementer: 'builder', reviewer: 'reviewer', owner: 'owner' };
@@ -130,4 +130,49 @@ test('wait ends on a verdict, on merge, on a closed PR and on timeout', () => {
 
 test('wait refuses an unknown condition', () => {
   assert.throws(() => waitCommand(['5', '--until', 'forever'], lanes), /Usage: wait/);
+});
+
+// A fake `gh`: each issue is { state, reason, body, labels, blockedBy, subs }.
+function fakeGh(issues, prs = []) {
+  return args => {
+    const [kind, path] = args;
+    const key = args.join(' ');
+    const at = /issues\/(\d+)/.exec(path || '')?.[1];
+    if (kind === 'api' && path.endsWith('/blocked_by')) return (issues[at].blockedBy || []).map(number => ({ number }));
+    if (kind === 'api' && path.includes('/sub_issues')) return (issues[at].subs || []).map(number => ({ number, state: issues[number].state, body: issues[number].body || '' }));
+    if (kind === 'api') return { state: issues[at].state, state_reason: issues[at].reason, labels: (issues[at].labels || []).map(name => ({ name })), body: issues[at].body || '' };
+    if (key.startsWith('issue view')) { const n = Number(args[2]); return { number: n, url: `u/${n}`, state: issues[n].state.toUpperCase(), title: 't', body: issues[n].body || '', labels: (issues[n].labels || []).map(name => ({ name })) }; }
+    if (key.includes('--label lane:owner')) return [];
+    if (key.startsWith('issue list')) return Object.entries(issues).filter(([, item]) => item.state === 'open').map(([number, item]) => ({ number: Number(number), url: `u/${number}`, body: item.body || '', labels: (item.labels || []).map(name => ({ name })) }));
+    if (key.startsWith('pr list --repo acme/app --state open')) return prs;
+    throw new Error(`unexpected gh ${key}`);
+  };
+}
+function captured(run) {
+  let said = '';
+  const log = console.log; console.log = text => { said = text; };
+  try { run(); } finally { console.log = log; }
+  return JSON.parse(said);
+}
+
+test('status lists an issue\'s unmet dependencies, from blocked-by links and the scope packet', () => {
+  const issues = { 3: { state: 'open', body: '```scope\n{"dependencies":[5]}\n```', blockedBy: [4] }, 4: { state: 'open' }, 5: { state: 'open' } };
+  const result = captured(() => statusCommand(['3'], lanes, fakeGh(issues)));
+  assert.deepEqual(result.blockedBy, [4, 5]);
+  assert.equal(result.next.action, 'wait');
+  issues[4] = { state: 'closed', reason: 'completed', labels: ['type:epic'] };
+  issues[5] = { state: 'closed', reason: 'completed', labels: ['type:epic'] };
+  assert.equal(captured(() => statusCommand(['3'], lanes, fakeGh(issues))).next.action, 'start');
+});
+
+test('next --owner shows items blocked by a dropped dependency or a cycle', () => {
+  const issues = {
+    3: { state: 'open', blockedBy: [2] }, 2: { state: 'closed', reason: 'not_planned' },
+    9: { state: 'open', labels: ['type:epic'], subs: [12, 14] }, 12: { state: 'open', blockedBy: [14] }, 14: { state: 'open', blockedBy: [12] },
+    20: { state: 'open' },
+  };
+  const items = captured(() => nextCommand(['--owner'], lanes, fakeGh(issues)));
+  assert.deepEqual(items.map(item => [item.number, item.actor]), [[3, 'owner'], [9, 'owner']]);
+  assert.match(items[0].reason, /^#3 depends on #2, closed as not planned/);
+  assert.equal(items[1].reason, 'dependency cycle #12 → #14 → #12');
 });

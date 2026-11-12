@@ -1,5 +1,6 @@
 import { prRecord } from './board.mjs';
 import { jsonCommand } from './core.mjs';
+import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { checkState, failedStates, passedStates, prFields } from './pr.mjs';
 
 // One check summary for the head: red wins over pending, pending over green; no checks reads `none`.
@@ -53,24 +54,27 @@ function readChecksAt(repo, sha) {
   const statuses = jsonCommand('gh', ['api', `repos/${repo}/commits/${sha}/status`]).statuses.map(status => ({ context: status.context, state: status.state === 'pending' ? 'PENDING' : status.state }));
   return [...runs, ...statuses];
 }
-function issueState(repo, number, lanes) {
-  const issue = jsonCommand('gh', ['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,labels,milestone']);
+function issueState(repo, number, lanes, read = args => jsonCommand('gh', args)) {
+  const issue = read(['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,body,labels,milestone']);
   const labels = issue.labels.map(label => label.name);
   const base = { kind: 'issue', number: issue.number, url: issue.url, state: issue.state, labels, milestone: issue.milestone?.title || null };
   if (issue.state !== 'OPEN') return { ...base, next: { action: 'done', actor: 'cli' } };
-  const open = jsonCommand('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', prFields]);
+  const { blockers, dropped } = splitDependencies(readDependencies(repo, issue, read));
+  const held = blockers.length ? { blockedBy: blockers } : {};
+  if (dropped.length) return { ...base, ...held, next: { action: 'decide', actor: 'owner', reason: droppedReason(issue.number, dropped) } };
+  const waiting = { action: 'wait', actor: 'cli', reason: `blocked by ${blockers.map(n => `#${n}`).join(', ')}` };
+  const open = read(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', prFields]);
   const pr = open.find(candidate => prRecord({ ...candidate, labels: candidate.labels || [] }, lanes).issues.includes(issue.number));
-  if (pr) { const state = prState(pr, lanes); return { ...base, pr: state.number, next: state.next }; }
-  const blockers = jsonCommand('gh', ['api', `repos/${repo}/issues/${number}/dependencies/blocked_by`]).filter(dep => dep.state === 'open').map(dep => dep.number);
-  if (blockers.length) return { ...base, blockedBy: blockers, next: { action: 'wait', actor: 'cli', reason: `blocked by ${blockers.map(n => `#${n}`).join(', ')}` } };
+  if (pr) { const state = prState(pr, lanes); return { ...base, ...held, pr: state.number, next: blockers.length ? waiting : state.next }; }
+  if (blockers.length) return { ...base, ...held, next: waiting };
   return { ...base, next: labels.includes('type:epic') ? { action: 'deliver-epic', actor: 'cli' } : { action: 'start', actor: 'implementer' } };
 }
 const number = value => { if (!/^[1-9]\d*$/.test(value || '')) throw new Error('Expected a PR or issue number'); return Number(value); };
-export function statusCommand(args, lanes) {
+export function statusCommand(args, lanes, read = args => jsonCommand('gh', args)) {
   if (args.length !== 1) throw new Error('Usage: status NUMBER');
   const n = number(args[0]);
-  const isPr = Boolean(jsonCommand('gh', ['api', `repos/${lanes.repo}/issues/${n}`]).pull_request);
-  console.log(JSON.stringify(isPr ? prState(readPr(lanes.repo, n), lanes) : issueState(lanes.repo, n, lanes)));
+  const isPr = Boolean(read(['api', `repos/${lanes.repo}/issues/${n}`]).pull_request);
+  console.log(JSON.stringify(isPr ? prState(readPr(lanes.repo, n), lanes) : issueState(lanes.repo, n, lanes, read)));
 }
 const sleep = seconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
 // Whether the condition holds (true), failed for good (false) or still pending (null). No checks right after a push
@@ -108,15 +112,35 @@ export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read =
     pause(interval);
   }
 }
-// Open PRs with their next action; --owner keeps what only the owner can do, plus draft epics waiting on the owner.
-export function nextCommand(args, lanes) {
+// Issues the owner must unblock: a dropped dependency, or a dependency cycle among an epic's slices.
+function dependencyProblems(lanes, read) {
+  const issues = read(['issue', 'list', '--repo', lanes.repo, '--state', 'open', '--limit', '200', '--json', 'number,url,body,labels']);
+  const items = [];
+  for (const issue of issues.filter(candidate => !candidate.labels.some(label => label.name === 'lane:owner'))) {
+    const decide = (reason, url = issue.url) => items.push({ kind: 'issue', number: issue.number, url, action: 'decide', actor: 'owner', reason });
+    const { dropped } = splitDependencies(readDependencies(lanes.repo, issue, read));
+    if (dropped.length) { decide(droppedReason(issue.number, dropped)); continue; }
+    if (!issue.labels.some(label => label.name === 'type:epic')) continue;
+    const slices = read(['api', `repos/${lanes.repo}/issues/${issue.number}/sub_issues?per_page=100`]).filter(sub => sub.state === 'open')
+      .map(sub => ({ number: sub.number, body: sub.body || '', blockers: splitDependencies(readDependencies(lanes.repo, sub, read)) }));
+    const slice = slices.find(candidate => candidate.blockers.dropped.length);
+    if (slice) { decide(droppedReason(slice.number, slice.blockers.dropped)); continue; }
+    const cycle = findCycle(slices.map(candidate => ({ number: candidate.number, blockers: candidate.blockers.blockers })));
+    if (cycle) decide(`dependency cycle ${cycle.map(n => `#${n}`).join(' → ')}`);
+  }
+  return items;
+}
+// Open PRs with their next action; --owner keeps what only the owner can do, plus draft epics waiting on the owner and
+// issues blocked by a dropped dependency or a cycle.
+export function nextCommand(args, lanes, read = args => jsonCommand('gh', args)) {
   if (args.length > 1 || (args.length && args[0] !== '--owner')) throw new Error('Usage: next [--owner]');
   const owner = args[0] === '--owner';
-  const prs = jsonCommand('gh', ['pr', 'list', '--repo', lanes.repo, '--state', 'open', '--limit', '200', '--json', prFields]).map(pr => prState(pr, lanes));
+  const prs = read(['pr', 'list', '--repo', lanes.repo, '--state', 'open', '--limit', '200', '--json', prFields]).map(pr => prState(pr, lanes));
   const items = prs.filter(pr => !owner || pr.next.actor === 'owner').map(pr => ({ kind: 'pr', number: pr.number, url: pr.url, ...pr.next }));
   if (owner) {
-    const epics = jsonCommand('gh', ['issue', 'list', '--repo', lanes.repo, '--state', 'open', '--label', 'type:epic', '--label', 'lane:owner', '--json', 'number,url']);
+    const epics = read(['issue', 'list', '--repo', lanes.repo, '--state', 'open', '--label', 'type:epic', '--label', 'lane:owner', '--json', 'number,url']);
     items.push(...epics.map(epic => ({ kind: 'epic', number: epic.number, url: epic.url, action: 'decide', actor: 'owner', reason: 'draft epic waits on the owner' })));
+    items.push(...dependencyProblems(lanes, read));
   }
   console.log(JSON.stringify(items));
 }
