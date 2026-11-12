@@ -459,7 +459,8 @@ export function driveEpic(io, epic, lanes) {
   const slices = io.subIssues(epic.number).map(slice => withDependencies(io.issue(slice.number)));
   if (!slices.length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices }), lanes);
   const marked = slices.filter(slice => (slice.body || '').includes(refinementMarker));
-  const legacy = slices.filter(slice => !(slice.body || '').includes(refinementMarker) && (/refin/i.test(slice.title || '') || (slice.body || '').includes(refinementReview)));
+  // A legacy refinement slice is open and wears a refinement slice's own title (`refine: …`, `Refinement …`), not any title that mentions refining.
+  const legacy = slices.filter(slice => slice.state === 'OPEN' && !(slice.body || '').includes(refinementMarker) && (/^refin(e|ement)\b/i.test((slice.title || '').trim()) || (slice.body || '').includes(refinementReview)));
   if (marked.length > 1 || legacy.length) return { owner: `epic #${epic.number}: classify refinement candidates ${[...marked, ...legacy].map(slice => `#${slice.number}`).join(', ')}`, url: epic.url };
   const refinement = marked[0] || io.createRefinement(epic);
   if (!marked.length) slices.push(refinement);

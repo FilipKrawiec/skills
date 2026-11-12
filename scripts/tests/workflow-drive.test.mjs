@@ -470,6 +470,20 @@ test('refinement candidates are classified before creation or repair', () => {
   }
 });
 
+test('a closed or merely refine-titled sub-issue is not a refinement candidate', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  for (const child of [
+    issue({ number: 10, state: 'CLOSED', title: 'fix(x): refine re-checks a recorded wait' }),
+    issue({ number: 10, state: 'CLOSED', title: 'Refinement' }),
+    issue({ number: 10, title: 'fix(x): refine re-checks a recorded wait' }),
+  ]) {
+    const repo = fakeRepo({ issues: { 9: epic, 10: child }, subs: { 9: [10] } });
+    const result = drive(repo.io, 9, lanes, {});
+    assert.doesNotMatch(result.owner || '', /classify/);
+    assert.deepEqual(repo.calls[0], ['create-refinement', 99]);
+  }
+});
+
 test('refinement is created once, repaired for new slices and waits for merged closing PRs', () => {
   const epic = issue({ number: 9, labels: [label('type:epic')] });
   const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }) }, subs: { 9: [10] } });
