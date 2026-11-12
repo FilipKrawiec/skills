@@ -22,6 +22,14 @@ export const modelFor = risk => (risk === 'R2' ? 'opus' : 'sonnet');
 export const freshFixRound = 3;
 export const modelForStep = (step, risk) => (step.agent === 'planner' || step.fresh ? 'opus' : modelFor(risk));
 const riskLabel = labels => labels.map(label => label.name ?? label).find(name => /^risk:R\d$/.test(name))?.slice(5) || null;
+// An epic's final refinement slice: drive finds it by the marker and creates it with the criteria `plan` gives the planner.
+const refinementMarker = '<!-- workflow:epic-refinement -->';
+const refinementReview = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
+const refinementCriteria = [
+  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths.`,
+  'Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.',
+  'Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.',
+];
 
 // The CODEOWNERS patterns the owner holds; those paths need the owner's judgment.
 export function ownerPatterns(codeowners, owner) {
@@ -299,7 +307,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     hasLessons: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().some(comment => /^## Lessons\s*$/m.test(comment.body || '')),
     createRefinement: epic => {
       const scope = (epic.body || '').match(/```scope\s*\n[\s\S]*?```/)?.[0] || '```scope\n{"paths":[]}\n```';
-      const body = `${refinementMarker}\n\n## Outcome\nReview and refine the merged whole epic #${epic.number}.\n\n### Acceptance criteria\n- [ ] ${refinementCriteria}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths.\n- [ ] Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.\n- [ ] Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.\n\n${scope}`;
+      const body = `${refinementMarker}\n\n## Outcome\nReview and refine the merged whole epic #${epic.number}.\n\n### Acceptance criteria\n${refinementCriteria.map(line => `- [ ] ${line}`).join('\n')}\n\n${scope}`;
       const [owner, name] = repo.split('/');
       const lookup = `query($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { id issue(number:$number) { id milestone { id } } } }`;
       const data = gh(['api', 'graphql', '-f', `query=${lookup}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${epic.number}`]).data.repository;
@@ -308,7 +316,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const number = result.data.createIssue.issue.number;
       return gh(['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
     },
-    subIssues: n => gh(['api', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).map(sub => ({ number: sub.number, state: sub.state.toUpperCase(), body: sub.body || '' })),
+    subIssues: n => gh(['api', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).map(sub => ({ number: sub.number, state: sub.state.toUpperCase() })),
     pr: n => {
       const open = gh(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,body,closingIssuesReferences,labels,reviews,headRefOid,isDraft']);
       // `prLinkedIssues` also reads a stacked PR's `Closes #N`, which GitHub links no closing issue for.
@@ -340,7 +348,6 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
         if (exists || prBranch) git('-C', root, 'worktree', 'add', path, branch);
         else git('-C', root, 'worktree', 'add', '-b', branch, path, `origin/${lanes.base}`);
       }
-      board(lanes, issue.number, 'PROGRESS');
     },
     commit: (tree, message, paths) => self(['commit', '--message', message, '--', ...paths], tree.path),
     push: tree => self(['push'], tree.path),
@@ -352,7 +359,6 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const pr = gh(['pr', 'view', tree.branch, '--repo', repo, '--json', 'number']);
       run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--add-label', `risk:${risk}`]);
       try { run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--add-reviewer', lanes.reviewer]); } catch { console.error(`drive: could not request ${lanes.reviewer}'s review on #${pr.number}`); }
-      board(lanes, issue.number, 'REVIEW');
     },
     // When `state:reviewing` was last added to the PR, from its timeline; null when it never was.
     reviewingSince: pr => {
@@ -369,8 +375,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     close: issue => {
       const current = gh(['issue', 'view', String(issue.number), '--repo', repo, '--json', 'state']);
       if (current.state === 'OPEN') run('gh', ['issue', 'close', String(issue.number), '--repo', repo, '--reason', 'completed']);
-      board(lanes, issue.number, 'DONE');
     },
+    board: (n, value) => board(lanes, n, value),
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
     removeTree: tree => {
       const all = trees(); const root = all[0].path;
@@ -427,49 +433,46 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     const step = decideIssue(facts, lanes);
     if (!step.do) return finish(instruction(io, facts, step, lanes));
     const { issue, pr, tree } = facts;
-    if (step.do === 'start') io.start(issue, estimateRisk(issue, facts.patterns), pr?.headRefName);
+    if (step.do === 'start') { io.start(issue, estimateRisk(issue, facts.patterns), pr?.headRefName); io.board(n, 'PROGRESS'); }
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
     else if (step.do === 'push') io.push(tree);
     else if (step.do === 'open') io.open(issue, tree, maxRisk(riskLabel(issue.labels), riskFromPaths(facts.diffPaths, facts.patterns)), handBack);
     else if (step.do === 'release-review') io.releaseReview(pr);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
-    // A ready PR drops the issue's claim, as spec's transition table states; the open PR still excludes reassignment.
-    else if (step.do === 'ready') { io.ready(pr, tree); if (stateLabels(issue).length) io.unclaim(issue); }
+    // A draft PR keeps its issue In progress; Review starts when the PR is marked ready. A ready PR also drops the
+    // issue's claim, as spec's transition table states; the open PR still excludes reassignment.
+    else if (step.do === 'ready') { io.ready(pr, tree); io.board(n, 'REVIEW'); if (stateLabels(issue).length) io.unclaim(issue); }
     else if (step.do === 'unclaim') io.unclaim(issue);
     else if (step.do === 'auto-merge') io.autoMerge(pr, tree);
-    else if (step.do === 'close') io.close(issue);
+    else if (step.do === 'close') { io.close(issue); io.board(n, 'DONE'); }
     else if (step.do === 'remove-worktree') { io.removeTree(tree); return { done: { issue: n } }; }
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
 }
-const refinementMarker = '<!-- workflow:epic-refinement -->';
-const refinementCriteria = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
 export function driveEpic(io, epic, lanes) {
   if (epic.state !== 'OPEN' || (epic.labels || []).some(label => (label.name ?? label) === 'lane:owner')) return decideEpic({ epic, slices: [] });
   const { blockers, dropped } = splitDependencies(io.dependencies(epic));
   if (dropped.length) return { owner: droppedReason(epic.number, dropped), url: epic.url };
   if (blockers.length) return { blocked: { issue: epic.number, by: blockers } };
   const withDependencies = slice => ({ ...slice, ...(slice.state === 'OPEN' ? splitDependencies(io.dependencies(slice)) : { blockers: [], dropped: [] }) });
-  let slices = io.subIssues(epic.number).map(slice => withDependencies(io.issue(slice.number)));
+  const slices = io.subIssues(epic.number).map(slice => withDependencies(io.issue(slice.number)));
   if (!slices.length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices }), lanes);
   const marked = slices.filter(slice => (slice.body || '').includes(refinementMarker));
-  const legacy = slices.filter(slice => !(slice.body || '').includes(refinementMarker) && (/refin/i.test(slice.title || '') || (slice.body || '').includes(refinementCriteria)));
+  const legacy = slices.filter(slice => !(slice.body || '').includes(refinementMarker) && (/refin/i.test(slice.title || '') || (slice.body || '').includes(refinementReview)));
   if (marked.length > 1 || legacy.length) return { owner: `epic #${epic.number}: classify refinement candidates ${[...marked, ...legacy].map(slice => `#${slice.number}`).join(', ')}`, url: epic.url };
-  let refinement = marked[0];
-  if (!refinement) {
-    refinement = io.createRefinement(epic);
-    slices.push({ ...refinement, blockers: [], dropped: [] });
-  }
-  const others = slices.filter(slice => slice.number !== refinement.number);
+  const refinement = marked[0] || io.createRefinement(epic);
+  if (!marked.length) slices.push(refinement);
+  const others = slices.filter(slice => slice !== refinement);
   const existing = io.allBlockers(refinement.number);
   for (const slice of others) if (!existing.includes(slice.number)) io.addBlocker(refinement.number, slice.number);
   const unresolved = others.filter(slice => slice.state !== 'OPEN' && !io.mergedClosingPr(slice.number, lanes.base));
   if (unresolved.length) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${unresolved.map(slice => `#${slice.number}`).join(', ')}`, url: epic.url };
-  Object.assign(refinement, splitDependencies(io.dependencies(refinement)));
-  if (others.some(slice => slice.state === 'OPEN')) refinement.blockers = [...new Set([...refinement.blockers, ...others.filter(slice => slice.state === 'OPEN').map(slice => slice.number)])];
+  // Read the refinement's links again after the repair; every open slice blocks it even before GitHub shows a new link.
+  const repaired = splitDependencies(io.dependencies(refinement));
+  refinement.blockers = [...new Set([...repaired.blockers, ...others.filter(slice => slice.state === 'OPEN').map(slice => slice.number)])];
+  refinement.dropped = repaired.dropped;
   if (refinement.state !== 'OPEN' && !io.mergedClosingPr(refinement.number, lanes.base)) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for #${refinement.number}`, url: epic.url };
-  if (refinement.state === 'OPEN' && others.some(slice => slice.state === 'OPEN')) slices = slices.map(slice => slice.number === refinement.number ? refinement : slice);
   const step = decideEpic({ epic, slices });
   if (step.do === 'close-epic' && !io.hasLessons(epic.number)) return instruction(io, { issue: epic, pr: null, tree: null }, agent('improver', 'improve'), lanes);
   if (step.do === 'close-epic') { io.closeEpic(epic); return { done: { epic: epic.number } }; }

@@ -178,7 +178,7 @@ function fakeRepo(initial) {
   const s = structuredClone(initial); const calls = []; const writes = {};
   const io = {
     // A blocked-by link to a closed issue counts as met, like a completed issue whose closing PR merged.
-    issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: s.issues[m]?.state || 'OPEN', reason: 'completed', merged: true })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state, body: s.issues[m].body })),
+    issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: s.issues[m]?.state || 'OPEN', reason: 'completed', merged: true })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state })),
     allBlockers: n => s.blockers?.[n] || [],
     addBlocker: (n, blocker) => { calls.push(['blocker', n, blocker]); ((s.blockers ||= {})[n] ||= []).push(blocker); },
     mergedClosingPr: n => (s.merged || []).includes(n),
@@ -202,6 +202,7 @@ function fakeRepo(initial) {
     removeTree: t => { calls.push(['remove', t.path]); },
     scratch: t => `${t?.path || '/repo'}/.wf`,
     write: (path, text) => { writes[path] = text; },
+    board: (n, value) => { (s.board ||= {})[n] = value; },
   };
   return { s, io, calls, writes };
 }
@@ -241,6 +242,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   repo.s.trees[3].dirty = true;
   const reviewer = drive(repo.io, 3, lanes, { status: 'done', commit: 'docs(a): b', paths: ['docs/a.md'] });
   assert.deepEqual(repo.calls.slice(1), [['commit'], ['push'], ['open', 3, 'R0']]);
+  assert.equal(repo.s.board[3], 'PROGRESS', 'a draft PR keeps its issue In progress');
   assert.equal(reviewer.agent, 'reviewer');
   assert.equal(reviewer.session, 'separate');
   assert.equal(reviewer.pr, 53);
@@ -249,6 +251,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   repo.s.prs[0].reviews = [review('ready')];
   const approve = drive(repo.io, 3, lanes, {});
   assert.deepEqual(repo.calls.slice(-2), [['ready'], ['unclaim', 3]]);
+  assert.equal(repo.s.board[3], 'REVIEW', 'Review starts once the PR is ready');
   assert.equal(approve.mode, 'approve');
   assert.deepEqual(repo.s.issues[3].labels.map(l => l.name), ['risk:R0'], 'a ready PR drops the claim; the open PR excludes reassignment');
   repo.s.prs[0].reviews = [review('ready', 'APPROVED')];
@@ -496,7 +499,6 @@ test('refinement is created once, repaired for new slices and waits for merged c
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
 });
-
 
 test('refinement creation atomically links the parent even when the response is lost', () => {
   const epic = issue({ number: 9, labels: [label('type:epic')], milestone: { title: 'M' } });
