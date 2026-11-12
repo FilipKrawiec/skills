@@ -77,6 +77,7 @@ export function staleReviewClaim(pr, lanes, since, now) {
   return !(pr.reviews || []).some(review => review.author?.login?.toLowerCase() === reviewer && Date.parse(review.submittedAt || '') > since);
 }
 
+const stateLabels = issue => (issue.labels || []).map(label => label.name ?? label).filter(name => name.startsWith('state:'));
 const isEpic = issue => (issue.labels || []).some(label => (label.name ?? label) === 'type:epic');
 const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...extra });
 
@@ -84,6 +85,8 @@ const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...ext
 // terminal `agent`, `wait`, `owner`, `blocked` or `done`. Pure, so re-running on unchanged state repeats it.
 export function decideIssue(facts, lanes) {
   const { issue, pr, tree, handBack: hb = {}, blockers = [], dropped = [] } = facts;
+  // A closed issue carries no execution label: drive drops a claim it left, whoever closed the issue.
+  if (issue.state !== 'OPEN' && stateLabels(issue).length) return { do: 'unclaim' };
   if (issue.state !== 'OPEN') return tree && pr?.state !== 'OPEN' ? { do: 'remove-worktree' } : { done: { issue: issue.number } };
   if (pr?.state === 'MERGED') return { do: 'close' };
   // Unmet dependencies stop the item in every phase and touch nothing; a dropped one needs the owner.
@@ -367,6 +370,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     releaseReview: pr => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--remove-label', 'state:reviewing']),
     risk: (pr, from, to) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, ...(from ? ['--remove-label', `risk:${from}`] : []), '--add-label', `risk:${to}`]),
     ready: (pr, tree) => self(['pr', 'ready', '--pr', String(pr.number)], tree?.path || process.cwd()),
+    unclaim: issue => run('gh', ['issue', 'edit', String(issue.number), '--repo', repo, ...stateLabels(issue).flatMap(name => ['--remove-label', name])]),
     autoMerge: (pr, tree) => self(['pr', 'auto-merge', '--pr', String(pr.number)], tree?.path || process.cwd()),
     close: issue => {
       const current = gh(['issue', 'view', String(issue.number), '--repo', repo, '--json', 'state']);
@@ -436,8 +440,10 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     else if (step.do === 'release-review') io.releaseReview(pr);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
-    // A draft PR keeps its issue In progress; Review starts when the PR is marked ready.
-    else if (step.do === 'ready') { io.ready(pr, tree); io.board(n, 'REVIEW'); }
+    // A draft PR keeps its issue In progress; Review starts when the PR is marked ready. A ready PR also drops the
+    // issue's claim, as spec's transition table states; the open PR still excludes reassignment.
+    else if (step.do === 'ready') { io.ready(pr, tree); io.board(n, 'REVIEW'); if (stateLabels(issue).length) io.unclaim(issue); }
+    else if (step.do === 'unclaim') io.unclaim(issue);
     else if (step.do === 'auto-merge') io.autoMerge(pr, tree);
     else if (step.do === 'close') { io.close(issue); io.board(n, 'DONE'); }
     else if (step.do === 'remove-worktree') { io.removeTree(tree); return { done: { issue: n } }; }
