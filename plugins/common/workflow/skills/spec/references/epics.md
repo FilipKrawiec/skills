@@ -27,7 +27,7 @@ Waiting: #14 on the payment sandbox; next: #15.
 
 ## Slice
 
-`drive <epic>` hands an approved epic with no sub-issues to a planner to slice. Create one sub-issue per logical change, never per layer, each with a type, the epic's milestone, criteria, a scope packet and `lane:owner` only where the owner takes part. Their criteria together cover every epic criterion; leave the card In progress. When the body leaves a reserved question open, put `lane:owner` back on the epic and comment the question.
+`drive <epic>` hands an approved epic with no sub-issues to a planner to slice. Create one sub-issue per logical change, never per layer, each with a type, the epic's milestone, criteria, a scope packet and `lane:owner` only where the owner takes part. Invoke `plan` to create the final refinement slice and its native blockers. Their criteria together cover every epic criterion; leave the card In progress. When the body leaves a reserved question open, put `lane:owner` back on the epic and comment the question.
 
 ## Update
 
