@@ -337,7 +337,6 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
         if (exists || prBranch) git('-C', root, 'worktree', 'add', path, branch);
         else git('-C', root, 'worktree', 'add', '-b', branch, path, `origin/${lanes.base}`);
       }
-      board(lanes, issue.number, 'PROGRESS');
     },
     commit: (tree, message, paths) => self(['commit', '--message', message, '--', ...paths], tree.path),
     push: tree => self(['push'], tree.path),
@@ -349,7 +348,6 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const pr = gh(['pr', 'view', tree.branch, '--repo', repo, '--json', 'number']);
       run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--add-label', `risk:${risk}`]);
       try { run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--add-reviewer', lanes.reviewer]); } catch { console.error(`drive: could not request ${lanes.reviewer}'s review on #${pr.number}`); }
-      board(lanes, issue.number, 'REVIEW');
     },
     // When `state:reviewing` was last added to the PR, from its timeline; null when it never was.
     reviewingSince: pr => {
@@ -365,8 +363,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     close: issue => {
       const current = gh(['issue', 'view', String(issue.number), '--repo', repo, '--json', 'state']);
       if (current.state === 'OPEN') run('gh', ['issue', 'close', String(issue.number), '--repo', repo, '--reason', 'completed']);
-      board(lanes, issue.number, 'DONE');
     },
+    board: (n, value) => board(lanes, n, value),
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
     removeTree: tree => {
       const all = trees(); const root = all[0].path;
@@ -423,16 +421,17 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     const step = decideIssue(facts, lanes);
     if (!step.do) return finish(instruction(io, facts, step, lanes));
     const { issue, pr, tree } = facts;
-    if (step.do === 'start') io.start(issue, estimateRisk(issue, facts.patterns), pr?.headRefName);
+    if (step.do === 'start') { io.start(issue, estimateRisk(issue, facts.patterns), pr?.headRefName); io.board(n, 'PROGRESS'); }
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
     else if (step.do === 'push') io.push(tree);
     else if (step.do === 'open') io.open(issue, tree, maxRisk(riskLabel(issue.labels), riskFromPaths(facts.diffPaths, facts.patterns)), handBack);
     else if (step.do === 'release-review') io.releaseReview(pr);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
-    else if (step.do === 'ready') io.ready(pr, tree);
+    // A draft PR keeps its issue In progress; Review starts when the PR is marked ready.
+    else if (step.do === 'ready') { io.ready(pr, tree); io.board(n, 'REVIEW'); }
     else if (step.do === 'auto-merge') io.autoMerge(pr, tree);
-    else if (step.do === 'close') io.close(issue);
+    else if (step.do === 'close') { io.close(issue); io.board(n, 'DONE'); }
     else if (step.do === 'remove-worktree') { io.removeTree(tree); return { done: { issue: n } }; }
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);

@@ -201,6 +201,7 @@ function fakeRepo(initial) {
     removeTree: t => { calls.push(['remove', t.path]); },
     scratch: t => `${t?.path || '/repo'}/.wf`,
     write: (path, text) => { writes[path] = text; },
+    board: (n, value) => { (s.board ||= {})[n] = value; },
   };
   return { s, io, calls, writes };
 }
@@ -240,6 +241,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   repo.s.trees[3].dirty = true;
   const reviewer = drive(repo.io, 3, lanes, { status: 'done', commit: 'docs(a): b', paths: ['docs/a.md'] });
   assert.deepEqual(repo.calls.slice(1), [['commit'], ['push'], ['open', 3, 'R0']]);
+  assert.equal(repo.s.board[3], 'PROGRESS', 'a draft PR keeps its issue In progress');
   assert.equal(reviewer.agent, 'reviewer');
   assert.equal(reviewer.session, 'separate');
   assert.equal(reviewer.pr, 53);
@@ -248,6 +250,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   repo.s.prs[0].reviews = [review('ready')];
   const approve = drive(repo.io, 3, lanes, {});
   assert.deepEqual(repo.calls.at(-1), ['ready']);
+  assert.equal(repo.s.board[3], 'REVIEW', 'Review starts once the PR is ready');
   assert.equal(approve.mode, 'approve');
   repo.s.prs[0].reviews = [review('ready', 'APPROVED')];
   const wait = drive(repo.io, 3, lanes, {});
