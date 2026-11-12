@@ -19,7 +19,7 @@ Branch on your role, first match wins:
 
 Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next ready issue or epic. It prints one JSON line. Act on exactly that instruction, first match wins:
 
-- `agent` with `session: "subagent"` : start the named agent (general-purpose for improver) on its `model` with the prompt `Follow your brief at <brief>. Return at most 5 lines.`; with `resume`, resume the implementer. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
+- `agent` with `session: "subagent"`: start the named agent (general-purpose for improver) on its `model` with the prompt `Follow your brief at <brief>. Return at most 5 lines.`; with `resume`, resume the implementer. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
 - `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session, which wrote the PR. When it exits, run `<cli> drive <issue>`.
 - `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit. Never sleep or poll inside a turn.
 - `owner`: tell the owner its reason and `url`, then end the turn.
