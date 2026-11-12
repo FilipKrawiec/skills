@@ -179,6 +179,7 @@ function fakeRepo(initial) {
     allBlockers: n => s.blockers?.[n] || [],
     addBlocker: (n, blocker) => { calls.push(['blocker', n, blocker]); ((s.blockers ||= {})[n] ||= []).push(blocker); },
     mergedClosingPr: n => (s.merged || []).includes(n),
+    hasLessons: n => (s.lessons || []).includes(n),
     createRefinement: epic => { const n = 99; calls.push(['create-refinement', n]); const item = issue({ number: n, title: 'refinement', body: '<!-- workflow:epic-refinement -->' }); s.issues[n] = item; s.subs[epic.number].push(n); return item; },
     pr: n => (s.prs || []).find(p => p.issue === n && p.state === 'OPEN') || null, tree: n => s.trees?.[n] || null, patterns: () => [],
     openIssues: () => Object.values(s.issues).filter(i => i.state === 'OPEN'),
@@ -278,6 +279,8 @@ test('drive <epic> plans, drives the first ready slice, lists the others and clo
   for (const n of [10, 11, 12, 99]) repo.s.issues[n].state = 'CLOSED';
   repo.s.merged = [10, 11, 12, 99];
   repo.s.blockers = {};
+  assert.equal(drive(repo.io, 9, lanes, {}).agent, 'improver');
+  repo.s.lessons = [9];
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
   assert.deepEqual(repo.calls.at(-1), ['close-epic', 9]);
 });
@@ -365,6 +368,12 @@ test('refinement is created once, repaired for new slices and waits for merged c
   repo.s.issues[99].state = 'CLOSED';
   assert.match(drive(repo.io, 9, lanes, {}).owner, /#99/);
   repo.s.merged.push(99);
+  const improvement = drive(repo.io, 9, lanes, {});
+  assert.deepEqual([improvement.agent, improvement.mode, improvement.issue], ['improver', 'improve', 9]);
+  assert.match(repo.writes[improvement.brief], /Invoke the `improve` skill/);
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), improvement);
+  repo.s.lessons = [9];
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
 });
 
