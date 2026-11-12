@@ -44,7 +44,7 @@ Use version 1; read it from base.
 | `state:started` | `drive` started the issue in the owner's session. |
 | `state:reviewing` | The Reviewer's claim on a PR. |
 | `review:owner` | PR for the owner after the Reviewer's approval: `review` approves it with `verdict=owner`, `pr auto-merge` waits for the owner's approval of the head. |
-| `risk:R0`, `risk:R1`, `risk:R2` | One per PR; picks the models and whether the owner reviews. |
+| `risk:R0`, `risk:R1`, `risk:R2` | One per PR, set by `drive` from the `devops` risk assessment of the diff, which reasons about the change, never its paths; picks the models and whether the owner reviews. On an issue, only the owner sets one, as a floor. |
 | `nits:swept` | A merged PR whose review Nits were swept. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue. |
 

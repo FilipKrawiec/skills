@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
-import { boardStatus, pathsFromIssueBody, prRecord } from './board.mjs';
+import { boardStatus, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { prFields } from './pr.mjs';
@@ -12,6 +12,7 @@ import { prState } from './state.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
 
 const cli = fileURLToPath(new URL('../workflow.mjs', import.meta.url));
+const riskGuide = fileURLToPath(new URL('../../skills/review/references/risk.md', import.meta.url));
 const risks = ['R0', 'R1', 'R2'];
 export const maxRisk = (...values) => risks[Math.max(...values.filter(Boolean).map(value => risks.indexOf(value)), 0)];
 // Models follow risk for both the implementer and the Reviewer: Opus only for R2.
@@ -20,7 +21,8 @@ export const modelFor = risk => (risk === 'R2' ? 'opus' : 'sonnet');
 // takes the whole open set. A blocking verdict after that fresh round cuts scope through the planner (`spec`), who narrows
 // the issue to what the PR delivers, never a further fix round. The rounds never hand an unapproved PR to the owner.
 export const freshFixRound = 3;
-export const modelForStep = (step, risk) => (step.agent === 'planner' || step.fresh ? 'opus' : modelFor(risk));
+// The risk assessor runs on Sonnet whatever the risk.
+export const modelForStep = (step, risk) => (step.agent === 'devops' ? 'sonnet' : step.agent === 'planner' || step.fresh ? 'opus' : modelFor(risk));
 const riskLabel = labels => labels.map(label => label.name ?? label).find(name => /^risk:R\d$/.test(name))?.slice(5) || null;
 // An epic's final refinement slice: drive finds it by the marker and creates it with the criteria `plan` gives the planner.
 const refinementMarker = '<!-- workflow:epic-refinement -->';
@@ -31,27 +33,44 @@ const refinementCriteria = [
   'Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.',
 ];
 
-// The CODEOWNERS patterns the owner holds; those paths need the owner's judgment.
-export function ownerPatterns(codeowners, owner) {
-  if (!owner) return [];
-  return codeowners.split('\n').map(line => line.replace(/#.*/, '').trim().split(/\s+/)).filter(([pattern, ...owners]) => pattern && owners.some(name => name.toLowerCase() === `@${owner.toLowerCase()}`)).map(([pattern]) => pattern);
+// A risk assessment is one comment drive posts on the issue (before the build) or the PR (each assessed diff): a marker with
+// the risk set, the assessor's risk, the owner floor, the head and the files it saw, then the reason for people to read.
+const assessmentMarker = /<!-- workflow:risk (\{.*?\}) -->/;
+export function assessmentComment(record) {
+  const { risk, assessed, floor, head, paths, reason } = record;
+  const meta = JSON.stringify({ risk, assessed, floor: floor || null, head: head || null, paths: paths || [], reason: reason || '' });
+  const raised = floor && assessed !== risk ? ` The assessor said ${assessed}; the issue's owner-set \`risk:${floor}\` is the floor.` : '';
+  return `<!-- workflow:risk ${meta.replace(/-->/g, '--\\u003e')} -->\n**Risk ${risk}**${head ? ` at ${head.slice(0, 7)}` : ''}: ${reason || 'no reason given'}.${raised}\n`;
 }
-export function matchesPattern(path, pattern) {
-  const anchored = pattern.startsWith('/');
-  const body = pattern.replace(/^\//, '').replace(/\/$/, '/**');
-  const source = body.split('**').map(part => part.split('*').map(text => text.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')).join('.*');
-  return new RegExp(`${anchored || pattern.replace(/\/$/, '').includes('/') ? '^' : '(^|/)'}${source}(/.*)?$`).test(path);
+// The newest assessment among the comments, counting only those `author` (drive's identity) wrote; null when none.
+export function latestAssessment(comments, author) {
+  const own = comment => !author || (comment.user?.login ?? comment.author?.login)?.toLowerCase() === author.toLowerCase();
+  for (const comment of [...comments].reverse()) {
+    const match = own(comment) && assessmentMarker.exec(comment.body || '');
+    if (!match) continue;
+    try {
+      const record = JSON.parse(match[1]);
+      if (risks.includes(record.risk)) return record;
+    } catch { /* not a record drive wrote */ }
+  }
+  return null;
 }
-// R2 for owner paths, scripts or CI; R0 when every path is a skill, an agent definition or docs; R1 otherwise or with no paths.
-export function riskFromPaths(paths, patterns = []) {
-  if (!paths?.length) return 'R1';
-  if (paths.some(path => patterns.some(pattern => matchesPattern(path, pattern)) || /(^|\/)scripts\//.test(path) || /^\.github\//.test(path) || /(^|\/)(justfile|Makefile|package\.json)$/.test(path))) return 'R2';
-  if (paths.every(path => /(^|\/)(skills|docs|agents)\//.test(path) || /\.md$/.test(path))) return 'R0';
-  return 'R1';
-}
-// At Start: the issue's risk label wins upward, then its scope packet's paths.
-export function estimateRisk(issue, patterns) {
-  return maxRisk(riskLabel(issue.labels || []), riskFromPaths(pathsFromIssueBody(issue.body || ''), patterns));
+// Whether the risk assessor must run now: before the build with no issue assessment, on a draft with no assessment of its
+// diff, or when the head touches files the last assessment did not see. A `risk:` hand-back answers a due assessment.
+function assessmentStep(facts) {
+  const { handBack: hb = {} } = facts;
+  const pr = facts.pr?.state === 'OPEN' ? facts.pr : null;
+  const last = pr ? facts.prAssessment : facts.issueAssessment;
+  let reason = null;
+  if (!last) reason = pr ? 'assess the diff of the draft' : 'assess the issue before the build';
+  else if (pr) {
+    const seen = new Set(last.paths || []);
+    const unseen = (facts.diffPaths || []).filter(path => !seen.has(path));
+    if (unseen.length) reason = `the head touches ${unseen.length} ${unseen.length === 1 ? 'file' : 'files'} the last assessment did not see: ${unseen.slice(0, 5).join(', ')}${unseen.length > 5 ? ', …' : ''}`;
+  }
+  if (!reason) return null;
+  if (risks.includes(hb.risk)) return { do: 'assess', risk: hb.risk, reason: hb.reason || '' };
+  return agent('devops', 'risk', { task: 'risk', reason });
 }
 
 // A hand-back is at most 5 `key: value` lines; a bare first word is the status.
@@ -77,9 +96,9 @@ export function staleReviewClaim(pr, lanes, since, now) {
   return !(pr.reviews || []).some(review => review.author?.login?.toLowerCase() === reviewer && Date.parse(review.submittedAt || '') > since);
 }
 
+const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...extra });
 const stateLabels = issue => (issue.labels || []).map(label => label.name ?? label).filter(name => name.startsWith('state:'));
 const isEpic = issue => (issue.labels || []).some(label => (label.name ?? label) === 'type:epic');
-const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...extra });
 
 // One issue's next step from what was read about it, first match wins: a mechanical `do` for drive to perform, or a
 // terminal `agent`, `wait`, `owner`, `blocked` or `done`. Pure, so re-running on unchanged state repeats it.
@@ -99,7 +118,7 @@ export function decideIssue(facts, lanes) {
   if (hb.status === 'sliced') return { blocked: { issue: issue.number, reason: 'the planner handed back sliced, yet the issue is not an epic' } };
   const claimed = (issue.labels || []).some(label => (label.name ?? label) === 'state:started');
   if (!pr || pr.state !== 'OPEN') {
-    if (!claimed || !tree) return { do: 'start' };
+    if (!claimed || !tree) return assessmentStep(facts) || { do: 'start' };
     if (hb.status !== 'done') return agent('implementer', 'build');
     if (tree.dirty) return hb.commit && hb.paths?.length ? { do: 'commit' } : agent('implementer', 'build', { reason: 'uncommitted changes and no commit/paths in the hand-back' });
     if (!tree.commits) return agent('implementer', 'build', { reason: 'no commits ahead of the base' });
@@ -111,9 +130,12 @@ export function decideIssue(facts, lanes) {
     if (tree.dirty) return hb.commit && hb.paths?.length ? { do: 'commit' } : agent('implementer', 'fix', { reason: 'uncommitted changes and no commit/paths in the hand-back' });
     return { do: 'push' };
   }
-  const risk = maxRisk(state.risk, riskLabel(issue.labels || []), riskFromPaths(facts.diffPaths, facts.patterns));
-  if (risk !== state.risk && risks.indexOf(risk) > risks.indexOf(state.risk)) return { do: 'risk', risk };
   if (state.labels.includes('state:reviewing')) return staleReviewClaim(pr, lanes, facts.reviewingSince, facts.now ?? Date.now()) ? { do: 'release-review' } : { wait: { pr: pr.number, until: 'reviewed' } };
+  const assess = assessmentStep(facts);
+  if (assess) return assess;
+  // The owner's issue label is a floor; drive raises a PR label to it and never lowers one someone raised.
+  const risk = maxRisk(state.risk, riskLabel(issue.labels || []), facts.prAssessment?.risk);
+  if (risks.indexOf(risk) > risks.indexOf(state.risk)) return { do: 'risk', risk };
   const next = state.next;
   // A narrowed issue changes what the head is judged against: the Reviewer judges the same head again, no new build.
   if (hb.status === 'narrowed' && state.verdict === 'fixes') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
@@ -203,6 +225,30 @@ note: <one line: what changed, or why replan or blocked>
 ${f.issue.body || '(no body)'}
 `;
 }
+export function devopsBrief(f) {
+  const last = f.pr ? f.prAssessment : null;
+  return `# Risk brief: #${f.issue.number} ${f.issue.title}
+
+Task: risk. Assess ${f.pr ? `the diff of PR #${f.pr.number} at head ${f.pr.headRefOid}` : 'this issue before its build'} by the factors in ${riskGuide}, and set R0, R1 or R2 with a one-line reason (${f.step.reason}).
+Issue: ${f.issue.url}
+${f.pr ? `PR: ${f.pr.url}. Read the diff with \`gh pr diff ${f.pr.number} --repo ${f.repo}\`; it changes ${f.diffPaths.length} files: ${f.diffPaths.join(', ') || 'none listed'}.` : 'Read the issue below, its scope packet and the code it names.'}
+${last ? `The last assessment set ${last.risk} at ${String(last.head || '').slice(0, 7)}: ${last.reason}` : ''}
+${f.floor ? `The issue's owner-set \`risk:${f.floor}\` is a floor drive applies after you; assess the change on its own.` : ''}
+
+Read code, CODEOWNERS and the repository's rules as evidence; never edit, commit or push, never label or comment, never start an agent and never print a token. Drive sets the label and posts your reason.
+
+## Hand-back, exactly 2 lines
+
+\`\`\`text
+risk: R0 | R1 | R2
+reason: <one line: what the change does and why that risk>
+\`\`\`
+
+## Issue
+
+${f.issue.body || '(no body)'}
+`;
+}
 function improverBrief(f) {
   return `# Improvement brief: epic #${f.issue.number} ${f.issue.title}
 
@@ -268,7 +314,7 @@ ${hb.note || subjects.map(subject => `- ${subject}`).join('\n') || 'See the comm
 
 The implementer ran the project gate with \`workflow.mjs check\`: ${hb.check || 'unreported'}.
 
-Risk ${risk}, from the issue's scope and the diff.
+Risk ${risk}, from the risk assessor's estimate of the issue; its assessment of this diff follows as a PR comment.
 `;
 }
 
@@ -336,11 +382,21 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
         subjects: (gitIn(found.path, ['log', '--reverse', '--format=%s', `${base}..HEAD`]) || '').split('\n').filter(Boolean),
       };
     },
-    patterns: () => ownerPatterns(gitIn(trees()[0].path, ['show', `origin/${lanes.base}:.github/CODEOWNERS`]) || '', lanes.owner),
-    start: (issue, risk, prBranch) => {
+    // Drive posts as the implementer identity, so only its comments count as assessments.
+    assessment: (issue, pr) => latestAssessment(gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${pr ? pr.number : issue.number}/comments?per_page=100`]).flat(), lanes.implementer),
+    assess: (issue, pr, record) => {
+      const body = join(workflowScratch(), `drive-${issue.number}-risk.md`);
+      writeFileSync(body, assessmentComment(record));
+      run('gh', [pr ? 'pr' : 'issue', 'comment', String(pr ? pr.number : issue.number), '--repo', repo, '--body-file', body]);
+      if (!pr) return;
+      // The new assessment of the diff wins, lower or higher: the PR keeps exactly one risk label.
+      const stale = (pr.labels || []).map(label => label.name ?? label).filter(name => /^risk:R\d$/.test(name) && name !== `risk:${record.risk}`);
+      run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, ...stale.flatMap(name => ['--remove-label', name]), '--add-label', `risk:${record.risk}`]);
+    },
+    start: (issue, prBranch) => {
       try { ensureWorkflowLabels(repo); } catch { /* labels may already exist */ }
-      const stale = issue.labels.map(label => label.name).filter(name => /^risk:R\d$/.test(name) && name !== `risk:${risk}`);
-      run('gh', ['issue', 'edit', String(issue.number), '--repo', repo, '--add-label', 'state:started', '--add-label', `risk:${risk}`, ...stale.flatMap(name => ['--remove-label', name]), ...(lanes.implementer ? ['--add-assignee', lanes.implementer] : [])]);
+      // The issue's risk label stays as the owner set it: it is the floor, never drive's estimate.
+      run('gh', ['issue', 'edit', String(issue.number), '--repo', repo, '--add-label', 'state:started', ...(lanes.implementer ? ['--add-assignee', lanes.implementer] : [])]);
       const root = trees()[0].path; const branch = prBranch || slugBranch(issue); const path = join(root, '.worktrees', branch);
       git('fetch', '--quiet', 'origin');
       if (!existsSync(path)) {
@@ -406,18 +462,30 @@ function readIssueFacts(io, n, handBack) {
   const diffPaths = [...new Set([...(tree?.diffPaths || []), ...(pr?.files || []).map(file => file.path)])];
   const claimed = (pr?.labels || []).some(label => label.name === 'state:reviewing');
   const reviewingSince = claimed ? io.reviewingSince(pr) : null;
-  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, patterns: io.patterns(), reviewingSince, now: io.now?.() ?? Date.now() };
+  // Only the assessment of the current phase is read: the issue's before a draft exists, then the PR's.
+  const assessment = io.assessment(issue, pr?.state === 'OPEN' ? pr : null);
+  const assessments = pr?.state === 'OPEN' ? { prAssessment: assessment } : { issueAssessment: assessment };
+  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, ...assessments, reviewingSince, now: io.now?.() ?? Date.now() };
 }
+// The risk that picks the models: the PR's label once a draft exists, else the issue assessment; never below the floor.
+function currentRisk(facts, step) {
+  const { issue, pr } = facts;
+  if (step.agent === 'planner') return 'R2';
+  const floor = riskLabel(issue.labels || []);
+  return pr ? maxRisk(riskLabel(pr.labels || []), floor) : maxRisk(floor, facts.issueAssessment?.risk);
+}
+const briefs = { implementer: implementerBrief, reviewer: reviewerBrief, improver: improverBrief, devops: devopsBrief, planner: plannerBrief };
 function instruction(io, facts, step, lanes) {
   const { issue, pr, tree } = facts;
   if (!step.agent) return step;
-  const risk = maxRisk(riskLabel(pr?.labels || []), riskLabel(issue.labels || []), step.agent === 'planner' ? 'R2' : null);
+  const risk = currentRisk(facts, step);
   const model = modelForStep(step, risk);
   const brief = join(io.scratch(tree), `drive-${issue.number}-${step.agent}.md`);
   const round = pr ? prState(pr, lanes).round : 0;
-  const context = { issue, pr, tree, step, risk, round, base: lanes.base };
-  io.write(brief, step.agent === 'implementer' ? implementerBrief(context) : step.agent === 'reviewer' ? reviewerBrief(context) : step.agent === 'improver' ? improverBrief(context) : plannerBrief(context));
+  const context = { issue, pr, tree, step, risk, round, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
+  io.write(brief, briefs[step.agent](context));
   const out = { agent: step.agent, model, brief, issue: issue.number, pr: pr?.number ?? null, session: step.agent === 'reviewer' ? 'separate' : 'subagent', mode: step.mode, cwd: tree?.path || null };
+  if (step.task) out.task = step.task;
   if (step.reason) out.reason = step.reason;
   if (step.resume) out.resume = true;
   if (step.agent === 'reviewer') out.command = reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`);
@@ -433,10 +501,14 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     const step = decideIssue(facts, lanes);
     if (!step.do) return finish(instruction(io, facts, step, lanes));
     const { issue, pr, tree } = facts;
-    if (step.do === 'start') { io.start(issue, estimateRisk(issue, facts.patterns), pr?.headRefName); io.board(n, 'PROGRESS'); }
+    if (step.do === 'start') { io.start(issue, pr?.headRefName); io.board(n, 'PROGRESS'); }
+    else if (step.do === 'assess') {
+      const floor = riskLabel(issue.labels || []);
+      io.assess(issue, pr?.state === 'OPEN' ? pr : null, { risk: maxRisk(floor, step.risk), assessed: step.risk, floor, head: pr?.headRefOid ?? null, paths: pr ? facts.diffPaths : [], reason: step.reason });
+    }
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
     else if (step.do === 'push') io.push(tree);
-    else if (step.do === 'open') io.open(issue, tree, maxRisk(riskLabel(issue.labels), riskFromPaths(facts.diffPaths, facts.patterns)), handBack);
+    else if (step.do === 'open') io.open(issue, tree, maxRisk(riskLabel(issue.labels || []), facts.issueAssessment?.risk || 'R1'), handBack);
     else if (step.do === 'release-review') io.releaseReview(pr);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);

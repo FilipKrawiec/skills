@@ -6,7 +6,7 @@ allowed-tools: Skill Read Write Edit Bash Agent
 
 # Deliver
 
-`drive` makes every mechanical change (claim, branch, commit, push, draft PR, risk, ready, auto-merge, cards, close, worktree removal); agents add judgment only. `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
+`drive` makes every mechanical change (claim, branch, commit, push, draft PR, risk label, ready, auto-merge, cards, close, worktree removal); agents add judgment only, and `devops` judges risk (`review`'s `references/risk.md`). `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
 
 Run one plain command per Bash call: no pipes, `;`, `&&` or `$()`. Never edit labels, claims, board cards or auto-merge, and never watch CI, with `gh` or by polling: `drive` and `wait` do that.
 

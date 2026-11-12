@@ -17,7 +17,7 @@ Branch on the assignment, first match wins:
 - an area, diff or branch with no PR: read [area-audit.md](references/area-audit.md) for a whole area, do steps 3 and 4 and return the step 5 envelope without posting;
 - a PR: steps 1 to 5.
 
-Read [hot-paths.md](references/hot-paths.md) for a hot path or startup.
+Read [hot-paths.md](references/hot-paths.md) for a hot path or startup, [risk.md](references/risk.md) for risk.
 
 ## 1. Shape and claim
 

@@ -18,7 +18,7 @@ Each open issue has a native milestone and one type; it carries `lane:owner` onl
 
 ## 2. Transition
 
-Add a fenced `scope` JSON packet when the changed paths are known, such as `{"paths": ["src/feature/", "tests/feature/"], "dependencies": [12]}` (a trailing `/` covers a subtree): `drive` estimates risk from its paths. A follow-up to an unmerged PR lands in that PR's next round or lists the PR in `dependencies`. Before filing a `type:bug` or `type:chore`, run `issue create --check`; comment on a listed issue with the same outcome instead. Re-read before writing. Replace conflicting family labels; preserve others and owner holds.
+Add a fenced `scope` JSON packet when the changed paths are known, such as `{"paths": ["src/feature/", "tests/feature/"], "dependencies": [12]}` (a trailing `/` covers a subtree). The `devops` risk assessor reasons about the change itself, with the packet's paths as evidence, never the verdict (`review`'s `references/risk.md`); set an issue's `risk:R*` label only as the owner's floor. A follow-up to an unmerged PR lands in that PR's next round or lists the PR in `dependencies`. Before filing a `type:bug` or `type:chore`, run `issue create --check`; comment on a listed issue with the same outcome instead. Re-read before writing. Replace conflicting family labels; preserve others and owner holds.
 
 | Actor | Transition | Condition and consequence |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ Add a fenced `scope` JSON packet when the changed paths are known, such as `{"pa
 | Product partner | one `type:*` | Actual outcome changes type; an epic has no work lane. |
 | `drive` | `state:started` | Exclusive assignment; In Progress. |
 | `drive` | remove execution label | PR marked ready; Review, the open PR still excludes reassignment. |
-| `drive` | one `risk:R*` on a PR | Set when the draft opens; raised, never lowered. |
+| `drive` | one `risk:R*` on a PR | Set from the `devops` assessment of the diff when the draft opens, with its reason as one PR comment; reassessed when a later head touches unseen files; never below the issue's owner-set floor. |
 | Reviewer | add/remove own `review:owner` | An approval with `verdict=owner` needs the owner, or that gate clears; never erase an explicit owner hold. |
 | Orchestrator | close routine slice | Merged evidence proves authorized criteria; Done. |
 | Orchestrator | close epic | Closed slices delivered to test cover every criterion; Done. |
