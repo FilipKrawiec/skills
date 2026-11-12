@@ -1,20 +1,23 @@
 import { spawnSync } from 'node:child_process';
 import { effectiveBranchPolicy } from '../safety.mjs';
-import { prRecord, reviewerApproved } from './board.mjs';
+import { prLinkedIssues, prRecord, reviewerApproved } from './board.mjs';
 import { jsonCommand, run } from './core.mjs';
 
 export const failedStates = ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'];
 export const passedStates = ['SUCCESS', 'NEUTRAL', 'SKIPPED'];
 export const checkState = check => (check.conclusion || check.state || '').toUpperCase();
 const checkName = check => check.name || check.context || '';
+// Every PR delivers an issue: a PR whose body links none (`Closes #N` or `Part of #N`) is never handed off or merged.
+const orphan = (pr, cfg) => (prLinkedIssues(pr, cfg.repo).length ? null : `PR #${pr.number} links no issue: its body needs Closes #N or Part of #N`);
 
 // Why `pr ready` may not hand the draft to the Reviewer's approval, or null: it targets the configured base, the newest verdict at
-// its head is `ready`, every check at that head passed, the configured required checks among them, and no conflict or outside
+// its head is `ready`, it links an issue, every check at that head passed, the configured required checks among them, and no conflict or outside
 // change request stands.
 export function prReadyRefusal(pr, cfg) {
   if (pr.state !== 'OPEN') return `PR #${pr.number} is ${String(pr.state).toLowerCase()}`;
   if (!pr.isDraft) return `PR #${pr.number} is already ready for review`;
   if (pr.baseRefName !== cfg.base) return `PR #${pr.number} targets ${pr.baseRefName}, not ${cfg.base}`;
+  if (orphan(pr, cfg)) return orphan(pr, cfg);
   const checks = pr.statusCheckRollup || [];
   const failed = checks.filter(check => failedStates.includes(checkState(check))).map(checkName);
   if (failed.length) return `checks failed at ${pr.headRefOid}: ${failed.join(', ')}`;
@@ -30,11 +33,12 @@ export function prReadyRefusal(pr, cfg) {
 
 // Why `pr auto-merge` may not turn on squash auto-merge, or null: the PR is ready, the Reviewer approved its head with
 // `verdict=ready` (`verdict=owner` under `review:owner`, which also needs the owner's approval at that head), no owner change
-// request stands, no check failed, it targets the configured base, and that base requires code-owner review and the configured checks.
+// request stands, no check failed, it links an issue, it targets the configured base, and that base requires code-owner review and the configured checks.
 export function prAutoMergeRefusal(pr, cfg, policy) {
   if (pr.state !== 'OPEN') return `PR #${pr.number} is ${String(pr.state).toLowerCase()}`;
   if (pr.isDraft) return `PR #${pr.number} is a draft; run pr ready first`;
   if (pr.baseRefName !== cfg.base) return `PR #${pr.number} targets ${pr.baseRefName}, not ${cfg.base}`;
+  if (orphan(pr, cfg)) return orphan(pr, cfg);
   if (!policy?.reviews?.[1]) return `${cfg.base} does not visibly require code-owner review`;
   const unprotected = (cfg.requiredChecks || []).filter(name => !policy.checks.includes(name));
   if (unprotected.length) return `${cfg.base} does not require checks: ${unprotected.join(', ')}`;

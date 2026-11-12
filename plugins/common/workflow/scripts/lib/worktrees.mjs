@@ -132,6 +132,12 @@ export function removeWorktree(tree, verdict, root, baseRef) {
 export function worktreeCommand(args) {
   const usage = 'Usage: worktree tidy [--dry-run] [--idle-days N]';
   if (args[0] !== 'tidy') throw new Error(usage);
+  let sawIdleDays = false;
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === '--dry-run') continue;
+    if (args[i] === '--idle-days' && !sawIdleDays && i + 1 < args.length) { sawIdleDays = true; i++; continue; }
+    throw new Error(usage);
+  }
   const dryRun = args.includes('--dry-run');
   const idleAt = args.indexOf('--idle-days');
   const idleDays = idleAt === -1 ? 2 : Number(args[idleAt + 1]);

@@ -111,6 +111,7 @@ test('a PR links an issue only by a closing reference in its repository or a Par
   assert.deepEqual(prRecord(pr('Refs #8\nSee #9, and part of #10'), cfg).issues, [], 'a mention links nothing');
   assert.deepEqual(prRecord(pr('Closes #8', [closes(8), closes(11, 'other')]), cfg).issues, [8], 'only a closing link in this repository counts');
   assert.deepEqual(prLinkedIssues(pr('Summary\n  Part of #12\nPart of #13.'), 'Acme/App'), [12, 13]);
+  assert.deepEqual(prLinkedIssues(pr('Stacked on #5.\n\nCloses #6'), 'acme/app'), [6], 'a stacked PR has no closing link, yet its body closes its issue');
 });
 
 test('a Reviewer approval applies only to the exact head and verdict', () => {

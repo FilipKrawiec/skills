@@ -44,12 +44,14 @@ export function reviewerApproved(pr, cfg) {
   return Boolean(latest?.state === 'APPROVED' && latest.commit?.oid === head && latest.body.includes(`sha=${head}`) && latest.body.includes(`verdict=${ownerLane ? 'owner' : 'ready'}`) &&
     !mine.some(review => review.state === 'CHANGES_REQUESTED' && review.commit?.oid === head));
 }
-// A PR delivers the issues GitHub records it closing in this repository, and those a line starting `Part of #N` names:
-// a slice PR gets no closing link, yet it delivers its issue. A bare mention links nothing.
+// A PR delivers the issues GitHub records it closing in this repository, those its body closes by keyword (a stacked
+// PR's base is not the default branch, so GitHub records no closing link for it) and those a line starting
+// `Part of #N` names: a slice PR gets no closing link, yet it delivers its issue. A bare mention links nothing.
 export function prLinkedIssues(pr, repo) {
   const closes = (pr.closingIssuesReferences || []).filter(issue => `${issue.repository?.owner?.login}/${issue.repository?.name}`.toLowerCase() === repo.toLowerCase()).map(issue => issue.number);
+  const keywords = [...(pr.body || '').matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):? #(\d+)\b/gi)].map(match => Number(match[1]));
   const parts = [...(pr.body || '').matchAll(/^\s*Part of #(\d+)\b/gim)].map(match => Number(match[1]));
-  return [...new Set([...closes, ...parts])];
+  return [...new Set([...closes, ...keywords, ...parts])];
 }
 export function prRecord(pr, cfg) {
   const issues = prLinkedIssues(pr, cfg.repo);

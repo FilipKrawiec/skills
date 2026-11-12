@@ -45,7 +45,7 @@ Round = `round` from `<cli> status <N>`, plus one; a new head never resets it. T
 
 - **Acceptance outcome:** trace each criterion to an observable outcome and a production call site; code reached only from tests proves nothing. Run the manual steps CI cannot. Flag hollow tests, weakened thresholds and scope creep.
 - **Correctness:** edge cases, failure paths, security, concurrency, cleanup and data loss in the changed code.
-- **Fit:** breaches of the repository's own rules, each citing the rule's `file:line`.
+- **Fit:** breaches of the repository's own rules, each citing the rule's `file:line`; a PR linking no issue is Important.
 - **Blast radius:** callers, contracts, migrations and configuration outside the diff that it breaks; a surviving reference to a removed or renamed name is Important.
 
 Tag each candidate:
@@ -62,11 +62,13 @@ Only Blocker and Important block. Verify each candidate at the head: read the ci
 
 ## 5. Post
 
-Write the body and the inline findings (`[{"path","line","body"}]`, each body starting with its tag, as in `**Nit** rename x`) under the path `<cli> scratch` prints, then run `<cli> review-post --pr <N> --sha <40-hex HEAD> --event COMMENT --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. Pass each of your threads the delta fixes as `--resolve-thread`. On exit 1, stop and report. The body carries `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|fixes|cap|split> -->`. Verdict, first match wins:
+Write the body and the inline findings (`[{"path","line","body"}]`, each body starting with its tag, as in `**Nit** rename x`) under the path `<cli> scratch` prints, then run `<cli> review-post --pr <N> --sha <40-hex HEAD> --event COMMENT --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. Pass each of your threads the delta fixes as `--resolve-thread`. On exit 1, stop and report. The body carries `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|fixes|split> -->`. Verdict, first match wins:
 
-- a Blocker or Important finding at round 3 or later: `verdict=cap`, final; no later round or fix serves that head. `review-post` adds `review:owner`. List each open finding in one line, recommending a cut in scope, never a deeper fix.
-- a Blocker or Important finding: `verdict=fixes`.
+- a Blocker or Important finding: `verdict=fixes`; from round 3, list each open one.
+- a scope no fix cures: `verdict=split` naming the cut.
 - otherwise: `verdict=ready`.
+
+An owner-only question (a product call, an element reserved for the owner) is no finding: record it under `Owner decision`.
 
 Nits never block and never earn another round; they stay inline for the `<cli> nits` sweep. List Pre-existing and Follow-up findings in the body for the caller to file.
 

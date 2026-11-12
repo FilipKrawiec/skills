@@ -16,6 +16,11 @@ const risks = ['R0', 'R1', 'R2'];
 export const maxRisk = (...values) => risks[Math.max(...values.filter(Boolean).map(value => risks.indexOf(value)), 0)];
 // Models follow risk for both the implementer and the Reviewer: Opus only for R2.
 export const modelFor = risk => (risk === 'R2' ? 'opus' : 'sonnet');
+// From the third blocking verdict on, narrow fixes have stopped converging: one fresh implementer on the strongest model
+// takes the whole open set. A blocking verdict after that fresh round cuts scope through the planner (`spec`), who narrows
+// the issue to what the PR delivers, never a further fix round. The rounds never hand an unapproved PR to the owner.
+export const freshFixRound = 3;
+export const modelForStep = (step, risk) => (step.agent === 'planner' || step.fresh ? 'opus' : modelFor(risk));
 const riskLabel = labels => labels.map(label => label.name ?? label).find(name => /^risk:R\d$/.test(name))?.slice(5) || null;
 
 // The CODEOWNERS patterns the owner holds; those paths need the owner's judgment.
@@ -78,6 +83,9 @@ export function decideIssue(facts, lanes) {
   if (blockers.length) return { blocked: { issue: issue.number, by: blockers } };
   if (hb.status === 'replan') return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
   if (hb.status === 'blocked') return { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}` };
+  // A planner split makes the issue an epic, which `drive` routes to `driveEpic`; still a story, the split did not happen,
+  // and dispatching the planner again would loop on the same blocking verdict. A narrowed issue is handled with its PR.
+  if (hb.status === 'sliced') return { blocked: { issue: issue.number, reason: 'the planner handed back sliced, yet the issue is not an epic' } };
   const claimed = (issue.labels || []).some(label => (label.name ?? label) === 'state:started');
   if (!pr || pr.state !== 'OPEN') {
     if (!claimed || !tree) return { do: 'start' };
@@ -96,13 +104,22 @@ export function decideIssue(facts, lanes) {
   if (risk !== state.risk && risks.indexOf(risk) > risks.indexOf(state.risk)) return { do: 'risk', risk };
   if (state.labels.includes('state:reviewing')) return staleReviewClaim(pr, lanes, facts.reviewingSince, facts.now ?? Date.now()) ? { do: 'release-review' } : { wait: { pr: pr.number, until: 'reviewed' } };
   const next = state.next;
-  if (next.action === 'fix') return tree ? agent('implementer', 'fix', { reason: next.reason, resume: true }) : { do: 'start' };
+  // A narrowed issue changes what the head is judged against: the Reviewer judges the same head again, no new build.
+  if (hb.status === 'narrowed' && state.verdict === 'fixes') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
+  if (next.action === 'fix') {
+    if (!tree) return { do: 'start' };
+    if (state.verdict === 'fixes' && state.round > freshFixRound) return agent('planner', 'replan', { reason: `round ${state.round}: the fresh fix round left blocking findings; narrow the issue to what the PR delivers` });
+    const fresh = state.verdict === 'fixes' && state.round === freshFixRound;
+    return agent('implementer', 'fix', fresh ? { reason: `round ${state.round}: the whole open set, fresh`, fresh: true } : { reason: next.reason, resume: true });
+  }
   if (next.action === 'wait-ci') return { wait: { pr: pr.number, until: 'ci' } };
   // An unapproved `ready` verdict on a ready PR asks only for the approval; anything else is a review round.
   if (next.action === 'review') {
     const approve = !pr.isDraft && state.verdict === 'ready';
     return agent('reviewer', approve ? 'approve' : 'review', { reason: approve ? 'no approval at the head' : next.reason || 'no verdict at the head', round: approve ? state.round : state.round + 1 });
   }
+  // The PR was found through this issue, so drive links it in the body; never an owner step.
+  if (next.action === 'link-issue') return { do: 'link-issue' };
   if (next.action === 'split' ) return agent('planner', 'split', { reason: 'the Reviewer asked to split the change' });
   if (next.action === 'ready') return { do: 'ready' };
   if (next.action === 'merge') return pr.autoMergeRequest ? { wait: { pr: pr.number, until: 'merged' } } : { do: 'auto-merge' };
@@ -144,14 +161,14 @@ export function implementerBrief(f) {
   const fix = f.step.mode === 'fix';
   return `# Implementer brief: #${f.issue.number} ${f.issue.title}
 
-Mode: ${f.step.mode}${f.step.reason ? ` (${f.step.reason})` : ''}. Risk ${f.risk}. Model ${modelFor(f.risk)}.
+Mode: ${f.step.mode}${f.step.reason ? ` (${f.step.reason})` : ''}. Risk ${f.risk}. Model ${modelForStep(f.step, f.risk)}.
 Issue: ${f.issue.url}
 Worktree: ${f.tree.path} (branch ${f.tree.branch}, base origin/${f.base})
 PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}, round ${f.round}` : 'none yet; drive opens it'}
 
 ## Task
 
-${fix ? 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.' : 'Deliver the issue below so every acceptance criterion holds, with focused tests.'} Work only in the worktree. Run one plain command per Bash call.
+${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focused tests.' : f.step.fresh ? 'Earlier fix rounds did not converge. Read every open Blocker and Important thread `review-context` lists and the issue\'s criteria, find their shared cause and fix it whole, with the neighbouring cases the same cause breaks, each with a focused test. Fix nothing outside the criteria; Nits never block.' : 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.'} Work only in the worktree. Run one plain command per Bash call.
 
 ## Commands you may run
 
@@ -175,17 +192,23 @@ note: <one line: what changed, or why replan or blocked>
 ${f.issue.body || '(no body)'}
 `;
 }
+export function improverBrief(f) {
+  return `# Improvement brief: epic #${f.issue.number} ${f.issue.title}
+
+Invoke the \`improve\` skill for process lessons from the delivered epic ${f.issue.url}. Follow its idempotency and recording steps; the refinement PR has merged. Return its output in at most 5 lines.
+`;
+}
 export function reviewerBrief(f) {
   return `# Reviewer brief: PR #${f.pr.number} for #${f.issue.number}
 
 Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
-${f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`.\n' : ''}
+${f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 
 - \`node ${cli} review-context --pr ${f.pr.number} --issue ${f.issue.number} --claim\`
 - \`node ${cli} wait ${f.pr.number} --until ci\`, \`node ${cli} status ${f.pr.number}\`, \`node ${cli} scratch\`
-- \`node ${cli} review-post --pr ${f.pr.number} --sha ${f.pr.headRefOid} --event COMMENT|APPROVE --body-file <F> [--comments-file <C>]\`
+- \`node ${cli} review-post --pr ${f.pr.number} --sha ${f.pr.headRefOid} --event COMMENT|APPROVE --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...\`
 ${f.step.mode === 'approve' ? `- \`node ${cli} pr auto-merge --pr ${f.pr.number}\` as the Reviewer\n` : ''}
 Never edit, commit or push, never start an agent and never print a token.
 
@@ -197,15 +220,15 @@ verdict, PR, head, round, tag counts.
 export function plannerBrief(f) {
   return `# Planner brief: #${f.issue.number} ${f.issue.title}
 
-Task: ${f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices' : `${f.step.reason}; reshape the issue at its logical seam into sub-issues or a revised scope`}. Invoke the \`spec\` skill for the issue form.
+Task: ${f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Invoke the `plan` skill to create the final refinement slice' : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first) and hand back \`sliced\``}. Invoke the \`spec\` skill for the issue form.
 Issue: ${f.issue.url}
 Commands: \`node ${cli} issue create ...\`, \`node ${cli} issue edit ...\`, \`gh api\` to link sub-issues and blocked-by dependencies.
 Never write code and never start an agent. Agree each slice with the owner.
 
 ## Hand-back, at most 5 lines
 
-status: sliced | blocked
-slices: <issue numbers>
+status: sliced | narrowed | blocked
+slices: <issue numbers, or the new issue when narrowed>
 note: <one line>
 
 ## Issue
@@ -253,19 +276,40 @@ function self(args, cwd) {
   const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: ['ignore', 2, 2], env: process.env });
   if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
 }
-export function githubIo(lanes) {
+export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   const repo = lanes.repo;
-  const gh = args => jsonCommand('gh', args);
   const trees = () => parseWorktreeList(git('worktree', 'list', '--porcelain'));
   return {
-    issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees']),
-    dependencies: issue => readDependencies(repo, issue),
+    issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']),
+    dependencies: issue => readDependencies(repo, issue, gh),
+    allBlockers: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/dependencies/blocked_by?per_page=100`]).flat().map(dep => dep.number),
+    addBlocker: (n, blocker) => {
+      const id = gh(['api', `repos/${repo}/issues/${blocker}`]).id;
+      run('gh', ['api', '--method', 'POST', `repos/${repo}/issues/${n}/dependencies/blocked_by`, '-F', `issue_id=${id}`]);
+    },
+    mergedClosingPr: (n, base) => {
+      const [owner, name] = repo.split('/');
+      const query = `query($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { issue(number:$number) { closedByPullRequestsReferences(first:100) { nodes { merged baseRefName } } } } }`;
+      const data = gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${n}`]);
+      return data.data.repository.issue.closedByPullRequestsReferences.nodes.some(pr => pr.merged && pr.baseRefName === base);
+    },
+    hasLessons: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().some(comment => /^## Lessons\s*$/m.test(comment.body || '')),
+    createRefinement: epic => {
+      const scope = (epic.body || '').match(/```scope\s*\n[\s\S]*?```/)?.[0] || '```scope\n{"paths":[]}\n```';
+      const body = `${refinementMarker}\n\n## Outcome\nReview and refine the merged whole epic #${epic.number}.\n\n### Acceptance criteria\n- [ ] ${refinementCriteria}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths.\n- [ ] Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.\n- [ ] Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.\n\n${scope}`;
+      const [owner, name] = repo.split('/');
+      const lookup = `query($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { id issue(number:$number) { id milestone { id } } } }`;
+      const data = gh(['api', 'graphql', '-f', `query=${lookup}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${epic.number}`]).data.repository;
+      const mutation = `mutation($repository:ID!,$parent:ID!,$title:String!,$body:String!,$milestone:ID) { createIssue(input:{repositoryId:$repository,parentIssueId:$parent,title:$title,body:$body,milestoneId:$milestone}) { issue { number } } }`;
+      const result = gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=refine: ${epic.title}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]);
+      const number = result.data.createIssue.issue.number;
+      return gh(['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
+    },
     subIssues: n => gh(['api', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).map(sub => ({ number: sub.number, state: sub.state.toUpperCase(), body: sub.body || '' })),
     pr: n => {
       const open = gh(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,body,closingIssuesReferences,labels,reviews,headRefOid,isDraft']);
-      // A stacked PR's base is not the default branch, so GitHub links no closing issue; its body's `Closes #N` still does.
-      const closes = new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #${n}\\b`, 'i');
-      const found = open.find(candidate => prRecord({ ...candidate, labels: candidate.labels || [] }, lanes).issues.includes(n) || closes.test(candidate.body || ''));
+      // `prLinkedIssues` also reads a stacked PR's `Closes #N`, which GitHub links no closing issue for.
+      const found = open.find(candidate => prRecord({ ...candidate, labels: candidate.labels || [] }, lanes).issues.includes(n));
       return found ? gh(['pr', 'view', String(found.number), '--repo', repo, '--json', `${prFields},files,headRefName`]) : null;
     },
     tree: (n, branch) => {
@@ -313,6 +357,7 @@ export function githubIo(lanes) {
       const at = events.filter(event => event.event === 'labeled' && event.label?.name === 'state:reviewing').at(-1)?.created_at;
       return at ? Date.parse(at) : null;
     },
+    linkIssue: (pr, issue) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--body', `Closes #${issue.number}\n\n${pr.body || ''}`]),
     releaseReview: pr => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--remove-label', 'state:reviewing']),
     risk: (pr, from, to) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, ...(from ? ['--remove-label', `risk:${from}`] : []), '--add-label', `risk:${to}`]),
     ready: (pr, tree) => self(['pr', 'ready', '--pr', String(pr.number)], tree?.path || process.cwd()),
@@ -357,11 +402,11 @@ function instruction(io, facts, step, lanes) {
   const { issue, pr, tree } = facts;
   if (!step.agent) return step;
   const risk = maxRisk(riskLabel(pr?.labels || []), riskLabel(issue.labels || []), step.agent === 'planner' ? 'R2' : null);
-  const model = step.agent === 'planner' ? 'opus' : modelFor(risk);
+  const model = modelForStep(step, risk);
   const brief = join(io.scratch(tree), `drive-${issue.number}-${step.agent}.md`);
   const round = pr ? prState(pr, lanes).round : 0;
   const context = { issue, pr, tree, step, risk, round, base: lanes.base };
-  io.write(brief, step.agent === 'implementer' ? implementerBrief(context) : step.agent === 'reviewer' ? reviewerBrief(context) : plannerBrief(context));
+  io.write(brief, step.agent === 'implementer' ? implementerBrief(context) : step.agent === 'reviewer' ? reviewerBrief(context) : step.agent === 'improver' ? improverBrief(context) : plannerBrief(context));
   const out = { agent: step.agent, model, brief, issue: issue.number, pr: pr?.number ?? null, session: step.agent === 'reviewer' ? 'separate' : 'subagent', mode: step.mode, cwd: tree?.path || null };
   if (step.reason) out.reason = step.reason;
   if (step.resume) out.resume = true;
@@ -383,6 +428,7 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     else if (step.do === 'push') io.push(tree);
     else if (step.do === 'open') io.open(issue, tree, maxRisk(riskLabel(issue.labels), riskFromPaths(facts.diffPaths, facts.patterns)), handBack);
     else if (step.do === 'release-review') io.releaseReview(pr);
+    else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
     else if (step.do === 'ready') io.ready(pr, tree);
     else if (step.do === 'auto-merge') io.autoMerge(pr, tree);
@@ -391,12 +437,35 @@ export function driveIssue(io, n, lanes, handBack = {}) {
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
 }
+const refinementMarker = '<!-- workflow:epic-refinement -->';
+const refinementCriteria = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
 export function driveEpic(io, epic, lanes) {
+  if (epic.state !== 'OPEN' || (epic.labels || []).some(label => (label.name ?? label) === 'lane:owner')) return decideEpic({ epic, slices: [] });
   const { blockers, dropped } = splitDependencies(io.dependencies(epic));
   if (dropped.length) return { owner: droppedReason(epic.number, dropped), url: epic.url };
   if (blockers.length) return { blocked: { issue: epic.number, by: blockers } };
-  const slices = io.subIssues(epic.number).map(slice => ({ ...slice, ...(slice.state === 'OPEN' ? splitDependencies(io.dependencies(slice)) : { blockers: [], dropped: [] }) }));
+  const withDependencies = slice => ({ ...slice, ...(slice.state === 'OPEN' ? splitDependencies(io.dependencies(slice)) : { blockers: [], dropped: [] }) });
+  let slices = io.subIssues(epic.number).map(slice => withDependencies(io.issue(slice.number)));
+  if (!slices.length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices }), lanes);
+  const marked = slices.filter(slice => (slice.body || '').includes(refinementMarker));
+  const legacy = slices.filter(slice => !(slice.body || '').includes(refinementMarker) && (/refin/i.test(slice.title || '') || (slice.body || '').includes(refinementCriteria)));
+  if (marked.length > 1 || legacy.length) return { owner: `epic #${epic.number}: classify refinement candidates ${[...marked, ...legacy].map(slice => `#${slice.number}`).join(', ')}`, url: epic.url };
+  let refinement = marked[0];
+  if (!refinement) {
+    refinement = io.createRefinement(epic);
+    slices.push({ ...refinement, blockers: [], dropped: [] });
+  }
+  const others = slices.filter(slice => slice.number !== refinement.number);
+  const existing = io.allBlockers(refinement.number);
+  for (const slice of others) if (!existing.includes(slice.number)) io.addBlocker(refinement.number, slice.number);
+  const unresolved = others.filter(slice => slice.state !== 'OPEN' && !io.mergedClosingPr(slice.number, lanes.base));
+  if (unresolved.length) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${unresolved.map(slice => `#${slice.number}`).join(', ')}`, url: epic.url };
+  Object.assign(refinement, splitDependencies(io.dependencies(refinement)));
+  if (others.some(slice => slice.state === 'OPEN')) refinement.blockers = [...new Set([...refinement.blockers, ...others.filter(slice => slice.state === 'OPEN').map(slice => slice.number)])];
+  if (refinement.state !== 'OPEN' && !io.mergedClosingPr(refinement.number, lanes.base)) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for #${refinement.number}`, url: epic.url };
+  if (refinement.state === 'OPEN' && others.some(slice => slice.state === 'OPEN')) slices = slices.map(slice => slice.number === refinement.number ? refinement : slice);
   const step = decideEpic({ epic, slices });
+  if (step.do === 'close-epic' && !io.hasLessons(epic.number)) return instruction(io, { issue: epic, pr: null, tree: null }, agent('improver', 'improve'), lanes);
   if (step.do === 'close-epic') { io.closeEpic(epic); return { done: { epic: epic.number } }; }
   if (!step.slices) return finish(instruction(io, { issue: epic, pr: null, tree: null }, step, lanes));
   const entries = step.slices.map(number => ({ number, step: decideIssue(readIssueFacts(io, number, {}), lanes) }));

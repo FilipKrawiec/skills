@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, estimateRisk, matchesPattern,
-  driveCommand, modelFor, nextTarget, ownerPatterns, parseHandBack, pickSlice, reviewerCommand, riskFromPaths, staleReviewClaim,
+  driveCommand, githubIo, modelFor, modelForStep, nextTarget, ownerPatterns, parseHandBack, pickSlice, plannerBrief, reviewerCommand, riskFromPaths, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
@@ -72,13 +75,64 @@ test('drive releases a stale Reviewer claim, then dispatches the reviewer', () =
   assert.deepEqual([step.agent, step.mode], ['reviewer', 'review']);
 });
 
-test('only risk R2 or the round cap brings in the owner; line count never does', () => {
+test('the owner is asked only on an approved PR; the round cap and line count never ask', () => {
   const base = { issue: started, tree: tree({ commits: 1 }) };
   const approved = [review('ready', 'APPROVED')];
   assert.equal(decide({ ...base, pr: pr({ isDraft: false, labels: [label('risk:R2')], reviews: approved }) }).owner, 'risk R2');
-  assert.ok(decide({ ...base, pr: pr({ reviews: [review('cap')] }) }).owner);
+  assert.equal(decide({ ...base, pr: pr({ labels: [label('risk:R2')], reviews: [review('ready')] }) }).do, 'ready', 'an R2 draft goes to its approval first');
+  assert.equal(decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes')] }) }).owner, undefined);
   const huge = Array.from({ length: 5000 }, (_, i) => `src/file${i}.js`);
   assert.equal(decide({ ...base, diffPaths: huge, pr: pr({ isDraft: false, reviews: approved }) }).do, 'auto-merge');
+});
+
+test('from the third blocking verdict a fresh implementer on the strongest model fixes the whole open set', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  assert.equal(decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes')] }) }).resume, true);
+  const third = decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes')] }) });
+  assert.deepEqual([third.agent, third.mode, third.fresh, third.resume], ['implementer', 'fix', true, undefined]);
+  assert.equal(modelForStep(third, 'R0'), 'opus');
+  assert.equal(modelForStep({ agent: 'implementer', resume: true }, 'R0'), 'sonnet');
+});
+
+test('the fresh fix round runs once: a blocking verdict after it cuts scope through the planner, never the owner', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  const fourth = decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes'), review('fixes')] }) });
+  assert.deepEqual([fourth.agent, fourth.mode, fourth.owner], ['planner', 'replan', undefined]);
+  assert.match(fourth.reason, /narrow the issue to what the PR delivers/);
+});
+
+test('a cut after the fresh round keeps the PR: the planner narrows its issue and the Reviewer judges the same head again', () => {
+  const blocked = [review('fixes'), review('fixes'), review('fixes'), review('fixes')];
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, reviews: blocked })] });
+  const replan = drive(repo.io, 3, lanes, {});
+  assert.deepEqual([replan.agent, replan.mode], ['planner', 'replan']);
+  const brief = repo.writes[replan.brief];
+  assert.match(brief, /narrow this issue's criteria to what PR #5 delivers/);
+  assert.match(brief, /Never close the PR/);
+  // The planner narrows the issue and files the rest; the PR, its head and its verdicts stay.
+  const next = drive(repo.io, 3, lanes, { status: 'narrowed', slices: '4' });
+  assert.deepEqual(repo.calls, [], 'no new build, commit or push');
+  assert.deepEqual([next.agent, next.mode, next.pr], ['reviewer', 'review', 5]);
+  assert.equal(next.command.includes('review-5-r5'), true);
+  assert.match(repo.writes[next.brief], new RegExp(`at head ${head}`));
+  assert.match(repo.writes[next.brief], /Narrowed scope, same head/);
+  // A ready verdict at that head then readies the PR, which merges closing the narrowed issue.
+  repo.s.prs[0].reviews.push(review('ready'));
+  assert.deepEqual(drive(repo.io, 3, lanes, {}).agent, 'reviewer');
+  assert.deepEqual(repo.calls, [['ready']]);
+  // Without a PR, a cut splits the issue into an epic; a `sliced` hand-back on a story reports blocked, not another planner round.
+  assert.match(plannerBrief({ issue: started, pr: null, step: { mode: 'replan', reason: 'two seams' } }), /into an epic with one-PR sub-issues/);
+  assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: blocked }), handBack: { status: 'sliced' } }), { blocked: { issue: 3, reason: 'the planner handed back sliced, yet the issue is not an epic' } });
+});
+
+test('a PR found through its issue but linking none is linked by drive, never sent to the owner', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  assert.deepEqual(decide({ ...base, pr: pr({ body: 'Stacked work', closingIssuesReferences: [] }) }), { do: 'link-issue' });
+  assert.equal(decide({ ...base, pr: pr({ body: 'Closes #3', closingIssuesReferences: [] }) }).agent, 'reviewer', 'a stacked PR closing its issue in the body goes to review');
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, body: 'Stacked work', closingIssuesReferences: [] })] });
+  const step = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(repo.calls, [['link-issue', 5, 3]]);
+  assert.deepEqual([step.agent, step.mode], ['reviewer', 'review']);
 });
 
 test('risk: estimated from the issue, recomputed from the diff, and only ever rises', () => {
@@ -123,7 +177,13 @@ test('epics: slice when empty, deliver slices in dependency order, close when al
 function fakeRepo(initial) {
   const s = structuredClone(initial); const calls = []; const writes = {};
   const io = {
-    issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: 'OPEN' })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state, body: s.issues[m].body })),
+    // A blocked-by link to a closed issue counts as met, like a completed issue whose closing PR merged.
+    issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: s.issues[m]?.state || 'OPEN', reason: 'completed', merged: true })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state, body: s.issues[m].body })),
+    allBlockers: n => s.blockers?.[n] || [],
+    addBlocker: (n, blocker) => { calls.push(['blocker', n, blocker]); ((s.blockers ||= {})[n] ||= []).push(blocker); },
+    mergedClosingPr: n => (s.merged || []).includes(n),
+    hasLessons: n => (s.lessons || []).includes(n),
+    createRefinement: epic => { const n = 99; calls.push(['create-refinement', n]); const item = issue({ number: n, title: 'refinement', body: '<!-- workflow:epic-refinement -->' }); s.issues[n] = item; s.subs[epic.number].push(n); return item; },
     pr: n => (s.prs || []).find(p => p.issue === n && p.state === 'OPEN') || null, tree: n => s.trees?.[n] || null, patterns: () => [],
     openIssues: () => Object.values(s.issues).filter(i => i.state === 'OPEN'),
     start: (i, risk) => { calls.push(['start', i.number, risk]); i.labels = [label('state:started'), label(`risk:${risk}`)]; (s.trees ||= {})[i.number] = tree({ path: `/w/${i.number}`, branch: `${i.number}-x` }); },
@@ -131,6 +191,7 @@ function fakeRepo(initial) {
     push: t => { calls.push(['push']); t.unpushed = false; },
     open: (i, t, risk) => { calls.push(['open', i.number, risk]); (s.prs ||= []).push(pr({ issue: i.number, number: 50 + i.number, labels: [label(`risk:${risk}`)] })); },
     reviewingSince: () => null,
+    linkIssue: (p, i) => { calls.push(['link-issue', p.number, i.number]); p.body = `Closes #${i.number}\n\n${p.body}`; },
     releaseReview: p => { calls.push(['release-review', p.number]); p.labels = p.labels.filter(l => l.name !== 'state:reviewing'); },
     risk: (p, from, to) => { calls.push(['risk', to]); p.labels = [label(`risk:${to}`)]; },
     ready: p => { calls.push(['ready']); p.isDraft = false; },
@@ -143,6 +204,27 @@ function fakeRepo(initial) {
   };
   return { s, io, calls, writes };
 }
+
+test('drive pushes a real commit once and opens its PR in the same call', t => {
+  const f = fixture(t);
+  const remote = nativeRemote(f);
+  writeFileSync(join(f.repo, 'change.txt'), 'change');
+  assert.equal(f.linkedGit('add', 'change.txt').status, 0);
+  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'feat: change').status, 0);
+  const repo = fakeRepo({ issues: { 3: started } });
+  repo.io.tree = () => tree({ path: f.repo, branch: 'feature/test', commits: 1, unpushed: Boolean(f.linkedGit('log', '--oneline', 'HEAD', '--not', '--remotes').stdout.trim()) });
+  let pushed = false;
+  repo.io.push = () => {
+    assert.equal(pushed, false, 'drive must make progress after the push');
+    pushed = true;
+    const result = f.cliRun('push');
+    assert.equal(result.status, 0, result.stderr);
+  };
+  const result = drive(repo.io, 3, lanes, { status: 'done' });
+  assert.equal(run(f.env.REAL_GIT, ['--git-dir', remote, 'rev-parse', 'refs/heads/feature/test']).stdout.trim(), f.linkedGit('rev-parse', 'HEAD').stdout.trim());
+  assert.equal(repo.s.prs[0].issue, 3);
+  assert.equal(result.agent, 'reviewer');
+});
 
 test('drive performs the mechanical steps and stops at one instruction; re-running repeats it', () => {
   const repo = fakeRepo({ issues: { 3: issue({ body: '```scope\n{"paths":["docs/a.md"]}\n```' }) } });
@@ -197,8 +279,11 @@ test('drive <epic> plans, drives the first ready slice, lists the others and clo
   const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }), 11: issue({ number: 11 }), 12: issue({ number: 12 }) }, subs: { 9: [10, 11, 12] }, blockers: { 11: [10] } });
   const result = drive(repo.io, 9, lanes, {});
   assert.deepEqual([result.agent, result.issue, result.epic, result.alsoReady], ['implementer', 10, 9, [12]]);
-  for (const n of [10, 11, 12]) repo.s.issues[n].state = 'CLOSED';
+  for (const n of [10, 11, 12, 99]) repo.s.issues[n].state = 'CLOSED';
+  repo.s.merged = [10, 11, 12, 99];
   repo.s.blockers = {};
+  assert.equal(drive(repo.io, 9, lanes, {}).agent, 'improver');
+  repo.s.lessons = [9];
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
   assert.deepEqual(repo.calls.at(-1), ['close-epic', 9]);
 });
@@ -282,7 +367,8 @@ test('a dependency cycle in an epic returns an owner step naming it', () => {
   assert.equal(decideEpic({ epic, slices }).owner, 'epic #9: dependency cycle #12 → #14 → #12');
   const repo = fakeRepo({ issues: { 9: epic, 12: issue({ number: 12 }), 14: issue({ number: 14 }) }, subs: { 9: [12, 14] }, blockers: { 12: [14], 14: [12] } });
   assert.match(drive(repo.io, 9, lanes, {}).owner, /#12 → #14 → #12/);
-  assert.deepEqual(repo.calls, []);
+  // Only the epic's refinement slice is set up; no slice in the cycle starts.
+  assert.deepEqual(repo.calls, [['create-refinement', 99], ['blocker', 99, 12], ['blocker', 99, 14]]);
 });
 
 test('a slice with a dropped dependency or an epic blocked by an epic is not driven', () => {
@@ -341,4 +427,74 @@ test('check lets at most two gates run at once on the machine', async t => {
   let running = 0; let peak = 0;
   for (const mark of readFileSync(log, 'utf8').trim().split('\n')) { running += mark === '+' ? 1 : -1; peak = Math.max(peak, running); }
   assert.ok(peak >= 1 && peak <= 2, `peak ${peak}`);
+});
+
+test('epic refinement ambiguity halts before mutation', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, title: 'Refinement' }) }, subs: { 9: [10] } });
+  const result = drive(repo.io, 9, lanes, {});
+  assert.match(result.owner, /#10/);
+  assert.deepEqual(repo.calls, []);
+});
+
+test('refinement candidates are classified before creation or repair', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  for (const bodies of [
+    ['<!-- workflow:epic-refinement -->', '<!-- workflow:epic-refinement -->'],
+    ['<!-- workflow:epic-refinement -->', 'Review the merged whole epic against its Outcome, Decisions and architecture rules'],
+  ]) {
+    const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, body: bodies[0] }), 11: issue({ number: 11, body: bodies[1] }) }, subs: { 9: [10, 11] } });
+    assert.match(drive(repo.io, 9, lanes, {}).owner, /#10, #11/);
+    assert.deepEqual(repo.calls, []);
+  }
+});
+
+test('refinement is created once, repaired for new slices and waits for merged closing PRs', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }) }, subs: { 9: [10] } });
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 10);
+  assert.deepEqual(repo.calls.slice(0, 2), [['create-refinement', 99], ['blocker', 99, 10]]);
+  drive(repo.io, 9, lanes, {});
+  assert.equal(repo.calls.filter(call => call[0] === 'create-refinement').length, 1);
+  assert.equal(repo.calls.filter(call => call[0] === 'blocker').length, 1);
+  repo.s.issues[11] = issue({ number: 11 });
+  repo.s.subs[9].push(11);
+  drive(repo.io, 9, lanes, {});
+  assert.ok(repo.calls.some(call => call.join(',') === 'blocker,99,11'));
+  repo.s.issues[10].state = 'CLOSED';
+  repo.s.issues[11].state = 'CLOSED';
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#10, #11/);
+  repo.s.merged = [10, 11];
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 99);
+  assert.equal(repo.s.issues[9].state, 'OPEN');
+  repo.s.issues[99].state = 'CLOSED';
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#99/);
+  repo.s.merged.push(99);
+  const improvement = drive(repo.io, 9, lanes, {});
+  assert.deepEqual([improvement.agent, improvement.mode, improvement.issue], ['improver', 'improve', 9]);
+  assert.match(repo.writes[improvement.brief], /Invoke the `improve` skill/);
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), improvement);
+  repo.s.lessons = [9];
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+});
+
+
+test('refinement creation atomically links the parent even when the response is lost', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')], milestone: { title: 'M' } });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }) }, subs: { 9: [10] } });
+  const gh = args => {
+    const query = args.find(arg => arg.startsWith('query=')) || '';
+    if (query.includes('query(')) return { data: { repository: { id: 'R', issue: { id: 'E', milestone: { id: 'M' } } } } };
+    assert.match(query, /parentIssueId/);
+    assert.ok(args.includes('parent=E'));
+    const refinement = issue({ number: 99, title: 'refine', body: '<!-- workflow:epic-refinement -->' });
+    repo.s.issues[99] = refinement;
+    repo.s.subs[9].push(99);
+    throw new Error('response lost');
+  };
+  repo.io.createRefinement = githubIo(lanes, gh).createRefinement;
+  assert.throws(() => drive(repo.io, 9, lanes, {}), /response lost/);
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 10);
+  assert.deepEqual(repo.s.subs[9], [10, 99]);
 });

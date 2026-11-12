@@ -47,7 +47,7 @@ test('a ready PR the Reviewer approved at its head with an author verdict is app
   assert.deepEqual([record.approved, record.awaitingReview], [true, false]);
 });
 
-test('one review skill, one mode: one reviewer, no subagents, the cap is final and Nits never block', () => {
+test('one review skill, one mode: one reviewer, no subagents, no round asks the owner and Nits never block', () => {
   const read = path => readFileSync(new URL(`../../plugins/common/workflow/${path}`, import.meta.url), 'utf8');
   const skill = name => read(`skills/${name}/SKILL.md`);
   const deliver = skill('deliver');
@@ -66,9 +66,10 @@ test('one review skill, one mode: one reviewer, no subagents, the cap is final a
   assert.match(approval, /verdict=owner/);
   assert.match(approval, /pr auto-merge --pr <N>`/);
   assert.match(review, /Never start a subagent, finder or verifier/);
-  assert.match(review, /<!-- agent-review sha=<HEAD> round=<N> verdict=<ready\|fixes\|cap\|split> -->/);
+  assert.match(review, /<!-- agent-review sha=<HEAD> round=<N> verdict=<ready\|fixes\|split> -->/);
   assert.doesNotMatch(review, /mode=|author mode|team mode/i);
-  assert.match(review, /`verdict=cap`, final/);
+  assert.doesNotMatch(review + approval, /verdict=cap|round cap/);
+  assert.match(review, /`Owner decision`/);
   assert.match(review, /never the whole diff again/);
   assert.match(review, /Nits never block and never earn another round/);
   assert.match(review, /\*\*Follow-up:\*\*/);

@@ -37,6 +37,11 @@ test('the next action follows the PR state, first match wins', () => {
   assert.deepEqual(next({ reviews: [review('ready', 'APPROVED')] }), { action: 'merge', actor: 'cli' });
 });
 
+test('an open PR that links no issue goes to the planner before anything else', () => {
+  assert.deepEqual(next({ body: 'Bump a dependency', closingIssuesReferences: [] }), { action: 'link-issue', actor: 'planner', reason: 'no linked issue: spec files one and the body links it' });
+  assert.deepEqual(next({ body: 'Closes #6', closingIssuesReferences: [] }), { action: 'review', actor: 'reviewer' }, 'a stacked PR closing its issue in the body is linked');
+});
+
 test('a ready verdict without a mode hands a draft to deliver and a ready PR to its approval', () => {
   assert.deepEqual(next({ isDraft: true, reviews: [review('ready')] }), { action: 'ready', actor: 'cli', reason: 'verdict ready on a draft' });
   assert.deepEqual(next({ reviews: [review('ready')] }), { action: 'review', actor: 'reviewer' });
@@ -48,10 +53,15 @@ test('an author-mode ready verdict hands a draft off instead of reviewing it aga
   assert.deepEqual(next({ isDraft: true, reviews: [authorReady] }), { action: 'ready', actor: 'cli', reason: 'verdict ready on a draft' });
 });
 
-test('only risk R2 or the round cap brings in the owner', () => {
+test('the owner is asked only on a PR the Reviewer approved at its head', () => {
   assert.deepEqual(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready', 'APPROVED')] }), { action: 'owner-review', actor: 'owner', reason: 'risk R2' });
   assert.equal(next({ labels: [{ name: 'risk:R1' }], reviews: [review('ready', 'APPROVED')] }).action, 'merge');
-  assert.equal(next({ reviews: [review('cap')] }).actor, 'owner');
+  assert.equal(next({ isDraft: true, labels: [{ name: 'risk:R2' }], reviews: [review('ready')] }).action, 'ready', 'an R2 draft is readied, not handed to the owner');
+  assert.equal(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready')] }).actor, 'reviewer', 'an unapproved R2 PR waits for the approval');
+  assert.equal(next({ labels: [{ name: 'review:owner' }], reviews: [review('fixes')] }).actor, 'implementer', 'an owner hold never skips the fixes');
+  assert.equal(next({ reviews: [review('fixes'), review('fixes'), review('fixes')] }).actor, 'implementer', 'no round count asks the owner');
+  assert.equal(next({ reviews: [review('cap')] }).actor, 'reviewer', 'a retired cap verdict is not an approval');
+  assert.deepEqual(next({ labels: [{ name: 'review:owner' }], reviews: [review('owner', 'APPROVED')] }), { action: 'owner-review', actor: 'owner', reason: 'review:owner' });
   const ownerApproved = { author: { login: 'owner' }, state: 'APPROVED', body: '', commit: { oid: head } };
   assert.equal(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready', 'APPROVED'), ownerApproved] }).action, 'merge');
 });

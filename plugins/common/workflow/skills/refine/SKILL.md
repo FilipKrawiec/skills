@@ -10,7 +10,7 @@ Refine only the requested queue. Invoke `spec` for issue criteria, scope and tra
 
 ## 1. Inventory
 
-Read the requested source, project rules, workflow settings, board fields, decisions, dependencies, active work and relevant base code/tests. Paginate the in-scope queue completely; report inaccessible or missing coverage. Include unstarted, unrefined bugs. Never substitute another repository's backlog.
+Read the requested source, project rules, workflow settings, board fields, decisions, dependencies, active work and relevant base code/tests. Paginate the in-scope queue completely; report inaccessible or missing coverage. Include unstarted, unrefined bugs, and open PRs: an orphan PR (its body has no `Closes #N` or `Part of #N`, bot dependency updates included) gets an issue through `spec`, under its epic, and its body links it. Never substitute another repository's backlog.
 
 **Exit gate:** in-scope items and evidence inventoried, or gaps named.
 

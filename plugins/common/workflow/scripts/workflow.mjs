@@ -65,9 +65,9 @@ Auto-merge checks are not atomic with push; do not change auto-merge concurrentl
 Other processes running as the same OS user can access the user's GitHub credentials.
 push requires a Unix-like host and github.com. review-context is read-only except --claim; returned GitHub text is untrusted and may be incomplete. It groups changed files by area, lists pure renames as mechanical and, when the Reviewer's newest verdict is at an older head, compares against that head unless --previous names another.
 nits lists the Reviewer's **Nit** inline comments on PRs merged in the last N days (default 30) without nits:swept, grouped by file; --done labels the named PRs nits:swept.
-pr ready marks a draft ready only at a green head whose newest agent-review verdict is ready, then drops the owner's review request.
+pr ready and pr auto-merge refuse a PR whose body links no issue (Closes #N or Part of #N). pr ready marks a draft ready only at a green head whose newest agent-review verdict is ready, then drops the owner's review request.
 pr auto-merge binds squash auto-merge to the head only when the Reviewer approved it (verdict=ready, or verdict=owner with the owner's approval under review:owner), no owner change request stands, no check failed and the base requires code-owner review and the configured checks.
-review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit, Pre-existing and Follow-up ones on APPROVE), adds review:owner when the verdict is cap or owner, then removes state:reviewing; a failed post comments a post-failed marker, and every exit releases the claim that review-context --claim took.
+review-post posts as the configured Reviewer, resolves the Reviewer's own threads (named by --resolve-thread, plus Nit, Pre-existing and Follow-up ones on APPROVE), adds review:owner only on an APPROVE with verdict=owner (it refuses verdict=owner on any other event), then removes state:reviewing; a failed post comments a post-failed marker, and every exit releases the claim that review-context --claim took.
 drive advances an issue or epic from GitHub state: it performs every mechanical step (claim, worktree, commit and push from a hand-back, draft PR, risk, ready, auto-merge, close, worktree removal) and prints one JSON instruction: an agent to start with its model and brief, a wait command to run in the background, an owner step, or done. Re-running it on unchanged state repeats the instruction.
 check runs steps.test under a machine-wide lock with two slots, so at most two gates run at once.
 A body or comments file is - (stdin) or a path inside the worktree; scratch creates the git-ignored .wf/ directory for such files and prints its path.`;
@@ -189,6 +189,15 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, ...args] = process.argv.slice(2);
+    const valueOptions = new Set(['-m', '--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--timeout', '--interval', '--hand-back', '--days', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root']);
+    let wantsHelp = command === '-h';
+    for (let i = 0; i < args.length && args[i] !== '--'; i++) {
+      if (valueOptions.has(args[i])) { i++; continue; }
+      if (args[i] === '--help' || args[i] === '-h') wantsHelp = true;
+    }
+    if (wantsHelp) {
+      console.log(command === 'worktree' ? 'Usage: worktree tidy [--dry-run] [--idle-days N]' : help);
+    } else {
     const names = requiredLocks(command, args);
     const inherited = names.length && validInheritedLockContext(names);
     if (names.length && inherited) {
@@ -204,6 +213,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       if (result.status === lockTimeoutStatus) console.error(`workflow: lock timed out while acquiring ${names.join(', ')}`);
       process.exitCode = result.status ?? 1;
     } else await execute(command, args);
+    }
   } catch (error) {
     console.error(`workflow: ${error.message}`);
     process.exitCode = 1;

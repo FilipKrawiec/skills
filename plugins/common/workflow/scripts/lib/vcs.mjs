@@ -136,6 +136,10 @@ export async function push(args) {
   if (pulls.length >= 100) throw new Error('Open PR list may be incomplete; cannot check auto-merge safely');
   const common = realpathSync(resolve(root, git('rev-parse', '--git-common-dir')));
   const head = git('rev-parse', 'HEAD');
+  const trackingRef = `refs/remotes/origin/${branch}`;
+  const tracked = spawnSync('git', ['rev-parse', '--verify', '--quiet', trackingRef], { cwd: root, env, encoding: 'utf8' });
+  if (tracked.status !== 0 && tracked.status !== 1) throw new Error('Cannot read the remote tracking ref');
+  const oldTracking = tracked.status === 0 ? tracked.stdout.trim() : '0'.repeat(head.length);
   const helper = fileURLToPath(new URL('../git-askpass.mjs', import.meta.url));
   const hook = run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push'], { cwd: root, env });
   const temporary = mkdtempSync(join(tmpdir(), 'workflow-push-'));
@@ -167,6 +171,8 @@ export async function push(args) {
         : 'unclassified Git failure';
       throw new Error(`Push failed (exit ${result.status ?? 'unknown'}): ${reason}; Git output withheld to protect credentials`);
     }
+    const updated = spawnSync('git', ['update-ref', trackingRef, head, oldTracking], { cwd: root, env, encoding: 'utf8' });
+    if (updated.status !== 0) throw new Error('Push succeeded, but the tracking ref changed or could not be updated; fetch origin before retrying');
     console.log(JSON.stringify({ result: 'pushed', actor, repository: repo, branch, head, configSource }));
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 }
@@ -258,6 +264,7 @@ export function reviewContext(args) {
 }
 
 const reviewEvents = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
+const verdictIn = body => /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(body)?.[1];
 function reviewPostOptions(args, root) {
   const o = { '--resolve-thread': [] };
   const list = [...args];
@@ -276,6 +283,8 @@ function reviewPostOptions(args, root) {
   if (!o['--body-file']) throw new Error('--body-file is required');
   o.body = readWorkspaceText(root, o['--body-file']);
   if (!o.body.includes(`<!-- agent-review sha=${o['--sha']}`)) throw new Error('Review body must contain <!-- agent-review sha=<sha> ...');
+  // The owner is asked only on an approved head: `verdict=owner` is an approval, never a comment or a change request.
+  if (verdictIn(o.body) === 'owner' && o['--event'] !== 'APPROVE') throw new Error('verdict=owner requires --event APPROVE: the owner sees only a PR the Reviewer approved');
   o.comments = [];
   if (o['--comments-file']) {
     if (o['--comments-file'] === '-' && o['--body-file'] === '-') throw new Error('Only one of --body-file and --comments-file can read stdin');
@@ -331,9 +340,8 @@ export function reviewPost(args) {
     const posted = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/pulls/${pr}/reviews`, '--input', '-'], { ...options, input: JSON.stringify(payload) });
     if (!Number.isInteger(posted?.id)) throw new Error('GitHub did not confirm the review');
     console.log(`Posted review ${posted.id} on #${pr}`);
-    // A capped round, or an approval the owner must join, hands the PR to the owner; the CLI, not the agent, sets that label.
-    const verdict = /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(o.body)?.[1];
-    if (['cap', 'owner'].includes(verdict)) {
+    // Only an approval the owner must join hands the PR to the owner; the CLI, not the agent, sets that label.
+    if (approve && verdictIn(o.body) === 'owner') {
       try { run('gh', ['pr', 'edit', pr, '--repo', `github.com/${repo}`, '--add-label', 'review:owner'], options); } catch { console.error(`Warning: review posted, but could not add review:owner to #${pr}; add it by hand.`); }
     }
     // The inline Nit and Pre-existing notes of this review are open threads now; the posted verdict stands if resolving them fails.

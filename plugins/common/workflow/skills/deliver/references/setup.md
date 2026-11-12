@@ -43,7 +43,7 @@ Use version 1; read it from base.
 | `lane:owner` | Owner participation is required to implement. |
 | `state:started` | `drive` started the issue in the owner's session. |
 | `state:reviewing` | The Reviewer's claim on a PR. |
-| `review:owner` | PR for the owner; `review` withholds approval. |
+| `review:owner` | PR for the owner after the Reviewer's approval: `review` approves it with `verdict=owner`, `pr auto-merge` waits for the owner's approval of the head. |
 | `risk:R0`, `risk:R1`, `risk:R2` | One per PR; picks the models and whether the owner reviews. |
 | `nits:swept` | A merged PR whose review Nits were swept. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue. |
