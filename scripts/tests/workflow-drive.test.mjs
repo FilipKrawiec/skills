@@ -178,7 +178,7 @@ function fakeRepo(initial) {
   const s = structuredClone(initial); const calls = []; const writes = {};
   const io = {
     // A blocked-by link to a closed issue counts as met, like a completed issue whose closing PR merged.
-    issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: s.issues[m]?.state || 'OPEN', reason: 'completed', merged: true })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state, body: s.issues[m].body })),
+    issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: s.issues[m]?.state || 'OPEN', reason: 'completed', merged: true })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state })),
     allBlockers: n => s.blockers?.[n] || [],
     addBlocker: (n, blocker) => { calls.push(['blocker', n, blocker]); ((s.blockers ||= {})[n] ||= []).push(blocker); },
     mergedClosingPr: n => (s.merged || []).includes(n),
