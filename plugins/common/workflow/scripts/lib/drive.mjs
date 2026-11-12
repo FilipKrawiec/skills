@@ -77,6 +77,7 @@ export function staleReviewClaim(pr, lanes, since, now) {
   return !(pr.reviews || []).some(review => review.author?.login?.toLowerCase() === reviewer && Date.parse(review.submittedAt || '') > since);
 }
 
+const stateLabels = issue => (issue.labels || []).map(label => label.name ?? label).filter(name => name.startsWith('state:'));
 const isEpic = issue => (issue.labels || []).some(label => (label.name ?? label) === 'type:epic');
 const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...extra });
 
@@ -84,6 +85,8 @@ const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...ext
 // terminal `agent`, `wait`, `owner`, `blocked` or `done`. Pure, so re-running on unchanged state repeats it.
 export function decideIssue(facts, lanes) {
   const { issue, pr, tree, handBack: hb = {}, blockers = [], dropped = [] } = facts;
+  // A closed issue carries no execution label: drive drops a claim it left, whoever closed the issue.
+  if (issue.state !== 'OPEN' && stateLabels(issue).length) return { do: 'unclaim' };
   if (issue.state !== 'OPEN') return tree && pr?.state !== 'OPEN' ? { do: 'remove-worktree' } : { done: { issue: issue.number } };
   if (pr?.state === 'MERGED') return { do: 'close' };
   // Unmet dependencies stop the item in every phase and touch nothing; a dropped one needs the owner.
@@ -345,7 +348,6 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
         if (exists || prBranch) git('-C', root, 'worktree', 'add', path, branch);
         else git('-C', root, 'worktree', 'add', '-b', branch, path, `origin/${lanes.base}`);
       }
-      board(lanes, issue.number, 'PROGRESS');
     },
     commit: (tree, message, paths) => self(['commit', '--message', message, '--', ...paths], tree.path),
     push: tree => self(['push'], tree.path),
@@ -357,7 +359,6 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const pr = gh(['pr', 'view', tree.branch, '--repo', repo, '--json', 'number']);
       run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--add-label', `risk:${risk}`]);
       try { run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--add-reviewer', lanes.reviewer]); } catch { console.error(`drive: could not request ${lanes.reviewer}'s review on #${pr.number}`); }
-      board(lanes, issue.number, 'REVIEW');
     },
     // When `state:reviewing` was last added to the PR, from its timeline; null when it never was.
     reviewingSince: pr => {
@@ -369,12 +370,13 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     releaseReview: pr => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--remove-label', 'state:reviewing']),
     risk: (pr, from, to) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, ...(from ? ['--remove-label', `risk:${from}`] : []), '--add-label', `risk:${to}`]),
     ready: (pr, tree) => self(['pr', 'ready', '--pr', String(pr.number)], tree?.path || process.cwd()),
+    unclaim: issue => run('gh', ['issue', 'edit', String(issue.number), '--repo', repo, ...stateLabels(issue).flatMap(name => ['--remove-label', name])]),
     autoMerge: (pr, tree) => self(['pr', 'auto-merge', '--pr', String(pr.number)], tree?.path || process.cwd()),
     close: issue => {
       const current = gh(['issue', 'view', String(issue.number), '--repo', repo, '--json', 'state']);
       if (current.state === 'OPEN') run('gh', ['issue', 'close', String(issue.number), '--repo', repo, '--reason', 'completed']);
-      board(lanes, issue.number, 'DONE');
     },
+    board: (n, value) => board(lanes, n, value),
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
     removeTree: tree => {
       const all = trees(); const root = all[0].path;
@@ -431,16 +433,19 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     const step = decideIssue(facts, lanes);
     if (!step.do) return finish(instruction(io, facts, step, lanes));
     const { issue, pr, tree } = facts;
-    if (step.do === 'start') io.start(issue, estimateRisk(issue, facts.patterns), pr?.headRefName);
+    if (step.do === 'start') { io.start(issue, estimateRisk(issue, facts.patterns), pr?.headRefName); io.board(n, 'PROGRESS'); }
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
     else if (step.do === 'push') io.push(tree);
     else if (step.do === 'open') io.open(issue, tree, maxRisk(riskLabel(issue.labels), riskFromPaths(facts.diffPaths, facts.patterns)), handBack);
     else if (step.do === 'release-review') io.releaseReview(pr);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
-    else if (step.do === 'ready') io.ready(pr, tree);
+    // A draft PR keeps its issue In progress; Review starts when the PR is marked ready. A ready PR also drops the
+    // issue's claim, as spec's transition table states; the open PR still excludes reassignment.
+    else if (step.do === 'ready') { io.ready(pr, tree); io.board(n, 'REVIEW'); if (stateLabels(issue).length) io.unclaim(issue); }
+    else if (step.do === 'unclaim') io.unclaim(issue);
     else if (step.do === 'auto-merge') io.autoMerge(pr, tree);
-    else if (step.do === 'close') io.close(issue);
+    else if (step.do === 'close') { io.close(issue); io.board(n, 'DONE'); }
     else if (step.do === 'remove-worktree') { io.removeTree(tree); return { done: { issue: n } }; }
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
@@ -462,14 +467,16 @@ export function driveEpic(io, epic, lanes) {
   const others = slices.filter(slice => slice !== refinement);
   const existing = io.allBlockers(refinement.number);
   for (const slice of others) if (!existing.includes(slice.number)) io.addBlocker(refinement.number, slice.number);
+  // A closed slice without a merged closing PR holds only refinement and epic completion, not other open slices.
   const unresolved = others.filter(slice => slice.state !== 'OPEN' && !io.mergedClosingPr(slice.number, lanes.base));
-  if (unresolved.length) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${unresolved.map(slice => `#${slice.number}`).join(', ')}`, url: epic.url };
+  const unresolvedOwner = unresolved.length ? { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${unresolved.map(slice => `#${slice.number}`).join(', ')}`, url: epic.url } : null;
   // Read the refinement's links again after the repair; every open slice blocks it even before GitHub shows a new link.
   const repaired = splitDependencies(io.dependencies(refinement));
   refinement.blockers = [...new Set([...repaired.blockers, ...others.filter(slice => slice.state === 'OPEN').map(slice => slice.number)])];
   refinement.dropped = repaired.dropped;
   if (refinement.state !== 'OPEN' && !io.mergedClosingPr(refinement.number, lanes.base)) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for #${refinement.number}`, url: epic.url };
   const step = decideEpic({ epic, slices });
+  if (unresolvedOwner && (step.do === 'close-epic' || step.slices?.includes(refinement.number))) return unresolvedOwner;
   if (step.do === 'close-epic' && !io.hasLessons(epic.number)) return instruction(io, { issue: epic, pr: null, tree: null }, agent('improver', 'improve'), lanes);
   if (step.do === 'close-epic') { io.closeEpic(epic); return { done: { epic: epic.number } }; }
   if (!step.slices) return finish(instruction(io, { issue: epic, pr: null, tree: null }, step, lanes));
