@@ -466,14 +466,16 @@ export function driveEpic(io, epic, lanes) {
   const others = slices.filter(slice => slice !== refinement);
   const existing = io.allBlockers(refinement.number);
   for (const slice of others) if (!existing.includes(slice.number)) io.addBlocker(refinement.number, slice.number);
+  // A closed slice without a merged closing PR holds only refinement and epic completion, not other open slices.
   const unresolved = others.filter(slice => slice.state !== 'OPEN' && !io.mergedClosingPr(slice.number, lanes.base));
-  if (unresolved.length) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${unresolved.map(slice => `#${slice.number}`).join(', ')}`, url: epic.url };
+  const unresolvedOwner = unresolved.length ? { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${unresolved.map(slice => `#${slice.number}`).join(', ')}`, url: epic.url } : null;
   // Read the refinement's links again after the repair; every open slice blocks it even before GitHub shows a new link.
   const repaired = splitDependencies(io.dependencies(refinement));
   refinement.blockers = [...new Set([...repaired.blockers, ...others.filter(slice => slice.state === 'OPEN').map(slice => slice.number)])];
   refinement.dropped = repaired.dropped;
   if (refinement.state !== 'OPEN' && !io.mergedClosingPr(refinement.number, lanes.base)) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for #${refinement.number}`, url: epic.url };
   const step = decideEpic({ epic, slices });
+  if (unresolvedOwner && (step.do === 'close-epic' || step.slices?.includes(refinement.number))) return unresolvedOwner;
   if (step.do === 'close-epic' && !io.hasLessons(epic.number)) return instruction(io, { issue: epic, pr: null, tree: null }, agent('improver', 'improve'), lanes);
   if (step.do === 'close-epic') { io.closeEpic(epic); return { done: { epic: epic.number } }; }
   if (!step.slices) return finish(instruction(io, { issue: epic, pr: null, tree: null }, step, lanes));

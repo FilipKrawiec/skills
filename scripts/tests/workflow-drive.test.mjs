@@ -500,6 +500,24 @@ test('refinement is created once, repaired for new slices and waits for merged c
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
 });
 
+test('a closed slice without a merged closing PR holds only refinement and epic completion', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }), 11: issue({ number: 11 }) }, subs: { 9: [10, 11] } });
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 11, 'other open slices still deliver');
+  repo.s.issues[11].state = 'CLOSED';
+  repo.s.merged = [11];
+  const held = drive(repo.io, 9, lanes, {});
+  assert.match(held.owner, /missing closing PR merged into main for #10$/);
+  assert.equal(repo.s.issues[99].labels.length, 0, 'refinement does not start');
+  repo.s.issues[99].state = 'CLOSED';
+  repo.s.merged.push(99);
+  repo.s.lessons = [9];
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#10$/);
+  assert.equal(repo.s.issues[9].state, 'OPEN', 'the epic stays open');
+  repo.s.merged.push(10);
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+});
+
 test('refinement creation atomically links the parent even when the response is lost', () => {
   const epic = issue({ number: 9, labels: [label('type:epic')], milestone: { title: 'M' } });
   const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }) }, subs: { 9: [10] } });
