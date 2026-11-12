@@ -175,7 +175,11 @@ test('epics: slice when empty, deliver slices in dependency order, close when al
 function fakeRepo(initial) {
   const s = structuredClone(initial); const calls = []; const writes = {};
   const io = {
-    issue: n => s.issues[n], blockers: n => s.blockers?.[n] || [], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state })),
+    issue: n => s.issues[n], blockers: n => (s.blockers?.[n] || []).filter(id => s.issues[id]?.state !== 'CLOSED'), subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state })),
+    allBlockers: n => s.blockers?.[n] || [],
+    addBlocker: (n, blocker) => { calls.push(['blocker', n, blocker]); ((s.blockers ||= {})[n] ||= []).push(blocker); },
+    mergedClosingPr: n => (s.merged || []).includes(n),
+    createRefinement: epic => { const n = 99; calls.push(['create-refinement', n]); const item = issue({ number: n, title: 'refinement', body: '<!-- workflow:epic-refinement -->' }); s.issues[n] = item; s.subs[epic.number].push(n); return item; },
     pr: n => (s.prs || []).find(p => p.issue === n && p.state === 'OPEN') || null, tree: n => s.trees?.[n] || null, patterns: () => [],
     openIssues: () => Object.values(s.issues).filter(i => i.state === 'OPEN'),
     start: (i, risk) => { calls.push(['start', i.number, risk]); i.labels = [label('state:started'), label(`risk:${risk}`)]; (s.trees ||= {})[i.number] = tree({ path: `/w/${i.number}`, branch: `${i.number}-x` }); },
@@ -271,7 +275,8 @@ test('drive <epic> plans, drives the first ready slice, lists the others and clo
   const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }), 11: issue({ number: 11 }), 12: issue({ number: 12 }) }, subs: { 9: [10, 11, 12] }, blockers: { 11: [10] } });
   const result = drive(repo.io, 9, lanes, {});
   assert.deepEqual([result.agent, result.issue, result.epic, result.alsoReady], ['implementer', 10, 9, [12]]);
-  for (const n of [10, 11, 12]) repo.s.issues[n].state = 'CLOSED';
+  for (const n of [10, 11, 12, 99]) repo.s.issues[n].state = 'CLOSED';
+  repo.s.merged = [10, 11, 12, 99];
   repo.s.blockers = {};
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
   assert.deepEqual(repo.calls.at(-1), ['close-epic', 9]);
@@ -317,4 +322,48 @@ test('check lets at most two gates run at once on the machine', async t => {
   let running = 0; let peak = 0;
   for (const mark of readFileSync(log, 'utf8').trim().split('\n')) { running += mark === '+' ? 1 : -1; peak = Math.max(peak, running); }
   assert.ok(peak >= 1 && peak <= 2, `peak ${peak}`);
+});
+
+test('epic refinement ambiguity halts before mutation', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, title: 'Refinement' }) }, subs: { 9: [10] } });
+  const result = drive(repo.io, 9, lanes, {});
+  assert.match(result.owner, /#10/);
+  assert.deepEqual(repo.calls, []);
+});
+
+test('refinement candidates are classified before creation or repair', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  for (const bodies of [
+    ['<!-- workflow:epic-refinement -->', '<!-- workflow:epic-refinement -->'],
+    ['<!-- workflow:epic-refinement -->', 'Review the merged whole epic against its Outcome, Decisions and architecture rules'],
+  ]) {
+    const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, body: bodies[0] }), 11: issue({ number: 11, body: bodies[1] }) }, subs: { 9: [10, 11] } });
+    assert.match(drive(repo.io, 9, lanes, {}).owner, /#10, #11/);
+    assert.deepEqual(repo.calls, []);
+  }
+});
+
+test('refinement is created once, repaired for new slices and waits for merged closing PRs', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }) }, subs: { 9: [10] } });
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 10);
+  assert.deepEqual(repo.calls.slice(0, 2), [['create-refinement', 99], ['blocker', 99, 10]]);
+  drive(repo.io, 9, lanes, {});
+  assert.equal(repo.calls.filter(call => call[0] === 'create-refinement').length, 1);
+  assert.equal(repo.calls.filter(call => call[0] === 'blocker').length, 1);
+  repo.s.issues[11] = issue({ number: 11 });
+  repo.s.subs[9].push(11);
+  drive(repo.io, 9, lanes, {});
+  assert.ok(repo.calls.some(call => call.join(',') === 'blocker,99,11'));
+  repo.s.issues[10].state = 'CLOSED';
+  repo.s.issues[11].state = 'CLOSED';
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#10, #11/);
+  repo.s.merged = [10, 11];
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 99);
+  assert.equal(repo.s.issues[9].state, 'OPEN');
+  repo.s.issues[99].state = 'CLOSED';
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#99/);
+  repo.s.merged.push(99);
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
 });
