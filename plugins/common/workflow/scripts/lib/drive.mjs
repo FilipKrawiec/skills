@@ -263,9 +263,8 @@ function self(args, cwd) {
   const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: ['ignore', 2, 2], env: process.env });
   if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
 }
-export function githubIo(lanes) {
+export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   const repo = lanes.repo;
-  const gh = args => jsonCommand('gh', args);
   const trees = () => parseWorktreeList(git('worktree', 'list', '--porcelain'));
   return {
     issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']),
@@ -284,10 +283,12 @@ export function githubIo(lanes) {
     createRefinement: epic => {
       const scope = (epic.body || '').match(/```scope\s*\n[\s\S]*?```/)?.[0] || '```scope\n{"paths":[]}\n```';
       const body = `${refinementMarker}\n\n## Outcome\nReview and refine the merged whole epic #${epic.number}.\n\n### Acceptance criteria\n- [ ] ${refinementCriteria}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths.\n- [ ] Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.\n- [ ] Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.\n\n${scope}`;
-      const url = run('gh', ['issue', 'create', '--repo', repo, '--title', `refine: ${epic.title}`, '--body', body, ...(epic.milestone ? ['--milestone', epic.milestone.title] : [])]).trim();
-      const number = Number(url.split('/').at(-1));
-      const id = gh(['api', `repos/${repo}/issues/${number}`]).id;
-      run('gh', ['api', '--method', 'POST', `repos/${repo}/issues/${epic.number}/sub_issues`, '-F', `sub_issue_id=${id}`]);
+      const [owner, name] = repo.split('/');
+      const lookup = `query($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { id issue(number:$number) { id milestone { id } } } }`;
+      const data = gh(['api', 'graphql', '-f', `query=${lookup}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${epic.number}`]).data.repository;
+      const mutation = `mutation($repository:ID!,$parent:ID!,$title:String!,$body:String!,$milestone:ID) { createIssue(input:{repositoryId:$repository,parentIssueId:$parent,title:$title,body:$body,milestoneId:$milestone}) { issue { number } } }`;
+      const result = gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=refine: ${epic.title}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]);
+      const number = result.data.createIssue.issue.number;
       return gh(['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
     },
     subIssues: n => gh(['api', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).map(sub => ({ number: sub.number, state: sub.state.toUpperCase() })),

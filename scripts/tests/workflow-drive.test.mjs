@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, estimateRisk, matchesPattern,
-  modelFor, modelForStep, nextTarget, ownerPatterns, parseHandBack, pickSlice, plannerBrief, reviewerCommand, riskFromPaths, staleReviewClaim,
+  githubIo, modelFor, modelForStep, nextTarget, ownerPatterns, parseHandBack, pickSlice, plannerBrief, reviewerCommand, riskFromPaths, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 
 const head = 'a'.repeat(40);
@@ -366,4 +366,24 @@ test('refinement is created once, repaired for new slices and waits for merged c
   assert.match(drive(repo.io, 9, lanes, {}).owner, /#99/);
   repo.s.merged.push(99);
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+});
+
+
+test('refinement creation atomically links the parent even when the response is lost', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')], milestone: { title: 'M' } });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }) }, subs: { 9: [10] } });
+  const gh = args => {
+    const query = args.find(arg => arg.startsWith('query=')) || '';
+    if (query.includes('query(')) return { data: { repository: { id: 'R', issue: { id: 'E', milestone: { id: 'M' } } } } };
+    assert.match(query, /parentIssueId/);
+    assert.ok(args.includes('parent=E'));
+    const refinement = issue({ number: 99, title: 'refine', body: '<!-- workflow:epic-refinement -->' });
+    repo.s.issues[99] = refinement;
+    repo.s.subs[9].push(99);
+    throw new Error('response lost');
+  };
+  repo.io.createRefinement = githubIo(lanes, gh).createRefinement;
+  assert.throws(() => drive(repo.io, 9, lanes, {}), /response lost/);
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 10);
+  assert.deepEqual(repo.s.subs[9], [10, 99]);
 });
