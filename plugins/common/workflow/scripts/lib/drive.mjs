@@ -263,13 +263,34 @@ function self(args, cwd) {
   const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: ['ignore', 2, 2], env: process.env });
   if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
 }
-export function githubIo(lanes) {
+export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   const repo = lanes.repo;
-  const gh = args => jsonCommand('gh', args);
   const trees = () => parseWorktreeList(git('worktree', 'list', '--porcelain'));
   return {
-    issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees']),
+    issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']),
     blockers: n => gh(['api', `repos/${repo}/issues/${n}/dependencies/blocked_by`]).filter(dep => dep.state === 'open').map(dep => dep.number),
+    allBlockers: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/dependencies/blocked_by?per_page=100`]).flat().map(dep => dep.number),
+    addBlocker: (n, blocker) => {
+      const id = gh(['api', `repos/${repo}/issues/${blocker}`]).id;
+      run('gh', ['api', '--method', 'POST', `repos/${repo}/issues/${n}/dependencies/blocked_by`, '-F', `issue_id=${id}`]);
+    },
+    mergedClosingPr: (n, base) => {
+      const [owner, name] = repo.split('/');
+      const query = `query($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { issue(number:$number) { closedByPullRequestsReferences(first:100) { nodes { merged baseRefName } } } } }`;
+      const data = gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${n}`]);
+      return data.data.repository.issue.closedByPullRequestsReferences.nodes.some(pr => pr.merged && pr.baseRefName === base);
+    },
+    createRefinement: epic => {
+      const scope = (epic.body || '').match(/```scope\s*\n[\s\S]*?```/)?.[0] || '```scope\n{"paths":[]}\n```';
+      const body = `${refinementMarker}\n\n## Outcome\nReview and refine the merged whole epic #${epic.number}.\n\n### Acceptance criteria\n- [ ] ${refinementCriteria}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths.\n- [ ] Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.\n- [ ] Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.\n\n${scope}`;
+      const [owner, name] = repo.split('/');
+      const lookup = `query($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { id issue(number:$number) { id milestone { id } } } }`;
+      const data = gh(['api', 'graphql', '-f', `query=${lookup}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${epic.number}`]).data.repository;
+      const mutation = `mutation($repository:ID!,$parent:ID!,$title:String!,$body:String!,$milestone:ID) { createIssue(input:{repositoryId:$repository,parentIssueId:$parent,title:$title,body:$body,milestoneId:$milestone}) { issue { number } } }`;
+      const result = gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=refine: ${epic.title}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]);
+      const number = result.data.createIssue.issue.number;
+      return gh(['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
+    },
     subIssues: n => gh(['api', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).map(sub => ({ number: sub.number, state: sub.state.toUpperCase() })),
     pr: n => {
       const open = gh(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,body,closingIssuesReferences,labels,reviews,headRefOid,isDraft']);
@@ -402,8 +423,29 @@ export function driveIssue(io, n, lanes, handBack = {}) {
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
 }
+const refinementMarker = '<!-- workflow:epic-refinement -->';
+const refinementCriteria = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
 export function driveEpic(io, epic, lanes) {
-  const slices = io.subIssues(epic.number).map(slice => ({ ...slice, blockers: slice.state === 'OPEN' ? io.blockers(slice.number) : [] }));
+  if (epic.state !== 'OPEN' || (epic.labels || []).some(label => (label.name ?? label) === 'lane:owner')) return decideEpic({ epic, slices: [] });
+  let slices = io.subIssues(epic.number).map(slice => ({ ...io.issue(slice.number), blockers: slice.state === 'OPEN' ? io.blockers(slice.number) : [] }));
+  if (!slices.length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices }), lanes);
+  const marked = slices.filter(slice => (slice.body || '').includes(refinementMarker));
+  const legacy = slices.filter(slice => !(slice.body || '').includes(refinementMarker) && (/refin/i.test(slice.title || '') || (slice.body || '').includes(refinementCriteria)));
+  if (marked.length > 1 || legacy.length) return { owner: `epic #${epic.number}: classify refinement candidates ${[...marked, ...legacy].map(slice => `#${slice.number}`).join(', ')}`, url: epic.url };
+  let refinement = marked[0];
+  if (!refinement) {
+    refinement = io.createRefinement(epic);
+    slices.push({ ...refinement, blockers: [] });
+  }
+  const others = slices.filter(slice => slice.number !== refinement.number);
+  const existing = io.allBlockers(refinement.number);
+  for (const slice of others) if (!existing.includes(slice.number)) io.addBlocker(refinement.number, slice.number);
+  const unresolved = others.filter(slice => slice.state !== 'OPEN' && !io.mergedClosingPr(slice.number, lanes.base));
+  if (unresolved.length) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${unresolved.map(slice => `#${slice.number}`).join(', ')}`, url: epic.url };
+  refinement.blockers = io.blockers(refinement.number);
+  if (others.some(slice => slice.state === 'OPEN')) refinement.blockers = [...new Set([...refinement.blockers, ...others.filter(slice => slice.state === 'OPEN').map(slice => slice.number)])];
+  if (refinement.state !== 'OPEN' && !io.mergedClosingPr(refinement.number, lanes.base)) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for #${refinement.number}`, url: epic.url };
+  if (refinement.state === 'OPEN' && others.some(slice => slice.state === 'OPEN')) slices = slices.map(slice => slice.number === refinement.number ? refinement : slice);
   const step = decideEpic({ epic, slices });
   if (step.do === 'close-epic') { io.closeEpic(epic); return { done: { epic: epic.number } }; }
   if (!step.slices) return finish(instruction(io, { issue: epic, pr: null, tree: null }, step, lanes));

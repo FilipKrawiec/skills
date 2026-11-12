@@ -10,6 +10,7 @@ test('epic slicing directs the planner to create one final refinement with nativ
   assert.match(brief, /Invoke the `plan` skill/);
   const plan = read('plan/SKILL.md');
   assert.match(plan, /exactly one final refinement slice/);
+  assert.ok(plan.includes('<!-- workflow:epic-refinement -->')); 
   assert.match(plan, /native blocked-by links to every other slice/);
   assert.match(plan, /Outcome, Decisions and architecture rules/);
   assert.match(plan, /Nits, aliases, shims and naming clashes/);

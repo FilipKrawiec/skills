@@ -23,7 +23,7 @@ Write the plan for whoever executes it: the implementer agent or the developer b
 
 Plan the whole logical change as one PR, however many steps or lines it takes. Propose a split only at a logical seam: a prerequisite whole and useful on its own, or an outcome the owner asked to deliver separately; never by size, estimate or layer. Add the risks, the decisions taken with their reasons, and the manual test steps CI cannot run. Preserve shared interface inputs, outputs, errors and compatibility. Reserve product intent, paid services, budgets, authority, credentials, release or quality gates for the owner; new interactions need owner prototype direction. Return a technical-adjudication question with options, evidence and a recommendation.
 
-When slicing an approved epic, create exactly one final refinement slice with native blocked-by links to every other slice. Give it the epic's milestone, a scope packet and these criteria for its implementer brief and review expectations:
+When slicing an approved epic, create exactly one final refinement slice with native blocked-by links to every other slice. Include the exact body marker `<!-- workflow:epic-refinement -->`. Give it the epic's milestone, a scope packet and these criteria for its implementer brief and review expectations:
 
 - Review the merged whole epic against its Outcome, Decisions and architecture rules. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths.
 - Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.
