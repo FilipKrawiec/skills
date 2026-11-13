@@ -7,6 +7,7 @@ import {
   checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, estimateRisk, matchesPattern,
   driveCommand, githubIo, modelFor, modelForStep, nextTarget, ownerPatterns, parseHandBack, pickSlice, plannerBrief, reviewerCommand, riskFromPaths, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { holdBaseUpdates } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
 
@@ -73,6 +74,64 @@ test('drive releases a stale Reviewer claim, then dispatches the reviewer', () =
   const step = drive(repo.io, 3, lanes, {});
   assert.deepEqual(repo.calls, [['release-review', 5]]);
   assert.deepEqual([step.agent, step.mode], ['reviewer', 'review']);
+});
+
+test('an approved PR behind its base under review:owner is updated from the base, never sent to the owner', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  const held = pr({ isDraft: false, mergeStateStatus: 'BEHIND', labels: [label('risk:R1'), label('review:owner')], reviews: [review('owner', 'APPROVED')] });
+  assert.deepEqual(decide({ ...base, pr: held }), { do: 'update-branch' });
+  assert.equal(decide({ ...base, pr: { ...held, mergeStateStatus: 'BLOCKED' } }).owner, 'review:owner', 'up to date, it is the owner\'s');
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [{ ...held, issue: 3 }] });
+  const step = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(repo.calls, [['update-branch', 5]]);
+  assert.deepEqual(step.wait, { pr: 5, until: 'ci' }, 'the new head needs CI, then a fresh approval');
+  repo.s.prs[0].statusCheckRollup = green;
+  const again = drive(repo.io, 3, lanes, {});
+  assert.deepEqual([again.agent, again.mode], ['reviewer', 'review'], 'the Reviewer judges the new head before the owner sees it');
+  assert.deepEqual(repo.s.synced, ['/repo/.worktrees/3-add-a-thing'], 'the worktree takes the merged head before the Reviewer works in it');
+});
+
+test('behind PRs of an epic bring the base in one at a time, oldest first', () => {
+  const entry = (number, prNumber, step, extra = {}) => ({ number, pr: pr({ number: prNumber, isDraft: false, ...extra }), step });
+  const update = { do: 'update-branch' };
+  const held = holdBaseUpdates([entry(11, 62, update), entry(10, 61, update)]);
+  assert.deepEqual(held.map(e => e.step), [{ blocked: { issue: 11, reason: 'brings the base in after PR #61 is updated' } }, update]);
+  const busy = holdBaseUpdates([entry(10, 61, { wait: { pr: 61, until: 'ci' } }), entry(11, 62, update)]);
+  assert.deepEqual(busy[1].step, { blocked: { issue: 11, reason: 'brings the base in after PR #61 merges' } });
+  const idle = [entry(10, 61, { agent: 'implementer' }), entry(11, 62, update)];
+  assert.deepEqual(holdBaseUpdates(idle)[1].step, update, 'a PR being fixed does not hold the update');
+});
+
+test('strict policy: of two approved PRs, the second is updated and approved again after the first merges, then merges', () => {
+  const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
+  const slice = n => issue({ number: n, labels: [label('risk:R1')] });
+  const approvedAt = oid => ({ author: { login: 'reviewer' }, state: 'APPROVED', body: `<!-- agent-review sha=${oid} round=1 verdict=ready -->`, commit: { oid } });
+  const ready = (n, number) => pr({ issue: n, number, isDraft: false, mergeStateStatus: 'BEHIND', reviews: [approvedAt(head)], autoMergeRequest: {}, body: `Closes #${n}`, closingIssuesReferences: [] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: slice(10), 11: slice(11) }, subs: { 9: [10, 11] }, trees: { 10: tree({ path: '/w/10', commits: 1 }), 11: tree({ path: '/w/11', commits: 1 }) }, prs: [ready(10, 61), ready(11, 62)] });
+  repo.io.pr = n => repo.s.prs.find(p => p.issue === n) || null;
+  const [first, second] = repo.s.prs;
+  // Strict: a merge into the base sends every other open PR behind it.
+  const merge = p => { p.state = 'MERGED'; repo.s.merged = [...(repo.s.merged || []), p.issue]; for (const other of repo.s.prs) if (other !== p && other.state === 'OPEN') other.mergeStateStatus = 'BEHIND'; };
+  const approve = p => { p.statusCheckRollup = green; p.reviews.push(approvedAt(p.headRefOid)); };
+  assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 61, until: 'ci' });
+  assert.deepEqual(repo.calls.filter(c => c[0] === 'update-branch'), [['update-branch', 61]], 'the oldest first, the other held');
+  assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 61, until: 'ci' }, 'held while the first is on its way');
+  first.statusCheckRollup = green;
+  assert.equal(drive(repo.io, 9, lanes, {}).agent, 'reviewer');
+  approve(first);
+  assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 61, until: 'merged' });
+  assert.equal(repo.calls.filter(c => c[0] === 'update-branch').length, 1, 'the second is not updated before the first merges');
+  merge(first);
+  assert.deepEqual(drive(repo.io, 9, lanes, {}).done, { issue: 10 });
+  assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 62, until: 'ci' });
+  assert.deepEqual(repo.calls.filter(c => c[0] === 'update-branch'), [['update-branch', 61], ['update-branch', 62]]);
+  second.statusCheckRollup = green;
+  assert.equal(drive(repo.io, 9, lanes, {}).agent, 'reviewer', 'a fresh approval at the updated head');
+  approve(second);
+  assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 62, until: 'merged' });
+  merge(second);
+  drive(repo.io, 9, lanes, {});
+  assert.equal(repo.s.issues[11].state, 'CLOSED');
 });
 
 test('the owner is asked only on an approved PR; the round cap and line count never ask', () => {
@@ -197,6 +256,9 @@ function fakeRepo(initial) {
     ready: p => { calls.push(['ready']); p.isDraft = false; },
     unclaim: i => { calls.push(['unclaim', i.number]); i.labels = i.labels.filter(l => !l.name.startsWith('state:')); },
     autoMerge: p => { calls.push(['auto-merge']); p.autoMergeRequest = {}; },
+    // `gh pr update-branch`: a merge commit on the head, whose checks start again; the old approval no longer covers it.
+    syncTree: t => { (s.synced ||= []).push(t.path); },
+    updateBranch: p => { calls.push(['update-branch', p.number]); Object.assign(p, { headRefOid: `${p.number}`.padEnd(40, 'b'), mergeStateStatus: 'BLOCKED', statusCheckRollup: [{ name: 'verify', status: 'QUEUED' }] }); },
     close: i => { calls.push(['close', i.number]); i.state = 'CLOSED'; },
     closeEpic: e => { calls.push(['close-epic', e.number]); e.state = 'CLOSED'; },
     removeTree: t => { calls.push(['remove', t.path]); },

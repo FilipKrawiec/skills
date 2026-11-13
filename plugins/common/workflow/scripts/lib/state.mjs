@@ -12,12 +12,15 @@ export function ciState(checks = []) {
 const verdictOf = review => /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(review?.body || '')?.[1] || null;
 // What happens next on an open PR and who does it, first match wins. The owner is asked only on a PR the Reviewer
 // approved at its head (risk R2, a review:owner hold, a release); line count and review rounds never ask them.
+// A ready PR behind its base (a ruleset that requires an up-to-date branch reports `BEHIND`) brings the base in before
+// any review, approval, owner step or merge, so neither the Reviewer nor the owner is ever asked about a stale head.
 function nextAction(pr, record, ci, verdict, owner) {
   if (pr.state === 'MERGED') return { action: 'done', actor: 'cli' };
   if (pr.state !== 'OPEN') return { action: 'none', actor: 'owner', reason: `PR is ${pr.state.toLowerCase()}` };
   if (!record.issues.length) return { action: 'link-issue', actor: 'planner', reason: 'no linked issue: spec files one and the body links it' };
-  if (pr.mergeable === 'CONFLICTING') return { action: 'fix', actor: 'implementer', reason: 'conflicts with its base' };
+  if (pr.mergeable === 'CONFLICTING' || pr.mergeStateStatus === 'DIRTY') return { action: 'fix', actor: 'implementer', reason: 'conflicts with its base' };
   if (ci === 'red') return { action: 'fix', actor: 'implementer', reason: 'a check failed' };
+  if (!pr.isDraft && pr.mergeStateStatus === 'BEHIND') return { action: 'update-branch', actor: 'cli', reason: 'behind its base' };
   if (record.awaitingReview) return ci === 'pending' ? { action: 'wait-ci', actor: 'cli' } : { action: 'review', actor: 'reviewer' };
   if (verdict === 'fixes') return { action: 'fix', actor: 'implementer', reason: 'blocking review findings' };
   if (verdict === 'split') return { action: 'split', actor: 'planner' };
@@ -43,7 +46,7 @@ export function prState(pr, lanes) {
   const rounds = reviewer.filter(review => review.state !== 'APPROVED' && verdictOf(review) !== 'split').length;
   return {
     kind: 'pr', number: pr.number, url: pr.url, state: pr.state, draft: pr.isDraft, head: pr.headRefOid, ci, verdict,
-    round: rounds, labels, mergeable: pr.mergeable, risk,
+    round: rounds, labels, mergeable: pr.mergeable, mergeState: pr.mergeStateStatus || null, risk,
     issues: record.issues, next: nextAction(pr, record, ci, verdict, owner),
   };
 }
@@ -82,7 +85,8 @@ const sleep = seconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 
 // base branch's checks at the merge commit, once the PR has merged.
 function settled(until, state, lanes) {
   if (state.state === 'CLOSED' && until !== 'reviewed') return false;
-  if (until === 'merged') return state.state === 'MERGED' ? true : null;
+  // Behind or in conflict with its base, auto-merge never fires: exit so the caller runs `drive`, which updates the branch.
+  if (until === 'merged') return state.state === 'MERGED' ? true : ['BEHIND', 'DIRTY'].includes(state.mergeState) ? false : null;
   const ci = until === 'base' ? state.base : state.ci;
   if (until === 'ci' || until === 'base') return ci === 'red' ? false : ci === 'green' || (ci === 'none' && !lanes.requiredChecks?.length) ? true : null;
   return state.verdict ? true : null;
@@ -104,9 +108,10 @@ export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read =
     const state = prState(pr, lanes);
     const merge = o['--until'] === 'base' && state.state === 'MERGED' ? pr.mergeCommit?.oid : null;
     if (merge) state.base = ciState(checksAt(lanes.repo, merge));
-    const line = JSON.stringify({ number: n, state: state.state, ci: state.ci, verdict: state.verdict, head: state.head, ...(merge ? { merge, base: state.base } : {}) });
+    const line = JSON.stringify({ number: n, state: state.state, ci: state.ci, verdict: state.verdict, head: state.head, ...(state.state === 'OPEN' && state.mergeState ? { merge_state: state.mergeState } : {}), ...(merge ? { merge, base: state.base } : {}) });
     if (line !== last) { console.log(line); last = line; }
     const done = settled(o['--until'], state, lanes);
+    if (done === false && o['--until'] === 'merged' && state.state === 'OPEN') console.error(`workflow: #${n} is ${state.mergeState} against its base; run drive to bring the base in`);
     if (done !== null) return done ? 0 : 1;
     if (now() >= deadline) { console.error(`workflow: timed out after ${timeout} minutes waiting for ${o['--until']} on #${n}`); return 1; }
     pause(interval);
