@@ -57,7 +57,7 @@ export function prAutoMergeRefusal(pr, cfg, policy) {
   return null;
 }
 
-export const prFields = 'number,url,state,isDraft,baseRefName,headRefOid,labels,reviews,statusCheckRollup,mergeable,body,closingIssuesReferences,autoMergeRequest';
+export const prFields = 'number,url,state,isDraft,baseRefName,headRefOid,labels,reviews,statusCheckRollup,mergeable,mergeStateStatus,body,closingIssuesReferences,autoMergeRequest';
 function readPr(repo, number) { return jsonCommand('gh', ['pr', 'view', number, '--repo', repo, '--json', prFields]); }
 function readPolicy(repo, base) {
   const read = endpoint => { try { return jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/${endpoint}`]); } catch { return null; } };
