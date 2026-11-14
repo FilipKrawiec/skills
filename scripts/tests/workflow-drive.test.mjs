@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
@@ -809,4 +811,17 @@ test('replacing unmarked evidence preserves later sections', () => {
   assert.doesNotMatch(updated, /\nCapture\n/);
   assert.match(updated, /## Verification\n\nKeep this/);
   assert.match(updated, /workflow:evidence-start[\s\S]*New capture[\s\S]*workflow:evidence-end/);
+});
+
+
+test('a fully evidenced parent closes with a delivered nested epic', () => {
+  const bytes = Buffer.from('evidence');
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '### Acceptance criteria\n- [x] Works <!-- workflow:criterion a -->\n' });
+  const nested = issue({ number: 10, state: 'CLOSED', labels: [label('type:epic')] });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 10: nested, 11: issue({ number: 11, state: 'CLOSED' }), 99: refinement }, subs: { 9: [10, 99], 10: [11] }, merged: [11, 99], lessons: [9] });
+  repo.io.verifyEpic = (current, children, base, merged) => verifyEpicClosure({ epic: current, slices: children, base, repo: 'a/b' }, {
+    merged, read: () => bytes, native: () => ({ version: 1, epic: 9, children: [10, 99], outcomes: [{ criterion: { id: 'a', text: 'Works' }, state: 'met', evidence: [{ url: 'https://example.com/evidence', sha256: createHash('sha256').update(bytes).digest('hex') }] }] })
+  });
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
 });
