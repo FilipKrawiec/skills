@@ -1,7 +1,6 @@
 ---
 name: devops
 description: Assesses one change's risk from a drive brief, reasoning about what it does, its blast radius, reversibility, the gates it touches and the evidence for it, and hands back R0, R1 or R2 with a one-line reason covering failure, recovery and financial impact. Use when drive names agent devops with task risk.
-model: sonnet
 effort: medium
 disallowedTools: Agent
 ---

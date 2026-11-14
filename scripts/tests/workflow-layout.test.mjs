@@ -142,3 +142,10 @@ test('delivery skills keep one plain command per Bash call, inline plan scoring,
   assert.match(tdd, /full gate once through `[^`]*workflow\.mjs check`/);
   assert.match(tdd, /without a fake clock/);
 });
+
+test('workflow role definitions leave model selection to the host', () => {
+  for (const role of ['devops', 'implementer', 'reviewer']) {
+    const text = readFileSync(join(commonRoot, 'workflow/agents', `${role}.md`), 'utf8');
+    assert.doesNotMatch(text.split('---')[1], /^model:/m, role);
+  }
+});
