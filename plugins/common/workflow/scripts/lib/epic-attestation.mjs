@@ -46,3 +46,22 @@ export function resolveEpicRecordAuthor({ repo, issue, commentId, recordsUrl, sh
   if (payload?.version !== 1 || payload.recordsUrl !== recordsUrl || payload.sha256 !== sha256) throw new Error('Record author comment does not bind current records bytes');
   return item.user.login;
 }
+
+// One authenticated, unedited Reviewer comment holds the complete current outcome assessment.
+export function resolveNativeEpicEvidence({ repo, issue }, adapters = {}) {
+  parseRepo(repo);
+  const trustedConfig = adapters.trustedConfig || (() => { git('fetch', '--quiet', 'origin'); return config().lanes; });
+  const comments = adapters.comments || ((repository, number) => gh(['api', '--paginate', '--slurp', `repos/${repository}/issues/${number}/comments?per_page=100`]).flat());
+  const editState = adapters.editState || (nodeId => gh(['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on IssueComment{id lastEditedAt}}}', '-f', `id=${nodeId}`]).data.node);
+  const cfg = trustedConfig();
+  if (!cfg || cfg.repo?.toLowerCase() !== repo.toLowerCase() || !login(cfg.reviewer) || !login(cfg.implementer) || cfg.reviewer.toLowerCase() === cfg.implementer.toLowerCase()) throw new Error('Missing or non-independent trusted identities');
+  const list = comments(repo, issue);
+  if (!Array.isArray(list)) throw new Error('Epic review comments unavailable');
+  const matches = list.filter(item => parse(item?.body)?.kind === 'workflow:epic-outcomes');
+  if (matches.length !== 1) throw new Error('Post exactly one current independent epic outcome review');
+  const item = matches[0];
+  if (!item.node_id || item.user?.login?.toLowerCase() !== cfg.reviewer.toLowerCase() || !item.created_at || item.created_at !== item.updated_at || !Number.isFinite(Date.parse(item.created_at))) throw new Error('Epic outcome review is not from the configured independent Reviewer');
+  const edit = editState(item.node_id);
+  if (!edit || edit.id !== item.node_id || edit.lastEditedAt !== null) throw new Error('Epic outcome review was edited or is inaccessible');
+  return parse(item.body);
+}
