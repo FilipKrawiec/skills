@@ -556,6 +556,21 @@ export function driveIssue(io, n, lanes, handBack = {}) {
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
 }
+function unresolvedDelivery(io, slice, base, ancestors = new Set()) {
+  if (!slice || slice.state !== 'CLOSED' || ancestors.has(slice.number)) return [slice?.number].filter(Boolean);
+  if (!isEpic(slice)) return io.mergedClosingPr(slice.number, base) ? [] : [slice.number];
+  const seen = new Set([...ancestors, slice.number]);
+  try {
+    const children = io.subIssues(slice.number);
+    if (!children.length) return [slice.number];
+    return children.flatMap(child => {
+      const issue = io.issue(child.number);
+      return issue ? unresolvedDelivery(io, issue, base, seen) : [child.number];
+    });
+  } catch {
+    return [slice.number];
+  }
+}
 export function driveEpic(io, epic, lanes) {
   if (epic.state !== 'OPEN' || (epic.labels || []).some(label => (label.name ?? label) === 'lane:owner')) return decideEpic({ epic, slices: [] });
   const { blockers, dropped } = splitDependencies(io.dependencies(epic));
@@ -574,8 +589,8 @@ export function driveEpic(io, epic, lanes) {
   const existing = io.allBlockers(refinement.number);
   for (const slice of others) if (!existing.includes(slice.number)) io.addBlocker(refinement.number, slice.number);
   // A closed slice without a merged closing PR holds only refinement and epic completion, not other open slices.
-  const unresolved = others.filter(slice => slice.state !== 'OPEN' && !io.mergedClosingPr(slice.number, lanes.base));
-  const unresolvedOwner = unresolved.length ? { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${unresolved.map(slice => `#${slice.number}`).join(', ')}`, url: epic.url } : null;
+  const unresolved = others.filter(slice => slice.state !== 'OPEN').flatMap(slice => unresolvedDelivery(io, slice, lanes.base));
+  const unresolvedOwner = unresolved.length ? { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${[...new Set(unresolved)].map(number => `#${number}`).join(', ')}`, url: epic.url } : null;
   // Read the refinement's links again after the repair; every open slice blocks it even before GitHub shows a new link.
   const repaired = splitDependencies(io.dependencies(refinement));
   refinement.blockers = [...new Set([...repaired.blockers, ...others.filter(slice => slice.state === 'OPEN').map(slice => slice.number)])];

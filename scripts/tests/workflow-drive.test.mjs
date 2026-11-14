@@ -659,6 +659,19 @@ test('refinement is created once, repaired for new slices and waits for merged c
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
 });
 
+test('closed nested epics require merged closing PRs for every descendant slice', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const nested = issue({ number: 10, state: 'CLOSED', labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: nested, 11: issue({ number: 11, state: 'CLOSED' }), 12: issue({ number: 12, state: 'CLOSED' }) }, subs: { 9: [10], 10: [11, 12] }, merged: [11, 12] });
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 99);
+  repo.s.merged = [11];
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#12/);
+  repo.s.subs[10] = [];
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#10/);
+  repo.s.subs[10] = [10];
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#10/);
+});
+
 test('a closed slice without a merged closing PR holds only refinement and epic completion', () => {
   const epic = issue({ number: 9, labels: [label('type:epic')] });
   const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }), 11: issue({ number: 11 }) }, subs: { 9: [10, 11] } });
