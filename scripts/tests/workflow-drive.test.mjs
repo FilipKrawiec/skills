@@ -542,6 +542,9 @@ test('delivery assignments select configured hosts and models and reject unsuppo
   const delivery = { orchestrator: 'codex', roles: { reviewer: { host: 'codex', model: 'gpt-6.1-terra' }, implementer: { host: 'codex', model: 'gpt-6.1-terra' } } };
   assert.deepEqual(deliveryAssignment(delivery, { agent: 'reviewer' }, 'R2'), { host: 'codex', model: 'gpt-6.1-terra', session: 'separate' });
   assert.deepEqual(deliveryAssignment(delivery, { agent: 'implementer' }, 'R1'), { host: 'codex', model: 'gpt-6.1-terra', session: 'subagent' });
+  assert.throws(() => deliveryAssignment(delivery, { agent: 'implementer', fresh: true }, 'R2'), /freshImplementer/);
+  delivery.roles.freshImplementer = { host: 'codex', model: 'strongest-model' };
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'implementer', fresh: true }, 'R2'), { host: 'codex', model: 'strongest-model', session: 'subagent' });
   assert.throws(() => deliveryAssignment({ orchestrator: 'agy', roles: {} }, { agent: 'reviewer' }, 'R1'), /unsupported/i);
   assert.throws(() => deliveryAssignment({ orchestrator: 'codex', roles: {} }, { agent: 'reviewer' }, 'R1'), /configure/i);
 });

@@ -28,8 +28,9 @@ export function deliveryAssignment(delivery, step, risk) {
   if (delivery == null) return { host: 'claude', model: modelForStep(step, risk), session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
   if (!delivery || typeof delivery !== 'object' || !['codex', 'claude'].includes(delivery.orchestrator)) throw new Error('Unsupported delivery orchestrator; configure codex or claude after verifying host capabilities');
   if (delivery.executables != null && (typeof delivery.executables !== 'object' || Array.isArray(delivery.executables) || Object.entries(delivery.executables).some(([host, path]) => !['codex', 'claude'].includes(host) || typeof path !== 'string' || !path.trim()))) throw new Error('Configure delivery.executables as host-to-executable paths');
-  const role = delivery.roles?.[step.agent];
-  if (!role || !['codex', 'claude'].includes(role.host) || typeof role.model !== 'string' || !role.model.trim()) throw new Error(`Configure delivery.roles.${step.agent} with a supported host and model`);
+  const roleName = step.agent === 'implementer' && step.fresh ? 'freshImplementer' : step.agent;
+  const role = delivery.roles?.[roleName];
+  if (!role || !['codex', 'claude'].includes(role.host) || typeof role.model !== 'string' || !role.model.trim()) throw new Error(`Configure delivery.roles.${roleName} with a supported host and model`);
   if (step.agent !== 'reviewer' && role.host !== delivery.orchestrator) throw new Error(`Unsupported cross-host subagent for ${step.agent}; use the orchestrator host`);
   return { host: role.host, model: role.model, session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
 }
