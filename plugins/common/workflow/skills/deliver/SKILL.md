@@ -67,7 +67,7 @@ Use `status: replan` when the issue contradicts the code or splits at a logical 
 
 ## Setup
 
-Read [setup.md](references/setup.md) when setting up a repository for `drive`.
+Read [setup.md](references/setup.md) when setting up a repository for `drive`. Read [epic-closure.md](references/epic-closure.md) for epic closure evidence and follow-ups.
 
 ## Output
 

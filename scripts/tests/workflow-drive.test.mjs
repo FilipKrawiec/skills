@@ -301,6 +301,7 @@ function fakeRepo(initial) {
     addBlocker: (n, blocker) => { calls.push(['blocker', n, blocker]); ((s.blockers ||= {})[n] ||= []).push(blocker); },
     mergedClosingPr: n => (s.merged || []).includes(n),
     hasLessons: n => (s.lessons || []).includes(n),
+    verifyEpic: () => ({ complete: true, issues: [] }),
     createRefinement: epic => { const n = 99; calls.push(['create-refinement', n]); const item = issue({ number: n, title: 'refinement', body: '<!-- workflow:epic-refinement -->' }); s.issues[n] = item; s.subs[epic.number].push(n); return item; },
     pr: n => (s.prs || []).find(p => p.issue === n && p.state === 'OPEN') || null, tree: n => s.trees?.[n] || null,
     assessment: (i, p) => (p ? p.assessment : i.assessment) || null,
@@ -326,6 +327,7 @@ function fakeRepo(initial) {
     scratch: t => `${t?.path || '/repo'}/.wf`,
     write: (path, text) => { writes[path] = text; },
     board: (n, value) => { (s.board ||= {})[n] = value; },
+    requiredBoard: (n, value) => { (s.board ||= {})[n] = value; },
   };
   return { s, io, calls, writes };
 }
@@ -708,4 +710,77 @@ test('refinement creation atomically links the parent even when the response is 
   assert.throws(() => drive(repo.io, 9, lanes, {}), /response lost/);
   assert.equal(drive(repo.io, 9, lanes, {}).issue, 10);
   assert.deepEqual(repo.s.subs[9], [10, 99]);
+});
+
+
+test('epic closure requires freshly authenticated evidence before closing', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  repo.io.verifyEpic = () => ({ complete: false, issues: ['unverified'] });
+  const result = drive(repo.io, 9, lanes, {});
+  assert.match(result.owner, /unverified/);
+  assert.equal(repo.s.issues[9].state, 'OPEN');
+});
+
+test('unmet epic criteria create and reuse one follow-up while failures hold closure', () => {
+  const make = () => {
+    const epic = issue({ number: 9, labels: [label('type:epic')], body: '- [ ] Works <!-- workflow:criterion a -->' });
+    const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+    const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+    repo.io.verifyEpic = () => ({ complete: false, issues: ['unmet'], outstanding: [{ id: 'a', text: 'Works', nextAction: 'Fix gap' }] });
+    repo.io.uncheckEpicCriteria = () => { repo.s.unchecked = true; };
+    repo.io.createEpicFollowUp = () => {
+      const child = issue({ number: 100, body: '<!-- workflow:epic-follow-up 9 a -->\nFix gap' });
+      repo.s.issues[100] = child; repo.s.subs[9].push(100); return child;
+    };
+    return repo;
+  };
+  const repo = make();
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /unmet/);
+  assert.equal(repo.s.unchecked, true);
+  assert.equal(repo.s.board[9], 'BLOCKED');
+  assert.equal(repo.s.board[100], 'TODO');
+  drive(repo.io, 9, lanes, {});
+  assert.deepEqual(repo.s.subs[9], [99, 100]);
+  assert.equal(repo.s.issues[9].state, 'OPEN');
+  for (const method of ['uncheckEpicCriteria', 'createEpicFollowUp', 'requiredBoard']) {
+    const f = make(); f.io[method] = () => { throw Error('write failed'); };
+    assert.match(drive(f.io, 9, lanes, {}).owner, /write failed/);
+    assert.equal(f.s.issues[9].state, 'OPEN');
+  }
+});
+
+test('epic closure rechecks inputs and holds on a failed or changed second read', () => {
+  for (const changed of [false, true]) {
+    const epic = issue({ number: 9, labels: [label('type:epic')] });
+    const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+    const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+    let calls = 0;
+    repo.io.verifyEpic = () => ++calls === 1 ? { complete: true, issues: [], revision: 1 } : changed ? { complete: true, issues: [], revision: 2 } : { complete: false, issues: ['unavailable'] };
+    assert.match(drive(repo.io, 9, lanes, {}).owner, /changed/);
+    assert.equal(repo.s.issues[9].state, 'OPEN');
+  }
+});
+
+test('a follow-up survives a board failure and is reused on retry', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '- [ ] Works <!-- workflow:criterion a -->' });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  repo.io.verifyEpic = () => ({ complete: false, issues: ['unmet'], outstanding: [{ id: 'a', text: 'Works', nextAction: 'Fix gap' }] });
+  repo.io.uncheckEpicCriteria = () => {};
+  let creates = 0; let failBoard = true;
+  repo.io.createEpicFollowUp = () => { creates++; const child = issue({ number: 100, body: '<!-- workflow:epic-follow-up 9 a -->\nFix gap' }); repo.s.issues[100] = child; repo.s.subs[9].push(100); return child; };
+  repo.io.requiredBoard = n => { if (n === 100 && failBoard) throw Error('board failed'); };
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /board failed/);
+  failBoard = false;
+  drive(repo.io, 9, lanes, {});
+  assert.equal(creates, 1);
+  assert.equal(repo.s.issues[9].state, 'OPEN');
+});
+
+test('production epic board updates fail when the board is unavailable', () => {
+  const io = githubIo({ ...lanes, repo: 'acme/app' }, () => { throw Error('unavailable'); });
+  assert.equal(typeof io.requiredBoard, 'function');
+  assert.throws(() => io.requiredBoard(9, 'BLOCKED'));
 });
