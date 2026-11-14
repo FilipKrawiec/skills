@@ -1,0 +1,9 @@
+# Epic closure refinement
+
+Review of [#509](https://github.com/FilipKrawiec/skills/issues/509) and its merged slices #507, #511, #515 and #516 against the outcome and architecture rules. The implementation checks current criteria, repository evidence, independent authenticated reviewer identity, child inventory and merged work before closure. It retains the review and approval gates and holds on retrieval or board failures. The integration tests exercise closure, follow-up reuse, changed evidence and partial failure. The refinement fixes a gap: an attested unmet outcome could be changed to met without changing the attestation. Attestations now bind the state and existing comments must be replaced. Authentication proves the reviewer attested the content, not that the content is true. The record author is a mutable assertion, not an authenticated GitHub identity: comparing it to the reviewer cannot prove that the reviewer did not author the record. Before relying on author independence, design and implement authenticated record authorship and fail closure when it cannot be established. This needs a separate protocol decision because the current records file has no authenticated author provenance.
+
+The configured `justfile` and CI workflow have no unused-code tool or baseline. Inspection of the epic files found no dead file, export, symbol or fixture to remove; this is not a repository-wide unused-code analysis. Review comments and Nit disposition could not be checked because GitHub became unavailable; this remains an evidence gap for the PR reviewer.
+
+## Timing evidence
+
+The project configuration does not record local per-gate times. CI step timestamps were unavailable when queried, so before and after times for each CI part are missing. No performance change or measured win is claimed.

@@ -9,9 +9,9 @@ const sameRefs = (a, b) => refsValid(a) && refsValid(b) && a.length === b.length
 const parse = body => { try { return JSON.parse(body); } catch { return null; } };
 
 // Fetch trusted roles and all issue comments anew on every call; injected functions are adapters.
-export function resolveEpicVerification({ repo, issue, commentId, criterion, evidence }, adapters = {}) {
+export function resolveEpicVerification({ repo, issue, commentId, criterion, evidence, state }, adapters = {}) {
   parseRepo(repo);
-  if (!Number.isSafeInteger(issue) || issue < 1 || !Number.isSafeInteger(commentId) || commentId < 1 || !criterionValid(criterion) || !refsValid(evidence)) throw new Error('Invalid attestation request');
+  if (!Number.isSafeInteger(issue) || issue < 1 || !Number.isSafeInteger(commentId) || commentId < 1 || !criterionValid(criterion) || !refsValid(evidence) || !['met', 'unmet', 'unverifiable'].includes(state)) throw new Error('Invalid attestation request');
   const trustedConfig = adapters.trustedConfig || (() => { git('fetch', '--quiet', 'origin'); return config().lanes; });
   const comments = adapters.comments || ((repository, number) => gh(['api', '--paginate', '--slurp', `repos/${repository}/issues/${number}/comments?per_page=100`]).flat());
   const editState = adapters.editState || (nodeId => gh(['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on IssueComment{id lastEditedAt}}}', '-f', `id=${nodeId}`]).data.node);
@@ -25,6 +25,6 @@ export function resolveEpicVerification({ repo, issue, commentId, criterion, evi
   if (typeof item.node_id !== 'string' || !item.node_id) throw new Error('Missing comment node');
   const edit = editState(item.node_id);
   if (!edit || edit.id !== item.node_id || edit.lastEditedAt !== null) throw new Error('Edited or inaccessible verification');
-  if (!login(item.user?.login) || item.user.login.toLowerCase() !== cfg.reviewer.toLowerCase() || !item.created_at || item.created_at !== item.updated_at || !Number.isFinite(Date.parse(item.created_at)) || payload.version !== 1 || !criterionValid(payload.criterion) || payload.criterion.id !== criterion.id || payload.criterion.text !== criterion.text || !sameRefs(payload.evidence, evidence)) throw new Error('Invalid or stale verification');
-  return { reviewer: item.user.login, criterion, evidence };
+  if (!login(item.user?.login) || item.user.login.toLowerCase() !== cfg.reviewer.toLowerCase() || !item.created_at || item.created_at !== item.updated_at || !Number.isFinite(Date.parse(item.created_at)) || payload.version !== 1 || payload.state !== state || !criterionValid(payload.criterion) || payload.criterion.id !== criterion.id || payload.criterion.text !== criterion.text || !sameRefs(payload.evidence, evidence)) throw new Error('Invalid or stale verification');
+  return { reviewer: item.user.login, criterion, evidence, state };
 }
