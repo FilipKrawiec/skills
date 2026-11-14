@@ -36,7 +36,7 @@ Deliver through `drive <issue>` as the `deliver` skill describes: it opens the d
 
 ## Local installation
 
-Use the host's direct local plugin loading or `just link-agy`. The latter uses `AGY_IDE_PLUGIN_DIR`, links only this repository's common packages, replaces existing symlinks and refuses real paths. Test installation against a temporary destination, not a user's home. No automatic refresh hooks, copies or sibling discovery run on commit/merge.
+Use the host's direct local plugin loading or `just link-agy`; linking does not establish that a host loads or executes every component. See the [host portability audit](docs/records/2026-11-14-library-host-portability.md) before claiming support. The latter uses `AGY_IDE_PLUGIN_DIR`, links only this repository's common packages, replaces existing symlinks and refuses real paths. Test installation against a temporary destination, not a user's home. No automatic refresh hooks, copies or sibling discovery run on commit/merge.
 
 If an earlier installation configured this repository's removed hooks, first inspect `git config --local --get core.hooksPath`; when it points to the old `scripts/git-hooks`, remove that setting with `git config --local --unset core.hooksPath`. Preserve unrelated custom hooks. Explicitly migrate old copied plugin directories before linking; the command will not delete them.
 

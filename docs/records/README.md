@@ -12,3 +12,5 @@ Name records as `YYYY-MM-DD-short-topic.md`.
 
 - [Delivery host capability evidence](2026-11-14-delivery-host-capabilities.md): observed and documented host capabilities, unverified cases, and delivery stops.
 - [Supported host delivery refinement](2026-11-14-delivery-refinement.md): epic audit and gate timing evidence.
+
+- [Library host portability audit](2026-11-14-library-host-portability.md): package and instruction inventory, native validation findings and unverified capabilities.

@@ -22,7 +22,7 @@ The Product partner, Craftsman, Reviewer and Delivery steward are responsibiliti
 
 ## Load the library
 
-Install the common packages through your host's plugin mechanism. Generated manifests are provided for the supported host formats; common skill instructions remain provider-neutral. Host discovery support does not itself prove isolated reviewer credentials, safe concurrency or production approval.
+Generated manifests target Claude Code and Codex plugin formats; validate loading and execution in your configured host. Common instructions are provider-neutral, but role definitions, tool permissions and hooks are host-specific. Discovery does not prove reviewer credentials, safe concurrency or production approval. See the [host portability audit](docs/records/2026-11-14-library-host-portability.md) for evidence and limitations.
 
 For local Claude Code development, load this checkout directly:
 
@@ -33,7 +33,7 @@ claude \
   --plugin-dir plugins/common/authoring
 ```
 
-Antigravity automatically discovers workspace packages via `.agents/plugins.json`. To link or validate packages with the Antigravity CLI:
+The repository includes an Antigravity workspace declaration and local linking helper. Native validation currently rejects the workflow agents and does not load its hook; workflow delivery on Antigravity is unverified and unsupported. To link or inspect packages with the Antigravity CLI:
 
 ```bash
 # Link live symlinks into ~/.gemini/config/plugins (dev mode)
@@ -57,7 +57,7 @@ Use focused checks while editing and run the final gate once. `node plugins/comm
 
 Lanes record implementation authorization, milestones group deliverable outcomes, and types classify work. Temporary waiting reasons do not erase authorization. Parallel implementation requires enforced claims, one run per issue; shared files never block, the later PR resolves conflicts.
 
-Production requires approval of the exact demonstrated artifact and configuration, with acceptance evidence, limitations and rollback readiness. This plugin library itself releases on every verified push to `main`, because hosts install only released versions; see the [release record](docs/records/2026-10-19-release-on-main.md).
+Production requires approval of the exact demonstrated artifact and configuration, with acceptance evidence, limitations and rollback readiness. This plugin library itself releases on every verified push to `main`, because release consumers may require released versions; see the [release record](docs/records/2026-10-19-release-on-main.md).
 
 Each product milestone is followed by bounded engineering health: compatible current dependencies, meaningful testing gaps, test deduplication, test speed and justified refactoring. Measure confidence with reproducible project-specific mutation, coverage and risk gates; missing required evidence blocks merging. Test count and line coverage alone are insufficient.
 
