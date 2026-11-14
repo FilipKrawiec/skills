@@ -24,7 +24,7 @@ export function validateEpicEvidence(input) {
   for (const criterion of criteria) {
     if (!nonempty(criterion?.id) || !nonempty(criterion?.text) || criterion.checked !== true) fail('Missing or unchecked criterion');
     const matches = records.filter(r => r?.criterion?.id === criterion?.id);
-    if (matches.length !== 1) { fail('Criterion requires exactly one record'); continue; }
+    if (matches.length !== 1 || !matches[0] || typeof matches[0] !== 'object') { fail('Criterion requires exactly one record'); continue; }
     const record = matches[0];
     if (record.version !== 1 || !sameCriterion(criterion, record.criterion) || !['met', 'unmet', 'unverifiable'].includes(record.state) || !nonempty(record.explanation)) fail('Malformed or stale record');
     const refs = record.evidence;

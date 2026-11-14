@@ -27,3 +27,9 @@ test('unmet and unverifiable criteria require a next action and linked follow-up
     assert.equal(validate([criterion], [{ ...record, state }]).complete, false);
   }
 });
+
+test('null criterion and record fail closed without throwing', () => {
+  const result = validate([null], [null], []);
+  assert.equal(result.complete, false);
+  assert.ok(result.issues.length > 0);
+});
