@@ -29,3 +29,7 @@ Sources accessed 2026-11-14; use the linked pages and local `--help` to reproduc
 ## Subsequent observed Codex review
 
 The owner session dispatched separate `codex exec -m gpt-6.1-terra` reviewer processes for [PR #489](https://github.com/FilipKrawiec/skills/pull/489). The configured Reviewer posted ready review 5904284673 and approval 5904288602 at head `a203dcae43fedd996520750957ab73154cf5ddff`; the PR merged. An initial cached skill produced an invalid marker; a fresh session explicitly loaded the repository review skill and produced the valid review. This demonstrates that configuration in that session, not every host installation.
+
+## Configured Codex dispatch probe
+
+For #487, the offline `configured dispatch produces` test supplied a fake issue to `drive` with a Codex implementer assigned `gpt-6.1-terra`. It returned an implementer subagent instruction and brief. The owner dispatched that literal brief through `collaboration.spawn_agent` with model `gpt-6.1-terra`, expressly limiting it to a no-mutation probe. The final hand-back was exactly `status: blocked` and `note: bounded dispatch probe`; the test parses those lines and confirms that the driver returns the corresponding owner block. This fixture-based probe used no live issue and does not establish model availability in other sessions.

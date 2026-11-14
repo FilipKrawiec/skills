@@ -549,6 +549,16 @@ test('delivery assignments select configured hosts and models and reject unsuppo
   assert.throws(() => deliveryAssignment({ orchestrator: 'codex', roles: {} }, { agent: 'reviewer' }, 'R1'), /configure/i);
 });
 
+test('configured dispatch produces an implementer brief and accepts its intact hand-back', () => {
+  const repo = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
+  const configured = { ...lanes, delivery: { orchestrator: 'codex', roles: { implementer: { host: 'codex', model: 'gpt-6.1-terra' } } } };
+  const instruction = drive(repo.io, 3, configured, {});
+  assert.deepEqual([instruction.agent, instruction.host, instruction.model, instruction.session], ['implementer', 'codex', 'gpt-6.1-terra', 'subagent']);
+  assert.match(repo.writes[instruction.brief], /status: done \| replan \| blocked/);
+  const handBack = parseHandBack('status: blocked\nnote: bounded dispatch probe');
+  assert.deepEqual(drive(repo.io, 3, configured, handBack), { owner: '#3: bounded dispatch probe' });
+});
+
 test('the reviewer runs as a separate non-interactive session', () => {
   const argv = reviewerCommand('opus', '/w/.wf/b.md', 'review-5-r1');
   assert.deepEqual(argv.slice(0, 2), ['claude', '--print']);
