@@ -1,0 +1,9 @@
+# Portability epic refinement
+
+Review of [#484](https://github.com/FilipKrawiec/skills/issues/484) for [#495](https://github.com/FilipKrawiec/skills/issues/495): the [library audit](2026-11-14-library-host-portability.md), [delivery refinement](2026-11-14-delivery-refinement.md) and [integrated assessment](2026-11-14-integrated-host-refinement.md) together cover the epic outcome and decisions. The implementation retains the configured reviewer and exact-head, identity, scope and verification gates. Its default Claude assignment is a deliberate migration path; Antigravity dispatch remains unsupported and native execution is not inferred from manifests. No further in-scope inconsistency was confirmed. The existing `validate-agy` failure-masking defect identified in [#496's review](https://github.com/FilipKrawiec/skills/pull/496) remains outside this issue's scope (`justfile`); its audit records the workaround and limitation. No unresolved Nit was found in the merged refinement reviews.
+
+The configured `justfile` and CI workflow have no unused-code tool or baseline. Inspection of the epic's changed files found no dead file, export, symbol or fixture to remove; no baseline was added. This is not a whole-repository unused-code analysis.
+
+## Timing evidence
+
+The configuration does not record local per-gate timing; before and after local times are unavailable. The latest successful [base CI job](https://github.com/FilipKrawiec/skills/actions/runs/43599312213/job/132460443042) reports whole-second timestamps: setup job 2 s, checkout 1 s, setup just 1 s, unit 12 s, manifest verification and worktree hygiene each less than 1 s, Gitleaks 2 s, post-checkout and completion each less than 1 s. A CI run for this refinement is unavailable until its PR runs. No performance change or measured win is claimed.
