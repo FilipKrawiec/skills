@@ -21,7 +21,7 @@ function parseCriteria(body) {
 }
 
 // curl performs a fresh complete body read; redirects may never leave HTTP(S).
-export function retrieveEpicBytes(url) {
+function retrieveEpicBytes(url) {
   const parsed = new URL(url);
   const result = parsed.protocol === 'https:' && parsed.hostname === 'api.github.com' && parsed.pathname.startsWith('/repos/')
     ? spawnSync('gh', ['api', url], { maxBuffer: 32 * 1024 * 1024 })
