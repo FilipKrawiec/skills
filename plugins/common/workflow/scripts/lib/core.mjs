@@ -267,7 +267,7 @@ export const workflowLabels = {
   'review:owner': ['e99695', 'PR is waiting for owner approval'],
   'risk:R0': ['c2e0c6', 'Low-risk PR: docs, tests or a local change'],
   'risk:R1': ['fef2c0', 'PR changes behaviour inside one boundary'],
-  'risk:R2': ['d93f0b', 'PR crosses boundaries or touches contracts, data or security'],
+  'risk:R2': ['d93f0b', 'Critical failure with difficult recovery and financial cost'],
   'nits:swept': ['ededed', 'Merged PR whose review Nits were swept'],
   'type:epic': ['3e4b9e', 'Parent of bounded work items'],
   'type:story': ['a2eeef', 'New or changed user-visible behavior'],

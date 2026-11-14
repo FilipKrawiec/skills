@@ -1,34 +1,30 @@
 # Risk assessment
 
-The `devops` agent, task `risk`, sets a change's risk by reasoning about what it does. `drive` names it before the implementer starts, with the issue and its scope packet, and again when the draft opens, with the diff. The PR's `risk:R*` label picks the models and whether the owner reviews, so R2 is for critical changes only.
+The `devops` agent, task `risk`, assesses the issue before the build and the diff when the draft opens. The PR's `risk:R*` label selects models and whether the owner reviews; reserve R2 for critical changes.
 
-## Factors
+## Assess
 
-| Factor | Question |
-| --- | --- |
-| What it does | Which behaviour, contracts and callers does it alter? |
-| Blast radius | Who or what breaks if it is wrong: one feature, every run the workflow drives, production users? |
-| Reversibility | Is a revert enough, or does it leave data, state, published artifacts or credentials behind? |
-| Gates and trust | Does it touch authorization, credentials, CI, release, review or merge gates, or weaken a check? |
-| Evidence | How well do the tests and checks observe the outcome? |
+Identify a concrete plausible failure and its blast radius, recovery steps and financial impact. Weigh the behavior and callers affected, the evidence from checks, and any state, data or artifacts a revert leaves behind. Paths, CODEOWNERS, gates and repository rules are evidence, never a verdict. Touching a gate or imagining a failure alone does not make a change R2.
 
-Paths, CODEOWNERS, CI files, migrations and the repository's own rules are evidence you weigh, never the verdict: code under `scripts/` or a build file is not R2 by where it lives.
-
-## Levels
+Classify a change lower when recovery is easy **or** the failure has no financial cost. Establish that from evidence: unknown impact is unknown, not zero cost. Seek evidence about the failure, recovery and cost before asserting an impact; report what remains unknown in the hand-back. Weak evidence raises risk only when the outcome it fails to observe is itself critical.
 
 | Risk | When |
 | --- | --- |
-| R0 | Text only, with no behaviour change. |
-| R1 | Everything else. |
-| R2 | Critical: wrong would be hard to reverse, or it can weaken a gate, leak a credential, lose data or break every downstream run. |
+| R0 | Text only, with no behavior change. |
+| R1 | Other changes, including easy-to-recover or no-cost failures. |
+| R2 | A critical failure with difficult recovery and financial cost, supported by evidence. |
 
-Weak evidence raises the level only when the outcome it fails to observe is itself critical.
+For example, a workflow defect like #516 that incorrectly asks the owner for review can be corrected and rerun without financial cost: R1. A failure that irreversibly corrupts paid customer transactions and requires costly manual restitution is R2 when evidence supports those consequences.
+
+Risk classification does not grant authority. Follow the repository's separate owner-reserved effects and approvals regardless of risk, including credentials, authority, release controls, GitHub protections and quality gates. Do not weaken those controls.
 
 ## Hand-back
 
+Return the concrete failure, recovery steps and financial impact, including unknowns and evidence, in the one-line reason so the reviewer can assess the classification:
+
 ```text
 risk: R1
-reason: changes how one parser reads hand-backs; a revert undoes it and the drive tests cover each field
+reason: a parser error stops one drive run; revert and rerun it; no financial cost evidenced by the local test workflow
 ```
 
-`drive` sets the PR's label from it and posts the reason once as a PR comment; the newest assessment of the diff wins, so a draft can come out lower than the issue estimate. An owner-set `risk:R*` label on the issue is a floor `drive` applies; assess the change on its own. After a fix round, `drive` asks again only when the head touches files the last assessment did not see.
+`drive` sets the PR's label and posts the reason. The newest assessment of the diff wins; an owner-set issue `risk:R*` label is a floor. After a fix round, `drive` asks again only when the head touches files the last assessment did not see.

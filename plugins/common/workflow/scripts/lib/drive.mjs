@@ -265,7 +265,7 @@ Read code, CODEOWNERS and the repository's rules as evidence; never edit, commit
 
 \`\`\`text
 risk: R0 | R1 | R2
-reason: <one line: what the change does and why that risk>
+reason: <one line: concrete failure, recovery steps and financial impact, with evidence or unknowns>
 \`\`\`
 
 ## Issue
