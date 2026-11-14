@@ -802,3 +802,11 @@ test('replacing evidence removes nested headings and preserves later sections', 
   assert.match(updated, /## After\n\nNew capture/);
   assert.match(updated, /## Notes\n\nKeep this/);
 });
+
+test('adding managed evidence preserves unmarked evidence and later sections', () => {
+  const original = '## Change\n\nDone.\n\n## Evidence\n\nCapture\n\n## Verification\n\nKeep this.\n';
+  const updated = updatePrBody(original, {}, 'New capture');
+  assert.ok(updated.includes(original));
+  assert.match(updated, /## Verification\n\nKeep this/);
+  assert.match(updated, /workflow:evidence-start[\s\S]*New capture[\s\S]*workflow:evidence-end/);
+});
