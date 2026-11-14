@@ -17,6 +17,7 @@ sync-manifests:
 # Validate plugins with Antigravity CLI if available
 validate-agy:
     #!/usr/bin/env bash
+    set -euo pipefail
     if command -v agy >/dev/null 2>&1; then
       for dir in plugins/common/*; do
         [ -d "$dir" ] || continue

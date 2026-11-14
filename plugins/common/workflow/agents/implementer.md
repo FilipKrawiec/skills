@@ -1,7 +1,6 @@
 ---
 name: implementer
 description: Builds one issue in its worktree, or fixes its PR's failing check or blocking review findings, from a drive brief, passes the project gate and commits through the workflow CLI. Use when drive names the implementer.
-model: sonnet
 effort: medium
 skills:
   - deliver

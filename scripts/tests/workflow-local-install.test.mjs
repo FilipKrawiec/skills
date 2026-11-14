@@ -67,3 +67,10 @@ test('link-agy refuses real files and directories without removing contents', t 
     assert.equal(readFileSync(preserved, 'utf8'), 'valuable');
   }
 });
+
+test('validate-agy fails when an earlier package fails validation', t => {
+  const bin = fixture(t);
+  writeFileSync(join(bin, 'agy'), '#!/bin/sh\ncase "$3" in */authoring) exit 7;; *) exit 0;; esac\n', { mode: 0o755 });
+  const result = spawnSync('just', ['validate-agy'], { cwd: root, env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }, encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+});
