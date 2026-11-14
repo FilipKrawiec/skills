@@ -416,7 +416,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       return gh(['issue', 'view', String(result.data.createIssue.issue.number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
     },
     subIssues: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).flat().map(sub => ({ number: sub.number, state: sub.state.toUpperCase() })),
-    verifyEpic: (epic, slices, base) => verifyEpicClosure({ epic, slices, base, repo }, { merged: (n, branch) => githubIo(lanes, gh).mergedClosingPr(n, branch) }),
+    verifyEpic: (epic, slices, base, merged) => verifyEpicClosure({ epic, slices, base, repo }, { merged }),
     pr: n => {
       const open = gh(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,body,closingIssuesReferences,labels,reviews,headRefOid,isDraft']);
       // `prLinkedIssues` also reads a stacked PR's `Closes #N`, which GitHub links no closing issue for.
@@ -648,7 +648,15 @@ export function driveEpic(io, epic, lanes) {
         if (current.state !== 'OPEN' || (current.labels || []).some(label => (label.name ?? label) === 'lane:owner')) throw new Error('Epic state or approval changed');
         const dependencies = splitDependencies(io.dependencies(current));
         if (dependencies.blockers.length || dependencies.dropped.length || !io.hasLessons(current.number)) throw new Error('Epic dependencies or lessons changed');
-        return { current, children, result: io.verifyEpic(current, children, lanes.base) };
+        const delivery = [];
+        const deliveryIo = {
+          issue: n => { const issue = io.issue(n); delivery.push(['issue', n, issue]); return issue; },
+          subIssues: n => { const subIssues = io.subIssues(n); delivery.push(['children', n, subIssues]); return subIssues; },
+          mergedClosingPr: (n, base) => { const merged = io.mergedClosingPr(n, base); delivery.push(['merged', n, merged]); return merged; }
+        };
+        const merged = (n, base) => unresolvedDelivery(deliveryIo, children.find(child => child.number === n), base).length === 0;
+        const result = io.verifyEpic(current, children, lanes.base, merged);
+        return { current, children, delivery, result };
       };
       const first = read();
       if (!first.result.complete) {
