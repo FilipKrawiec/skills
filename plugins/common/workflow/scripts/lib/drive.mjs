@@ -644,7 +644,7 @@ export function driveEpic(io, epic, lanes) {
             if (io.requiredBoard(followUp.number, 'TODO') === false) throw new Error('Follow-up board update unavailable');
           }
         }
-        if (step.do === 'close-epic' || !outstanding.length) return { owner: `epic #${epic.number}: ${first.result.issues.join('; ')}; update manifest and evidence for outstanding work`, url: epic.url };
+        if (step.do === 'close-epic' || !outstanding.length) return { owner: `epic #${epic.number}: ${first.result.issues.join('; ')}; update the epic outcome review and evidence for outstanding work`, url: epic.url };
       }
       if (step.do === 'close-epic') {
         const second = read();
