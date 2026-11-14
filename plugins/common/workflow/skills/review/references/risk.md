@@ -6,13 +6,13 @@ The `devops` agent, task `risk`, assesses the issue before the build and the dif
 
 Identify a concrete plausible failure and its blast radius, recovery steps and financial impact. Weigh the behavior and callers affected, the evidence from checks, and any state, data or artifacts a revert leaves behind. Paths, CODEOWNERS, gates and repository rules are evidence, never a verdict. Touching a gate or imagining a failure alone does not make a change R2.
 
-Classify a change lower when recovery is easy **or** the failure has no financial cost. Establish that from evidence: unknown impact is unknown, not zero cost. Seek evidence about the failure, recovery and cost before asserting an impact; report what remains unknown in the hand-back. Weak evidence raises risk only when the outcome it fails to observe is itself critical.
+Classify a change lower when recovery is easy **or** the failure has no financial cost. Establish that from evidence: unknown impact is unknown, not zero cost. Seek evidence about the failure, recovery and cost before asserting an impact; report what remains unknown in the hand-back. If a critical failure could be hard to recover and costly, but neither easy recovery nor no financial cost is established, use R2 while seeking the missing evidence. Weak evidence raises risk only when the outcome it fails to observe is itself critical.
 
 | Risk | When |
 | --- | --- |
 | R0 | Text only, with no behavior change. |
-| R1 | Other changes, including easy-to-recover or no-cost failures. |
-| R2 | A critical failure with difficult recovery and financial cost, supported by evidence. |
+| R1 | Noncritical changes and critical failures with established easy recovery or no financial cost. |
+| R2 | A critical failure with difficult recovery and financial cost, or unresolved recovery or cost when neither lower-risk condition is established. |
 
 For example, a workflow defect like #516 that incorrectly asks the owner for review can be corrected and rerun without financial cost: R1. A failure that irreversibly corrupts paid customer transactions and requires costly manual restitution is R2 when evidence supports those consequences.
 
