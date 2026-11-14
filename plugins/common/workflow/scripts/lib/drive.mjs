@@ -85,9 +85,9 @@ function assessmentStep(facts) {
   return agent('devops', 'risk', { task: 'risk', reason });
 }
 
-// A hand-back is at most 5 `key: value` lines; a bare first word is the status.
+// A hand-back is at most 6 `key: value` lines; a bare first word is the status.
 export function parseHandBack(text) {
-  const lines = String(text || '').split('\n').map(line => line.trim()).filter(Boolean).slice(0, 5);
+  const lines = String(text || '').split('\n').map(line => line.trim()).filter(Boolean).slice(0, 6);
   const result = {};
   lines.forEach((line, index) => {
     const match = /^(\w+):\s*(.*)$/.exec(line);
@@ -243,7 +243,7 @@ commit: <Conventional Commit subject, only if you left changes uncommitted>
 paths: <paths drive commits, only with commit>
 check: pass | fail
 note: <one line: what changed, or why replan or blocked>
-body: <optional absolute path to a Markdown evidence file; omit commit/paths when already committed>
+body: <optional absolute path to a Markdown evidence file>
 \`\`\`
 
 ## Issue
@@ -331,8 +331,9 @@ export function updatePrBody(body, hb, evidence) {
   let result = body;
   if (hb.note) result = result.replace(/(## Change\n\n)[\s\S]*?(?=\n## |$)/, (_, heading) => `${heading}${hb.note}\n`);
   if (evidence !== undefined) {
-    const section = `## Evidence\n\n${evidence.trim()}\n`;
-    if (/## Evidence\n/.test(result)) result = result.replace(/## Evidence\n[\s\S]*?(?=\n## |$)/, () => section);
+    const section = `<!-- workflow:evidence-start -->\n## Evidence\n\n${evidence.trim()}\n<!-- workflow:evidence-end -->\n`;
+    if (result.includes('<!-- workflow:evidence-start -->')) result = result.replace(/<!-- workflow:evidence-start -->[\s\S]*?<!-- workflow:evidence-end -->\n?/, () => section);
+    else if (/## Evidence\n/.test(result)) result = result.replace(/## Evidence\n[\s\S]*$/, () => section);
     else result += `\n${section}`;
   }
   return result;
@@ -354,7 +355,7 @@ ${hb.note || subjects.map(subject => `- ${subject}`).join('\n') || 'See the comm
 The implementer ran the project gate with \`workflow.mjs check\`: ${hb.check || 'unreported'}.
 
 Risk ${risk}, from the risk assessor's estimate of the issue; its assessment of this diff follows as a PR comment.
-${evidence === undefined ? '' : `\n## Evidence\n\n${evidence.trim()}\n`}`;
+${evidence === undefined ? '' : `\n<!-- workflow:evidence-start -->\n## Evidence\n\n${evidence.trim()}\n<!-- workflow:evidence-end -->\n`}`;
 }
 
 export function slugBranch(issue) {

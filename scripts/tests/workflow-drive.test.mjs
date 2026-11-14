@@ -274,8 +274,8 @@ test('drive: an owner floor wins over a lower assessment', () => {
   assert.deepEqual(repo.s.issues[3].labels.map(l => l.name), ['risk:R2', 'state:started'], 'drive never rewrites the issue label');
 });
 
-test('hand-backs are at most 5 lines of key: value', () => {
-  assert.deepEqual(parseHandBack('status: done\ncommit: feat(a): b\npaths: a.js b.js\ncheck: pass\nnote: ok\nextra: dropped'), { status: 'done', commit: 'feat(a): b', paths: ['a.js', 'b.js'], check: 'pass', note: 'ok' });
+test('hand-backs are at most 6 lines of key: value', () => {
+  assert.deepEqual(parseHandBack('status: done\ncommit: feat(a): b\npaths: a.js b.js\ncheck: pass\nnote: ok\nbody: evidence.md\nextra: dropped'), { status: 'done', commit: 'feat(a): b', paths: ['a.js', 'b.js'], check: 'pass', note: 'ok', body: 'evidence.md' });
   assert.equal(parseHandBack('DONE all good').status, 'done');
 });
 
@@ -788,7 +788,17 @@ test('production epic board updates fail when the board is unavailable', () => {
 
 test('drive updates the PR change and supplied evidence after a fix', () => {
   const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, body: 'Closes #3\n\n## Change\n\nOld change\n\n## Verification\n\nPassed.', reviews: [review('fixes')] })] });
-  drive(repo.io, 3, lanes, { status: 'done', note: 'New change', body: 'Before and after captures' });
+  const handBack = parseHandBack('status: done\ncommit: fix: change\npaths: a.js\ncheck: pass\nnote: New change\nbody: Before and after captures');
+  drive(repo.io, 3, lanes, handBack);
   assert.match(repo.s.prs[0].body, /## Change\n\nNew change/);
   assert.match(repo.s.prs[0].body, /## Evidence\n\nBefore and after captures/);
+});
+
+
+test('replacing evidence removes nested headings and preserves later sections', () => {
+  const original = updatePrBody('## Change\n\nOld\n\n## Verification\n\nPassed.\n', {}, '## Before\n\nOld capture\n\n## After\n\nOld result');
+  const updated = updatePrBody(`${original}\n## Notes\n\nKeep this.\n`, {}, '## After\n\nNew capture');
+  assert.doesNotMatch(updated, /Old capture|Old result/);
+  assert.match(updated, /## After\n\nNew capture/);
+  assert.match(updated, /## Notes\n\nKeep this/);
 });
