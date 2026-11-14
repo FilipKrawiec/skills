@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveEpicVerification } from '../../plugins/common/workflow/scripts/lib/epic-attestation.mjs';
+import { resolveEpicVerification, resolveEpicRecordAuthor } from '../../plugins/common/workflow/scripts/lib/epic-attestation.mjs';
 
 const criterion = { id: 'c1', text: 'Works' };
 const evidence = [{ id: 'e1', url: 'https://example.org/e', sha256: 'a'.repeat(64) }];
@@ -33,4 +33,17 @@ test('rejects untrusted, edited, ambiguous, stale, malformed or inaccessible att
   assert.throws(() => resolve({}, { comments: () => { throw Error('API failure'); } }));
   for (const config of [{}, { repo: 'acme/app', reviewer: 'reviewer', implementer: 'REVIEWER' }, { repo: 'other/app', reviewer: 'reviewer', implementer: 'builder' }]) assert.throws(() => resolve({}, { trustedConfig: () => config }));
   assert.throws(() => resolve({}, { trustedConfig: () => { throw Error('fetch failed'); } }));
+});
+
+
+test('record author is the unedited GitHub comment author bound to exact bytes', () => {
+  const request = { repo: 'acme/app', issue: 12, commentId: 5, recordsUrl: 'https://raw.githubusercontent.com/acme/app/main/records.json', sha256: 'a'.repeat(64) };
+  const recordComment = { ...comment, user: { login: 'builder' }, body: JSON.stringify({ version: 1, recordsUrl: request.recordsUrl, sha256: request.sha256, author: 'reviewer' }) };
+  const authors = { comments: () => [recordComment], editState: deps.editState };
+  assert.equal(resolveEpicRecordAuthor(request, authors), 'builder');
+  for (const bad of [[], [{ ...recordComment, user: null }], [{ ...recordComment, body: JSON.stringify({ version: 1, recordsUrl: request.recordsUrl, sha256: 'b'.repeat(64) }) }], [{ ...recordComment, updated_at: '2026-01-02T00:00:00Z' }]]) {
+    assert.throws(() => resolveEpicRecordAuthor(request, { ...authors, comments: () => bad }));
+  }
+  assert.throws(() => resolveEpicRecordAuthor(request, { ...authors, editState: () => ({ id: 'node5', lastEditedAt: '2026-01-01T00:00:00Z' }) }));
+  assert.throws(() => resolveEpicRecordAuthor(request, { ...authors, comments: () => { throw Error('API unavailable'); } }));
 });

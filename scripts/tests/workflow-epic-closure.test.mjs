@@ -10,9 +10,9 @@ function fixture() {
   const manifest = { version: 1, epic: 9, criteria: [{ id: 'a', text: 'Works', requiredSlices: [10, 99] }] };
   const manifestBytes = () => Buffer.from(JSON.stringify(manifest));
   const record = { version: 2, criterion: { id: 'a', text: 'Works' }, state: 'met', explanation: 'Delivered', author: 'builder', verificationCommentId: 123, evidence: [{ id: 'manifest', url: manifestUrl, sha256: sha(manifestBytes()) }] };
-  const epic = { number: 9, body: `<!-- workflow:epic-manifest ${manifestUrl} -->\n<!-- workflow:epic-records ${recordsUrl} -->\n### Acceptance criteria\n- [x] Works <!-- workflow:criterion a -->\n` };
+  const epic = { number: 9, body: `<!-- workflow:epic-manifest ${manifestUrl} -->\n<!-- workflow:epic-records ${recordsUrl} -->\n<!-- workflow:epic-record-author 456 -->\n### Acceptance criteria\n- [x] Works <!-- workflow:criterion a -->\n` };
   const slices = [{ number: 10, state: 'CLOSED' }, { number: 99, state: 'CLOSED' }];
-  const adapters = { read: url => url === manifestUrl ? manifestBytes() : Buffer.from(JSON.stringify({ version: 2, epic: 9, records: [record] })), attest: ({ criterion, evidence, state }) => ({ reviewer: 'reviewer', criterion, evidence, state }), merged: () => true };
+  const adapters = { author: () => 'builder', read: url => url === manifestUrl ? manifestBytes() : Buffer.from(JSON.stringify({ version: 2, epic: 9, records: [record] })), attest: ({ criterion, evidence, state }) => ({ reviewer: 'reviewer', criterion, evidence, state }), merged: () => true };
   return { epic, slices, manifest, record, adapters, check: () => verifyEpicClosure({ epic, slices, repo: 'a/b', base: 'main' }, adapters) };
 }
 
@@ -66,5 +66,13 @@ test('unverified actions never authorize follow-up mutations', () => {
 test("a changed outcome cannot reuse an unmet attestation", () => {
   const f = fixture();
   f.adapters.attest = ({ criterion, evidence }) => ({ reviewer: "reviewer", criterion, evidence, state: "unmet" });
+  assert.equal(f.check().complete, false);
+});
+
+
+test('forged record author cannot claim independence', () => {
+  const f = fixture();
+  f.record.author = 'builder';
+  f.adapters.author = () => 'reviewer';
   assert.equal(f.check().complete, false);
 });
