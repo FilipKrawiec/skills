@@ -8,6 +8,18 @@ const positive = n => Number.isSafeInteger(n) && n > 0;
 const nonempty = s => typeof s === 'string' && s.trim().length > 0;
 const fail = message => { throw new Error(message); };
 
+function parseCriteria(body) {
+  const section = (body || '').match(/^#{2,4} Acceptance criteria\s*$([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/mi)?.[1];
+  if (!section) fail('Missing acceptance criteria');
+  const lines = section.split('\n').filter(line => /^\s*[-*] \[[ xX]\]/.test(line));
+  const criteria = lines.map(line => {
+    const match = line.match(/^\s*[-*] \[([ xX])\] (.+?)\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->\s*$/);
+    if (!match) fail('Every criterion needs a stable ID');
+    return { id: match[3], text: match[2], checked: match[1].toLowerCase() === 'x' };
+  });
+  return criteria;
+}
+
 // curl performs a fresh complete body read; redirects may never leave HTTP(S).
 export function retrieveEpicBytes(url) {
   const parsed = new URL(url);
@@ -44,14 +56,7 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
     const recordAuthor = author({ repo, issue: epic.number, commentId: Number(authorMarkers[0][1]), recordsUrl, sha256: createHash('sha256').update(recordsBytes).digest('hex') });
     if (!nonempty(recordAuthor)) fail('Unable to authenticate record author');
     if (manifest.version !== 1 || manifest.epic !== epic.number || !Array.isArray(manifest.criteria) || !manifest.criteria.length || packet.version !== 2 || packet.epic !== epic.number || !Array.isArray(packet.records)) fail('Invalid evidence files');
-    const section = (epic.body || '').match(/^#{2,4} Acceptance criteria\s*$([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/mi)?.[1];
-    if (!section) fail('Missing acceptance criteria');
-    const lines = section.split('\n').filter(line => /^\s*[-*] \[[ xX]\]/.test(line));
-    const criteria = lines.map(line => {
-      const match = line.match(/^\s*[-*] \[([ xX])\] (.+?)\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->\s*$/);
-      if (!match) fail('Every criterion needs a stable ID');
-      return { id: match[3], text: match[2], checked: match[1].toLowerCase() === 'x' };
-    });
+    const criteria = parseCriteria(epic.body);
     if (!criteria.length || !unique(criteria.map(c => c.id)) || !unique(manifest.criteria.map(c => c.id)) || criteria.length !== manifest.criteria.length) fail('Ambiguous criteria');
     for (const c of criteria) {
       const item = manifest.criteria.find(m => m.id === c.id);
@@ -107,14 +112,7 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
 
 function verifyNative({ epic, slices, base, repo }, { read, merged, native }) {
   const packet = native({ repo, issue: epic.number });
-  const section = (epic.body || '').match(/^#{2,4} Acceptance criteria\s*$([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/mi)?.[1];
-  if (!section) fail('Missing acceptance criteria');
-  const lines = section.split('\n').filter(line => /^\s*[-*] \[[ xX]\]/.test(line));
-  const criteria = lines.map(line => {
-    const match = line.match(/^\s*[-*] \[([ xX])\] (.+?)\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->\s*$/);
-    if (!match) fail('Every criterion needs a stable ID');
-    return { id: match[3], text: match[2], checked: match[1].toLowerCase() === 'x' };
-  });
+  const criteria = parseCriteria(epic.body);
   if (!criteria.length || !unique(criteria.map(c => c.id))) fail('Missing or duplicate criteria');
   if (!packet || packet.version !== 1 || packet.epic !== epic.number || !Array.isArray(packet.children) || !Array.isArray(packet.outcomes)) fail('Invalid epic outcome review');
   const inventory = slices.map(s => s.number);
