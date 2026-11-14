@@ -8,6 +8,7 @@ import { boardStatus, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { prFields } from './pr.mjs';
+import { verifyEpicClosure } from './epic-closure.mjs';
 import { prState } from './state.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
 
@@ -388,7 +389,21 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const number = result.data.createIssue.issue.number;
       return gh(['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
     },
-    subIssues: n => gh(['api', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).map(sub => ({ number: sub.number, state: sub.state.toUpperCase() })),
+    uncheckEpicCriteria: (epic, ids) => {
+      const body = epic.body.replace(/^(\s*[-*] \[[ xX]\] .+?\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->\s*)$/gm, (line, whole, id) => ids.includes(id) ? line.replace(/\[[xX]\]/, '[ ]') : line);
+      if (body !== epic.body) run('gh', ['issue', 'edit', String(epic.number), '--repo', repo, '--body', body]);
+    },
+    createEpicFollowUp: (epic, criterion) => {
+      const [owner, name] = repo.split('/');
+      const lookup = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){id issue(number:$number){id milestone{id}}}}';
+      const data = gh(['api', 'graphql', '-f', `query=${lookup}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${epic.number}`]).data.repository;
+      const mutation = 'mutation($repository:ID!,$parent:ID!,$title:String!,$body:String!,$milestone:ID){createIssue(input:{repositoryId:$repository,parentIssueId:$parent,title:$title,body:$body,milestoneId:$milestone}){issue{number}}}';
+      const body = `<!-- workflow:epic-follow-up ${epic.number} ${criterion.id} -->\n\n## Outcome\n${criterion.nextAction}\n\n### Acceptance criteria\n- [ ] ${criterion.nextAction}`;
+      const result = gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=Follow up: ${criterion.text}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]);
+      return gh(['issue', 'view', String(result.data.createIssue.issue.number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
+    },
+    subIssues: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).flat().map(sub => ({ number: sub.number, state: sub.state.toUpperCase() })),
+    verifyEpic: (epic, slices, base) => verifyEpicClosure({ epic, slices, base, repo }, { merged: (n, branch) => githubIo(lanes, gh).mergedClosingPr(n, branch) }),
     pr: n => {
       const open = gh(['pr', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,body,closingIssuesReferences,labels,reviews,headRefOid,isDraft']);
       // `prLinkedIssues` also reads a stacked PR's `Closes #N`, which GitHub links no closing issue for.
@@ -599,7 +614,43 @@ export function driveEpic(io, epic, lanes) {
   const step = decideEpic({ epic, slices });
   if (unresolvedOwner && (step.do === 'close-epic' || step.slices?.includes(refinement.number))) return unresolvedOwner;
   if (step.do === 'close-epic' && !io.hasLessons(epic.number)) return instruction(io, { issue: epic, pr: null, tree: null }, agent('improver', 'improve'), lanes);
-  if (step.do === 'close-epic') { io.closeEpic(epic); return { done: { epic: epic.number } }; }
+  if (step.do === 'close-epic' || slices.some(slice => (slice.body || '').includes(`<!-- workflow:epic-follow-up ${epic.number} `))) {
+    try {
+      const read = () => {
+        const current = io.issue(epic.number);
+        const children = io.subIssues(epic.number).map(child => io.issue(child.number));
+        if (current.state !== 'OPEN' || (current.labels || []).some(label => (label.name ?? label) === 'lane:owner')) throw new Error('Epic state or approval changed');
+        const dependencies = splitDependencies(io.dependencies(current));
+        if (dependencies.blockers.length || dependencies.dropped.length || !io.hasLessons(current.number)) throw new Error('Epic dependencies or lessons changed');
+        return { current, children, result: io.verifyEpic(current, children, lanes.base) };
+      };
+      const first = read();
+      if (!first.result.complete) {
+        const outstanding = first.result.outstanding || [];
+        if (outstanding.length) {
+          const matches = outstanding.map(criterion => ({ criterion, found: first.children.filter(child => (child.body || '').includes(`<!-- workflow:epic-follow-up ${epic.number} ${criterion.id} -->`)) }));
+          if (matches.some(item => item.found.length > 1 || item.found.some(child => child.state !== 'OPEN'))) throw new Error('Duplicate or closed follow-up needs classification');
+          io.uncheckEpicCriteria(first.current, outstanding.map(item => item.id));
+          const updated = io.issue(epic.number);
+          if (outstanding.some(item => !(updated.body || '').split('\n').some(line => /^\s*[-*] \[ \] /.test(line) && line.trimEnd().endsWith(`${item.text} <!-- workflow:criterion ${item.id} -->`)))) throw new Error('Criterion was not left unchecked');
+          if (io.board(epic.number, 'BLOCKED') === false) throw new Error('Epic board update unavailable');
+          for (const item of matches) {
+            const followUp = item.found[0] || io.createEpicFollowUp(first.current, item.criterion);
+            const linked = io.subIssues(epic.number).some(child => child.number === followUp.number);
+            if (!linked || followUp.state !== 'OPEN' || !(followUp.body || '').includes(item.criterion.nextAction)) throw new Error('Follow-up is not linked, open and actionable');
+            if (io.board(followUp.number, 'TODO') === false) throw new Error('Follow-up board update unavailable');
+          }
+        }
+        if (step.do === 'close-epic' || !outstanding.length) return { owner: `epic #${epic.number}: ${first.result.issues.join('; ')}; update manifest and evidence for outstanding work`, url: epic.url };
+      }
+      if (step.do === 'close-epic') {
+        const second = read();
+        if (!second.result.complete || JSON.stringify(first) !== JSON.stringify(second)) return { owner: `epic #${epic.number}: evidence or issue state changed before closure`, url: epic.url };
+        io.closeEpic(second.current);
+        return { done: { epic: epic.number } };
+      }
+    } catch (error) { return { owner: `epic #${epic.number}: closure verification failed: ${error.message}`, url: epic.url }; }
+  }
   if (!step.slices) return finish(instruction(io, { issue: epic, pr: null, tree: null }, step, lanes));
   const entries = step.slices.map(number => { const facts = readIssueFacts(io, number, {}); return { number, pr: facts.pr, step: decideIssue(facts, lanes) }; });
   const chosen = pickSlice(holdBaseUpdates(entries));
