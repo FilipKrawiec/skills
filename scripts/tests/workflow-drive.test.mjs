@@ -244,6 +244,7 @@ test('drive: the assessment sets the PR label, posts its reason once, and a draf
   assert.deepEqual(repo.calls, [], 'nothing starts before the assessment');
   assert.match(repo.writes[first.brief], /risk: R0 \| R1 \| R2/);
   assert.match(repo.writes[first.brief], /references\/risk\.md/);
+  assert.match(repo.writes[first.brief], /failure, recovery steps and financial impact/);
   assert.deepEqual(drive(repo.io, 3, lanes, {}), first, 'unchanged state repeats the instruction');
   const build = drive(repo.io, 3, lanes, { risk: 'R2', reason: 'touches the merge gate' });
   assert.deepEqual(repo.calls, [['assess', 3, null, 'R2'], ['start', 3]]);
