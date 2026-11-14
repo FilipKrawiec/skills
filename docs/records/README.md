@@ -14,3 +14,5 @@ Name records as `YYYY-MM-DD-short-topic.md`.
 - [Supported host delivery refinement](2026-11-14-delivery-refinement.md): epic audit and gate timing evidence.
 
 - [Library host portability audit](2026-11-14-library-host-portability.md): package and instruction inventory, native validation findings and unverified capabilities.
+
+- [Integrated host refinement](2026-11-14-integrated-host-refinement.md): assessment of the combined portability and delivery outcome.
