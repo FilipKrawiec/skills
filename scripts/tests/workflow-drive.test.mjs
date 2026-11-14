@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, latestAssessment,
-  driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, pickSlice, plannerBrief, reviewerCommand, staleReviewClaim,
+  driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, reviewerCommand, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { holdBaseUpdates } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -311,6 +311,7 @@ function fakeRepo(initial) {
     commit: (t, message, paths) => { calls.push(['commit']); t.diffPaths = paths; t.dirty = false; t.commits++; t.unpushed = true; },
     push: t => { calls.push(['push']); t.unpushed = false; },
     open: (i, t, risk) => { calls.push(['open', i.number, risk]); (s.prs ||= []).push(pr({ issue: i.number, number: 50 + i.number, labels: [label(`risk:${risk}`)], assessment: null })); },
+    updateBody: (p, t, hb) => { p.body = updatePrBody(p.body, hb, hb.body); },
     reviewingSince: () => null,
     linkIssue: (p, i) => { calls.push(['link-issue', p.number, i.number]); p.body = `Closes #${i.number}\n\n${p.body}`; },
     releaseReview: p => { calls.push(['release-review', p.number]); p.labels = p.labels.filter(l => l.name !== 'state:reviewing'); },
@@ -783,4 +784,11 @@ test('production epic board updates fail when the board is unavailable', () => {
   const io = githubIo({ ...lanes, repo: 'acme/app' }, () => { throw Error('unavailable'); });
   assert.equal(typeof io.requiredBoard, 'function');
   assert.throws(() => io.requiredBoard(9, 'BLOCKED'));
+});
+
+test('drive updates the PR change and supplied evidence after a fix', () => {
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, body: 'Closes #3\n\n## Change\n\nOld change\n\n## Verification\n\nPassed.', reviews: [review('fixes')] })] });
+  drive(repo.io, 3, lanes, { status: 'done', note: 'New change', body: 'Before and after captures' });
+  assert.match(repo.s.prs[0].body, /## Change\n\nNew change/);
+  assert.match(repo.s.prs[0].body, /## Evidence\n\nBefore and after captures/);
 });
