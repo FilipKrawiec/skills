@@ -85,9 +85,9 @@ function assessmentStep(facts) {
   return agent('devops', 'risk', { task: 'risk', reason });
 }
 
-// A hand-back is at most 5 `key: value` lines; a bare first word is the status.
+// A hand-back is at most 6 `key: value` lines; a bare first word is the status.
 export function parseHandBack(text) {
-  const lines = String(text || '').split('\n').map(line => line.trim()).filter(Boolean).slice(0, 5);
+  const lines = String(text || '').split('\n').map(line => line.trim()).filter(Boolean).slice(0, 6);
   const result = {};
   lines.forEach((line, index) => {
     const match = /^(\w+):\s*(.*)$/.exec(line);
@@ -243,6 +243,7 @@ commit: <Conventional Commit subject, only if you left changes uncommitted>
 paths: <paths drive commits, only with commit>
 check: pass | fail
 note: <one line: what changed, or why replan or blocked>
+body: <optional absolute path to a Markdown evidence file>
 \`\`\`
 
 ## Issue
@@ -326,7 +327,19 @@ export function reviewerCommand(model, brief, name, host = 'claude', executable 
 }
 export const waitCommandFor = (pr, until) => ['node', cli, 'wait', String(pr), '--until', until];
 
-export function prBody(issue, risk, hb, subjects) {
+export function updatePrBody(body, hb, evidence) {
+  let result = body;
+  if (hb.note) result = result.replace(/(## Change\n\n)[\s\S]*?(?=\n## |$)/, (_, heading) => `${heading}${hb.note}\n`);
+  if (evidence !== undefined) {
+    const section = `<!-- workflow:evidence-start -->\n## Evidence\n\n${evidence.trim()}\n<!-- workflow:evidence-end -->\n`;
+    if (result.includes('<!-- workflow:evidence-start -->')) result = result.replace(/<!-- workflow:evidence-start -->[\s\S]*?<!-- workflow:evidence-end -->\n?/, () => section);
+    else if (/^## Evidence[^\S\n]*$/m.test(result)) result = result.replace(/^## Evidence[^\S\n]*(?:\n|$)[\s\S]*?(?=^## |(?![\s\S]))/m, () => `${section}\n`);
+    else result += `\n${section}`;
+  }
+  return result;
+}
+
+export function prBody(issue, risk, hb, subjects, evidence) {
   return `Closes #${issue.number}
 
 ## Problem
@@ -342,7 +355,7 @@ ${hb.note || subjects.map(subject => `- ${subject}`).join('\n') || 'See the comm
 The implementer ran the project gate with \`workflow.mjs check\`: ${hb.check || 'unreported'}.
 
 Risk ${risk}, from the risk assessor's estimate of the issue; its assessment of this diff follows as a PR comment.
-`;
+${evidence === undefined ? '' : `\n<!-- workflow:evidence-start -->\n## Evidence\n\n${evidence.trim()}\n<!-- workflow:evidence-end -->\n`}`;
 }
 
 export function slugBranch(issue) {
@@ -450,12 +463,17 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     push: tree => self(['push'], tree.path),
     open: (issue, tree, risk, hb) => {
       const body = join(workflowScratch(tree.path), `drive-${issue.number}-pr.md`);
-      writeFileSync(body, prBody(issue, risk, hb, tree.subjects));
+      writeFileSync(body, prBody(issue, risk, hb, tree.subjects, hb.body ? readFileSync(hb.body, 'utf8') : undefined));
       const title = tree.subjects[0] || issue.title;
       run('gh', ['pr', 'create', '--repo', repo, '--draft', '--base', lanes.base, '--head', tree.branch, '--title', title, '--body-file', body]);
       const pr = gh(['pr', 'view', tree.branch, '--repo', repo, '--json', 'number']);
       run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--add-label', `risk:${risk}`]);
       try { run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--add-reviewer', lanes.reviewer]); } catch { console.error(`drive: could not request ${lanes.reviewer}'s review on #${pr.number}`); }
+    },
+    updateBody: (pr, tree, hb) => {
+      const body = join(workflowScratch(tree.path), `drive-${pr.number}-pr-update.md`);
+      writeFileSync(body, updatePrBody(pr.body || '', hb, hb.body ? readFileSync(hb.body, 'utf8') : undefined));
+      run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--body-file', body]);
     },
     // When `state:reviewing` was last added to the PR, from its timeline; null when it never was.
     reviewingSince: pr => {
@@ -544,8 +562,13 @@ function finish(step) {
   return step;
 }
 export function driveIssue(io, n, lanes, handBack = {}) {
+  let bodyUpdated = false;
   for (let i = 0; i < 12; i++) {
     const facts = readIssueFacts(io, n, handBack);
+    if (!bodyUpdated && handBack.status === 'done' && (handBack.note || handBack.body) && facts.pr?.state === 'OPEN' && facts.tree && !facts.tree.dirty && !facts.tree.unpushed) {
+      io.updateBody(facts.pr, facts.tree, handBack);
+      bodyUpdated = true;
+    }
     const step = decideIssue(facts, lanes);
     // A head moved on GitHub (a base merged by `update-branch`) reaches a clean worktree before an agent works in it.
     if (step.agent && facts.tree && facts.pr?.state === 'OPEN' && !facts.tree.dirty && !facts.tree.unpushed) io.syncTree(facts.tree);
@@ -558,7 +581,7 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     }
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
     else if (step.do === 'push') io.push(tree);
-    else if (step.do === 'open') io.open(issue, tree, maxRisk(riskLabel(issue.labels || []), facts.issueAssessment?.risk || 'R1'), handBack);
+    else if (step.do === 'open') { io.open(issue, tree, maxRisk(riskLabel(issue.labels || []), facts.issueAssessment?.risk || 'R1'), handBack); bodyUpdated = true; }
     else if (step.do === 'release-review') io.releaseReview(pr);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
