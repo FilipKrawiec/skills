@@ -333,6 +333,7 @@ export function updatePrBody(body, hb, evidence) {
   if (evidence !== undefined) {
     const section = `<!-- workflow:evidence-start -->\n## Evidence\n\n${evidence.trim()}\n<!-- workflow:evidence-end -->\n`;
     if (result.includes('<!-- workflow:evidence-start -->')) result = result.replace(/<!-- workflow:evidence-start -->[\s\S]*?<!-- workflow:evidence-end -->\n?/, () => section);
+    else if (/^## Evidence[^\S\n]*$/m.test(result)) result = result.replace(/^## Evidence[^\S\n]*(?:\n|$)[\s\S]*?(?=^## |(?![\s\S]))/m, () => `${section}\n`);
     else result += `\n${section}`;
   }
   return result;
