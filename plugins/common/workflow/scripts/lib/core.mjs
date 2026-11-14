@@ -87,7 +87,7 @@ export function config(requireLanes = true, allowBootstrap = false, allowBootstr
     throw new Error('Workflow roles and GitHub metadata come from CODEOWNERS/Git and the local cache; use CLI defaults for labels and repository scripts under steps');
   }
   // Other top-level keys, such as the removed watcher's block, are ignored, so older configs still load.
-  const lanes = raw ? { ...raw.github, ...raw.identities, steps: validateWorkflowSteps(raw.steps || {}) } : { steps: {} };
+  const lanes = raw ? { ...raw.github, ...raw.identities, steps: validateWorkflowSteps(raw.steps || {}), delivery: raw.delivery } : { steps: {} };
   const remote = git('remote', 'get-url', 'origin');
   lanes.repo = githubRepoFromRemote(remote);
   lanes.base = baseRef.slice('refs/remotes/origin/'.length);

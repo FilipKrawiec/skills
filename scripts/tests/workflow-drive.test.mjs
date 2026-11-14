@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, latestAssessment,
-  driveCommand, githubIo, modelFor, modelForStep, nextTarget, parseHandBack, pickSlice, plannerBrief, reviewerCommand, staleReviewClaim,
+  driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, pickSlice, plannerBrief, reviewerCommand, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { holdBaseUpdates } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -354,7 +354,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   const repo = fakeRepo({ issues: { 3: issue({ body: '```scope\n{"paths":["docs/a.md"]}\n```', assessment: assessed('R0') }) } });
   const first = drive(repo.io, 3, lanes, {});
   assert.deepEqual(repo.calls, [['start', 3]]);
-  assert.deepEqual({ ...first, brief: undefined }, { agent: 'implementer', model: 'sonnet', brief: undefined, issue: 3, pr: null, session: 'subagent', mode: 'build', cwd: '/w/3' });
+  assert.deepEqual({ ...first, brief: undefined }, { agent: 'implementer', host: 'claude', model: 'sonnet', brief: undefined, issue: 3, pr: null, session: 'subagent', mode: 'build', cwd: '/w/3' });
   assert.equal(first.brief, '/w/3/.wf/drive-3-implementer.md');
   assert.match(repo.writes[first.brief], /status: done \| replan \| blocked/);
   const brief = repo.writes[first.brief];
@@ -536,6 +536,14 @@ test('--next takes the lowest-numbered ready item and skips unmet or dropped dep
   const log = console.log; console.log = text => { said = text; };
   try { driveCommand(['--next'], lanes, repo.io); } finally { console.log = log; }
   assert.deepEqual([JSON.parse(said).agent, JSON.parse(said).issue], ['planner', 4], 'drive --next picks the epic the issue waits for, not the blocked issue');
+});
+
+test('delivery assignments select configured hosts and models and reject unsupported hosts', () => {
+  const delivery = { orchestrator: 'codex', roles: { reviewer: { host: 'codex', model: 'gpt-6.1-terra' }, implementer: { host: 'codex', model: 'gpt-6.1-terra' } } };
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'reviewer' }, 'R2'), { host: 'codex', model: 'gpt-6.1-terra', session: 'separate' });
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'implementer' }, 'R1'), { host: 'codex', model: 'gpt-6.1-terra', session: 'subagent' });
+  assert.throws(() => deliveryAssignment({ orchestrator: 'agy', roles: {} }, { agent: 'reviewer' }, 'R1'), /unsupported/i);
+  assert.throws(() => deliveryAssignment({ orchestrator: 'codex', roles: {} }, { agent: 'reviewer' }, 'R1'), /configure/i);
 });
 
 test('the reviewer runs as a separate non-interactive session', () => {

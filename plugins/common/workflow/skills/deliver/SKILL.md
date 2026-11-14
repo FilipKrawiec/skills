@@ -6,7 +6,7 @@ allowed-tools: Skill Read Write Edit Bash Agent
 
 # Deliver
 
-`drive` makes every mechanical change (claim, branch, commit, push, draft PR, risk label, ready, auto-merge, cards, close, worktree removal); agents add judgment only, and `devops` judges risk (`review`'s `references/risk.md`). `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
+`drive` handles mechanical changes; agents add judgment and `devops` judges risk (`review`'s `references/risk.md`). `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
 
 Run one plain command per Bash call: no pipes, `;`, `&&` or `$()`. Never edit labels, claims, board cards or auto-merge, and never watch CI, with `gh` or by polling: `drive` and `wait` do that.
 
@@ -19,14 +19,14 @@ Branch on your role, first match wins:
 
 Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next ready issue or epic. It prints one JSON line. Act on exactly that instruction, first match wins:
 
-- `agent` with `session: "subagent"`: start the named agent (general-purpose for improver) on its `model` with the prompt `Follow your brief at <brief>. Return at most 5 lines.`; with `resume`, resume the implementer. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
-- `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session, which wrote the PR. When it exits, run `<cli> drive <issue>`.
+- `agent` with `session: "subagent"`: verify the owner host matches `host`, then start the named agent (general-purpose for improver) on its `model` with the prompt `Follow your brief at <brief>. Return at most 5 lines.`; with `resume`, resume the implementer. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
+- `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session, which wrote the PR. When it exits, run `<cli> drive <issue>`. If the host, model, dispatch, or hand-back cannot be verified, stop and report the missing capability; never substitute another model or bypass review.
 - `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit. Never sleep or poll inside a turn.
 - `owner`: tell the owner its reason and `url`, then end the turn.
 - `blocked`: report the cause; end the turn.
 - `done`: report it. For an epic, rerun `drive <epic>` until the epic is done.
 
-An epic instruction may list `alsoReady` slices: drive each with its own `drive <slice>` call. Start no agent drive did not name; edit no project file; run no `gh`. After an interruption, run `drive` again: unchanged state repeats its instruction.
+Drive each `alsoReady` slice separately. Start only agents drive names; edit no project file; run no `gh`. After interruption, run `drive` again.
 
 **Exit gate:** `done` for the issue or epic, or an `owner` or `blocked` step reported.
 

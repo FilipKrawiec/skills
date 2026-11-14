@@ -23,6 +23,16 @@ export const modelFor = risk => (risk === 'R2' ? 'opus' : 'sonnet');
 export const freshFixRound = 3;
 // The risk assessor runs on Sonnet whatever the risk.
 export const modelForStep = (step, risk) => (step.agent === 'devops' ? 'sonnet' : step.agent === 'planner' || step.fresh ? 'opus' : modelFor(risk));
+// Missing configuration retains the existing Claude delivery behavior for migration.
+export function deliveryAssignment(delivery, step, risk) {
+  if (delivery == null) return { host: 'claude', model: modelForStep(step, risk), session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
+  if (!delivery || typeof delivery !== 'object' || !['codex', 'claude'].includes(delivery.orchestrator)) throw new Error('Unsupported delivery orchestrator; configure codex or claude after verifying host capabilities');
+  if (delivery.executables != null && (typeof delivery.executables !== 'object' || Array.isArray(delivery.executables) || Object.entries(delivery.executables).some(([host, path]) => !['codex', 'claude'].includes(host) || typeof path !== 'string' || !path.trim()))) throw new Error('Configure delivery.executables as host-to-executable paths');
+  const role = delivery.roles?.[step.agent];
+  if (!role || !['codex', 'claude'].includes(role.host) || typeof role.model !== 'string' || !role.model.trim()) throw new Error(`Configure delivery.roles.${step.agent} with a supported host and model`);
+  if (step.agent !== 'reviewer' && role.host !== delivery.orchestrator) throw new Error(`Unsupported cross-host subagent for ${step.agent}; use the orchestrator host`);
+  return { host: role.host, model: role.model, session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
+}
 const riskLabel = labels => labels.map(label => label.name ?? label).find(name => /^risk:R\d$/.test(name))?.slice(5) || null;
 // An epic's final refinement slice: drive finds it by the marker and creates it with the criteria `plan` gives the planner.
 const refinementMarker = '<!-- workflow:epic-refinement -->';
@@ -207,7 +217,7 @@ export function implementerBrief(f) {
   const fix = f.step.mode === 'fix';
   return `# Implementer brief: #${f.issue.number} ${f.issue.title}
 
-Mode: ${f.step.mode}${f.step.reason ? ` (${f.step.reason})` : ''}. Risk ${f.risk}. Model ${modelForStep(f.step, f.risk)}.
+Mode: ${f.step.mode}${f.step.reason ? ` (${f.step.reason})` : ''}. Risk ${f.risk}. Model ${f.model || modelForStep(f.step, f.risk)}.
 Issue: ${f.issue.url}
 Worktree: ${f.tree.path} (branch ${f.tree.branch}, base origin/${f.base})
 PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}, round ${f.round}` : 'none yet; drive opens it'}
@@ -307,8 +317,10 @@ ${f.issue.body || '(no body)'}
 `;
 }
 // The Reviewer runs as a separate non-interactive session, so the session that wrote the PR never approves it.
-export function reviewerCommand(model, brief, name) {
-  return ['claude', '--print', '--agent', 'filipkrawiec-workflow:reviewer', '--model', model, '--permission-mode', 'auto', '--name', name, `Follow your brief at ${brief}. Return at most 5 lines.`];
+export function reviewerCommand(model, brief, name, host = 'claude', executable = host) {
+  if (host === 'codex') return [executable, 'exec', '-m', model, `Read ${fileURLToPath(new URL('../../skills/review/SKILL.md', import.meta.url))}, then follow your brief at ${brief}. Return at most 5 lines.`];
+  if (host !== 'claude') throw new Error('Unsupported reviewer host');
+  return [executable, '--print', '--agent', 'filipkrawiec-workflow:reviewer', '--model', model, '--permission-mode', 'auto', '--name', name, `Follow your brief at ${brief}. Return at most 5 lines.`];
 }
 export const waitCommandFor = (pr, until) => ['node', cli, 'wait', String(pr), '--until', until];
 
@@ -495,16 +507,17 @@ function instruction(io, facts, step, lanes) {
   const { issue, pr, tree } = facts;
   if (!step.agent) return step;
   const risk = currentRisk(facts, step);
-  const model = modelForStep(step, risk);
+  const assignment = deliveryAssignment(lanes.delivery, step, risk);
+  const { model, host, session } = assignment;
   const brief = join(io.scratch(tree), `drive-${issue.number}-${step.agent}.md`);
   const round = pr ? prState(pr, lanes).round : 0;
-  const context = { issue, pr, tree, step, risk, round, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
+  const context = { issue, pr, tree, step, risk, model, round, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
   io.write(brief, briefs[step.agent](context));
-  const out = { agent: step.agent, model, brief, issue: issue.number, pr: pr?.number ?? null, session: step.agent === 'reviewer' ? 'separate' : 'subagent', mode: step.mode, cwd: tree?.path || null };
+  const out = { agent: step.agent, host, model, brief, issue: issue.number, pr: pr?.number ?? null, session, mode: step.mode, cwd: tree?.path || null };
   if (step.task) out.task = step.task;
   if (step.reason) out.reason = step.reason;
   if (step.resume) out.resume = true;
-  if (step.agent === 'reviewer') out.command = reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`);
+  if (step.agent === 'reviewer') out.command = reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host);
   return out;
 }
 function finish(step) {
