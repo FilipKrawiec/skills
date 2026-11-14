@@ -66,8 +66,8 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
         refs.set(ref.id, ref);
       }
       if (!positive(record.verificationCommentId)) fail('Missing verification comment');
-      const verification = attest({ repo, issue: epic.number, commentId: record.verificationCommentId, criterion: record.criterion, evidence: record.evidence });
-      if (typeof record.author !== 'string' || verification.reviewer.toLowerCase() === record.author.toLowerCase()) fail('Verification is not independent');
+      const verification = attest({ repo, issue: epic.number, commentId: record.verificationCommentId, criterion: record.criterion, evidence: record.evidence, state: record.state });
+      if (verification.state !== record.state || typeof record.author !== 'string' || verification.reviewer.toLowerCase() === record.author.toLowerCase()) fail('Verification is not independent');
       return { ...record, verification };
     });
     const evidence = [...refs.values()].map(ref => ({ id: ref.id, url: ref.url, type: 'http-body', bytes: ref.url === manifestUrl ? manifestBytes : read(ref.url) }));
