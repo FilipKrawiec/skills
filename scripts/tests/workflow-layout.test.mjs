@@ -9,7 +9,7 @@ const commonRoot = join(root, 'plugins/common');
 const packages = readdirSync(commonRoot, { withFileTypes: true }).filter(entry => entry.isDirectory() && !entry.name.startsWith('.')).map(entry => entry.name).sort();
 const json = path => JSON.parse(readFileSync(join(root, path), 'utf8'));
 
-test('common packages are directly installable by every host', () => {
+test('common packages contain the declared manifest formats', () => {
   for (const name of packages) {
     const path = join(commonRoot, name);
     for (const required of ['skills', 'plugin.json', '.claude-plugin/plugin.json', '.codex-plugin/plugin.json']) {
