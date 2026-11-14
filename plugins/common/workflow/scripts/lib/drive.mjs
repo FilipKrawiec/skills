@@ -155,6 +155,8 @@ export function decideIssue(facts, lanes) {
   if (next.action === 'link-issue') return { do: 'link-issue' };
   if (next.action === 'split' ) return agent('planner', 'split', { reason: 'the Reviewer asked to split the change' });
   if (next.action === 'ready') return { do: 'ready' };
+  // `gh pr update-branch` merges the base in as the implementer; the new head then needs CI and a fresh approval.
+  if (next.action === 'update-branch') return { do: 'update-branch' };
   if (next.action === 'merge') return pr.autoMergeRequest ? { wait: { pr: pr.number, until: 'merged' } } : { do: 'auto-merge' };
   if (next.action === 'done') return { do: 'close' };
   return { owner: next.reason || `PR #${pr.number} needs the owner`, url: pr.url };
@@ -188,6 +190,17 @@ export function decideEpic({ epic, slices }) {
 export function pickSlice(entries) {
   const rank = step => (step.do || step.agent ? 0 : step.wait ? 1 : step.owner || step.blocked ? 2 : 3);
   return [...entries].sort((a, b) => rank(a.step) - rank(b.step))[0] || null;
+}
+
+// Each merge sends an epic's other ready PRs behind their base again, so one PR at a time brings the base in, the oldest
+// first, and none while another ready PR of the epic is on its way to merge (CI, review, auto-merge); the rest are held.
+export function holdBaseUpdates(entries) {
+  const behind = entries.filter(entry => entry.step.do === 'update-branch').sort((a, b) => a.pr.number - b.pr.number);
+  if (!behind.length) return entries;
+  const merging = entries.find(entry => entry.pr?.state === 'OPEN' && !entry.pr.isDraft && !behind.includes(entry) && (entry.step.wait || entry.step.do === 'auto-merge' || entry.step.agent === 'reviewer'));
+  const first = merging ? null : behind[0];
+  const reason = `brings the base in after PR #${(merging || first).pr.number} ${merging ? 'merges' : 'is updated'}`;
+  return entries.map(entry => (behind.includes(entry) && entry !== first ? { ...entry, step: { blocked: { issue: entry.number, reason } } } : entry));
 }
 
 export function implementerBrief(f) {
@@ -427,6 +440,9 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     risk: (pr, from, to) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, ...(from ? ['--remove-label', `risk:${from}`] : []), '--add-label', `risk:${to}`]),
     ready: (pr, tree) => self(['pr', 'ready', '--pr', String(pr.number)], tree?.path || process.cwd()),
     unclaim: issue => run('gh', ['issue', 'edit', String(issue.number), '--repo', repo, ...stateLabels(issue).flatMap(name => ['--remove-label', name])]),
+    // A merge, never a rebase: the open PR keeps its review threads. Runs as the session's identity, the implementer.
+    syncTree: tree => { if (gitIn(tree.path, ['fetch', '--quiet', 'origin', tree.branch]) !== null) gitIn(tree.path, ['merge', '--ff-only', '--quiet', 'FETCH_HEAD']); },
+    updateBranch: pr => run('gh', ['pr', 'update-branch', String(pr.number), '--repo', repo]),
     autoMerge: (pr, tree) => self(['pr', 'auto-merge', '--pr', String(pr.number)], tree?.path || process.cwd()),
     close: issue => {
       const current = gh(['issue', 'view', String(issue.number), '--repo', repo, '--json', 'state']);
@@ -499,6 +515,8 @@ export function driveIssue(io, n, lanes, handBack = {}) {
   for (let i = 0; i < 12; i++) {
     const facts = readIssueFacts(io, n, handBack);
     const step = decideIssue(facts, lanes);
+    // A head moved on GitHub (a base merged by `update-branch`) reaches a clean worktree before an agent works in it.
+    if (step.agent && facts.tree && facts.pr?.state === 'OPEN' && !facts.tree.dirty && !facts.tree.unpushed) io.syncTree(facts.tree);
     if (!step.do) return finish(instruction(io, facts, step, lanes));
     const { issue, pr, tree } = facts;
     if (step.do === 'start') { io.start(issue, pr?.headRefName); io.board(n, 'PROGRESS'); }
@@ -517,6 +535,8 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     else if (step.do === 'ready') { io.ready(pr, tree); io.board(n, 'REVIEW'); if (stateLabels(issue).length) io.unclaim(issue); }
     else if (step.do === 'unclaim') io.unclaim(issue);
     else if (step.do === 'auto-merge') io.autoMerge(pr, tree);
+    // GitHub reports the merge state late, so drive waits on the new head's CI instead of reading BEHIND again.
+    else if (step.do === 'update-branch') { io.updateBranch(pr); return finish({ wait: { pr: pr.number, until: 'ci' }, reason: 'merged the base into the head' }); }
     else if (step.do === 'close') { io.close(issue); io.board(n, 'DONE'); }
     else if (step.do === 'remove-worktree') { io.removeTree(tree); return { done: { issue: n } }; }
   }
@@ -552,8 +572,8 @@ export function driveEpic(io, epic, lanes) {
   if (step.do === 'close-epic' && !io.hasLessons(epic.number)) return instruction(io, { issue: epic, pr: null, tree: null }, agent('improver', 'improve'), lanes);
   if (step.do === 'close-epic') { io.closeEpic(epic); return { done: { epic: epic.number } }; }
   if (!step.slices) return finish(instruction(io, { issue: epic, pr: null, tree: null }, step, lanes));
-  const entries = step.slices.map(number => ({ number, step: decideIssue(readIssueFacts(io, number, {}), lanes) }));
-  const chosen = pickSlice(entries);
+  const entries = step.slices.map(number => { const facts = readIssueFacts(io, number, {}); return { number, pr: facts.pr, step: decideIssue(facts, lanes) }; });
+  const chosen = pickSlice(holdBaseUpdates(entries));
   const result = driveIssue(io, chosen.number, lanes);
   const alsoReady = step.slices.filter(number => number !== chosen.number);
   return { ...result, epic: epic.number, ...(alsoReady.length ? { alsoReady } : {}) };

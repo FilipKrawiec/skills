@@ -66,6 +66,17 @@ test('the owner is asked only on a PR the Reviewer approved at its head', () => 
   assert.equal(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready', 'APPROVED'), ownerApproved] }).action, 'merge');
 });
 
+test('a ready PR behind its base brings the base in before any review, owner step or merge', () => {
+  const behind = { mergeStateStatus: 'BEHIND' };
+  assert.deepEqual(next({ ...behind, labels: [{ name: 'review:owner' }], reviews: [review('owner', 'APPROVED')] }), { action: 'update-branch', actor: 'cli', reason: 'behind its base' }, 'never the owner on a stale head');
+  assert.equal(next({ ...behind, labels: [{ name: 'risk:R2' }], reviews: [review('ready', 'APPROVED')] }).action, 'update-branch');
+  assert.equal(next({ ...behind, reviews: [review('ready', 'APPROVED')] }).action, 'update-branch');
+  assert.equal(next({ ...behind, reviews: [review('ready')] }).action, 'update-branch', 'before the approval, too');
+  assert.equal(next({ ...behind, isDraft: true, reviews: [review('ready')] }).action, 'ready', 'a draft is not merging yet');
+  assert.deepEqual(next({ mergeStateStatus: 'DIRTY', reviews: [review('ready', 'APPROVED')] }), { action: 'fix', actor: 'implementer', reason: 'conflicts with its base' });
+  assert.equal(prState(pr(behind), lanes).mergeState, 'BEHIND');
+});
+
 function waitOn(states, ...args) { return waitWith(lanes, states, ...args); }
 function waitWith(cfg, states, ...args) {
   const lines = []; const log = console.log; console.log = line => lines.push(JSON.parse(line));
@@ -126,6 +137,19 @@ test('wait ends on a verdict, on merge, on a closed PR and on timeout', () => {
   const stuck = waitOn([{}], '--until', 'merged', '--timeout', '3');
   assert.equal(stuck.code, 1);
   assert.equal(stuck.pauses, 3);
+});
+
+test('wait --until merged exits 1 on a PR behind or in conflict with its base, printing the state', () => {
+  const error = console.error; const errors = []; console.error = line => errors.push(line);
+  try {
+    for (const state of ['BEHIND', 'DIRTY']) {
+      const result = waitOn([{ mergeStateStatus: 'BLOCKED' }, { mergeStateStatus: state }], '--until', 'merged');
+      assert.equal(result.code, 1);
+      assert.deepEqual(result.lines.map(line => line.merge_state), ['BLOCKED', state]);
+    }
+    assert.match(errors[0], /#5 is BEHIND against its base; run drive/);
+    assert.equal(waitOn([{ mergeStateStatus: 'BEHIND' }], '--until', 'ci').code, 0, 'only a merge wait ends on it');
+  } finally { console.error = error; }
 });
 
 test('wait refuses an unknown condition', () => {
