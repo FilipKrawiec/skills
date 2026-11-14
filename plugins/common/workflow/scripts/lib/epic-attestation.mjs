@@ -28,3 +28,21 @@ export function resolveEpicVerification({ repo, issue, commentId, criterion, evi
   if (!login(item.user?.login) || item.user.login.toLowerCase() !== cfg.reviewer.toLowerCase() || !item.created_at || item.created_at !== item.updated_at || !Number.isFinite(Date.parse(item.created_at)) || payload.version !== 1 || payload.state !== state || !criterionValid(payload.criterion) || payload.criterion.id !== criterion.id || payload.criterion.text !== criterion.text || !sameRefs(payload.evidence, evidence)) throw new Error('Invalid or stale verification');
   return { reviewer: item.user.login, criterion, evidence, state };
 }
+
+// The API-authenticated comment author binds the exact records file bytes.
+export function resolveEpicRecordAuthor({ repo, issue, commentId, recordsUrl, sha256 }, adapters = {}) {
+  parseRepo(repo);
+  if (!Number.isSafeInteger(issue) || issue < 1 || !Number.isSafeInteger(commentId) || commentId < 1 || !/^[a-f0-9]{64}$/.test(sha256)) throw new Error('Invalid record author request');
+  const comments = adapters.comments || ((repository, number) => gh(['api', '--paginate', '--slurp', `repos/${repository}/issues/${number}/comments?per_page=100`]).flat());
+  const editState = adapters.editState || (nodeId => gh(['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on IssueComment{id lastEditedAt}}}', '-f', `id=${nodeId}`]).data.node);
+  const list = comments(repo, issue);
+  if (!Array.isArray(list)) throw new Error('Record author comments unavailable');
+  const matches = list.filter(item => item?.id === commentId);
+  if (matches.length !== 1) throw new Error('Missing or ambiguous record author comment');
+  const item = matches[0], payload = parse(item.body);
+  if (!item.node_id || !login(item.user?.login) || !item.created_at || item.created_at !== item.updated_at || !Number.isFinite(Date.parse(item.created_at))) throw new Error('Invalid record author comment');
+  const edit = editState(item.node_id);
+  if (!edit || edit.id !== item.node_id || edit.lastEditedAt !== null) throw new Error('Edited or inaccessible record author comment');
+  if (payload?.version !== 1 || payload.recordsUrl !== recordsUrl || payload.sha256 !== sha256) throw new Error('Record author comment does not bind current records bytes');
+  return item.user.login;
+}

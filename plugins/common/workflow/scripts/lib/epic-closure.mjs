@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { validateEpicEvidence } from './epic-evidence.mjs';
-import { resolveEpicVerification } from './epic-attestation.mjs';
+import { resolveEpicVerification, resolveEpicRecordAuthor } from './epic-attestation.mjs';
 
 const unique = values => new Set(values).size === values.length;
 const positive = n => Number.isSafeInteger(n) && n > 0;
@@ -18,6 +19,7 @@ export function retrieveEpicBytes(url) {
 export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
   const read = adapters.read || retrieveEpicBytes;
   const attest = adapters.attest || resolveEpicVerification;
+  const author = adapters.author || resolveEpicRecordAuthor;
   const merged = adapters.merged;
   try {
     const links = [...(epic.body || '').matchAll(/<!-- workflow:epic-(manifest|records) (https?:\/\/[^\s]+) -->/g)];
@@ -31,7 +33,12 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
     }
     const manifestBytes = read(manifestUrl);
     const manifest = JSON.parse(manifestBytes.toString('utf8'));
-    const packet = JSON.parse(read(recordsUrl).toString('utf8'));
+    const recordsBytes = read(recordsUrl);
+    const packet = JSON.parse(recordsBytes.toString('utf8'));
+    const authorMarkers = [...(epic.body || '').matchAll(/<!-- workflow:epic-record-author ([1-9][0-9]*) -->/g)];
+    if (authorMarkers.length !== 1) fail('Exactly one record author comment is required');
+    const recordAuthor = author({ repo, issue: epic.number, commentId: Number(authorMarkers[0][1]), recordsUrl, sha256: createHash('sha256').update(recordsBytes).digest('hex') });
+    if (!nonempty(recordAuthor)) fail('Unable to authenticate record author');
     if (manifest.version !== 1 || manifest.epic !== epic.number || !Array.isArray(manifest.criteria) || !manifest.criteria.length || packet.version !== 2 || packet.epic !== epic.number || !Array.isArray(packet.records)) fail('Invalid evidence files');
     const section = (epic.body || '').match(/^#{2,4} Acceptance criteria\s*$([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/mi)?.[1];
     if (!section) fail('Missing acceptance criteria');
@@ -67,7 +74,8 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
       }
       if (!positive(record.verificationCommentId)) fail('Missing verification comment');
       const verification = attest({ repo, issue: epic.number, commentId: record.verificationCommentId, criterion: record.criterion, evidence: record.evidence, state: record.state });
-      if (verification.state !== record.state || typeof record.author !== 'string' || verification.reviewer.toLowerCase() === record.author.toLowerCase()) fail('Verification is not independent');
+      if (typeof record.author !== 'string' || record.author.toLowerCase() !== recordAuthor.toLowerCase()) fail('Record author does not match authenticated GitHub author');
+      if (verification.state !== record.state || verification.reviewer.toLowerCase() === recordAuthor.toLowerCase()) fail('Verification is not independent');
       return { ...record, verification };
     });
     const evidence = [...refs.values()].map(ref => ({ id: ref.id, url: ref.url, type: 'http-body', bytes: ref.url === manifestUrl ? manifestBytes : read(ref.url) }));

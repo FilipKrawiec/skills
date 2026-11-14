@@ -5,9 +5,12 @@ Give each acceptance criterion a stable ID, for example `- [ ] Users can sign in
 ```text
 <!-- workflow:epic-manifest https://raw.githubusercontent.com/OWNER/REPO/BRANCH/path/manifest.json -->
 <!-- workflow:epic-records https://raw.githubusercontent.com/OWNER/REPO/BRANCH/path/records.json -->
+<!-- workflow:epic-record-author 456 -->
 ```
 
 The manifest is `{"version":1,"epic":9,"criteria":[{"id":"sign-in","text":"Users can sign in","requiredSlices":[10,11]}]}`. List every current linked child exactly once across the criteria, including the final refinement slice. Every criterion has at least one child. The configured independent Reviewer must verify that each mapping accounts for all required work; an inventory match alone cannot prove completeness.
+
+After writing the records file, its author posts an unedited epic issue comment containing `{"version":1,"recordsUrl":"https://raw.githubusercontent.com/OWNER/REPO/BRANCH/path/records.json","sha256":"<sha256 of exact records file bytes>"}` and puts its numeric comment ID in the author marker. Each record’s `author` must match that GitHub comment author. Any records change requires a new comment and marker.
 
 The records file is `{"version":2,"epic":9,"records":[...]}`. Each record follows `plugins/common/workflow/scripts/lib/epic-evidence-protocol.md`, adds `verificationCommentId` (the numeric GitHub comment ID), and includes the manifest URL and SHA-256 of its current raw bytes among its evidence references. Record the exact criterion text, outcome state, evidence URLs and byte hashes in the Reviewer's unedited JSON attestation comment as the protocol specifies. The Reviewer's authenticated GitHub identity, not a name in the file, establishes verification. Reverify after any outcome, content, mapping or evidence change; remove superseded attestations before posting a replacement.
 
