@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, latestAssessment,
-  driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, pickSlice, plannerBrief, reviewerCommand, staleReviewClaim,
+  driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, reviewerCommand, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { holdBaseUpdates } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -274,8 +274,8 @@ test('drive: an owner floor wins over a lower assessment', () => {
   assert.deepEqual(repo.s.issues[3].labels.map(l => l.name), ['risk:R2', 'state:started'], 'drive never rewrites the issue label');
 });
 
-test('hand-backs are at most 5 lines of key: value', () => {
-  assert.deepEqual(parseHandBack('status: done\ncommit: feat(a): b\npaths: a.js b.js\ncheck: pass\nnote: ok\nextra: dropped'), { status: 'done', commit: 'feat(a): b', paths: ['a.js', 'b.js'], check: 'pass', note: 'ok' });
+test('hand-backs are at most 6 lines of key: value', () => {
+  assert.deepEqual(parseHandBack('status: done\ncommit: feat(a): b\npaths: a.js b.js\ncheck: pass\nnote: ok\nbody: evidence.md\nextra: dropped'), { status: 'done', commit: 'feat(a): b', paths: ['a.js', 'b.js'], check: 'pass', note: 'ok', body: 'evidence.md' });
   assert.equal(parseHandBack('DONE all good').status, 'done');
 });
 
@@ -311,6 +311,7 @@ function fakeRepo(initial) {
     commit: (t, message, paths) => { calls.push(['commit']); t.diffPaths = paths; t.dirty = false; t.commits++; t.unpushed = true; },
     push: t => { calls.push(['push']); t.unpushed = false; },
     open: (i, t, risk) => { calls.push(['open', i.number, risk]); (s.prs ||= []).push(pr({ issue: i.number, number: 50 + i.number, labels: [label(`risk:${risk}`)], assessment: null })); },
+    updateBody: (p, t, hb) => { p.body = updatePrBody(p.body, hb, hb.body); },
     reviewingSince: () => null,
     linkIssue: (p, i) => { calls.push(['link-issue', p.number, i.number]); p.body = `Closes #${i.number}\n\n${p.body}`; },
     releaseReview: p => { calls.push(['release-review', p.number]); p.labels = p.labels.filter(l => l.name !== 'state:reviewing'); },
@@ -783,4 +784,29 @@ test('production epic board updates fail when the board is unavailable', () => {
   const io = githubIo({ ...lanes, repo: 'acme/app' }, () => { throw Error('unavailable'); });
   assert.equal(typeof io.requiredBoard, 'function');
   assert.throws(() => io.requiredBoard(9, 'BLOCKED'));
+});
+
+test('drive updates the PR change and supplied evidence after a fix', () => {
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, body: 'Closes #3\n\n## Change\n\nOld change\n\n## Verification\n\nPassed.', reviews: [review('fixes')] })] });
+  const handBack = parseHandBack('status: done\ncommit: fix: change\npaths: a.js\ncheck: pass\nnote: New change\nbody: Before and after captures');
+  drive(repo.io, 3, lanes, handBack);
+  assert.match(repo.s.prs[0].body, /## Change\n\nNew change/);
+  assert.match(repo.s.prs[0].body, /## Evidence\n\nBefore and after captures/);
+});
+
+
+test('replacing evidence removes nested headings and preserves later sections', () => {
+  const original = updatePrBody('## Change\n\nOld\n\n## Verification\n\nPassed.\n', {}, '## Before\n\nOld capture\n\n## After\n\nOld result');
+  const updated = updatePrBody(`${original}\n## Notes\n\nKeep this.\n`, {}, '## After\n\nNew capture');
+  assert.doesNotMatch(updated, /Old capture|Old result/);
+  assert.match(updated, /## After\n\nNew capture/);
+  assert.match(updated, /## Notes\n\nKeep this/);
+});
+
+test('replacing unmarked evidence preserves later sections', () => {
+  const original = '## Change\n\nDone.\n\n## Evidence\n\nCapture\n\n## Verification\n\nKeep this.\n';
+  const updated = updatePrBody(original, {}, 'New capture');
+  assert.doesNotMatch(updated, /\nCapture\n/);
+  assert.match(updated, /## Verification\n\nKeep this/);
+  assert.match(updated, /workflow:evidence-start[\s\S]*New capture[\s\S]*workflow:evidence-end/);
 });
