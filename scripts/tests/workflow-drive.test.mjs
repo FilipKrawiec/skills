@@ -825,3 +825,34 @@ test('a fully evidenced parent closes with a delivered nested epic', () => {
   });
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
 });
+
+test('native incomplete review creates a follow-up once across a partial board failure', () => {
+  const bytes = Buffer.from('proof');
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '### Acceptance criteria\n- [ ] Works <!-- workflow:criterion a -->\n' });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  const packet = { version: 1, epic: 9, children: [99], outcomes: [{ criterion: { id: 'a', text: 'Works' }, state: 'unmet', nextAction: 'Fix gap', evidence: [{ url: 'https://example.org/proof', sha256: createHash('sha256').update(bytes).digest('hex') }] }] };
+  repo.io.verifyEpic = (current, children, base, merged) => verifyEpicClosure({ epic: current, slices: children, base, repo: 'acme/app' }, { merged, read: () => bytes, native: () => packet });
+  repo.io.uncheckEpicCriteria = () => {};
+  let creates = 0; let failBoard = true;
+  repo.io.createEpicFollowUp = () => { creates++; const child = issue({ number: 100, body: '<!-- workflow:epic-follow-up 9 a -->\nFix gap' }); repo.s.issues[100] = child; repo.s.subs[9].push(100); return child; };
+  repo.io.requiredBoard = (n, state) => { if (n === 100 && failBoard) throw Error('board failed'); (repo.s.board ||= {})[n] = state; };
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /board failed/);
+  failBoard = false;
+  packet.children.push(100);
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 100);
+  assert.equal(creates, 1);
+  assert.equal(repo.s.board[100], 'TODO');
+  assert.equal(repo.s.issues[9].state, 'OPEN');
+});
+
+test('native review refuses unaccounted linked work without creating follow-ups', () => {
+  const bytes = Buffer.from('proof');
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '### Acceptance criteria\n- [x] Works <!-- workflow:criterion a -->\n' });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }), 99: refinement }, subs: { 9: [10, 99] }, merged: [10, 99], lessons: [9] });
+  repo.io.verifyEpic = (current, children, base, merged) => verifyEpicClosure({ epic: current, slices: children, base, repo: 'acme/app' }, { merged, read: () => bytes, native: () => ({ version: 1, epic: 9, children: [99], outcomes: [{ criterion: { id: 'a', text: 'Works' }, state: 'met', evidence: [{ url: 'https://example.org/proof', sha256: createHash('sha256').update(bytes).digest('hex') }] }] }) });
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /inventory is stale/);
+  assert.deepEqual(repo.s.subs[9], [10, 99]);
+  assert.equal(repo.s.issues[9].state, 'OPEN');
+});
