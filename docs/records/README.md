@@ -9,3 +9,5 @@ Name records as `YYYY-MM-DD-short-topic.md`.
 - [Reviewer-gated workflow audit](2026-10-19-reviewer-gated-workflow.md): original plan, confirmed instruction conflicts, policy correction, native limits and concrete delivery scenarios.
 
 - [AFK watcher removal](2026-11-11-afk-watcher-removal.md): the one-time commands that remove the launchd watchers, their launchers and `afk-watch` worktrees from the owner's machine.
+
+- [Delivery host capability evidence](2026-11-14-delivery-host-capabilities.md): observed and documented host capabilities, unverified cases, and delivery stops.
