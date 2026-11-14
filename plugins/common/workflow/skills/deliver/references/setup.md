@@ -18,6 +18,8 @@ Use version 1; read it from base.
 
 `steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS defines path owners and must name exactly one default Reviewer matching `identities.reviewer`; `verify` is the default check. Until the first config merges, `push --owner-bootstrap` reads a missing Owner from the branch's CODEOWNERS; afterwards, from base. The CLI caches the Project for 24 hours in common `.git`; `cache show` and `cache refresh` manage it.
 
+Configure `delivery` as documented in the project installation guidance. Verify the host can dispatch, select the model and return an intact hand-back. The reviewer credential and exact-head approval remain mandatory.
+
 ## One-time setup
 
 - Run `node <this-skill-directory>/../../scripts/workflow.mjs labels ensure` to create missing labels.
