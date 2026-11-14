@@ -4,8 +4,8 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
-  checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, estimateRisk, matchesPattern,
-  driveCommand, githubIo, modelFor, modelForStep, nextTarget, ownerPatterns, parseHandBack, pickSlice, plannerBrief, reviewerCommand, riskFromPaths, staleReviewClaim,
+  assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, latestAssessment,
+  driveCommand, githubIo, modelFor, modelForStep, nextTarget, parseHandBack, pickSlice, plannerBrief, reviewerCommand, staleReviewClaim,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { holdBaseUpdates } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -17,13 +17,14 @@ const label = name => ({ name });
 const review = (verdict, state = 'COMMENTED') => ({ author: { login: 'reviewer' }, state, body: `<!-- agent-review sha=${head} round=1 verdict=${verdict} -->`, commit: { oid: head } });
 const green = [{ name: 'verify', conclusion: 'SUCCESS' }];
 const issue = (extra = {}) => ({ number: 3, url: 'https://github.com/acme/app/issues/3', state: 'OPEN', title: 'feat(app): add a thing', body: '', labels: [], ...extra });
-const pr = (extra = {}) => ({ number: 5, url: 'https://github.com/acme/app/pull/5', state: 'OPEN', isDraft: true, headRefOid: head, headRefName: '3-add-a-thing', labels: [label('risk:R1')], mergeable: 'MERGEABLE', statusCheckRollup: green, reviews: [], body: 'Closes #3', closingIssuesReferences: [{ number: 3, repository: { owner: { login: 'acme' }, name: 'app' } }], files: [], ...extra });
+const assessed = (risk = 'R1', paths = []) => ({ risk, assessed: risk, head, paths, reason: 'a local change' });
+const pr = (extra = {}) => ({ assessment: assessed(), number: 5, url: 'https://github.com/acme/app/pull/5', state: 'OPEN', isDraft: true, headRefOid: head, headRefName: '3-add-a-thing', labels: [label('risk:R1')], mergeable: 'MERGEABLE', statusCheckRollup: green, reviews: [], body: 'Closes #3', closingIssuesReferences: [{ number: 3, repository: { owner: { login: 'acme' }, name: 'app' } }], files: [], ...extra });
 const tree = (extra = {}) => ({ path: '/repo/.worktrees/3-add-a-thing', branch: '3-add-a-thing', dirty: false, commits: 0, unpushed: false, diffPaths: [], subjects: [], ...extra });
-const started = issue({ labels: [label('state:started'), label('risk:R1')] });
-const decide = facts => decideIssue({ blockers: [], patterns: [], diffPaths: [], handBack: {}, ...facts }, lanes);
+const started = issue({ labels: [label('state:started'), label('risk:R1')], assessment: assessed() });
+const decide = facts => decideIssue({ blockers: [], diffPaths: [], handBack: {}, issueAssessment: facts.issue?.assessment, prAssessment: facts.pr?.assessment, ...facts }, lanes);
 
-test('an unstarted issue starts, and a blocked one reports its blockers', () => {
-  assert.deepEqual(decide({ issue: issue() }), { do: 'start' });
+test('an unstarted issue starts once assessed, and a blocked one reports its blockers', () => {
+  assert.deepEqual(decide({ issue: issue({ assessment: assessed() }) }), { do: 'start' });
   assert.deepEqual(decide({ issue: issue(), blockers: [2] }), { blocked: { issue: 3, by: [2] } });
   assert.deepEqual(decide({ issue: started }), { do: 'start' }, 'a claimed issue without its worktree makes it again');
 });
@@ -141,7 +142,7 @@ test('the owner is asked only on an approved PR; the round cap and line count ne
   assert.equal(decide({ ...base, pr: pr({ labels: [label('risk:R2')], reviews: [review('ready')] }) }).do, 'ready', 'an R2 draft goes to its approval first');
   assert.equal(decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes')] }) }).owner, undefined);
   const huge = Array.from({ length: 5000 }, (_, i) => `src/file${i}.js`);
-  assert.equal(decide({ ...base, diffPaths: huge, pr: pr({ isDraft: false, reviews: approved }) }).do, 'auto-merge');
+  assert.equal(decide({ ...base, diffPaths: huge, pr: pr({ isDraft: false, reviews: approved, assessment: assessed('R1', huge) }) }).do, 'auto-merge');
 });
 
 test('from the third blocking verdict a fresh implementer on the strongest model fixes the whole open set', () => {
@@ -194,25 +195,82 @@ test('a PR found through its issue but linking none is linked by drive, never se
   assert.deepEqual([step.agent, step.mode], ['reviewer', 'review']);
 });
 
-test('risk: estimated from the issue, recomputed from the diff, and only ever rises', () => {
-  const patterns = ownerPatterns('* @reviewer\n/.github/CODEOWNERS @owner\n/.agents/config.json @owner\n', 'owner');
-  assert.deepEqual(patterns, ['/.github/CODEOWNERS', '/.agents/config.json']);
-  assert.ok(matchesPattern('.agents/config.json', '/.agents/config.json'));
-  assert.ok(matchesPattern('a/b/x.js', 'b/'));
-  assert.equal(riskFromPaths(['.agents/config.json'], patterns), 'R2');
-  assert.equal(riskFromPaths(['plugins/x/scripts/lib/a.mjs']), 'R2');
-  assert.equal(riskFromPaths(['.github/workflows/ci.yml']), 'R2');
-  assert.equal(riskFromPaths(['plugins/x/skills/review/SKILL.md', 'docs/a.md']), 'R0');
-  assert.equal(riskFromPaths(['src/app.js']), 'R1');
-  assert.equal(riskFromPaths(null), 'R1');
-  const scoped = paths => issue({ body: `\`\`\`scope\n${JSON.stringify({ paths })}\n\`\`\`` });
-  assert.equal(estimateRisk(scoped(['docs/a.md']), patterns), 'R0');
-  assert.equal(estimateRisk(scoped(['scripts/a.mjs']), patterns), 'R2');
-  assert.equal(estimateRisk(issue({ labels: [label('risk:R2')], body: '' }), patterns), 'R2');
+test('risk: the devops assessor is named before the build and when the draft opens, never on unchanged state', () => {
+  const fresh = issue({ body: '```scope\n{"paths":["scripts/a.mjs"]}\n```' });
+  assert.deepEqual(decide({ issue: fresh }), { agent: 'devops', mode: 'risk', task: 'risk', reason: 'assess the issue before the build' });
+  assert.deepEqual(decide({ issue: fresh, handBack: { risk: 'R0', reason: 'text only' } }), { do: 'assess', risk: 'R0', reason: 'text only' });
+  assert.equal(decide({ issue: fresh, handBack: { risk: 'R7' } }).agent, 'devops', 'an unknown risk asks again');
+  assert.deepEqual(decide({ issue: { ...fresh, assessment: assessed('R0') } }), { do: 'start' }, 'paths never decide: scripts/ alone is no R2');
   const base = { issue: started, tree: tree({ commits: 1 }) };
-  assert.deepEqual(decide({ ...base, diffPaths: ['scripts/a.mjs'], pr: pr() }), { do: 'risk', risk: 'R2' });
-  assert.equal(decide({ ...base, diffPaths: ['docs/a.md'], pr: pr({ labels: [label('risk:R2')] }) }).do, undefined, 'never lowers R2');
+  assert.deepEqual(decide({ ...base, diffPaths: ['src/a.js'], pr: pr({ assessment: null }) }), { agent: 'devops', mode: 'risk', task: 'risk', reason: 'assess the diff of the draft' });
+  assert.deepEqual(decide({ ...base, diffPaths: ['src/a.js'], pr: pr({ assessment: null }), handBack: { risk: 'R2', reason: 'weakens a gate' } }), { do: 'assess', risk: 'R2', reason: 'weakens a gate' });
+  assert.equal(decide({ ...base, diffPaths: ['src/a.js'], pr: pr({ assessment: assessed('R1', ['src/a.js']) }) }).agent, 'reviewer', 'an assessed diff goes to review');
+  assert.deepEqual(decide({ ...base, diffPaths: ['src/a.js'], pr: pr({ assessment: assessed('R1', ['src/a.js']), labels: [label('state:reviewing')] }) }), { wait: { pr: 5, until: 'reviewed' } });
   assert.deepEqual([modelFor('R0'), modelFor('R1'), modelFor('R2')], ['sonnet', 'sonnet', 'opus']);
+  assert.equal(modelForStep({ agent: 'devops', fresh: true }, 'R2'), 'sonnet', 'the assessor runs on Sonnet');
+});
+
+test('risk: a fix-round head is re-assessed only when it touches files the last assessment did not see', () => {
+  const base = { issue: started, tree: tree({ commits: 2 }) };
+  const last = assessed('R1', ['src/a.js', 'test/a.test.js']);
+  assert.equal(decide({ ...base, diffPaths: ['src/a.js'], pr: pr({ assessment: last, reviews: [review('fixes')] }) }).mode, 'fix', 'a subset of the seen files');
+  const again = decide({ ...base, diffPaths: ['src/a.js', 'src/b.js'], pr: pr({ assessment: last, reviews: [review('fixes')] }) });
+  assert.deepEqual([again.agent, again.task], ['devops', 'risk']);
+  assert.match(again.reason, /1 file the last assessment did not see: src\/b\.js/);
+});
+
+test('risk: an owner-set issue label is a floor the PR label never goes below', () => {
+  const base = { issue: issue({ labels: [label('state:started'), label('risk:R2')], assessment: assessed('R2') }), tree: tree({ commits: 1 }) };
+  assert.deepEqual(decide({ ...base, pr: pr({ labels: [label('risk:R1')] }) }), { do: 'risk', risk: 'R2' }, 'raised to the floor');
+  assert.equal(decide({ ...base, pr: pr({ labels: [label('risk:R2')], assessment: assessed('R2') }) }).agent, 'reviewer');
+  assert.equal(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ labels: [label('risk:R2')] }) }).agent, 'reviewer', 'a raised PR label is never lowered by drive');
+});
+
+test('risk: an assessment comment carries its risk, head and the files it saw, and only drive\'s count', () => {
+  const record = { risk: 'R2', assessed: 'R1', floor: 'R2', head, paths: ['src/a.js'], reason: 'changes one parser' };
+  const body = assessmentComment(record);
+  assert.match(body, /Risk R2/);
+  assert.match(body, /changes one parser/);
+  assert.match(body, /floor/);
+  const comments = [{ user: { login: 'builder' }, body: assessmentComment({ ...record, risk: 'R1', floor: null }) }, { user: { login: 'builder' }, body }, { user: { login: 'mallory' }, body: assessmentComment({ ...record, risk: 'R0' }) }];
+  assert.deepEqual(latestAssessment(comments, 'builder'), record);
+  assert.equal(latestAssessment([{ user: { login: 'builder' }, body: 'plain' }], 'builder'), null);
+});
+
+test('drive: the assessment sets the PR label, posts its reason once, and a draft can come out lower than the issue estimate', () => {
+  const repo = fakeRepo({ issues: { 3: issue() } });
+  const first = drive(repo.io, 3, lanes, {});
+  assert.deepEqual([first.agent, first.task, first.model, first.session, first.cwd], ['devops', 'risk', 'sonnet', 'subagent', null]);
+  assert.deepEqual(repo.calls, [], 'nothing starts before the assessment');
+  assert.match(repo.writes[first.brief], /risk: R0 \| R1 \| R2/);
+  assert.match(repo.writes[first.brief], /references\/risk\.md/);
+  assert.deepEqual(drive(repo.io, 3, lanes, {}), first, 'unchanged state repeats the instruction');
+  const build = drive(repo.io, 3, lanes, { risk: 'R2', reason: 'touches the merge gate' });
+  assert.deepEqual(repo.calls, [['assess', 3, null, 'R2'], ['start', 3]]);
+  assert.deepEqual([build.agent, build.model], ['implementer', 'opus'], 'the issue assessment picks the implementer model');
+  assert.deepEqual(drive(repo.io, 3, lanes, { risk: 'R2', reason: 'touches the merge gate' }).agent, 'implementer', 'a repeated hand-back assesses nothing');
+  assert.equal(repo.calls.length, 2);
+  repo.s.trees[3].dirty = true;
+  const diff = drive(repo.io, 3, lanes, { status: 'done', commit: 'docs(a): b', paths: ['docs/a.md'] });
+  assert.deepEqual(repo.calls.slice(2), [['commit'], ['push'], ['open', 3, 'R2']]);
+  assert.deepEqual([diff.agent, diff.task, diff.pr], ['devops', 'risk', 53]);
+  assert.match(repo.writes[diff.brief], /gh pr diff 53/);
+  const review = drive(repo.io, 3, lanes, { risk: 'R0', reason: 'text only' });
+  assert.deepEqual(repo.calls.slice(5), [['assess', 3, 53, 'R0']]);
+  assert.deepEqual(repo.s.prs[0].labels.map(l => l.name), ['risk:R0']);
+  assert.equal(repo.s.comments.filter(c => c.on === 53).length, 1, 'one PR comment');
+  assert.deepEqual([review.agent, review.model], ['reviewer', 'sonnet']);
+  assert.deepEqual(drive(repo.io, 3, lanes, { risk: 'R0', reason: 'text only' }), review, 'no second comment on a repeated hand-back');
+  assert.equal(repo.s.comments.length, 2);
+});
+
+test('drive: an owner floor wins over a lower assessment', () => {
+  const repo = fakeRepo({ issues: { 3: issue({ labels: [label('risk:R2')] }) }, trees: {} });
+  drive(repo.io, 3, lanes, {});
+  const build = drive(repo.io, 3, lanes, { risk: 'R0', reason: 'text only' });
+  assert.equal(build.model, 'opus');
+  assert.deepEqual(repo.calls[0], ['assess', 3, null, 'R2']);
+  assert.deepEqual(repo.s.issues[3].labels.map(l => l.name), ['risk:R2', 'state:started'], 'drive never rewrites the issue label');
 });
 
 test('hand-backs are at most 5 lines of key: value', () => {
@@ -243,12 +301,14 @@ function fakeRepo(initial) {
     mergedClosingPr: n => (s.merged || []).includes(n),
     hasLessons: n => (s.lessons || []).includes(n),
     createRefinement: epic => { const n = 99; calls.push(['create-refinement', n]); const item = issue({ number: n, title: 'refinement', body: '<!-- workflow:epic-refinement -->' }); s.issues[n] = item; s.subs[epic.number].push(n); return item; },
-    pr: n => (s.prs || []).find(p => p.issue === n && p.state === 'OPEN') || null, tree: n => s.trees?.[n] || null, patterns: () => [],
+    pr: n => (s.prs || []).find(p => p.issue === n && p.state === 'OPEN') || null, tree: n => s.trees?.[n] || null,
+    assessment: (i, p) => (p ? p.assessment : i.assessment) || null,
+    assess: (i, p, record) => { calls.push(['assess', i.number, p?.number ?? null, record.risk]); (s.comments ||= []).push({ on: p?.number ?? i.number, record }); if (p) { p.assessment = record; p.labels = [...p.labels.filter(l => !l.name.startsWith('risk:')), label(`risk:${record.risk}`)]; } else i.assessment = record; },
     openIssues: () => Object.values(s.issues).filter(i => i.state === 'OPEN'),
-    start: (i, risk) => { calls.push(['start', i.number, risk]); i.labels = [label('state:started'), label(`risk:${risk}`)]; (s.trees ||= {})[i.number] = tree({ path: `/w/${i.number}`, branch: `${i.number}-x` }); },
+    start: i => { calls.push(['start', i.number]); i.labels = [...i.labels, label('state:started')]; (s.trees ||= {})[i.number] = tree({ path: `/w/${i.number}`, branch: `${i.number}-x` }); },
     commit: (t, message, paths) => { calls.push(['commit']); t.diffPaths = paths; t.dirty = false; t.commits++; t.unpushed = true; },
     push: t => { calls.push(['push']); t.unpushed = false; },
-    open: (i, t, risk) => { calls.push(['open', i.number, risk]); (s.prs ||= []).push(pr({ issue: i.number, number: 50 + i.number, labels: [label(`risk:${risk}`)] })); },
+    open: (i, t, risk) => { calls.push(['open', i.number, risk]); (s.prs ||= []).push(pr({ issue: i.number, number: 50 + i.number, labels: [label(`risk:${risk}`)], assessment: null })); },
     reviewingSince: () => null,
     linkIssue: (p, i) => { calls.push(['link-issue', p.number, i.number]); p.body = `Closes #${i.number}\n\n${p.body}`; },
     releaseReview: p => { calls.push(['release-review', p.number]); p.labels = p.labels.filter(l => l.name !== 'state:reviewing'); },
@@ -287,13 +347,13 @@ test('drive pushes a real commit once and opens its PR in the same call', t => {
   const result = drive(repo.io, 3, lanes, { status: 'done' });
   assert.equal(run(f.env.REAL_GIT, ['--git-dir', remote, 'rev-parse', 'refs/heads/feature/test']).stdout.trim(), f.linkedGit('rev-parse', 'HEAD').stdout.trim());
   assert.equal(repo.s.prs[0].issue, 3);
-  assert.equal(result.agent, 'reviewer');
+  assert.equal(result.agent, 'devops', 'the new draft is assessed before review');
 });
 
 test('drive performs the mechanical steps and stops at one instruction; re-running repeats it', () => {
-  const repo = fakeRepo({ issues: { 3: issue({ body: '```scope\n{"paths":["docs/a.md"]}\n```' }) } });
+  const repo = fakeRepo({ issues: { 3: issue({ body: '```scope\n{"paths":["docs/a.md"]}\n```', assessment: assessed('R0') }) } });
   const first = drive(repo.io, 3, lanes, {});
-  assert.deepEqual(repo.calls, [['start', 3, 'R0']]);
+  assert.deepEqual(repo.calls, [['start', 3]]);
   assert.deepEqual({ ...first, brief: undefined }, { agent: 'implementer', model: 'sonnet', brief: undefined, issue: 3, pr: null, session: 'subagent', mode: 'build', cwd: '/w/3' });
   assert.equal(first.brief, '/w/3/.wf/drive-3-implementer.md');
   assert.match(repo.writes[first.brief], /status: done \| replan \| blocked/);
@@ -302,20 +362,21 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   assert.equal(repo.writes[first.brief], brief);
   assert.equal(repo.calls.length, 1);
   repo.s.trees[3].dirty = true;
-  const reviewer = drive(repo.io, 3, lanes, { status: 'done', commit: 'docs(a): b', paths: ['docs/a.md'] });
+  assert.equal(drive(repo.io, 3, lanes, { status: 'done', commit: 'docs(a): b', paths: ['docs/a.md'] }).agent, 'devops');
   assert.deepEqual(repo.calls.slice(1), [['commit'], ['push'], ['open', 3, 'R0']]);
   assert.equal(repo.s.board[3], 'PROGRESS', 'a draft PR keeps its issue In progress');
+  const reviewer = drive(repo.io, 3, lanes, { risk: 'R0', reason: 'text only' });
   assert.equal(reviewer.agent, 'reviewer');
   assert.equal(reviewer.session, 'separate');
   assert.equal(reviewer.pr, 53);
   assert.deepEqual(reviewer.command.slice(0, 7), ['claude', '--print', '--agent', 'filipkrawiec-workflow:reviewer', '--model', 'sonnet', '--permission-mode']);
-  assert.deepEqual(drive(repo.io, 3, lanes, { status: 'done', commit: 'docs(a): b', paths: ['docs/a.md'] }), reviewer, 'a repeated hand-back changes nothing');
+  assert.deepEqual(drive(repo.io, 3, lanes, { risk: 'R0', reason: 'text only' }), reviewer, 'a repeated hand-back changes nothing');
   repo.s.prs[0].reviews = [review('ready')];
   const approve = drive(repo.io, 3, lanes, {});
   assert.deepEqual(repo.calls.slice(-2), [['ready'], ['unclaim', 3]]);
   assert.equal(repo.s.board[3], 'REVIEW', 'Review starts once the PR is ready');
   assert.equal(approve.mode, 'approve');
-  assert.deepEqual(repo.s.issues[3].labels.map(l => l.name), ['risk:R0'], 'a ready PR drops the claim; the open PR excludes reassignment');
+  assert.deepEqual(repo.s.issues[3].labels.map(l => l.name), [], 'a ready PR drops the claim; the open PR excludes reassignment');
   repo.s.prs[0].reviews = [review('ready', 'APPROVED')];
   const wait = drive(repo.io, 3, lanes, {});
   assert.deepEqual(repo.calls.at(-1), ['auto-merge']);
@@ -328,10 +389,11 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
 });
 
 test('an R2 issue runs Opus for both roles and stops for the owner after approval', () => {
-  const repo = fakeRepo({ issues: { 3: issue({ labels: [label('risk:R2')] }) } });
+  const repo = fakeRepo({ issues: { 3: issue({ labels: [label('risk:R2')], assessment: assessed('R2') }) } });
   assert.equal(drive(repo.io, 3, lanes, {}).model, 'opus');
   repo.s.trees[3].dirty = true;
-  const reviewer = drive(repo.io, 3, lanes, { status: 'done', commit: 'feat(a): b', paths: ['a'] });
+  drive(repo.io, 3, lanes, { status: 'done', commit: 'feat(a): b', paths: ['a'] });
+  const reviewer = drive(repo.io, 3, lanes, { risk: 'R1', reason: 'one feature' });
   assert.equal(reviewer.model, 'opus');
   assert.ok(reviewer.command.includes('opus'));
   Object.assign(repo.s.prs[0], { isDraft: false, reviews: [review('owner', 'APPROVED')], labels: [label('risk:R2'), label('review:owner')] });
@@ -361,7 +423,7 @@ test('drive <epic> plans, drives the first ready slice, lists the others and clo
   assert.deepEqual([planner.agent, planner.model, planner.mode, planner.issue], ['planner', 'opus', 'slice', 9]);
   const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }), 11: issue({ number: 11 }), 12: issue({ number: 12 }) }, subs: { 9: [10, 11, 12] }, blockers: { 11: [10] } });
   const result = drive(repo.io, 9, lanes, {});
-  assert.deepEqual([result.agent, result.issue, result.epic, result.alsoReady], ['implementer', 10, 9, [12]]);
+  assert.deepEqual([result.agent, result.issue, result.epic, result.alsoReady], ['devops', 10, 9, [12]]);
   for (const n of [10, 11, 12, 99]) repo.s.issues[n].state = 'CLOSED';
   repo.s.merged = [10, 11, 12, 99];
   repo.s.blockers = {};
