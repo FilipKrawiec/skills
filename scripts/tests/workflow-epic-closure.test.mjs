@@ -40,7 +40,25 @@ test('closure fails on changed content, stale attestation, retrieval failure or 
 
 test('unmet criteria retain concrete follow-up instructions', () => {
   const f = fixture(); f.record.state = 'unmet'; f.record.nextAction = 'Fix the gap';
+  const url = 'https://example.org/action';
+  const bytes = Buffer.from(JSON.stringify({ version: 1, criterion: f.record.criterion, nextAction: f.record.nextAction }));
+  f.record.evidence.push({ id: 'action', url, sha256: sha(bytes) });
+  const read = f.adapters.read; f.adapters.read = target => target === url ? bytes : read(target);
   const result = f.check();
   assert.equal(result.complete, false);
   assert.deepEqual(result.outstanding, [{ id: 'a', text: 'Works', nextAction: 'Fix the gap' }]);
+});
+
+test('unverified actions never authorize follow-up mutations', () => {
+  for (const mutate of [
+    f => { f.adapters.attest = () => { throw Error('edited'); }; },
+    f => { f.record.evidence[0].sha256 = '0'.repeat(64); },
+    f => { f.adapters.read = () => { throw Error('unavailable'); }; },
+    f => {},
+  ]) {
+    const f = fixture(); f.record.state = 'unmet'; f.record.nextAction = 'Unsupported action'; mutate(f);
+    const result = f.check();
+    assert.equal(result.complete, false);
+    assert.deepEqual(result.outstanding || [], []);
+  }
 });

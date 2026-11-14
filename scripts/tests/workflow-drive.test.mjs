@@ -326,6 +326,7 @@ function fakeRepo(initial) {
     scratch: t => `${t?.path || '/repo'}/.wf`,
     write: (path, text) => { writes[path] = text; },
     board: (n, value) => { (s.board ||= {})[n] = value; },
+    requiredBoard: (n, value) => { (s.board ||= {})[n] = value; },
   };
   return { s, io, calls, writes };
 }
@@ -742,7 +743,7 @@ test('unmet epic criteria create and reuse one follow-up while failures hold clo
   drive(repo.io, 9, lanes, {});
   assert.deepEqual(repo.s.subs[9], [99, 100]);
   assert.equal(repo.s.issues[9].state, 'OPEN');
-  for (const method of ['uncheckEpicCriteria', 'createEpicFollowUp', 'board']) {
+  for (const method of ['uncheckEpicCriteria', 'createEpicFollowUp', 'requiredBoard']) {
     const f = make(); f.io[method] = () => { throw Error('write failed'); };
     assert.match(drive(f.io, 9, lanes, {}).owner, /write failed/);
     assert.equal(f.s.issues[9].state, 'OPEN');
@@ -769,10 +770,16 @@ test('a follow-up survives a board failure and is reused on retry', () => {
   repo.io.uncheckEpicCriteria = () => {};
   let creates = 0; let failBoard = true;
   repo.io.createEpicFollowUp = () => { creates++; const child = issue({ number: 100, body: '<!-- workflow:epic-follow-up 9 a -->\nFix gap' }); repo.s.issues[100] = child; repo.s.subs[9].push(100); return child; };
-  repo.io.board = n => { if (n === 100 && failBoard) throw Error('board failed'); };
+  repo.io.requiredBoard = n => { if (n === 100 && failBoard) throw Error('board failed'); };
   assert.match(drive(repo.io, 9, lanes, {}).owner, /board failed/);
   failBoard = false;
   drive(repo.io, 9, lanes, {});
   assert.equal(creates, 1);
   assert.equal(repo.s.issues[9].state, 'OPEN');
+});
+
+test('production epic board updates fail when the board is unavailable', () => {
+  const io = githubIo({ ...lanes, repo: 'acme/app' }, () => { throw Error('unavailable'); });
+  assert.equal(typeof io.requiredBoard, 'function');
+  assert.throws(() => io.requiredBoard(9, 'BLOCKED'));
 });

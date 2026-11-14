@@ -19,7 +19,6 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
   const read = adapters.read || retrieveEpicBytes;
   const attest = adapters.attest || resolveEpicVerification;
   const merged = adapters.merged;
-  let outstanding = [];
   try {
     const links = [...(epic.body || '').matchAll(/<!-- workflow:epic-(manifest|records) (https?:\/\/[^\s]+) -->/g)];
     if (links.length !== 2 || new Set(links.map(m => m[1])).size !== 2) fail('Exactly one manifest and records URL are required');
@@ -48,17 +47,16 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
       if (!item || item.text !== c.text || !Array.isArray(item.requiredSlices) || !item.requiredSlices.length || !item.requiredSlices.every(positive) || !unique(item.requiredSlices)) fail('Stale or invalid manifest');
     }
     if (packet.records.length !== criteria.length || !unique(packet.records.map(r => r?.criterion?.id)) || packet.records.some(r => !criteria.some(c => c.id === r?.criterion?.id && c.text === r.criterion.text))) fail('Ambiguous or stale records');
-    outstanding = packet.records.filter(r => ['unmet', 'unverifiable'].includes(r.state)).map(r => ({ id: r.criterion.id, text: r.criterion.text, nextAction: r.nextAction }));
-    if (outstanding.some(r => !nonempty(r.nextAction))) { outstanding = []; fail('Incomplete criterion needs a concrete next action'); }
+    const outstanding = packet.records.filter(r => ['unmet', 'unverifiable'].includes(r.state)).map(r => ({ id: r.criterion.id, text: r.criterion.text, nextAction: r.nextAction }));
+    if (outstanding.some(r => !nonempty(r.nextAction))) fail('Incomplete criterion needs a concrete next action');
     const mapped = manifest.criteria.flatMap(c => c.requiredSlices);
     const inventory = slices.map(s => s.number);
-    if (!Array.isArray(slices) || !unique(inventory) || !unique(mapped) || mapped.length !== inventory.length || mapped.some(n => !inventory.includes(n))) {
+    const mismatch = !unique(inventory) || !unique(mapped) || mapped.length !== inventory.length || mapped.some(n => !inventory.includes(n));
+    if (mismatch) {
       const extras = slices.filter(s => !mapped.includes(s.number));
       const pending = extras.length && extras.every(s => outstanding.some(c => (s.body || '').includes(`<!-- workflow:epic-follow-up ${epic.number} ${c.id} -->`)));
-      if (!pending || mapped.some(n => !inventory.includes(n)) || !unique(mapped)) outstanding = [];
-      fail('Slice inventory does not match manifest');
+      if (!pending || mapped.some(n => !inventory.includes(n)) || !unique(mapped)) fail('Slice inventory does not match manifest');
     }
-    if (slices.some(s => s.state !== 'CLOSED' || !merged(s.number, base))) fail('Required slice is incomplete');
     const refs = new Map();
     const records = packet.records.map(record => {
       if (!Array.isArray(record.evidence) || !record.evidence.some(ref => ref.url === manifestUrl)) fail('Manifest must be evidence for every criterion');
@@ -73,6 +71,24 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
       return { ...record, verification };
     });
     const evidence = [...refs.values()].map(ref => ({ id: ref.id, url: ref.url, type: 'http-body', bytes: ref.url === manifestUrl ? manifestBytes : read(ref.url) }));
+    // Authenticate every record and its content before using any action. The reviewer attests a
+    // separate JSON evidence body binding the criterion to the exact action, avoiding self-hashing records.
+    const checked = criteria.map(c => ({ ...c, checked: true }));
+    const met = records.map(r => ({ ...r, state: 'met' }));
+    const validated = validateEpicEvidence({ criteria: checked, records: met, evidence });
+    if (!validated.complete) fail(`Untrusted action or evidence: ${validated.issues.join('; ')}`);
+    for (const action of outstanding) {
+      const record = records.find(r => r.criterion.id === action.id);
+      const bound = record.evidence.some(ref => {
+        try {
+          const data = JSON.parse(evidence.find(item => item.id === ref.id).bytes.toString('utf8'));
+          return data.version === 1 && data.criterion?.id === action.id && data.criterion?.text === action.text && data.nextAction === action.nextAction;
+        } catch { return false; }
+      });
+      if (!bound) fail(`Criterion ${action.id} needs independently verified action evidence`);
+    }
+    if (mismatch) return { complete: false, issues: ['Slice inventory does not match manifest'], outstanding };
+    if (slices.some(s => s.state !== 'CLOSED' || !merged(s.number, base))) return { complete: false, issues: ['Required slice is incomplete'], outstanding };
     return { ...validateEpicEvidence({ criteria, records, evidence }), criteria, records, outstanding };
-  } catch (error) { return { complete: false, issues: [error.message], outstanding }; }
+  } catch (error) { return { complete: false, issues: [error.message], outstanding: [] }; }
 }
