@@ -1058,3 +1058,23 @@ test('implementer check quotes worktree paths for the shell', async () => {
  assert.equal(result.status, 0);
  assert.equal(result.stdout, `1\n${path}\n`);
 });
+
+test('custom responsibility invokes its configured host and returns its hand-back', async () => {
+  const { runResponsibility } = await import('../../plugins/common/workflow/scripts/lib/responsibility.mjs');
+  const calls = [];
+  const delivery = { orchestrator: 'codex', roles: Object.fromEntries(['design', 'documentation', 'security'].map(role => [role, { host: role === 'design' ? 'claude' : 'codex', model: `${role}-model` }])) };
+  for (const role of ['design', 'documentation', 'security']) {
+    const output = runResponsibility(delivery, role, '/tmp/brief.md', (host, args) => { calls.push({ host, args }); return { status: 0, stdout: 'status: done\nnote: complete\n' }; });
+    assert.match(output, /status: done/);
+  }
+  assert.deepEqual(calls.map(call => call.host), ['claude', 'codex', 'codex']);
+  assert.ok(calls.every(call => call.args.join(' ').includes('/tmp/brief.md')));
+  assert.deepEqual(calls.map(call => ['design', 'documentation', 'security'].find(role => call.args.at(-1).includes(`responsibility: ${role}`))), ['design', 'documentation', 'security']);
+  assert.throws(() => runResponsibility(delivery, 'reviewer', '/tmp/brief.md', () => {}), /built-in/);
+  assert.throws(() => runResponsibility(delivery, 'missing', '/tmp/brief.md', () => {}), /Configure/);
+  assert.throws(() => runResponsibility({ ...delivery, roles: { design: { host: 'agy', model: 'm' } } }, 'design', '/tmp/brief.md', () => {}), /unverified/);
+  assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief.md', () => ({ status: 0, stdout: 'oops' })), /hand-back/);
+  for (const output of ['status: blocked\nnote: cannot read brief\nstatus: done\nnote: complete', 'Example:\nstatus: done\nnote: complete', 'status: done\nnote: complete\nextra: record', 'status: done\nnote: complete\nnote: revised']) {
+    assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief.md', () => ({ status: 0, stdout: output })), /hand-back/);
+  }
+});

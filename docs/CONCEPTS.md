@@ -66,3 +66,17 @@ The board remains Backlog, Todo, In progress, Blocked, Review, Done; Blocked hol
 In `.agents/config.json`, set `delivery.orchestrator` to `codex` or `claude`, and provide `delivery.roles` entries for `implementer`, `reviewer`, `planner`, `devops`, `improver`, and `freshImplementer`, each with `host` and `model` strings. Set `freshImplementer` to the strongest available implementer model for the third blocking round. For example, `"reviewer": {"host": "codex", "model": "gpt-6.1-terra"}`. Subagents must use the orchestrator host; the separate reviewer may use either supported host. Optional `delivery.executables` maps host names to executable paths. Without `delivery`, the legacy Claude assignments remain in effect; add every role to migrate. Verify host dispatch, model availability and intact hand-back in the actual session. An Antigravity `devops` risk assignment may use `host: "agy"` with a listed model; drive runs a native session and checks its two-line hand-back. Install the workflow plugin and verify the role and model in the target environment. Other Antigravity responsibilities, including reviewer identity, stop until verified. A native risk probe demonstrated role, model and hand-back, not full delivery orchestration. GitHub identity and exact-head gates remain mandatory.
 
 For a Codex owner, use the native `spawn_agent` tool with a unique task name, the requested model override, and a prompt naming the responsibility and brief. Wait for its final hand-back, preserve it unchanged and pass it to `drive`; stop if host instructions prohibit the override, the role or model cannot be honored, or the hand-back is missing or malformed. For Claude, select the named agent and configured model through its native subagent capability with the same completion checks. These instructions do not override host permissions.
+
+Additional responsibilities run explicitly, at the workflow point chosen by the repository. Add entries under `delivery.roles`, alongside the built-in roles:
+
+```json
+{
+  "design": {"host": "claude", "model": "sonnet"},
+  "documentation": {"host": "codex", "model": "gpt-6.1-terra"},
+  "security": {"host": "codex", "model": "gpt-6.1-terra"}
+}
+```
+
+Write a brief containing the task, context, permitted actions and a requested hand-back of exactly two lines: `status: done|blocked|replan`, then `note: ...`, with no other text. Run `node <workflow-scripts>/workflow.mjs responsibility <name> <brief-path>` from the intended worktree. The configured host runs a separate session and its hand-back is printed; the caller interprets and applies it. Verify the installed executable and model in the target environment. This invocation does not change drive state, assign review authority or replace the independent exact-head review and project gate. Only Codex and Claude custom sessions are supported; AGY remains limited to the verified `devops` risk session. Built-in names cannot be invoked through this command.
+
+To probe actual host compatibility in the target environment, run `node scripts/probe-responsibilities.mjs <codex-model> <claude-model>`. This explicitly starts both installed hosts and may consume usage. Each must read a fresh brief and return its unique hand-back unchanged; a failure reports the host or session error. The probe does not establish AGY support or review authority.

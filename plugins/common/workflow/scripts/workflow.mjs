@@ -35,6 +35,7 @@ import {
 import { nitsCommand, prCommand } from './lib/pr.mjs';
 import { nextCommand, statusCommand, waitCommand } from './lib/state.mjs';
 import { checkCommand, driveCommand } from './lib/drive.mjs';
+import { runResponsibility } from './lib/responsibility.mjs';
 import { worktreeCommand } from './lib/worktrees.mjs';
 
 const help = `Usage:
@@ -47,6 +48,7 @@ const help = `Usage:
   node workflow.mjs wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]
   node workflow.mjs next [--owner]
   node workflow.mjs drive NUMBER [--hand-back FILE|-] | drive --next
+  node workflow.mjs responsibility NAME BRIEF
   node workflow.mjs check --worktree PATH
   node workflow.mjs pr ready|auto-merge --pr NUMBER
   node workflow.mjs nits [--days N] [--done PR...]
@@ -154,6 +156,7 @@ async function execute(command, args) {
   else if (command === 'status') { const { lanes } = config(); statusCommand(args, lanes); }
   else if (command === 'wait') { const { lanes } = config(); process.exitCode = waitCommand(args, lanes); }
   else if (command === 'next') { const { lanes } = config(); nextCommand(args, lanes); }
+  else if (command === 'responsibility') { if (args.length !== 2) throw new Error('Usage: responsibility NAME BRIEF'); const { lanes } = config(); process.stdout.write(runResponsibility(lanes.delivery, args[0], args[1])); }
   else if (command === 'drive') { const { lanes } = config(); driveCommand(args, lanes); }
   else if (command === 'check') { const { lanes } = config(); process.exitCode = checkCommand(args, lanes); }
   else if (command === 'scratch' && !args.length) console.log(JSON.stringify({ path: workflowScratch() }));
