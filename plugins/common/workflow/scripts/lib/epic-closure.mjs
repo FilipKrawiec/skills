@@ -122,6 +122,7 @@ function verifyNative({ epic, slices, base, repo }, { read, merged, native }) {
   for (const c of criteria) {
     const outcome = packet.outcomes.find(o => o?.criterion?.id === c.id);
     if (!outcome || outcome.criterion.text !== c.text || !['met', 'unmet', 'unverifiable'].includes(outcome.state)) fail(`Review criterion ${c.id} against its current text`);
+    if (!nonempty(outcome.explanation)) fail(`Criterion ${c.id} needs an explanation connecting its evidence to the outcome`);
     if (!Array.isArray(outcome.evidence) || !outcome.evidence.length) fail(`Criterion ${c.id} needs evidence`);
     for (const ref of outcome.evidence) {
       let url; try { url = new URL(ref.url); } catch { fail(`Criterion ${c.id} has an invalid evidence URL`); }
