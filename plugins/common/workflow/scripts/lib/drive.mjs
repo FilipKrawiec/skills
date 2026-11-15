@@ -147,8 +147,21 @@ export function decideIssue(facts, lanes) {
   const latestVerdict = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && review.commit?.oid === pr.headRefOid && review.state !== 'DISMISSED' && /<!-- agent-review\b[^>]*\bverdict=/.test(review.body || '')).at(-1);
   const verdictBody = latestVerdict?.body || '';
   const findings = [...verdictBody.matchAll(/\*\*(?:Blocker|Important)\*\*([\s\S]*?)(?=\*\*(?:Blocker|Important|Nit|Pre-existing|Follow-up)\*\*|$)/g)].map(match => match[1]);
-  const taggedConflicts = findings.every(finding => /\bconflict/i.test(finding) && /\bbase\b/i.test(finding));
-  const conflictOnly = taggedConflicts && (findings.length > 0 || /<!-- agent-review\b[^>]*\bfinding=base-conflict\b/.test(verdictBody));
+  const threads = facts.reviewThreads;
+  let completeThreads = threads === undefined || (Array.isArray(threads?.nodes) && threads.pageInfo?.hasNextPage === false);
+  const inline = [];
+  for (const thread of Array.isArray(threads?.nodes) ? threads.nodes : []) {
+    if (!thread || typeof thread !== 'object') { completeThreads = false; continue; }
+    if (thread.isResolved === true) continue;
+    const first = thread.comments?.nodes?.[0];
+    if (thread.isResolved !== false || !first?.author?.login || typeof first.body !== 'string') { completeThreads = false; continue; }
+    if (first.author.login.toLowerCase() !== lanes.reviewer?.toLowerCase()) continue;
+    if (/^\*\*(?:Blocker|Important)\*\*/.test(first.body)) inline.push(first.body);
+    else if (!/^\*\*(?:Nit|Pre-existing|Follow-up)\*\*/.test(first.body)) completeThreads = false;
+  }
+  const blocking = [...findings, ...inline];
+  const taggedConflicts = blocking.every(finding => /\bconflict/i.test(finding) && /\bbase\b/i.test(finding));
+  const conflictOnly = completeThreads && taggedConflicts && (blocking.length > 0 || /<!-- agent-review\b[^>]*\bfinding=base-conflict\b/.test(verdictBody));
   if (hb.status === 'replan' && !conflictOnly && pr.mergeable !== 'CONFLICTING' && pr.mergeStateStatus !== 'DIRTY') return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
   if (tree && (tree.dirty || tree.unpushed)) {
     if (hb.status !== 'done') return agent('implementer', 'fix', { reason: 'fix in progress' });
@@ -496,6 +509,13 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       writeFileSync(body, updatePrBody(pr.body || '', hb, hb.body ? readFileSync(hb.body, 'utf8') : undefined));
       run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--body-file', body]);
     },
+    reviewThreads: pr => {
+      const [owner, name] = repo.split('/');
+      const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){pageInfo{hasNextPage} nodes{isResolved comments(first:1){nodes{body author{login}}}}}}}}';
+      const threads = gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${pr.number}`])?.data?.repository?.pullRequest?.reviewThreads;
+      if (!Array.isArray(threads?.nodes) || typeof threads.pageInfo?.hasNextPage !== 'boolean') throw new Error('Cannot read review threads');
+      return threads;
+    },
     reviewSession: (pr, tree) => {
       const root = tree?.path || git('rev-parse', '--show-toplevel');
       try { const session = sessionClaim(root, repo, lanes.reviewer, pr.number); return session ? { oid: session.oid, dead: localClaimIsDead(session, session.claim?.head), startedAt: session.claim?.startedAt } : null; } catch { return { unavailable: true }; }
@@ -563,10 +583,14 @@ function readIssueFacts(io, n, handBack) {
   const reviewingSince = pr?.state === 'OPEN' ? io.reviewingSince(pr) : null;
   const reviewSession = pr?.state === 'OPEN' ? io.reviewSession?.(pr, tree) : null;
   const postFailed = !reviewSession && reviewingSince ? io.reviewPostFailed?.(pr, reviewingSince) === true : false;
+  let reviewThreads;
+  if (pr?.state === 'OPEN' && io.reviewThreads && (pr.reviews || []).some(review => review.commit?.oid === pr.headRefOid && /<!-- agent-review\b[^>]*\bverdict=fixes\b/.test(review.body || ''))) {
+    try { reviewThreads = io.reviewThreads(pr); } catch { reviewThreads = { nodes: [], pageInfo: { hasNextPage: true } }; }
+  }
   // Only the assessment of the current phase is read: the issue's before a draft exists, then the PR's.
   const assessment = io.assessment(issue, pr?.state === 'OPEN' ? pr : null);
   const assessments = pr?.state === 'OPEN' ? { prAssessment: assessment } : { issueAssessment: assessment };
-  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, ...assessments, reviewingSince, reviewSession, postFailed, now: io.now?.() ?? Date.now() };
+  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, ...assessments, reviewingSince, reviewSession, postFailed, reviewThreads, now: io.now?.() ?? Date.now() };
 }
 // The risk that picks the models: the PR's label once a draft exists, else the issue assessment; never below the floor.
 function currentRisk(facts, step) {

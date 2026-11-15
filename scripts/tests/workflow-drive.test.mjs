@@ -937,3 +937,36 @@ test('existing tagged conflict-only findings route to the base merge without hid
   inconsistent.body = inconsistent.body.replace('verdict=fixes', 'verdict=fixes finding=base-conflict');
   assert.equal(decide({ ...base, pr: pr({ reviews: [...prior, inconsistent] }) }).agent, 'planner');
 });
+
+test('drive reads open inline findings before routing a conflict-only verdict', () => {
+  const reviews = Array.from({ length: 5 }, () => review('fixes'));
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, reviews })] });
+  const thread = (body, extra = {}) => ({ isResolved: false, comments: { nodes: [{ body, author: { login: 'reviewer' } }] }, ...extra });
+  const conflict = thread('**Important** The PR conflicts with the base branch.');
+  repo.io.reviewThreads = () => ({ nodes: [conflict], pageInfo: { hasNextPage: false } });
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'implementer');
+  repo.io.reviewThreads = () => ({ nodes: [conflict, thread('**Important** Users lose saved data.')], pageInfo: { hasNextPage: false } });
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
+  repo.io.reviewThreads = () => ({ nodes: [conflict], pageInfo: { hasNextPage: true } });
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
+  repo.io.reviewThreads = () => { throw new Error('unavailable'); };
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
+  repo.io.reviewThreads = () => null;
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
+  repo.io.reviewThreads = () => ({ nodes: [conflict, thread('Unclassified reviewer finding')], pageInfo: { hasNextPage: false } });
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
+  repo.io.reviewThreads = () => ({ nodes: [conflict, thread('**Important** Users lose saved data.', { isResolved: true })], pageInfo: { hasNextPage: false } });
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'implementer');
+});
+
+test('GitHub thread lookup reads reviewer findings and rejects incomplete responses', () => {
+  const threads = { nodes: [{ isResolved: false, comments: { nodes: [{ body: '**Important** Base conflict', author: { login: 'reviewer' } }] } }], pageInfo: { hasNextPage: false } };
+  const io = githubIo(lanes, args => {
+    assert.equal(args[0], 'api');
+    assert.ok(args.some(arg => arg.startsWith('query=') && arg.includes('reviewThreads')));
+    assert.ok(args.includes('number=5'));
+    return { data: { repository: { pullRequest: { reviewThreads: threads } } } };
+  });
+  assert.deepEqual(io.reviewThreads(pr()), threads);
+  assert.throws(() => githubIo(lanes, () => ({})).reviewThreads(pr()), /Cannot read review threads/);
+});
