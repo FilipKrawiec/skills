@@ -1,0 +1,22 @@
+import { spawnSync } from 'node:child_process';
+
+const builtIn = new Set(['implementer', 'freshImplementer', 'reviewer', 'planner', 'devops', 'improver']);
+
+// A separate session is advisory work; it cannot take over delivery or review authority.
+export function runResponsibility(delivery, name, brief, runner = spawnSync) {
+  if (!/^[a-z][a-z0-9-]*$/.test(name) || builtIn.has(name)) throw new Error('Choose a custom responsibility name, not a built-in role');
+  if (!brief || typeof brief !== 'string') throw new Error('Provide a brief path');
+  if (!delivery || !['codex', 'claude'].includes(delivery.orchestrator)) throw new Error('Configure a supported delivery orchestrator');
+  const role = delivery.roles?.[name];
+  if (!role || !['codex', 'claude', 'agy'].includes(role.host) || typeof role.model !== 'string' || !role.model.trim()) throw new Error(`Configure delivery.roles.${name} with a supported host and model`);
+  if (role.host === 'agy') throw new Error(`AGY ${name} dispatch is unverified; use codex or claude`);
+  const executable = delivery.executables?.[role.host] ?? role.host;
+  if (typeof executable !== 'string' || !executable.trim()) throw new Error(`Configure delivery.executables.${role.host} as an executable path`);
+  const prompt = `Follow your brief at ${brief} and return its hand-back.`;
+  const args = role.host === 'codex' ? ['exec', '-m', role.model, prompt] : ['--print', '--model', role.model, '--permission-mode', 'auto', prompt];
+  const result = runner(executable, args, { encoding: 'utf8' });
+  if (result.error || result.status !== 0) throw new Error(`${role.host} ${name} failed: ${result.error?.message || result.stderr || `exit ${result.status}`}`);
+  const output = result.stdout || '';
+  if (!/^status: (done|blocked|replan)\s*$/m.test(output) || !/^note: \S.*$/m.test(output)) throw new Error(`${role.host} ${name} returned a malformed hand-back; require status and note`);
+  return output;
+}
