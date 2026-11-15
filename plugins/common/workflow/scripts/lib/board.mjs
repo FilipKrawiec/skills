@@ -80,7 +80,7 @@ export function prRecord(pr, cfg) {
   const failed = checks.some(check => ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes((check.conclusion || check.state || '').toUpperCase()));
   const broken = pr.mergeable === 'CONFLICTING' || failed;
   // A red check, a conflict or someone's change request comes before the hand-off; pending checks are waited on.
-  const shipReady = Boolean(pr.isDraft && !broken && !outsideChanges && verdictOf(latestVerdict) === 'ready');
+  const shipReady = Boolean(pr.isDraft && !broken && !outsideChanges && (verdictOf(latestVerdict) === 'ready' || (verdictOf(latestVerdict) === 'owner' && approved)));
   return { ...pr, issues, approved, ownerApproved, awaitingReview: atHead.length === 0, shipReady };
 }
 // Moves an issue's card to a Status column; a closed issue always goes to Done. `silent` skips a missing board, card or

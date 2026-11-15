@@ -27,7 +27,7 @@ export function prReadyRefusal(pr, cfg) {
   if (missing.length) return `required checks missing at ${pr.headRefOid}: ${missing.join(', ')}`;
   if (pr.mergeable === 'CONFLICTING') return `PR #${pr.number} conflicts with its base`;
   const record = prRecord({ ...pr, labels: pr.labels || [] }, cfg);
-  if (!record.shipReady) return `no agent-review verdict=ready at head ${pr.headRefOid}, or someone outside the workflow requests changes there`;
+  if (!record.shipReady) return `no agent-review verdict=ready or approved verdict=owner at head ${pr.headRefOid}, or someone outside the workflow requests changes there`;
   return null;
 }
 

@@ -140,6 +140,18 @@ test('the owner is asked only on an approved PR; the round cap and line count ne
   assert.equal(decide({ ...base, diffPaths: huge, pr: pr({ isDraft: false, reviews: approved, assessment: assessed('R1', huge) }) }).do, 'auto-merge');
 });
 
+test('an approved owner-held draft becomes ready before owner approval and merge', () => {
+  const held = pr({ issue: 3, labels: [label('risk:R2'), label('review:owner')], reviews: [review('owner', 'APPROVED')], assessment: assessed('R2') });
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [held] });
+  const owner = drive(repo.io, 3, lanes, {});
+  assert.equal(repo.s.prs[0].isDraft, false);
+  assert.equal(owner.owner, 'review:owner');
+  assert.deepEqual(repo.calls.filter(call => call[0] === 'ready' || call[0] === 'auto-merge'), [['ready']]);
+  repo.s.prs[0].reviews.push({ author: { login: 'owner' }, state: 'APPROVED', commit: { oid: head }, body: '' });
+  assert.deepEqual(drive(repo.io, 3, lanes, {}).wait, { pr: 5, until: 'merged' });
+  assert.deepEqual(repo.calls.filter(call => call[0] === 'auto-merge'), [['auto-merge']]);
+});
+
 test('from the third blocking verdict a fresh implementer on the strongest model fixes the whole open set', () => {
   const base = { issue: started, tree: tree({ commits: 1 }) };
   assert.equal(decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes')] }) }).resume, true);
