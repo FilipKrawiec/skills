@@ -1,3 +1,4 @@
+import { verifyConsolidatedDelivery } from './consolidated-delivery.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -390,6 +391,12 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const data = gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${n}`]);
       return data.data.repository.issue.closedByPullRequestsReferences.nodes.some(pr => pr.merged && pr.baseRefName === base);
     },
+    consolidatedDelivery: (epic, child, base) => verifyConsolidatedDelivery({ epic, child, repo, base }, {
+      mergedPr: (number, target) => {
+        const pr = gh(['api', `repos/${repo}/pulls/${number}`]);
+        return pr.number === number && pr.merged === true && pr.base?.ref === target && pr.base?.repo?.full_name?.toLowerCase() === repo.toLowerCase();
+      }
+    }),
     hasLessons: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().some(comment => /^## Lessons\s*$/m.test(comment.body || '')),
     createRefinement: epic => {
       const scope = (epic.body || '').match(/```scope\s*\n[\s\S]*?```/)?.[0] || '```scope\n{"paths":[]}\n```';
@@ -597,16 +604,16 @@ export function driveIssue(io, n, lanes, handBack = {}) {
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
 }
-function unresolvedDelivery(io, slice, base, ancestors = new Set()) {
+function unresolvedDelivery(io, slice, base, epic, ancestors = new Set()) {
   if (!slice || slice.state !== 'CLOSED' || ancestors.has(slice.number)) return [slice?.number].filter(Boolean);
-  if (!isEpic(slice)) return io.mergedClosingPr(slice.number, base) ? [] : [slice.number];
+  if (!isEpic(slice)) return io.mergedClosingPr(slice.number, base) || io.consolidatedDelivery?.(epic, slice, base) ? [] : [slice.number];
   const seen = new Set([...ancestors, slice.number]);
   try {
     const children = io.subIssues(slice.number);
     if (!children.length) return [slice.number];
     return children.flatMap(child => {
       const issue = io.issue(child.number);
-      return issue ? unresolvedDelivery(io, issue, base, seen) : [child.number];
+      return issue ? unresolvedDelivery(io, issue, base, epic, seen) : [child.number];
     });
   } catch {
     return [slice.number];
@@ -630,13 +637,13 @@ export function driveEpic(io, epic, lanes) {
   const existing = io.allBlockers(refinement.number);
   for (const slice of others) if (!existing.includes(slice.number)) io.addBlocker(refinement.number, slice.number);
   // A closed slice without a merged closing PR holds only refinement and epic completion, not other open slices.
-  const unresolved = others.filter(slice => slice.state !== 'OPEN').flatMap(slice => unresolvedDelivery(io, slice, lanes.base));
+  const unresolved = others.filter(slice => slice.state !== 'OPEN').flatMap(slice => unresolvedDelivery(io, slice, lanes.base, epic.number));
   const unresolvedOwner = unresolved.length ? { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${[...new Set(unresolved)].map(number => `#${number}`).join(', ')}`, url: epic.url } : null;
   // Read the refinement's links again after the repair; every open slice blocks it even before GitHub shows a new link.
   const repaired = splitDependencies(io.dependencies(refinement));
   refinement.blockers = [...new Set([...repaired.blockers, ...others.filter(slice => slice.state === 'OPEN').map(slice => slice.number)])];
   refinement.dropped = repaired.dropped;
-  if (refinement.state !== 'OPEN' && !io.mergedClosingPr(refinement.number, lanes.base)) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for #${refinement.number}`, url: epic.url };
+  if (refinement.state !== 'OPEN' && unresolvedDelivery(io, refinement, lanes.base, epic.number).length) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for #${refinement.number}`, url: epic.url };
   const step = decideEpic({ epic, slices });
   if (unresolvedOwner && (step.do === 'close-epic' || step.slices?.includes(refinement.number))) return unresolvedOwner;
   if (step.do === 'close-epic' && !io.hasLessons(epic.number)) return instruction(io, { issue: epic, pr: null, tree: null }, agent('improver', 'improve'), lanes);
@@ -652,9 +659,10 @@ export function driveEpic(io, epic, lanes) {
         const deliveryIo = {
           issue: n => { const issue = io.issue(n); delivery.push(['issue', n, issue]); return issue; },
           subIssues: n => { const subIssues = io.subIssues(n); delivery.push(['children', n, subIssues]); return subIssues; },
-          mergedClosingPr: (n, base) => { const merged = io.mergedClosingPr(n, base); delivery.push(['merged', n, merged]); return merged; }
+          mergedClosingPr: (n, base) => { const merged = io.mergedClosingPr(n, base); delivery.push(['merged', n, merged]); return merged; },
+          consolidatedDelivery: (epic, child, base) => { const verified = io.consolidatedDelivery?.(epic, child, base) || false; delivery.push(['consolidated', child.number, verified]); return verified; }
         };
-        const merged = (n, base) => unresolvedDelivery(deliveryIo, children.find(child => child.number === n), base).length === 0;
+        const merged = (n, base) => unresolvedDelivery(deliveryIo, children.find(child => child.number === n), base, current.number).length === 0;
         const result = io.verifyEpic(current, children, lanes.base, merged);
         return { current, children, delivery, result };
       };
