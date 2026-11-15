@@ -29,10 +29,14 @@ export const modelForStep = (step, risk) => (step.agent === 'devops' ? 'sonnet' 
 export function deliveryAssignment(delivery, step, risk) {
   if (delivery == null) return { host: 'claude', model: modelForStep(step, risk), session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
   if (!delivery || typeof delivery !== 'object' || !['codex', 'claude'].includes(delivery.orchestrator)) throw new Error('Unsupported delivery orchestrator; configure codex or claude after verifying host capabilities');
-  if (delivery.executables != null && (typeof delivery.executables !== 'object' || Array.isArray(delivery.executables) || Object.entries(delivery.executables).some(([host, path]) => !['codex', 'claude'].includes(host) || typeof path !== 'string' || !path.trim()))) throw new Error('Configure delivery.executables as host-to-executable paths');
+  if (delivery.executables != null && (typeof delivery.executables !== 'object' || Array.isArray(delivery.executables) || Object.entries(delivery.executables).some(([host, path]) => !['codex', 'claude', 'agy'].includes(host) || typeof path !== 'string' || !path.trim()))) throw new Error('Configure delivery.executables as host-to-executable paths');
   const roleName = step.agent === 'implementer' && step.fresh ? 'freshImplementer' : step.agent;
   const role = delivery.roles?.[roleName];
-  if (!role || !['codex', 'claude'].includes(role.host) || typeof role.model !== 'string' || !role.model.trim()) throw new Error(`Configure delivery.roles.${roleName} with a supported host and model`);
+  if (!role || !['codex', 'claude', 'agy'].includes(role.host) || typeof role.model !== 'string' || !role.model.trim()) throw new Error(`Configure delivery.roles.${roleName} with a supported host and model`);
+  if (role.host === 'agy') {
+    if (step.agent !== 'devops') throw new Error(`AGY ${step.agent} dispatch is unverified; configure a supported host for this responsibility`);
+    return { host: role.host, model: role.model, session: 'native' };
+  }
   if (step.agent !== 'reviewer' && role.host !== delivery.orchestrator) throw new Error(`Unsupported cross-host subagent for ${step.agent}; use the orchestrator host`);
   return { host: role.host, model: role.model, session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
 }
@@ -561,6 +565,7 @@ function instruction(io, facts, step, lanes) {
   if (step.task) out.task = step.task;
   if (step.reason) out.reason = step.reason;
   if (step.resume) out.resume = true;
+  if (host === 'agy') out.command = ['node', fileURLToPath(new URL('../agy-session.mjs', import.meta.url)), lanes.delivery?.executables?.agy || 'agy', step.agent, model, brief];
   if (step.agent === 'reviewer') out.command = reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host);
   return out;
 }

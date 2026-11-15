@@ -17,9 +17,10 @@ Branch on your role, first match wins:
 
 ## 1. Dispatch
 
-Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next ready issue or epic. It prints one JSON line. Act on exactly that instruction, first match wins:
+Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next ready issue or epic. Act on its JSON instruction, first match wins:
 
 - `agent` with `session: "subagent"`: verify the owner host matches `host`. Use the host's native subagent dispatch: where it offers `spawn_agent`, set a unique task name, pass the assigned model and include the named responsibility in the prompt. Otherwise select the named agent and model. If the host forbids or cannot confirm that selection, stop. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. Wait for completion; if its hand-back is missing or malformed, stop. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
+- `agent` with `session: "native"`: follow [native session](references/native-session.md).
 - `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session, which wrote the PR. When it exits, run `<cli> drive <issue>`. If the host, model, dispatch, or hand-back cannot be verified, stop and report the missing capability; never substitute another model or bypass review.
 - `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit. Never sleep or poll inside a turn.
 - `owner`: tell the owner its reason and `url`, then end the turn.

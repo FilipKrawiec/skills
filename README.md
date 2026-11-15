@@ -33,7 +33,7 @@ claude \
   --plugin-dir plugins/common/authoring
 ```
 
-The repository includes an Antigravity workspace declaration and local linking helper. Native validation accepts the workflow skills and roles; the hook is not loaded and is not a security boundary. Antigravity delivery dispatch remains unsupported: use a supported Claude or Codex orchestrator until role assignment, model selection and intact hand-back are verified in the target session. To link and validate packages with the Antigravity CLI:
+The repository includes an Antigravity workspace declaration and local linking helper. Native validation accepts the workflow skills and roles; the hook is not loaded and is not a security boundary. Antigravity supports a configured native `devops` risk session; other responsibilities stop until verified. A role/model and intact hand-back probe succeeded, but full delivery orchestration and reviewer identity remain unproven. To link and validate packages with the Antigravity CLI:
 
 ```bash
 # Link live symlinks into ~/.gemini/config/plugins (dev mode)
