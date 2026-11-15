@@ -7,10 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
-  assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, latestAssessment,
+  assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, holdBaseUpdates, latestAssessment,
   driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
-import { holdBaseUpdates } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
 
@@ -410,6 +409,7 @@ test('drive closes an issue after its PR merged and leaves it with no state labe
   assert.deepEqual(drive(repo.io, 3, lanes, {}), { done: { issue: 3 } });
   assert.deepEqual(repo.calls, [['close', 3], ['unclaim', 3], ['remove', '/repo/.worktrees/3-add-a-thing']]);
   assert.equal(repo.s.issues[3].state, 'CLOSED');
+  assert.equal(repo.s.board[3], 'DONE');
   assert.deepEqual(repo.s.issues[3].labels.map(l => l.name), ['risk:R1']);
 });
 
