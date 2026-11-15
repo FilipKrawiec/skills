@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { verifyConsolidatedDelivery } from '../../plugins/common/workflow/scripts/lib/consolidated-delivery.mjs';
 import { verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
 
 test('native reviewer evidence closes only with current complete work', () => {
@@ -49,3 +50,17 @@ test('incomplete native outcomes produce verified actionable follow-ups', () => 
   assert.equal(result.complete, false);
   assert.deepEqual(result.outstanding, [{ id: 'a', text: 'Works', nextAction: 'Fix the gap' }]);
 });
+
+test('consolidated delivery requires authenticated current child and merged PR evidence', () => {
+  const child = { number: 10, state: 'CLOSED', body: '### Acceptance criteria\n- [x] Delivered' };
+  const packet = { version: 1, epic: 9, consolidated: [{ issue: 10, bodySha256: createHash('sha256').update(child.body).digest('hex'), pr: 25, state: 'met' }] };
+  const adapters = { native: () => packet, mergedPr: (number, base) => number === 25 && base === 'main' };
+  const check = () => verifyConsolidatedDelivery({ epic: 9, child, repo: 'a/b', base: 'main' }, adapters);
+  assert.equal(check(), true);
+  child.body += ' changed'; assert.equal(check(), false); child.body = child.body.replace(' changed', '');
+  adapters.mergedPr = () => false; assert.equal(check(), false); adapters.mergedPr = () => true;
+  packet.consolidated.push(packet.consolidated[0]); assert.equal(check(), false); packet.consolidated.pop();
+  packet.consolidated[0].state = 'unmet'; assert.equal(check(), false);
+  adapters.native = () => { throw Error('unavailable'); }; assert.equal(check(), false);
+});
+

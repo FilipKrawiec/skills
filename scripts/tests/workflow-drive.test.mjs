@@ -856,3 +856,14 @@ test('native review refuses unaccounted linked work without creating follow-ups'
   assert.deepEqual(repo.s.subs[9], [10, 99]);
   assert.equal(repo.s.issues[9].state, 'OPEN');
 });
+
+
+test('verified consolidated children and refinements close an epic without another PR', () => {
+  for (const consolidated of [10, 99]) {
+    const epic = issue({ number: 9, labels: [label('type:epic')] });
+    const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+    const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }), 99: refinement }, subs: { 9: [10, 99] }, merged: [consolidated === 10 ? 99 : 10], lessons: [9] });
+    repo.io.consolidatedDelivery = (parent, child) => parent === 9 && child.number === consolidated;
+    assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  }
+});
