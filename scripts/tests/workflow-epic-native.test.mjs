@@ -8,7 +8,7 @@ test('native reviewer evidence closes only with current complete work', () => {
   const bytes = Buffer.from('evidence');
   const epic = { number: 9, body: '### Acceptance criteria\n- [x] Works <!-- workflow:criterion a -->\n' };
   const slices = [{ number: 10, state: 'CLOSED' }];
-  const packet = { version: 1, epic: 9, children: [10], outcomes: [{ criterion: { id: 'a', text: 'Works' }, state: 'met', evidence: [{ url: 'https://example.org/evidence', sha256: createHash('sha256').update(bytes).digest('hex') }] }] };
+  const packet = { version: 1, epic: 9, children: [10], outcomes: [{ criterion: { id: 'a', text: 'Works' }, state: 'met', explanation: 'The evidence demonstrates the outcome.', evidence: [{ url: 'https://example.org/evidence', sha256: createHash('sha256').update(bytes).digest('hex') }] }] };
   const adapters = { native: () => packet, read: () => bytes, merged: () => true };
   const check = () => verifyEpicClosure({ epic, slices, repo: 'a/b', base: 'main' }, adapters);
   assert.equal(check().complete, true);
@@ -30,6 +30,15 @@ test('native reviewer evidence closes only with current complete work', () => {
   assert.equal(check().complete, false);
 });
 
+test('native outcomes require a reviewer explanation', () => {
+  const bytes = Buffer.from('proof');
+  const outcome = { criterion: { id: 'a', text: 'Works' }, state: 'met', evidence: [{ url: 'https://example.org/proof', sha256: createHash('sha256').update(bytes).digest('hex') }] };
+  const check = () => verifyEpicClosure({ epic: { number: 9, body: '### Acceptance criteria\n- [x] Works <!-- workflow:criterion a -->\n' }, slices: [{ number: 10, state: 'CLOSED' }], repo: 'a/b', base: 'main' }, { native: () => ({ version: 1, epic: 9, children: [10], outcomes: [outcome] }), read: () => bytes, merged: () => true });
+  assert.equal(check().complete, false);
+  outcome.explanation = '   '; assert.equal(check().complete, false);
+  outcome.explanation = 'The linked proof demonstrates the outcome.'; assert.equal(check().complete, true);
+});
+
 import { resolveNativeEpicEvidence } from '../../plugins/common/workflow/scripts/lib/epic-attestation.mjs';
 test('native assessment requires one unedited comment from the independent reviewer', () => {
   const item = { node_id: 'node', user: { login: 'reviewer' }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', body: JSON.stringify({ kind: 'workflow:epic-outcomes', version: 1 }) };
@@ -45,7 +54,7 @@ test('native assessment requires one unedited comment from the independent revie
 
 test('incomplete native outcomes produce verified actionable follow-ups', () => {
   const bytes = Buffer.from('proof');
-  const outcome = { criterion: { id: 'a', text: 'Works' }, state: 'unmet', nextAction: 'Fix the gap', evidence: [{ url: 'https://example.org/proof', sha256: createHash('sha256').update(bytes).digest('hex') }] };
+  const outcome = { criterion: { id: 'a', text: 'Works' }, state: 'unmet', explanation: 'The evidence shows the remaining gap.', nextAction: 'Fix the gap', evidence: [{ url: 'https://example.org/proof', sha256: createHash('sha256').update(bytes).digest('hex') }] };
   const result = verifyEpicClosure({ epic: { number: 9, body: '### Acceptance criteria\n- [ ] Works <!-- workflow:criterion a -->\n' }, slices: [{ number: 10, state: 'CLOSED' }], repo: 'a/b', base: 'main' }, { native: () => ({ version: 1, epic: 9, children: [10], outcomes: [outcome] }), read: () => bytes, merged: () => true });
   assert.equal(result.complete, false);
   assert.deepEqual(result.outstanding, [{ id: 'a', text: 'Works', nextAction: 'Fix the gap' }]);
