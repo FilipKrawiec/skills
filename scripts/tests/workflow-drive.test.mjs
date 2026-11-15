@@ -970,3 +970,35 @@ test('GitHub thread lookup reads reviewer findings and rejects incomplete respon
   assert.deepEqual(io.reviewThreads(pr()), threads);
   assert.throws(() => githubIo(lanes, () => ({})).reviewThreads(pr()), /Cannot read review threads/);
 });
+
+test('drive classifies all review-thread pages, including later mixed findings', () => {
+  const reviews = Array.from({ length: 5 }, () => review('fixes'));
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, reviews })] });
+  const thread = (body, isResolved = false) => ({ isResolved, comments: { nodes: [{ body, author: { login: 'reviewer' } }] } });
+  const resolved = Array.from({ length: 100 }, () => thread('**Important** Old finding', true));
+  let mixed = false; const seen = [];
+  const gh = args => {
+    const after = args.find(arg => arg.startsWith('after='))?.slice(6) || null;
+    seen.push(after);
+    const page = after === null ? { nodes: resolved, pageInfo: { hasNextPage: true, endCursor: 'page-one' } }
+      : { nodes: [thread('**Important** The PR conflicts with the base branch.'), ...(mixed ? [thread('**Important** Users lose data.')] : [])], pageInfo: { hasNextPage: false, endCursor: 'page-two' } };
+    return { data: { repository: { pullRequest: { reviewThreads: page } } } };
+  };
+  repo.io.reviewThreads = githubIo(lanes, gh).reviewThreads;
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'implementer');
+  assert.deepEqual(seen, [null, 'page-one']);
+  mixed = true; seen.length = 0;
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
+  assert.deepEqual(seen, [null, 'page-one']);
+});
+
+test('thread pagination refuses missing, repeated, and failed later pages', () => {
+  const page = endCursor => ({ data: { repository: { pullRequest: { reviewThreads: { nodes: [], pageInfo: { hasNextPage: true, endCursor } } } } } });
+  assert.throws(() => githubIo(lanes, () => page(null)).reviewThreads(pr()), /Cannot paginate/);
+  assert.throws(() => githubIo(lanes, () => page('same')).reviewThreads(pr()), /Cannot paginate/);
+  let calls = 0;
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, reviews: Array.from({ length: 5 }, () => review('fixes')) })] });
+  repo.io.reviewThreads = githubIo(lanes, () => { if (calls++) throw new Error('network'); return page('next'); }).reviewThreads;
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
+  assert.equal(calls, 2);
+});

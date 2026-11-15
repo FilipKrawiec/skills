@@ -511,10 +511,19 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     },
     reviewThreads: pr => {
       const [owner, name] = repo.split('/');
-      const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){pageInfo{hasNextPage} nodes{isResolved comments(first:1){nodes{body author{login}}}}}}}}';
-      const threads = gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${pr.number}`])?.data?.repository?.pullRequest?.reviewThreads;
-      if (!Array.isArray(threads?.nodes) || typeof threads.pageInfo?.hasNextPage !== 'boolean') throw new Error('Cannot read review threads');
-      return threads;
+      const query = 'query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:1){nodes{body author{login}}}}}}}}';
+      const nodes = []; const seen = new Set(); let after = null;
+      for (;;) {
+        const args = ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${pr.number}`];
+        if (after !== null) args.push('-f', `after=${after}`);
+        const threads = gh(args)?.data?.repository?.pullRequest?.reviewThreads;
+        if (!Array.isArray(threads?.nodes) || typeof threads.pageInfo?.hasNextPage !== 'boolean') throw new Error('Cannot read review threads');
+        nodes.push(...threads.nodes);
+        if (!threads.pageInfo.hasNextPage) return { nodes, pageInfo: threads.pageInfo };
+        const cursor = threads.pageInfo.endCursor;
+        if (typeof cursor !== 'string' || !cursor || seen.has(cursor)) throw new Error('Cannot paginate review threads');
+        seen.add(cursor); after = cursor;
+      }
     },
     reviewSession: (pr, tree) => {
       const root = tree?.path || git('rev-parse', '--show-toplevel');
