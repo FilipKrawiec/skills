@@ -113,6 +113,16 @@ test('workflow pr ready marks the draft ready and drops the owner request', t =>
   assert.deepEqual(log(), ['pr ready 5 --repo acme/app', 'pr edit 5 --repo acme/app --remove-reviewer owner']);
 });
 
+test('workflow pr ready reports a failed owner request removal without undoing readiness', t => {
+  const { f } = setup(t, draft(), { FAIL_PR_EDIT: '1' });
+  f.env.PR_STATE_FILE = join(f.root, 'pr-state.json');
+  const result = f.cliRun('pr', 'ready', '--pr', '5');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /Warning: could not drop owner.s review request/);
+  assert.match(result.stdout, /PR #5 ready for review/);
+  assert.equal(JSON.parse(readFileSync(f.env.PR_STATE_FILE, 'utf8')).isDraft, false);
+});
+
 test('workflow pr ready refuses with the reason and changes nothing', t => {
   const { f, log } = setup(t, draft({ reviews: [] }));
   const result = f.cliRun('pr', 'ready', '--pr', '5');
