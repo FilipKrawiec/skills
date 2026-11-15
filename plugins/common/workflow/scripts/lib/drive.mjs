@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { effectiveBranchPolicy } from '../safety.mjs';
 import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
 import { boardStatus, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
@@ -254,11 +255,11 @@ PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}, round ${f.round}` : 'none yet; 
 
 ## Task
 
-${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focused tests.' : /base conflict|conflicts with its base/.test(f.step.reason || '') ? `Merge the base with \`git merge --no-ff --no-commit origin/${f.base}\`, resolve conflicts and commit the merge.` : f.step.fresh ? 'Earlier fix rounds did not converge. Read every open Blocker and Important thread `review-context` lists and the issue\'s criteria, find their shared cause and fix it whole, with the neighbouring cases the same cause breaks, each with a focused test. Fix nothing outside the criteria; Nits never block.' : 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.'} Work only in the worktree. Run one plain command per Bash call.
+${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focused tests.' : /base conflict|conflicts with its base/.test(f.step.reason || '') ? `Merge the base with \`git merge --no-ff --no-commit origin/${f.base}\`, resolve conflicts and commit the merge.` : f.step.fresh ? 'Earlier fix rounds did not converge. Read every open Blocker and Important thread `review-context` lists and the issue\'s criteria, find their shared cause and fix it whole, with the neighbouring cases the same cause breaks, each with a focused test. Fix nothing outside the criteria; Nits never block.' : 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.'} Set cwd to ${f.tree.path} for every command. Work only in that worktree. Run one plain command per Bash call.
 
 ## Commands you may run
 
-- \`node ${cli} check\`: the project gate, under the machine-wide lock. It must pass before you hand back \`done\`.
+- \`node ${cli} check --worktree ${f.tree.path}\`: the project gate, under the machine-wide lock. It must pass before you hand back \`done\`.
 - \`node ${cli} commit --message "<Conventional Commit subject>" -- <paths>\`
 ${fix ? `- \`node ${cli} status ${f.pr.number}\` and \`node ${cli} review-context --pr ${f.pr.number}\`\n` : ''}
 Never push, open, label, ready or merge a PR, and never start an agent: drive does that.
@@ -268,7 +269,7 @@ Never push, open, label, ready or merge a PR, and never start an agent: drive do
 \`\`\`text
 status: done | replan | blocked
 commit: <Conventional Commit subject, only if you left changes uncommitted>
-paths: <paths drive commits, only with commit>
+paths: <changed file paths only, not directories; drive commits only explicit files>
 check: pass | fail
 note: <one line: what changed, or why replan or blocked>
 body: <optional absolute path to a Markdown evidence file>
@@ -551,7 +552,13 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     unclaim: issue => run('gh', ['issue', 'edit', String(issue.number), '--repo', repo, ...stateLabels(issue).flatMap(name => ['--remove-label', name])]),
     // A merge, never a rebase: the open PR keeps its review threads. Runs as the session's identity, the implementer.
     syncTree: tree => { if (gitIn(tree.path, ['fetch', '--quiet', 'origin', tree.branch]) !== null) gitIn(tree.path, ['merge', '--ff-only', '--quiet', 'FETCH_HEAD']); },
+    disableAutoMerge: pr => run('gh', ['pr', 'merge', String(pr.number), '--repo', repo, '--disable-auto']),
     updateBranch: pr => run('gh', ['pr', 'update-branch', String(pr.number), '--repo', repo]),
+    strictPolicy: () => {
+      const read = endpoint => { try { return gh(['api', `repos/${repo}/${endpoint}`]); } catch { return null; } };
+      const policy = effectiveBranchPolicy(read(`branches/${encodeURIComponent(lanes.base)}/protection`), read(`rules/branches/${encodeURIComponent(lanes.base)}?per_page=100`));
+      return !!lanes.requiredChecks?.length && lanes.requiredChecks.every(name => policy?.strictChecks?.includes(name));
+    },
     autoMerge: (pr, tree) => self(['pr', 'auto-merge', '--pr', String(pr.number)], tree?.path || process.cwd()),
     close: issue => {
       const current = gh(['issue', 'view', String(issue.number), '--repo', repo, '--json', 'state']);
@@ -650,7 +657,7 @@ export function driveIssue(io, n, lanes, handBack = {}) {
       io.assess(issue, pr?.state === 'OPEN' ? pr : null, { risk: maxRisk(floor, step.risk), assessed: step.risk, floor, head: pr?.headRefOid ?? null, paths: pr ? facts.diffPaths : [], reason: step.reason });
     }
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
-    else if (step.do === 'push') io.push(tree);
+    else if (step.do === 'push') { if (pr?.autoMergeRequest) io.disableAutoMerge(pr); io.push(tree); }
     else if (step.do === 'open') { io.open(issue, tree, maxRisk(riskLabel(issue.labels || []), facts.issueAssessment?.risk || 'R1'), handBack); bodyUpdated = true; }
     else if (step.do === 'release-review') io.releaseReview(pr, tree, step.claim);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
@@ -659,9 +666,9 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     // issue's claim, as spec's transition table states; the open PR still excludes reassignment.
     else if (step.do === 'ready') { io.ready(pr, tree); io.board(n, 'REVIEW'); if (stateLabels(issue).length) io.unclaim(issue); }
     else if (step.do === 'unclaim') io.unclaim(issue);
-    else if (step.do === 'auto-merge') io.autoMerge(pr, tree);
+    else if (step.do === 'auto-merge') { if (!io.strictPolicy()) return { owner: `${lanes.base} must require configured checks on an up-to-date branch`, url: `https://github.com/${lanes.repo}/settings/rules` }; io.autoMerge(pr, tree); }
     // GitHub reports the merge state late, so drive waits on the new head's CI instead of reading BEHIND again.
-    else if (step.do === 'update-branch') { io.updateBranch(pr); return finish({ wait: { pr: pr.number, until: 'ci' }, reason: 'merged the base into the head' }); }
+    else if (step.do === 'update-branch') { if (pr.autoMergeRequest) io.disableAutoMerge(pr); io.updateBranch(pr); return finish({ wait: { pr: pr.number, until: 'ci' }, reason: 'merged the base into the head' }); }
     else if (step.do === 'close') { io.close(issue); io.board(n, 'DONE'); }
     else if (step.do === 'remove-worktree') { io.removeTree(tree); return { done: { issue: n } }; }
   }
@@ -811,7 +818,8 @@ export function chooseSlot(isFree, pid = process.pid) {
   return checkSlots.find(isFree) ?? checkSlots[pid % checkSlots.length];
 }
 export function checkCommand(args, lanes, { root = git('rev-parse', '--show-toplevel'), directory = checkLockDirectory(), probe = probeSlot, runner = runWithLocks } = {}) {
-  if (args.length) throw new Error('Usage: check');
+  if (args.length && (args.length !== 2 || args[0] !== '--worktree')) throw new Error('Usage: check [--worktree PATH]');
+  if (args.length && realpathSync(args[1]) !== realpathSync(root)) throw new Error('Check must run from the intended worktree');
   const test = lanes.steps?.test;
   if (!Array.isArray(test) || !test.length) throw new Error('Configure steps.test in .agents/config.json as a non-empty argv array');
   mkdirSync(directory, { recursive: true });

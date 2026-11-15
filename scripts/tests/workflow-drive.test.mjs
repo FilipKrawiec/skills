@@ -105,7 +105,7 @@ test('strict policy: of two approved PRs, the second is updated and approved aga
   const merge = p => { p.state = 'MERGED'; repo.s.merged = [...(repo.s.merged || []), p.issue]; for (const other of repo.s.prs) if (other !== p && other.state === 'OPEN') other.mergeStateStatus = 'BEHIND'; };
   const approve = p => { p.statusCheckRollup = green; p.reviews.push(approvedAt(p.headRefOid)); };
   assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 61, until: 'ci' });
-  assert.deepEqual(repo.calls.filter(c => c[0] === 'update-branch'), [['update-branch', 61]], 'the oldest first, the other held');
+  assert.deepEqual(repo.calls.filter(c => ['disable-auto-merge', 'update-branch'].includes(c[0])), [['disable-auto-merge', 61], ['update-branch', 61]], 'disable before updating');
   assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 61, until: 'ci' }, 'held while the first is on its way');
   first.statusCheckRollup = green;
   assert.equal(drive(repo.io, 9, lanes, {}).agent, 'reviewer');
@@ -308,9 +308,11 @@ function fakeRepo(initial) {
     risk: (p, from, to) => { calls.push(['risk', to]); p.labels = [label(`risk:${to}`)]; },
     ready: p => { calls.push(['ready']); p.isDraft = false; },
     unclaim: i => { calls.push(['unclaim', i.number]); i.labels = i.labels.filter(l => !l.name.startsWith('state:')); },
+    strictPolicy: () => true,
     autoMerge: p => { calls.push(['auto-merge']); p.autoMergeRequest = {}; },
     // `gh pr update-branch`: a merge commit on the head, whose checks start again; the old approval no longer covers it.
     syncTree: t => { (s.synced ||= []).push(t.path); },
+    disableAutoMerge: p => { calls.push(['disable-auto-merge', p.number]); p.autoMergeRequest = null; },
     updateBranch: p => { calls.push(['update-branch', p.number]); Object.assign(p, { headRefOid: `${p.number}`.padEnd(40, 'b'), mergeStateStatus: 'BLOCKED', statusCheckRollup: [{ name: 'verify', status: 'QUEUED' }] }); },
     close: i => { calls.push(['close', i.number]); i.state = 'CLOSED'; },
     closeEpic: e => { calls.push(['close-epic', e.number]); e.state = 'CLOSED'; },
@@ -1001,4 +1003,45 @@ test('thread pagination refuses missing, repeated, and failed later pages', () =
   repo.io.reviewThreads = githubIo(lanes, () => { if (calls++) throw new Error('network'); return page('next'); }).reviewThreads;
   assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
   assert.equal(calls, 2);
+});
+
+ test('check refuses a different intended worktree', () => {
+  assert.throws(() => checkCommand(['--worktree', '/private/tmp'], { steps: { test: ['true'] } }, { root: process.cwd() }), /worktree/i);
+ });
+
+test('drive returns an owner step for non-strict base checks', () => {
+  const approved = { author: { login: 'reviewer' }, state: 'APPROVED', body: `<!-- agent-review sha=${head} round=1 verdict=ready -->`, commit: { oid: head } };
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, isDraft: false, reviews: [approved] })] });
+  repo.io.strictPolicy = () => false;
+  const result = drive(repo.io, 3, lanes, {});
+  assert.match(result.owner, /up.to.date/);
+  assert.match(result.url, /settings/);
+  assert.ok(!repo.calls.some(c => c[0] === 'auto-merge'));
+});
+
+test('implementer hand-back requests individual changed files', () => {
+ const brief = implementerBrief({ issue: started, tree: tree(), step: { mode: 'build' }, base: 'main' });
+ assert.match(brief, /changed file paths only, not directories/);
+});
+
+test('project device locks cover the whole verification run', async t => {
+  const { mkdtempSync, readFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { spawn } = await import('node:child_process');
+  const directory = mkdtempSync(join(tmpdir(), 'device-lock-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const log = join(directory, 'log');
+  const gate = `const fs=require('fs');fs.appendFileSync(${JSON.stringify(log)},'+\\n');setTimeout(()=>fs.appendFileSync(${JSON.stringify(log)},'-\\n'),200)`;
+  const module = new URL('../../plugins/common/workflow/scripts/locks.mjs', import.meta.url).href;
+  const script = `import {runWithLocks} from ${JSON.stringify(module)}; process.exitCode=runWithLocks(${JSON.stringify(directory)}, ['device-a'], process.execPath, ['-e', ${JSON.stringify(gate)}]).status;`;
+  const runs = Array.from({length: 2}, () => new Promise(resolve => spawn(process.execPath, ['--input-type=module', '-e', script], {stdio: 'ignore'}).on('exit', resolve)));
+  assert.deepEqual(await Promise.all(runs), [0, 0]);
+  assert.equal(readFileSync(log, 'utf8'), '+\n-\n+\n-\n');
+});
+
+test('drive disables auto-merge before pushing an updated head', () => {
+ const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1, unpushed: true }) }, prs: [pr({ issue: 3, autoMergeRequest: {} })] });
+ drive(repo.io, 3, lanes, { status: 'done' });
+ assert.deepEqual(repo.calls.filter(c => ['disable-auto-merge', 'push'].includes(c[0])), [['disable-auto-merge', 5], ['push']]);
 });
