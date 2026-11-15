@@ -568,10 +568,10 @@ test('check runs the test step in a free slot of two, and waits on one when both
   assert.ok(checkSlots.includes(chooseSlot(() => false, 7)));
   assert.equal(checkSlots.length, 2);
   const runs = [];
-  const code = checkCommand([], lanes, { root: process.cwd(), directory: process.cwd(), probe: (_, name) => name === 'check-2', runner: (dir, names, cmd, args, opts) => { runs.push([names, cmd, args, opts.timeoutSeconds]); return { status: 0 }; } });
+  const code = checkCommand(['--worktree', process.cwd()], lanes, { root: process.cwd(), directory: process.cwd(), probe: (_, name) => name === 'check-2', runner: (dir, names, cmd, args, opts) => { runs.push([names, cmd, args, opts.timeoutSeconds]); return { status: 0 }; } });
   assert.equal(code, 0);
   assert.deepEqual(runs, [[['check-2'], 'just', ['verify'], 3600]]);
-  assert.throws(() => checkCommand([], { steps: {} }, { root: process.cwd(), directory: process.cwd(), probe: () => true, runner: () => ({ status: 0 }) }), /steps\.test/);
+  assert.throws(() => checkCommand(['--worktree', process.cwd()], { steps: {} }, { root: process.cwd(), directory: process.cwd(), probe: () => true, runner: () => ({ status: 0 }) }), /steps\.test/);
 });
 
 test('check lets at most two gates run at once on the machine', async t => {
@@ -584,7 +584,7 @@ test('check lets at most two gates run at once on the machine', async t => {
   const log = join(directory, 'log');
   const gate = `const fs=require('fs');fs.appendFileSync(${JSON.stringify(log)},'+\\n');setTimeout(()=>fs.appendFileSync(${JSON.stringify(log)},'-\\n'),400)`;
   const module = new URL('../../plugins/common/workflow/scripts/lib/drive.mjs', import.meta.url).href;
-  const script = `import {checkCommand} from ${JSON.stringify(module)}; process.exitCode = checkCommand([], { steps: { test: [process.execPath, '-e', ${JSON.stringify(gate)}] } }, { root: process.cwd(), directory: ${JSON.stringify(directory)} });`;
+  const script = `import {checkCommand} from ${JSON.stringify(module)}; process.exitCode = checkCommand(['--worktree', process.cwd()], { steps: { test: [process.execPath, '-e', ${JSON.stringify(gate)}] } }, { root: process.cwd(), directory: ${JSON.stringify(directory)} });`;
   const runs = Array.from({ length: 3 }, () => new Promise(resolve => spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: 'ignore' }).on('exit', resolve)));
   assert.deepEqual(await Promise.all(runs), [0, 0, 0]);
   let running = 0; let peak = 0;
@@ -1047,4 +1047,19 @@ test('drive disables auto-merge before pushing an updated head', () => {
  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1, unpushed: true }) }, prs: [pr({ issue: 3, autoMergeRequest: {} })] });
  drive(repo.io, 3, lanes, { status: 'done' });
  assert.deepEqual(repo.calls.filter(c => ['disable-auto-merge', 'push'].includes(c[0])), [['disable-auto-merge', 5], ['push']]);
+});
+
+test('check requires an intended worktree binding', () => {
+ assert.throws(() => checkCommand([], lanes, { root: process.cwd() }), /worktree/i);
+});
+
+test('implementer check quotes worktree paths for the shell', async () => {
+ const { spawnSync } = await import('node:child_process');
+ const path = "/tmp/team workspace/owner's tree";
+ const brief = implementerBrief({ issue: started, tree: tree({ path }), step: { mode: 'build' }, base: 'main' });
+ const command = brief.match(/`node ([^`]+) check --worktree ([^`]+)`/);
+ assert.ok(command);
+ const result = spawnSync('sh', ['-c', `set -- ${command[2]}; printf '%s\\n' "$#" "$1"`], { encoding: 'utf8' });
+ assert.equal(result.status, 0);
+ assert.equal(result.stdout, `1\n${path}\n`);
 });

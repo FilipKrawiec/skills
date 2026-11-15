@@ -139,7 +139,7 @@ test('delivery skills keep one plain command per Bash call, inline plan scoring,
   assert.match(improve, /once per delivered epic/);
   assert.match(improve, /<cli> nits --done/);
   const tdd = skillText('tdd');
-  assert.match(tdd, /full gate once through `[^`]*workflow\.mjs check`/);
+  assert.match(tdd, /full gate once through `[^`]*workflow\.mjs check --worktree <worktree-path>`/);
   assert.match(tdd, /without a fake clock/);
 });
 

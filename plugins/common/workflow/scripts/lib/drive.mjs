@@ -244,6 +244,7 @@ export function holdBaseUpdates(entries) {
   return entries.map(entry => (behind.includes(entry) && entry !== first ? { ...entry, step: { blocked: { issue: entry.number, reason } } } : entry));
 }
 
+const shellQuote = value => '\'' + value.replaceAll('\'', '\'\\\'\'') + '\'';
 export function implementerBrief(f) {
   const fix = f.step.mode === 'fix';
   return `# Implementer brief: #${f.issue.number} ${f.issue.title}
@@ -259,7 +260,7 @@ ${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focu
 
 ## Commands you may run
 
-- \`node ${cli} check --worktree ${f.tree.path}\`: the project gate, under the machine-wide lock. It must pass before you hand back \`done\`.
+- \`node ${cli} check --worktree ${shellQuote(f.tree.path)}\`: the project gate, under the machine-wide lock. It must pass before you hand back \`done\`.
 - \`node ${cli} commit --message "<Conventional Commit subject>" -- <paths>\`
 ${fix ? `- \`node ${cli} status ${f.pr.number}\` and \`node ${cli} review-context --pr ${f.pr.number}\`\n` : ''}
 Never push, open, label, ready or merge a PR, and never start an agent: drive does that.
@@ -818,7 +819,7 @@ export function chooseSlot(isFree, pid = process.pid) {
   return checkSlots.find(isFree) ?? checkSlots[pid % checkSlots.length];
 }
 export function checkCommand(args, lanes, { root = git('rev-parse', '--show-toplevel'), directory = checkLockDirectory(), probe = probeSlot, runner = runWithLocks } = {}) {
-  if (args.length && (args.length !== 2 || args[0] !== '--worktree')) throw new Error('Usage: check [--worktree PATH]');
+  if (args.length !== 2 || args[0] !== '--worktree') throw new Error('Usage: check --worktree PATH');
   if (args.length && realpathSync(args[1]) !== realpathSync(root)) throw new Error('Check must run from the intended worktree');
   const test = lanes.steps?.test;
   if (!Array.isArray(test) || !test.length) throw new Error('Configure steps.test in .agents/config.json as a non-empty argv array');

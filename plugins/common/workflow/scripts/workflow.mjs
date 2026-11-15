@@ -47,7 +47,7 @@ const help = `Usage:
   node workflow.mjs wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]
   node workflow.mjs next [--owner]
   node workflow.mjs drive NUMBER [--hand-back FILE|-] | drive --next
-  node workflow.mjs check
+  node workflow.mjs check --worktree PATH
   node workflow.mjs pr ready|auto-merge --pr NUMBER
   node workflow.mjs nits [--days N] [--done PR...]
   node workflow.mjs issue status|create|comment|edit|close|reopen ...
