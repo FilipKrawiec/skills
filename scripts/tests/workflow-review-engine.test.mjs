@@ -70,7 +70,9 @@ test('one review skill, one mode: one reviewer, no subagents, no round asks the 
   assert.doesNotMatch(review, /mode=|author mode|team mode/i);
   assert.doesNotMatch(review + approval, /verdict=cap|round cap/);
   assert.match(review, /`Owner decision`/);
-  assert.match(review, /never the whole diff again/);
+  assert.match(review, /Every round:.*judge the whole diff at head/);
+  assert.match(review, /red required check.*Important.*continue the review/);
+  assert.match(deliver, /documented capture command.*native build.*Capture after the UI settles/);
   assert.match(review, /Nits never block and never earn another round/);
   assert.match(review, /\*\*Follow-up:\*\*/);
   assert.match(deliver, /Add no capability, option or refactor the issue did not ask for/);

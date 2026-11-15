@@ -27,19 +27,18 @@ Review only a PR with exactly one `risk:R0|R1|R2` label; otherwise stop and retu
 
 ## 2. Pipeline
 
-Run `<cli> wait <N> --until ci`. A red required check is one **Important** finding with its run link: post it as `verdict=fixes` (step 5) and skip steps 3 and 4.
+Run `<cli> wait <N> --until ci`. Record a red required check as one **Important** finding with its run link; continue the review and include it in the verdict.
 
-**Exit gate:** green head, or a posted red-pipeline verdict.
+**Exit gate:** CI settled and any red required check recorded.
 
 ## 3. Read the evidence
 
 Round is `<cli> status <N>`'s round plus one; a new head never resets it. The target's agent rules and `REVIEW.md` define fit.
 
-- **Round 1** judges the whole diff. Split independently useful changes with `round=0 verdict=split`, naming the seam; never split by size.
-- **Later rounds:** `review-context` returns `comparison`, the delta since your last verdict's head. Judge only `comparison.changedFiles` against your open threads and the criteria, never the whole diff again; report only failures the delta introduced.
+- **Every round:** judge the whole diff at head against the criteria. Use `review-context`'s `comparison`, the delta since the last verdict, to check open threads and resolve fixed findings. Split independently useful changes with `round=0 verdict=split`, naming the seam; never split by size.
 - **Large diff:** read `areas` one area at a time; skip `mechanical` (pure renames). For scripted mechanical edits, check the script and hand-written remainder.
 
-**Exit gate:** criteria, rules and the diff or delta read.
+**Exit gate:** criteria, rules and the whole diff at head read.
 
 ## 4. Find and verify
 
