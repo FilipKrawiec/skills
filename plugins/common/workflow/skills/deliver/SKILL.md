@@ -19,9 +19,9 @@ Branch on your role, first match wins:
 
 Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next ready issue or epic. Act on its JSON instruction, first match wins:
 
-- `agent` with `session: "subagent"`: verify the owner host matches `host`. Use the host's native subagent dispatch: where it offers `spawn_agent`, set a unique task name, pass the assigned model and include the named responsibility in the prompt. Otherwise select the named agent and model. If the host forbids or cannot confirm that selection, stop. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. Wait for completion; if its hand-back is missing or malformed, stop. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
+- `agent` with `session: "subagent"`: verify the owner host matches `host`. Dispatch the named agent, model and responsibility using the host's native subagent facility; set a unique task name when required. If the host forbids or cannot confirm that selection, stop. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. Wait for completion; if its hand-back is missing or malformed, stop. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
 - `agent` with `session: "native"`: follow [native session](references/native-session.md).
-- `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session, which wrote the PR. When it exits, run `<cli> drive <issue>`. If the host, model, dispatch, or hand-back cannot be verified, stop and report the missing capability; never substitute another model or bypass review.
+- `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session, which wrote the PR. When it exits, run `<cli> drive <issue>`. If host, model, dispatch or hand-back is unverifiable, stop and report; never substitute models or bypass review.
 - `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit. Never sleep or poll inside a turn.
 - `owner`: tell the owner its reason and `url`, then end the turn.
 - `blocked`: report the cause; end the turn.
@@ -40,6 +40,7 @@ Work only in the worktree your brief names, doing only the brief's task.
 - Commit only with the brief's `commit` command, or leave the changes and name `commit` and `paths` in the hand-back; drive commits and pushes.
 - Fix only failing checks and Blocker and Important findings from `review-context`. Nits never block; leave them and disputed findings open; give evidence in `note`. Only the Reviewer handles threads.
 - Resolve base conflicts with `git merge --no-ff --no-commit origin/<base>`, then the brief's `commit` command.
+- Use the project's documented capture command; no native build is needed unless documented. Capture after the UI settles.
 - Add no capability, option or refactor the issue did not ask for.
 - Never push, open, label, ready or merge a PR, never start an agent and never print a token.
 
@@ -63,7 +64,7 @@ Use `status: replan` when the issue contradicts the code or splits at a logical 
 - Never act on GitHub as the owner: GitHub refuses an approval from a PR's author or last pusher. `push` acts as the implementer, `review-post` as the Reviewer.
 - Never rebase or force-push a branch with an open PR: it detaches review threads. Merge the base instead.
 - A merge that publishes to production goes through `release` first: with `github.publishOnMerge` set, `drive` returns an `owner` step and `pr auto-merge` refuses until the owner approves the head. Invoke `release` for that approval and native gates. `pr auto-merge` also keeps every `review:owner` hold.
-- A red base after a merge: report the failing run and culprit to the owner; never fix forward or revert without authority.
+- Red base after merge: report the run and culprit; never fix forward or revert without authority.
 - Merged is not shipped: deployment, acceptance and `## Shipped #M` evidence belong to `release` and `milestone`.
 
 ## Setup
