@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
@@ -105,7 +106,7 @@ test('strict policy: of two approved PRs, the second is updated and approved aga
   const merge = p => { p.state = 'MERGED'; repo.s.merged = [...(repo.s.merged || []), p.issue]; for (const other of repo.s.prs) if (other !== p && other.state === 'OPEN') other.mergeStateStatus = 'BEHIND'; };
   const approve = p => { p.statusCheckRollup = green; p.reviews.push(approvedAt(p.headRefOid)); };
   assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 61, until: 'ci' });
-  assert.deepEqual(repo.calls.filter(c => c[0] === 'update-branch'), [['update-branch', 61]], 'the oldest first, the other held');
+  assert.deepEqual(repo.calls.filter(c => ['disable-auto-merge', 'update-branch'].includes(c[0])), [['disable-auto-merge', 61], ['update-branch', 61]], 'disable before updating');
   assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 61, until: 'ci' }, 'held while the first is on its way');
   first.statusCheckRollup = green;
   assert.equal(drive(repo.io, 9, lanes, {}).agent, 'reviewer');
@@ -308,9 +309,11 @@ function fakeRepo(initial) {
     risk: (p, from, to) => { calls.push(['risk', to]); p.labels = [label(`risk:${to}`)]; },
     ready: p => { calls.push(['ready']); p.isDraft = false; },
     unclaim: i => { calls.push(['unclaim', i.number]); i.labels = i.labels.filter(l => !l.name.startsWith('state:')); },
+    strictPolicy: () => true,
     autoMerge: p => { calls.push(['auto-merge']); p.autoMergeRequest = {}; },
     // `gh pr update-branch`: a merge commit on the head, whose checks start again; the old approval no longer covers it.
     syncTree: t => { (s.synced ||= []).push(t.path); },
+    disableAutoMerge: p => { calls.push(['disable-auto-merge', p.number]); p.autoMergeRequest = null; },
     updateBranch: p => { calls.push(['update-branch', p.number]); Object.assign(p, { headRefOid: `${p.number}`.padEnd(40, 'b'), mergeStateStatus: 'BLOCKED', statusCheckRollup: [{ name: 'verify', status: 'QUEUED' }] }); },
     close: i => { calls.push(['close', i.number]); i.state = 'CLOSED'; },
     closeEpic: e => { calls.push(['close-epic', e.number]); e.state = 'CLOSED'; },
@@ -565,10 +568,10 @@ test('check runs the test step in a free slot of two, and waits on one when both
   assert.ok(checkSlots.includes(chooseSlot(() => false, 7)));
   assert.equal(checkSlots.length, 2);
   const runs = [];
-  const code = checkCommand([], lanes, { root: process.cwd(), directory: process.cwd(), probe: (_, name) => name === 'check-2', runner: (dir, names, cmd, args, opts) => { runs.push([names, cmd, args, opts.timeoutSeconds]); return { status: 0 }; } });
+  const code = checkCommand(['--worktree', process.cwd()], lanes, { root: process.cwd(), directory: process.cwd(), probe: (_, name) => name === 'check-2', runner: (dir, names, cmd, args, opts) => { runs.push([names, cmd, args, opts.timeoutSeconds]); return { status: 0 }; } });
   assert.equal(code, 0);
   assert.deepEqual(runs, [[['check-2'], 'just', ['verify'], 3600]]);
-  assert.throws(() => checkCommand([], { steps: {} }, { root: process.cwd(), directory: process.cwd(), probe: () => true, runner: () => ({ status: 0 }) }), /steps\.test/);
+  assert.throws(() => checkCommand(['--worktree', process.cwd()], { steps: {} }, { root: process.cwd(), directory: process.cwd(), probe: () => true, runner: () => ({ status: 0 }) }), /steps\.test/);
 });
 
 test('check lets at most two gates run at once on the machine', async t => {
@@ -581,7 +584,7 @@ test('check lets at most two gates run at once on the machine', async t => {
   const log = join(directory, 'log');
   const gate = `const fs=require('fs');fs.appendFileSync(${JSON.stringify(log)},'+\\n');setTimeout(()=>fs.appendFileSync(${JSON.stringify(log)},'-\\n'),400)`;
   const module = new URL('../../plugins/common/workflow/scripts/lib/drive.mjs', import.meta.url).href;
-  const script = `import {checkCommand} from ${JSON.stringify(module)}; process.exitCode = checkCommand([], { steps: { test: [process.execPath, '-e', ${JSON.stringify(gate)}] } }, { root: process.cwd(), directory: ${JSON.stringify(directory)} });`;
+  const script = `import {checkCommand} from ${JSON.stringify(module)}; process.exitCode = checkCommand(['--worktree', process.cwd()], { steps: { test: [process.execPath, '-e', ${JSON.stringify(gate)}] } }, { root: process.cwd(), directory: ${JSON.stringify(directory)} });`;
   const runs = Array.from({ length: 3 }, () => new Promise(resolve => spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: 'ignore' }).on('exit', resolve)));
   assert.deepEqual(await Promise.all(runs), [0, 0, 0]);
   let running = 0; let peak = 0;
@@ -1001,4 +1004,62 @@ test('thread pagination refuses missing, repeated, and failed later pages', () =
   repo.io.reviewThreads = githubIo(lanes, () => { if (calls++) throw new Error('network'); return page('next'); }).reviewThreads;
   assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
   assert.equal(calls, 2);
+});
+
+test('check refuses a different intended worktree', t => {
+  const other = mkdtempSync(join(tmpdir(), 'workflow-other-worktree-'));
+  t.after(() => rmSync(other, { recursive: true, force: true }));
+  assert.throws(() => checkCommand(['--worktree', other], { steps: { test: ['true'] } }, { root: process.cwd() }), /worktree/i);
+});
+
+test('drive returns an owner step for non-strict base checks', () => {
+  const approved = { author: { login: 'reviewer' }, state: 'APPROVED', body: `<!-- agent-review sha=${head} round=1 verdict=ready -->`, commit: { oid: head } };
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, isDraft: false, reviews: [approved] })] });
+  repo.io.strictPolicy = () => false;
+  const result = drive(repo.io, 3, lanes, {});
+  assert.match(result.owner, /up.to.date/);
+  assert.match(result.url, /settings/);
+  assert.ok(!repo.calls.some(c => c[0] === 'auto-merge'));
+});
+
+test('implementer hand-back requests individual changed files', () => {
+ const brief = implementerBrief({ issue: started, tree: tree(), step: { mode: 'build' }, base: 'main' });
+ assert.match(brief, /changed file paths only, not directories/);
+});
+
+test('project device locks cover the whole verification run', async t => {
+  const { mkdtempSync, readFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { spawn } = await import('node:child_process');
+  const directory = mkdtempSync(join(tmpdir(), 'device-lock-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const log = join(directory, 'log');
+  const gate = `const fs=require('fs');fs.appendFileSync(${JSON.stringify(log)},'+\\n');setTimeout(()=>fs.appendFileSync(${JSON.stringify(log)},'-\\n'),200)`;
+  const module = new URL('../../plugins/common/workflow/scripts/locks.mjs', import.meta.url).href;
+  const script = `import {runWithLocks} from ${JSON.stringify(module)}; process.exitCode=runWithLocks(${JSON.stringify(directory)}, ['device-a'], process.execPath, ['-e', ${JSON.stringify(gate)}]).status;`;
+  const runs = Array.from({length: 2}, () => new Promise(resolve => spawn(process.execPath, ['--input-type=module', '-e', script], {stdio: 'ignore'}).on('exit', resolve)));
+  assert.deepEqual(await Promise.all(runs), [0, 0]);
+  assert.equal(readFileSync(log, 'utf8'), '+\n-\n+\n-\n');
+});
+
+test('drive disables auto-merge before pushing an updated head', () => {
+ const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1, unpushed: true }) }, prs: [pr({ issue: 3, autoMergeRequest: {} })] });
+ drive(repo.io, 3, lanes, { status: 'done' });
+ assert.deepEqual(repo.calls.filter(c => ['disable-auto-merge', 'push'].includes(c[0])), [['disable-auto-merge', 5], ['push']]);
+});
+
+test('check requires an intended worktree binding', () => {
+ assert.throws(() => checkCommand([], lanes, { root: process.cwd() }), /worktree/i);
+});
+
+test('implementer check quotes worktree paths for the shell', async () => {
+ const { spawnSync } = await import('node:child_process');
+ const path = "/tmp/team workspace/owner's tree";
+ const brief = implementerBrief({ issue: started, tree: tree({ path }), step: { mode: 'build' }, base: 'main' });
+ const command = brief.match(/`node ([^`]+) check --worktree ([^`]+)`/);
+ assert.ok(command);
+ const result = spawnSync('sh', ['-c', `set -- ${command[2]}; printf '%s\\n' "$#" "$1"`], { encoding: 'utf8' });
+ assert.equal(result.status, 0);
+ assert.equal(result.stdout, `1\n${path}\n`);
 });

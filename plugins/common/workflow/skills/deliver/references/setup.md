@@ -51,3 +51,7 @@ Configure `delivery` as documented in the project installation guidance. Verify 
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue. |
 
 Production needs exact owner approval for candidate and destination.
+
+Require configured status checks on branches up to date with the base in branch protection or the active ruleset. Drive cannot safely enable auto-merge without that setting.
+
+The project owns shared hardware verification: its test command must hold one machine-wide advisory lock per device for the entire run, including setup and cleanup. Use the same lock path for each device across checkouts and acquire multiple device locks in a consistent order. The workflow check slots only limit concurrent gates; they do not protect a device.

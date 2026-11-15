@@ -35,15 +35,15 @@ Run `<cli> wait <N> --until ci`. A red required check is one **Important** findi
 
 Round is `<cli> status <N>`'s round plus one; a new head never resets it. The target's agent rules and `REVIEW.md` define fit.
 
-- **Round 1** judges the whole diff. When it bundles logical changes each useful alone, post `round=0 verdict=split` naming the seam; size never earns it.
+- **Round 1** judges the whole diff. Split independently useful changes with `round=0 verdict=split`, naming the seam; never split by size.
 - **Later rounds:** `review-context` returns `comparison`, the delta since your last verdict's head. Judge only `comparison.changedFiles` against your open threads and the criteria, never the whole diff again; report only failures the delta introduced.
-- **Large diff:** read `areas` one area at a time; skip `mechanical` (pure renames). For a mechanical edit whose PR names its script, check the script and the hand-written remainder, not each generated line.
+- **Large diff:** read `areas` one area at a time; skip `mechanical` (pure renames). For scripted mechanical edits, check the script and hand-written remainder.
 
 **Exit gate:** criteria, rules and the diff or delta read.
 
 ## 4. Find and verify
 
-- **Acceptance outcome:** trace each criterion to an observable outcome and a production call site; code reached only from tests proves nothing. Run the manual steps CI cannot. Flag hollow tests, weakened thresholds and scope creep.
+- **Acceptance outcome:** derive closing intent from current issue criteria and the diff, never stale PR text. Trace each criterion to an observable outcome and a production call site; code reached only from tests proves nothing. Run the manual steps CI cannot. Flag hollow tests, weakened thresholds and scope creep.
 - **Correctness:** edge cases, failure paths, security, concurrency, cleanup and data loss in the changed code.
 - **Fit:** breaches of the repository's own rules, each citing the rule's `file:line`; a PR linking no issue is Important.
 - **Blast radius:** callers, contracts, migrations and configuration outside the diff that it breaks; a surviving reference to a removed or renamed name is Important.
