@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
@@ -1005,9 +1006,11 @@ test('thread pagination refuses missing, repeated, and failed later pages', () =
   assert.equal(calls, 2);
 });
 
- test('check refuses a different intended worktree', () => {
-  assert.throws(() => checkCommand(['--worktree', '/private/tmp'], { steps: { test: ['true'] } }, { root: process.cwd() }), /worktree/i);
- });
+test('check refuses a different intended worktree', t => {
+  const other = mkdtempSync(join(tmpdir(), 'workflow-other-worktree-'));
+  t.after(() => rmSync(other, { recursive: true, force: true }));
+  assert.throws(() => checkCommand(['--worktree', other], { steps: { test: ['true'] } }, { root: process.cwd() }), /worktree/i);
+});
 
 test('drive returns an owner step for non-strict base checks', () => {
   const approved = { author: { login: 'reviewer' }, state: 'APPROVED', body: `<!-- agent-review sha=${head} round=1 verdict=ready -->`, commit: { oid: head } };
