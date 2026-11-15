@@ -66,7 +66,7 @@ test('one review skill, one mode: one reviewer, no subagents, no round asks the 
   assert.match(approval, /verdict=owner/);
   assert.match(approval, /pr auto-merge --pr <N>`/);
   assert.match(review, /Never start a subagent, finder or verifier/);
-  assert.match(review, /<!-- agent-review sha=<HEAD> round=<N> verdict=<ready\|fixes\|split> -->/);
+  assert.match(review, /<!-- agent-review sha=<HEAD> round=<N> verdict=<ready\|fixes\|split\|owner> -->/);
   assert.doesNotMatch(review, /mode=|author mode|team mode/i);
   assert.doesNotMatch(review + approval, /verdict=cap|round cap/);
   assert.match(review, /`Owner decision`/);

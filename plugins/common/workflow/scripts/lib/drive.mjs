@@ -52,7 +52,7 @@ const refinementCriteria = [
   'Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.',
 ];
 
-// A risk assessment is one comment drive posts on the issue (before the build) or the PR (each assessed diff): a marker with
+// A risk assessment is a PR comment for each assessed diff, or a legacy issue comment: a marker with
 // the risk set, the assessor's risk, the owner floor, the head and the files it saw, then the reason for people to read.
 const assessmentMarker = /<!-- workflow:risk (\{.*?\}) -->/;
 export function assessmentComment(record) {
@@ -74,19 +74,15 @@ export function latestAssessment(comments, author) {
   }
   return null;
 }
-// Whether the risk assessor must run now: before the build with no issue assessment, on a draft with no assessment of its
-// diff, or when the head touches files the last assessment did not see. A `risk:` hand-back answers a due assessment.
+// Assess the draft diff and reassess each changed head before review.
+// A `risk:` hand-back answers a due assessment.
 function assessmentStep(facts) {
   const { handBack: hb = {} } = facts;
   const pr = facts.pr?.state === 'OPEN' ? facts.pr : null;
   const last = pr ? facts.prAssessment : facts.issueAssessment;
   let reason = null;
   if (!last) reason = pr ? 'assess the diff of the draft' : 'assess the issue before the build';
-  else if (pr) {
-    const seen = new Set(last.paths || []);
-    const unseen = (facts.diffPaths || []).filter(path => !seen.has(path));
-    if (unseen.length) reason = `the head touches ${unseen.length} ${unseen.length === 1 ? 'file' : 'files'} the last assessment did not see: ${unseen.slice(0, 5).join(', ')}${unseen.length > 5 ? ', …' : ''}`;
-  }
+  else if (pr && last.head !== pr.headRefOid) reason = 'assess the changed head diff';
   if (!reason) return null;
   if (risks.includes(hb.risk)) return { do: 'assess', risk: hb.risk, reason: hb.reason || '' };
   return agent('devops', 'risk', { task: 'risk', reason });
@@ -129,7 +125,7 @@ export function decideIssue(facts, lanes) {
   if (hb.status === 'sliced') return { blocked: { issue: issue.number, reason: 'the planner handed back sliced, yet the issue is not an epic' } };
   const claimed = (issue.labels || []).some(label => (label.name ?? label) === 'state:started');
   if (!pr || pr.state !== 'OPEN') {
-    if (!claimed || !tree) return assessmentStep(facts) || { do: 'start' };
+    if (!claimed || !tree) return { do: 'start' };
     if (hb.status !== 'done') return agent('implementer', 'build');
     if (tree.dirty) return hb.commit && hb.paths?.length ? { do: 'commit' } : agent('implementer', 'build', { reason: 'uncommitted changes and no commit/paths in the hand-back' });
     if (!tree.commits) return agent('implementer', 'build', { reason: 'no commits ahead of the base' });
@@ -316,7 +312,7 @@ export function reviewerBrief(f) {
 
 Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
-${f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`.\n' : ''}
+${f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge the whole diff and use the `review-context` `comparison` to check open findings.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 
 - \`node ${cli} review-context --pr ${f.pr.number} --issue ${f.issue.number} --claim\`
@@ -384,7 +380,7 @@ ${hb.note || subjects.map(subject => `- ${subject}`).join('\n') || 'See the comm
 
 The implementer ran the project gate with \`workflow.mjs check\`: ${hb.check || 'unreported'}.
 
-Risk ${risk}, from the risk assessor's estimate of the issue; its assessment of this diff follows as a PR comment.
+Initial risk ${risk}; the independent assessment of this diff follows as a PR comment.
 ${evidence === undefined ? '' : `\n<!-- workflow:evidence-start -->\n## Evidence\n\n${evidence.trim()}\n<!-- workflow:evidence-end -->\n`}`;
 }
 
@@ -614,7 +610,7 @@ function currentRisk(facts, step) {
   const { issue, pr } = facts;
   if (step.agent === 'planner') return 'R2';
   const floor = riskLabel(issue.labels || []);
-  return pr ? maxRisk(riskLabel(pr.labels || []), floor) : maxRisk(floor, facts.issueAssessment?.risk);
+  return pr ? maxRisk(riskLabel(pr.labels || []), floor) : maxRisk('R1', floor, facts.issueAssessment?.risk);
 }
 const briefs = { implementer: implementerBrief, reviewer: reviewerBrief, improver: improverBrief, devops: devopsBrief, planner: plannerBrief };
 function instruction(io, facts, step, lanes) {
