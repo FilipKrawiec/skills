@@ -5,6 +5,7 @@ const [executable, role, model, brief] = process.argv.slice(2);
 function invoke(args) {
   const result = spawnSync(executable, args, { encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error(`AGY ${args[0]} failed: ${result.error?.message || result.stderr || `exit ${result.status}`}`);
+  if (!result.stdout.trim() && /permission.*(?:denied|cannot prompt)|(?:denied|cannot prompt).*permission/i.test(result.stderr)) throw new Error('AGY headless tool permission was denied; configure the required read permissions in AGY settings and retry');
   return result.stdout;
 }
 try {

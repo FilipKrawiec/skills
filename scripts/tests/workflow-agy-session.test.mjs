@@ -21,5 +21,8 @@ test('native session checks role and model, passes arguments and preserves the h
   const missing = run('devops', 'missing'); assert.equal(missing.status, 1); assert.match(missing.stderr, /model missing unavailable/);
   const unsupported = run('reviewer', 'model'); assert.equal(unsupported.status, 1); assert.match(unsupported.stderr, /only the verified devops/);
   writeFileSync(fake, '#!/bin/sh\ncase "$1" in agents) echo devops;; models) echo model;; *) echo invalid;; esac\n', { mode: 0o755 });
+  writeFileSync(fake, '#!/bin/sh\ncase "$1" in agents) echo devops;; models) echo model;; *) echo "a tool required the read_file permission that headless mode cannot prompt for, so it was auto-denied" >&2;; esac\n', { mode: 0o755 });
+  const denied = run('devops', 'model'); assert.equal(denied.status, 1); assert.match(denied.stderr, /headless tool permission was denied/);
+  writeFileSync(fake, '#!/bin/sh\ncase "$1" in agents) echo devops;; models) echo model;; *) echo invalid;; esac\n', { mode: 0o755 });
   const malformed = run('devops', 'model'); assert.equal(malformed.status, 1); assert.match(malformed.stderr, /malformed/);
 });
