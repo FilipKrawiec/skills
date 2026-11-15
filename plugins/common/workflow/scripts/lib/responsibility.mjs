@@ -12,7 +12,7 @@ export function runResponsibility(delivery, name, brief, runner = spawnSync) {
   if (role.host === 'agy') throw new Error(`AGY ${name} dispatch is unverified; use codex or claude`);
   const executable = delivery.executables?.[role.host] ?? role.host;
   if (typeof executable !== 'string' || !executable.trim()) throw new Error(`Configure delivery.executables.${role.host} as an executable path`);
-  const prompt = `Follow your brief at ${brief} and return its hand-back.`;
+  const prompt = `Your responsibility: ${name}. Follow your brief at ${brief} and return its hand-back.`;
   const args = role.host === 'codex' ? ['exec', '-m', role.model, prompt] : ['--print', '--model', role.model, '--permission-mode', 'auto', prompt];
   const result = runner(executable, args, { encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error(`${role.host} ${name} failed: ${result.error?.message || result.stderr || `exit ${result.status}`}`);

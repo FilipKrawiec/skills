@@ -1069,6 +1069,7 @@ test('custom responsibility invokes its configured host and returns its hand-bac
   }
   assert.deepEqual(calls.map(call => call.host), ['claude', 'codex', 'codex']);
   assert.ok(calls.every(call => call.args.join(' ').includes('/tmp/brief.md')));
+  assert.deepEqual(calls.map(call => ['design', 'documentation', 'security'].find(role => call.args.at(-1).includes(`responsibility: ${role}`))), ['design', 'documentation', 'security']);
   assert.throws(() => runResponsibility(delivery, 'reviewer', '/tmp/brief.md', () => {}), /built-in/);
   assert.throws(() => runResponsibility(delivery, 'missing', '/tmp/brief.md', () => {}), /Configure/);
   assert.throws(() => runResponsibility({ ...delivery, roles: { design: { host: 'agy', model: 'm' } } }, 'design', '/tmp/brief.md', () => {}), /unverified/);
