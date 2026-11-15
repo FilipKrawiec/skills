@@ -24,7 +24,7 @@ function nextAction(pr, record, ci, verdict, owner) {
   if (record.awaitingReview) return ci === 'pending' ? { action: 'wait-ci', actor: 'cli' } : { action: 'review', actor: 'reviewer' };
   if (verdict === 'fixes') return { action: 'fix', actor: 'implementer', reason: 'blocking review findings' };
   if (verdict === 'split') return { action: 'split', actor: 'planner' };
-  // A draft whose newest verdict at its head is `ready` is handed off (`pr ready`); its approval follows on the ready PR.
+  // A draft with a ready verdict or an approved owner verdict is handed off (`pr ready`); owner gates still apply.
   if (record.shipReady) return { action: 'ready', actor: 'cli', reason: 'verdict ready on a draft' };
   if (!record.approved) return { action: 'review', actor: 'reviewer', reason: 'no approval at the head' };
   if (owner.needed && !record.ownerApproved) return { action: 'owner-review', actor: 'owner', reason: owner.reason };

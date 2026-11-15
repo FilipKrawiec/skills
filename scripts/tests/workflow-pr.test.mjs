@@ -22,6 +22,16 @@ test('pr ready accepts a green draft whose newest author verdict at its head is 
   assert.equal(prReadyRefusal(draft(), cfg), null);
 });
 
+test('pr ready accepts only an approved exact-head owner verdict and preserves merge holds', () => {
+  const held = draft({ labels: [{ name: 'review:owner' }], reviews: [verdict('team', 'owner', 'APPROVED')] });
+  assert.equal(prReadyRefusal(held, cfg), null);
+  assert.ok(prReadyRefusal({ ...held, reviews: [verdict('team', 'owner', 'COMMENTED')] }, cfg));
+  assert.ok(prReadyRefusal({ ...held, reviews: [verdict('team', 'owner', 'APPROVED', { commit: { oid: 'b'.repeat(40) } })] }, cfg));
+  assert.ok(prReadyRefusal({ ...held, statusCheckRollup: [{ name: 'verify', status: 'IN_PROGRESS' }] }, cfg));
+  assert.match(prAutoMergeRefusal({ ...held, isDraft: false }, cfg, policy), /review:owner holds/);
+  assert.match(prAutoMergeRefusal({ ...held, isDraft: false }, { ...cfg, publishOnMerge: true }, policy), /review:owner holds/);
+});
+
 test('pr ready refuses without the author verdict at the head, on red, pending or missing checks, and on a conflict', () => {
   const refusals = {
     'already ready': draft({ isDraft: false }),

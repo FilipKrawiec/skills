@@ -1,6 +1,6 @@
 # Risk assessment
 
-The `devops` agent, task `risk`, assesses the issue before the build and the diff when the draft opens. The PR's `risk:R*` label selects models and whether the owner reviews; reserve R2 for critical changes.
+The `devops` agent, task `risk`, assesses the diff when the draft opens. The PR's `risk:R*` label selects models and whether the owner reviews; reserve R2 for critical changes.
 
 ## Assess
 
