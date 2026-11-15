@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fixture } from './support/workflow-cli-fixture.mjs';
+import { fixture, nativeRemote } from './support/workflow-cli-fixture.mjs';
 
 const sha = 'a'.repeat(40);
 const thread = (id, author, body) => ({ id, isResolved: false, isOutdated: false, path: 'a.txt', line: 1, comments: { nodes: [{ url: 'u', body, author: { login: author } }] } });
@@ -13,6 +13,17 @@ function setup(t, extra = {}) {
   f.env.GH_LOG = join(f.root, `gh-${Math.random().toString(36).slice(2)}.log`);
   f.env.REVIEW_RECORD = join(f.root, 'review.json');
   Object.assign(f.env, extra);
+  const remote = nativeRemote(f); f.env.TEST_REVIEW_REMOTE = remote;
+  const nonce = '11111111-1111-4111-8111-111111111111';
+  const identity = { head: sha, nonce, pid: process.pid, host: 'fixture', startedAt: Date.now() };
+  const env = { ...f.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com', GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (...args) => { const result = spawnSync(f.env.REAL_GIT, args, { cwd: f.repo, env, encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); return result.stdout.trim(); };
+  const base = git('rev-parse', 'HEAD');
+  const oid = git('commit-tree', `${base}^{tree}`, '-p', base, '-m', JSON.stringify(identity));
+  git('push', remote, `${oid}:refs/heads/workflow-review-claims/pr-5`);
+  mkdirSync(join(f.repo, '.wf'), { recursive: true });
+  writeFileSync(join(f.repo, '.wf', `review-session-${nonce}.json`), JSON.stringify({ ...identity, oid, pr: '5', acquired: true }));
+  f.env.WORKFLOW_REVIEW_NONCE = nonce; f.env.HEAD_SHA = sha; f.env.BASE_SHA = base;
   writeFileSync(join(f.repo, 'body.md'), `<!-- agent-review sha=${sha} verdict=ready -->\nLooks good`);
   writeFileSync(join(f.repo, 'comments.json'), JSON.stringify([{ path: 'a.txt', line: 3, body: '**Nit** rename' }]));
   const post = (...args) => f.cliRun('review-post', '--pr', '5', '--sha', sha, '--body-file', 'body.md', ...args);
@@ -37,7 +48,7 @@ test('review-post refuses a bad event, sha or body marker without posting, and r
   assert.notEqual(f.cliRun('review-post', '--pr', '5', '--sha', 'HEAD', '--event', 'COMMENT', '--body-file', 'body.md').status, 0);
   writeFileSync(join(f.repo, 'plain.md'), 'no marker');
   assert.notEqual(f.cliRun('review-post', '--pr', '5', '--sha', sha, '--event', 'COMMENT', '--body-file', 'plain.md').status, 0);
-  assert.deepEqual(log(), ['pr edit 5 --repo github.com/acme/app --remove-label state:reviewing', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
+  assert.deepEqual(log(), ['pr edit 5 --repo github.com/acme/app --remove-label state:reviewing'], 'only the first attempt owns a claim to release');
   assert.equal(existsSync(f.env.REVIEW_RECORD), false);
 });
 
@@ -89,7 +100,7 @@ test('a failing resolve blocks the post, releases the claim and leaves a failure
 });
 
 test('a failed post releases the claim, comments the failure and never prints the token', t => {
-  const { post, log } = setup(t, { FAIL_REVIEW_POST: '1' });
+  const { f, post, log } = setup(t, { FAIL_REVIEW_POST: '1' });
   const result = post('--event', 'REQUEST_CHANGES');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Blocked:/);
@@ -97,6 +108,8 @@ test('a failed post releases the claim, comments the failure and never prints th
   assert.equal(log().length, 2);
   assert.match(log()[0], /post-failed sha=a{40} -->.*REQUEST_CHANGES/);
   assert.equal(log()[1], 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing');
+  const ref = spawnSync(f.env.REAL_GIT, ['ls-remote', '--refs', f.env.TEST_REVIEW_REMOTE, 'refs/heads/workflow-review-claims/pr-5'], { cwd: f.repo, encoding: 'utf8' });
+  assert.equal(ref.stdout.trim(), '', 'the atomic claim is released');
 });
 
 test('a failed label removal warns and still exits 0', t => {
@@ -223,4 +236,37 @@ test('review-post reads inline comments from stdin', t => {
   const result = f.cliRun('review-post', '--pr', '5', '--sha', sha, '--event', 'COMMENT', '--body-file', 'body.md', '--comments-file', '-', { input: comments });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(record().payload.comments[0].body, '**Nit** stdin');
+});
+
+test('review-post rejects an unsupported approve verdict at post time', t => {
+  const { f, post } = setup(t);
+  writeFileSync(join(f.repo, 'body.md'), `<!-- agent-review sha=${sha} verdict=approve -->\nLooks good`);
+  const result = post('--event', 'APPROVE');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /verdict=approve.*verdict=ready/);
+});
+
+
+test('review-post reads committed config from a nested directory', t => {
+  const { f } = setup(t);
+  const nested = join(f.repo, 'nested'); mkdirSync(nested);
+  const result = f.cliRun('review-post', '--pr', '5', '--sha', sha, '--event', 'COMMENT', '--body-file', join(f.repo, 'body.md'), { cwd: nested });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('a failed inline review identifies the attempted location', t => {
+  const { post } = setup(t, { FAIL_REVIEW_POST: '1' });
+  const result = post('--event', 'COMMENT', '--comments-file', 'comments.json');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /a\.txt:3/);
+});
+
+test('a reviewer without the session token cannot post or release another claim', t => {
+  const { f, post, log } = setup(t);
+  delete f.env.WORKFLOW_REVIEW_NONCE;
+  const result = post('--event', 'COMMENT');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /session claim is required/);
+  assert.deepEqual(log(), []);
+  assert.equal(existsSync(f.env.REVIEW_RECORD), false);
 });

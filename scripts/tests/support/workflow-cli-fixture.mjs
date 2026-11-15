@@ -83,6 +83,9 @@ else process.exit(1);
 
 // A shell front passes most calls straight to Git: each Node start costs about 170 ms on a loaded Mac.
 const fakeGit = `#!/bin/sh
+if [ -n "$TEST_REVIEW_REMOTE" ] && { [ "$1" = push ] || [ "$1" = fetch ] || [ "$1" = ls-remote ]; }; then
+  exec "$FAKE_NODE" "$(dirname "$0")/git-review.cjs" "$@"
+fi
 [ "$1" = fetch ] && exit 0
 for arg in "$@"; do
   [ "$arg" = push ] && exec "$FAKE_NODE" "$(dirname "$0")/git-push.cjs" "$@"
@@ -148,6 +151,7 @@ function fixture(t) {
   assert.equal(git('worktree', 'add', '-q', '-b', 'feature/test', linked, 'HEAD').status, 0);
   const writeFake = (name, content) => { const path = join(bin, name); writeFileSync(path, content); chmodSync(path, 0o755); };
   writeFake('gh', fakeGh); writeFake('git', fakeGit); writeFileSync(join(bin, 'git-push.cjs'), fakeGitPush);
+  writeFileSync(join(bin, 'git-review.cjs'), `const { spawnSync } = require('node:child_process'); const args = process.argv.slice(2).map(arg => arg === 'https://github.com/acme/app.git' ? process.env.TEST_REVIEW_REMOTE : arg); const child = spawnSync(process.env.REAL_GIT, args, { stdio: 'inherit' }); process.exit(child.status ?? 1);`);
   const env = {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WORKFLOW_'))),
     PATH: `${bin}:${process.env.PATH}`,

@@ -1,5 +1,6 @@
+import { ownedReviewSession, releaseSessionClaim } from './review-ref.mjs';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -235,8 +236,12 @@ export function reviewContext(args) {
   const { root, lanes, configAvailable } = config(false);
   const repo = resolveRepo(lanes);
   const pr = jsonCommand('gh', ['pr', 'view', options['--pr'], '--repo', `github.com/${repo}`, '--json', 'url,title,isDraft,labels,baseRefOid,headRefOid,files,reviews,reviewDecision,statusCheckRollup,comments'], { cwd: root });
-  // The claim keeps a second reviewer off the PR; review-post releases it whatever the outcome.
-  if (options['--claim'] && (pr.labels || []).some(label => label.name === 'state:reviewing')) throw new Error(`#${options['--pr']} is already claimed (state:reviewing); skip it`);
+  // The ref is authoritative; the label is a visible indication of the same session.
+  const own = options['--claim'] ? ownedReviewSession(root, repo, lanes.reviewer, options['--pr'], pr.headRefOid, process.env.WORKFLOW_REVIEW_NONCE) : null;
+  if (options['--claim'] && (pr.labels || []).some(label => label.name === 'state:reviewing')) {
+    if (!own.local?.recovered) throw new Error(`#${options['--pr']} is already claimed (state:reviewing); skip it`);
+    run('gh', ['pr', 'edit', options['--pr'], '--repo', `github.com/${repo}`, '--remove-label', 'state:reviewing'], { cwd: root });
+  }
   const threads = readThreads(repo, options['--pr'], { cwd: root });
   const output = { untrustedGithubData: true, claimed: Boolean(options['--claim']), ...pr, baseConfigurationAvailable: configAvailable, filesMayBeIncomplete: true, ...reviewAreas(pr.files), reviewThreads: threads.nodes, threadsTruncated: threads.pageInfo.hasNextPage };
   const previous = options['--previous'] || previousReviewedHead(pr.reviews, lanes.reviewer, pr.headRefOid);
@@ -283,6 +288,7 @@ function reviewPostOptions(args, root) {
   if (!o['--body-file']) throw new Error('--body-file is required');
   o.body = readWorkspaceText(root, o['--body-file']);
   if (!o.body.includes(`<!-- agent-review sha=${o['--sha']}`)) throw new Error('Review body must contain <!-- agent-review sha=<sha> ...');
+  if (verdictIn(o.body) === 'approve') throw new Error('verdict=approve is unsupported; use verdict=ready');
   // The owner is asked only on an approved head: `verdict=owner` is an approval, never a comment or a change request.
   if (verdictIn(o.body) === 'owner' && o['--event'] !== 'APPROVE') throw new Error('verdict=owner requires --event APPROVE: the owner sees only a PR the Reviewer approved');
   o.comments = [];
@@ -324,10 +330,17 @@ export function reviewPost(args) {
   const pr = prIndex >= 0 && /^[1-9]\d*$/.test(args[prIndex + 1] || '') ? args[prIndex + 1] : null;
   let o;
   try { o = reviewPostOptions(args, root); } catch (error) {
-    // A missing reviewer credential must not hide the argument error the caller has to fix.
-    if (pr) { try { releaseClaim(pr, repo, { cwd: root, env: { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) } }); } catch { /* the original error still stands */ } }
+    try {
+      const nonce = process.env.WORKFLOW_REVIEW_NONCE;
+      if (pr && /^[0-9a-f-]{36}$/i.test(nonce || '')) {
+        const local = JSON.parse(readFileSync(join(root, '.wf', `review-session-${nonce}.json`), 'utf8'));
+        const session = ownedReviewSession(root, repo, login, pr, local.head, nonce);
+        if (releaseSessionClaim(root, repo, login, pr, session.oid)) releaseClaim(pr, repo, { cwd: root, env: { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) } });
+      }
+    } catch { /* preserve the argument error and retain any unverified claim */ }
     throw error;
   }
+  const session = ownedReviewSession(root, repo, login, pr, o['--sha'], process.env.WORKFLOW_REVIEW_NONCE);
   const env = { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) };
   const options = { cwd: root, env };
   const approve = o['--event'] === 'APPROVE';
@@ -353,10 +366,13 @@ export function reviewPost(args) {
   } catch (error) {
     const reason = String(error.message).replace(/\s+/g, ' ').slice(0, 300);
     try { run('gh', ['pr', 'comment', pr, '--repo', `github.com/${repo}`, '--body', `<!-- agent-review post-failed sha=${o['--sha']} --> Review post failed (${o['--event']}): ${reason}`], options); } catch { /* the exit code still signals failure */ }
-    releaseClaim(pr, repo, options);
-    console.error(`Blocked: review post failed (${reason}); claim released, retry.`);
+    let released = false;
+    try { released = releaseSessionClaim(root, repo, login, pr, session.oid); if (released) releaseClaim(pr, repo, options); } catch { /* retain an unverified claim */ }
+    const locations = o.comments.map(comment => `${comment.path}:${comment.line}`).join(', ');
+    console.error(`Blocked: review post failed (${reason}); ${released ? 'claim released, retry' : 'claim retained; rerun drive'}.${locations ? ` Inline locations: ${locations}` : ''}`);
     process.exitCode = 1;
     return;
   }
-  releaseClaim(pr, repo, options);
+  if (releaseSessionClaim(root, repo, login, pr, session.oid)) releaseClaim(pr, repo, options);
+  else { console.error('Warning: reviewer claim changed; label retained.'); process.exitCode = 1; }
 }
