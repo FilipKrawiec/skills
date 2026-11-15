@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, latestAssessment,
-  driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, reviewerCommand, staleReviewClaim,
+  driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { holdBaseUpdates } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -59,24 +59,12 @@ test('review, fix, ready, merge and close follow the PR state', () => {
   assert.deepEqual(decide({ issue: issue({ state: 'CLOSED' }) }), { done: { issue: 3 } });
 });
 
-test('a Reviewer claim older than an hour with no review since is released and the reviewer dispatched again', () => {
+test('an old claim with unknown liveness remains held', () => {
   const base = { issue: started, tree: tree({ commits: 1 }) };
   const claimed = pr({ labels: [label('risk:R1'), label('state:reviewing')] });
   const since = Date.parse('2026-11-11T10:00:00Z'); const hour = 60 * 60_000;
   assert.deepEqual(decide({ ...base, pr: claimed, reviewingSince: since, now: since + hour - 1 }), { wait: { pr: 5, until: 'reviewed' } });
-  assert.deepEqual(decide({ ...base, pr: claimed, reviewingSince: since, now: since + hour }), { do: 'release-review' });
-  const posted = { ...review('fixes', 'COMMENTED'), submittedAt: '2026-11-11T10:30:00Z' };
-  assert.equal(staleReviewClaim({ ...claimed, reviews: [posted] }, lanes, since, since + 2 * hour), false, 'a review after the claim is not stale');
-  assert.equal(staleReviewClaim(claimed, lanes, null, since + 2 * hour), false, 'no label event, no release');
-});
-
-test('drive releases a stale Reviewer claim, then dispatches the reviewer', () => {
-  const since = Date.parse('2026-11-11T10:00:00Z');
-  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, labels: [label('risk:R1'), label('state:reviewing')] })] });
-  Object.assign(repo.io, { reviewingSince: () => since, now: () => since + 61 * 60_000 });
-  const step = drive(repo.io, 3, lanes, {});
-  assert.deepEqual(repo.calls, [['release-review', 5]]);
-  assert.deepEqual([step.agent, step.mode], ['reviewer', 'review']);
+  assert.deepEqual(decide({ ...base, pr: claimed, reviewingSince: since, now: since + hour }), { wait: { pr: 5, until: 'reviewed' } });
 });
 
 test('an approved PR behind its base under review:owner is updated from the base, never sent to the owner', () => {
@@ -375,7 +363,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   assert.equal(reviewer.agent, 'reviewer');
   assert.equal(reviewer.session, 'separate');
   assert.equal(reviewer.pr, 53);
-  assert.deepEqual(reviewer.command.slice(0, 7), ['claude', '--print', '--agent', 'filipkrawiec-workflow:reviewer', '--model', 'sonnet', '--permission-mode']);
+  assert.deepEqual(reviewer.command.slice(4, 11), ['claude', '--print', '--agent', 'filipkrawiec-workflow:reviewer', '--model', 'sonnet', '--permission-mode']);
   assert.deepEqual(drive(repo.io, 3, lanes, { risk: 'R0', reason: 'text only' }), reviewer, 'a repeated hand-back changes nothing');
   repo.s.prs[0].reviews = [review('ready')];
   const approve = drive(repo.io, 3, lanes, {});
@@ -866,4 +854,86 @@ test('verified consolidated children and refinements close an epic without anoth
     repo.io.consolidatedDelivery = (parent, child) => parent === 9 && child.number === consolidated;
     assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
   }
+});
+
+test('a current-head Reviewer verdict after the claim releases it immediately', () => {
+  const since = Date.parse('2026-11-11T10:00:00Z');
+  const claimed = pr({ labels: [label('risk:R1'), label('state:reviewing')], reviews: [{ ...review('owner', 'APPROVED'), submittedAt: '2026-11-11T10:01:00Z' }] });
+  assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), pr: claimed, reviewingSince: since, now: since + 120_000 }), { do: 'release-review' });
+});
+
+test('base conflicts always return to the implementer, even after the fresh round', () => {
+  const reviews = Array.from({ length: 5 }, () => review('fixes'));
+  const step = decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ mergeable: 'CONFLICTING', reviews }) });
+  assert.equal(step.agent, 'implementer');
+  assert.match(step.reason, /conflicts with its base/);
+});
+
+test('a completed evidence-only fix requests a fresh review of the unchanged head', () => {
+  const step = decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: [review('fixes')] }), handBack: { status: 'done', note: 'Corrected PR evidence' } });
+  assert.equal(step.agent, 'reviewer');
+  assert.equal(step.sameHead, true);
+});
+
+test('a structured conflict-only verdict sends the implementer to merge the base at every round', () => {
+  const conflict = { ...review('fixes'), body: `<!-- agent-review sha=${head} round=5 verdict=fixes finding=base-conflict -->` };
+  const reviews = [...Array.from({ length: 4 }, () => review('fixes')), conflict];
+  const step = decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews }) });
+  assert.equal(step.agent, 'implementer');
+  assert.match(step.reason, /base conflict/);
+  for (const status of ['narrowed', 'replan']) assert.equal(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews }), handBack: { status } }).agent, 'implementer', status);
+});
+
+
+
+test('an authoritative reviewer ref blocks dispatch before its label and recovers a dead child', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }), pr: pr() };
+  assert.deepEqual(decide({ ...base, reviewSession: { oid: 'claim', dead: false } }), { wait: { pr: 5, until: 'reviewed' } });
+  assert.deepEqual(decide({ ...base, reviewSession: { oid: 'claim', dead: true } }), { do: 'release-review', claim: 'claim' });
+  assert.deepEqual(decide({ ...base, reviewSession: { unavailable: true } }), { wait: { pr: 5, until: 'reviewed' } });
+});
+
+test('scope replanning excludes base conflicts and conflict fixes tell the implementer to merge', () => {
+  const brief = plannerBrief({ issue: started, pr: pr(), step: { mode: 'replan', reason: 'blocking findings' } });
+  assert.match(brief, /Ignore base conflicts/);
+  const fix = implementerBrief({ issue: started, tree: tree(), pr: pr(), step: { mode: 'fix', reason: 'conflicts with its base' }, base: 'main' });
+  assert.match(fix, /git merge --no-ff --no-commit origin\/main/);
+});
+
+test('a base conflict takes priority over narrowed and replan hand-backs', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }), pr: pr({ mergeable: 'CONFLICTING', reviews: [review('fixes')] }) };
+  for (const status of ['narrowed', 'replan']) {
+    const step = decide({ ...base, handBack: { status } });
+    assert.equal(step.agent, 'implementer', status);
+    assert.match(step.reason, /conflicts with its base/);
+  }
+});
+
+test('a live reviewer keeps its claim even if the worktree is dirty', () => {
+  const claimed = pr({ labels: [label('risk:R1'), label('state:reviewing')] });
+  const step = decide({ issue: started, tree: tree({ dirty: true }), pr: claimed, reviewSession: { oid: 'claim', dead: false } });
+  assert.deepEqual(step, { wait: { pr: 5, until: 'reviewed' } });
+});
+
+test('a recorded review-post failure releases a leftover label after the atomic claim is gone', () => {
+  const claimed = pr({ labels: [label('risk:R1'), label('state:reviewing')] });
+  const base = { issue: started, tree: tree({ commits: 1 }), pr: claimed, reviewingSince: 100, postFailed: true };
+  assert.deepEqual(decide(base), { do: 'release-review' });
+  assert.deepEqual(decide({ ...base, reviewSession: { oid: 'live', dead: false } }), { wait: { pr: 5, until: 'reviewed' } });
+  const retry = decide({ ...base, pr: pr({ reviews: [review('fixes')] }) });
+  assert.equal(retry.agent, 'reviewer');
+  assert.equal(retry.reason, 'the previous review post failed');
+});
+
+test('existing tagged conflict-only findings route to the base merge without hiding other findings', () => {
+  const prior = Array.from({ length: 4 }, () => review('fixes'));
+  const tagged = text => ({ ...review('fixes'), body: `<!-- agent-review sha=${head} round=5 verdict=fixes -->\n${text}` });
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  const conflict = decide({ ...base, pr: pr({ reviews: [...prior, tagged('**Important** The PR conflicts with the base branch.')] }) });
+  assert.equal(conflict.agent, 'implementer');
+  const mixed = decide({ ...base, pr: pr({ reviews: [...prior, tagged('**Important** The PR conflicts with the base branch.\n**Important** A user loses saved data.')] }) });
+  assert.equal(mixed.agent, 'planner');
+  const inconsistent = tagged('**Important** The PR conflicts with the base branch.\n**Important** A user loses saved data.');
+  inconsistent.body = inconsistent.body.replace('verdict=fixes', 'verdict=fixes finding=base-conflict');
+  assert.equal(decide({ ...base, pr: pr({ reviews: [...prior, inconsistent] }) }).agent, 'planner');
 });

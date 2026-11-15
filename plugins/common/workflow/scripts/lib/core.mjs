@@ -72,10 +72,10 @@ export function config(requireLanes = true, allowBootstrap = false, allowBootstr
   }
   // Never replace malformed or inaccessible committed authority with local values.
   const path = '.agents/config.json';
-  const present = git('ls-tree', '--name-only', baseRef, '--', path);
+  const present = git('ls-tree', '--name-only', baseRef, '--', `:(top)${path}`);
   let source = 'base';
   let configPath = present ? `${baseRef}:${path}` : null;
-  if (!present && allowBootstrap && git('ls-tree', '--name-only', 'HEAD', '--', path)) {
+  if (!present && allowBootstrap && git('ls-tree', '--name-only', 'HEAD', '--', `:(top)${path}`)) {
     configPath = `HEAD:${path}`;
     source = 'branch bootstrap';
   }

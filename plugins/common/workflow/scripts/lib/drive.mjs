@@ -1,3 +1,4 @@
+import { localClaimIsDead, releaseSessionClaim, sessionClaim } from './review-ref.mjs';
 import { verifyConsolidatedDelivery } from './consolidated-delivery.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -104,14 +105,6 @@ export function parseHandBack(text) {
   return result;
 }
 
-// A Reviewer claim older than this with no review posted since is stale: its session never started or died.
-export const staleReviewMinutes = 60;
-// Whether `state:reviewing`, labelled at `since` (ms), is stale at `now`: old enough and no Reviewer review after it.
-export function staleReviewClaim(pr, lanes, since, now) {
-  if (!since || now - since < staleReviewMinutes * 60_000) return false;
-  const reviewer = lanes.reviewer?.toLowerCase();
-  return !(pr.reviews || []).some(review => review.author?.login?.toLowerCase() === reviewer && Date.parse(review.submittedAt || '') > since);
-}
 
 const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...extra });
 const stateLabels = issue => (issue.labels || []).map(label => label.name ?? label).filter(name => name.startsWith('state:'));
@@ -128,7 +121,7 @@ export function decideIssue(facts, lanes) {
   // Unmet dependencies stop the item in every phase and touch nothing; a dropped one needs the owner.
   if (dropped.length) return { owner: droppedReason(issue.number, dropped), url: issue.url };
   if (blockers.length) return { blocked: { issue: issue.number, by: blockers } };
-  if (hb.status === 'replan') return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
+  if (hb.status === 'replan' && (!pr || pr.state !== 'OPEN')) return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
   if (hb.status === 'blocked') return { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}` };
   // A planner split makes the issue an epic, which `drive` routes to `driveEpic`; still a story, the split did not happen,
   // and dispatching the planner again would loop on the same blocking verdict. A narrowed issue is handled with its PR.
@@ -142,12 +135,26 @@ export function decideIssue(facts, lanes) {
     return tree.unpushed ? { do: 'push' } : { do: 'open' };
   }
   const state = prState(pr, lanes);
+  const completedClaim = facts.reviewingSince && (pr.reviews || []).some(review => review.author?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && review.commit?.oid === pr.headRefOid && review.state !== 'DISMISSED' && review.body?.includes(`sha=${pr.headRefOid}`) && /<!-- agent-review\b[^>]*\bverdict=(ready|fixes|split|owner)\b/.test(review.body) && Date.parse(review.submittedAt || '') > Math.max(facts.reviewingSince, facts.reviewSession?.startedAt || 0));
+  if (facts.reviewSession?.unavailable) return { wait: { pr: pr.number, until: 'reviewed' } };
+  if (facts.reviewSession?.oid) {
+    if (facts.reviewSession.dead || completedClaim) return { do: 'release-review', claim: facts.reviewSession.oid };
+    return { wait: { pr: pr.number, until: 'reviewed' } };
+  }
+  if (state.labels.includes('state:reviewing') && (completedClaim || facts.postFailed)) return { do: 'release-review' };
+  if (state.labels.includes('state:reviewing')) return { wait: { pr: pr.number, until: 'reviewed' } };
+  if (facts.postFailed) return agent('reviewer', 'review', { reason: 'the previous review post failed', sameHead: true, round: state.round + 1 });
+  const latestVerdict = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && review.commit?.oid === pr.headRefOid && review.state !== 'DISMISSED' && /<!-- agent-review\b[^>]*\bverdict=/.test(review.body || '')).at(-1);
+  const verdictBody = latestVerdict?.body || '';
+  const findings = [...verdictBody.matchAll(/\*\*(?:Blocker|Important)\*\*([\s\S]*?)(?=\*\*(?:Blocker|Important|Nit|Pre-existing|Follow-up)\*\*|$)/g)].map(match => match[1]);
+  const taggedConflicts = findings.every(finding => /\bconflict/i.test(finding) && /\bbase\b/i.test(finding));
+  const conflictOnly = taggedConflicts && (findings.length > 0 || /<!-- agent-review\b[^>]*\bfinding=base-conflict\b/.test(verdictBody));
+  if (hb.status === 'replan' && !conflictOnly && pr.mergeable !== 'CONFLICTING' && pr.mergeStateStatus !== 'DIRTY') return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
   if (tree && (tree.dirty || tree.unpushed)) {
     if (hb.status !== 'done') return agent('implementer', 'fix', { reason: 'fix in progress' });
     if (tree.dirty) return hb.commit && hb.paths?.length ? { do: 'commit' } : agent('implementer', 'fix', { reason: 'uncommitted changes and no commit/paths in the hand-back' });
     return { do: 'push' };
   }
-  if (state.labels.includes('state:reviewing')) return staleReviewClaim(pr, lanes, facts.reviewingSince, facts.now ?? Date.now()) ? { do: 'release-review' } : { wait: { pr: pr.number, until: 'reviewed' } };
   const assess = assessmentStep(facts);
   if (assess) return assess;
   // The owner's issue label is a floor; drive raises a PR label to it and never lowers one someone raised.
@@ -155,9 +162,12 @@ export function decideIssue(facts, lanes) {
   if (risks.indexOf(risk) > risks.indexOf(state.risk)) return { do: 'risk', risk };
   const next = state.next;
   // A narrowed issue changes what the head is judged against: the Reviewer judges the same head again, no new build.
-  if (hb.status === 'narrowed' && state.verdict === 'fixes') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
+  if (hb.status === 'narrowed' && state.verdict === 'fixes' && !conflictOnly && next.reason !== 'conflicts with its base') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
+  if (next.action === 'fix' && conflictOnly && hb.status !== 'done') return agent('implementer', 'fix', { reason: 'base conflict is the only blocking finding', resume: true });
+  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'done') return agent('reviewer', 'review', { reason: 'the completed fix changed no commit', sameHead: true, round: state.round + 1 });
   if (next.action === 'fix') {
     if (!tree) return { do: 'start' };
+    if (next.reason === 'conflicts with its base') return agent('implementer', 'fix', { reason: next.reason, resume: true });
     if (state.verdict === 'fixes' && state.round > freshFixRound) return agent('planner', 'replan', { reason: `round ${state.round}: the fresh fix round left blocking findings; narrow the issue to what the PR delivers` });
     const fresh = state.verdict === 'fixes' && state.round === freshFixRound;
     return agent('implementer', 'fix', fresh ? { reason: `round ${state.round}: the whole open set, fresh`, fresh: true } : { reason: next.reason, resume: true });
@@ -231,7 +241,7 @@ PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}, round ${f.round}` : 'none yet; 
 
 ## Task
 
-${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focused tests.' : f.step.fresh ? 'Earlier fix rounds did not converge. Read every open Blocker and Important thread `review-context` lists and the issue\'s criteria, find their shared cause and fix it whole, with the neighbouring cases the same cause breaks, each with a focused test. Fix nothing outside the criteria; Nits never block.' : 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.'} Work only in the worktree. Run one plain command per Bash call.
+${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focused tests.' : /base conflict|conflicts with its base/.test(f.step.reason || '') ? `Merge the base with \`git merge --no-ff --no-commit origin/${f.base}\`, resolve conflicts and commit the merge.` : f.step.fresh ? 'Earlier fix rounds did not converge. Read every open Blocker and Important thread `review-context` lists and the issue\'s criteria, find their shared cause and fix it whole, with the neighbouring cases the same cause breaks, each with a focused test. Fix nothing outside the criteria; Nits never block.' : 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.'} Work only in the worktree. Run one plain command per Bash call.
 
 ## Commands you may run
 
@@ -291,7 +301,7 @@ export function reviewerBrief(f) {
 
 Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
-${f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`.\n' : ''}
+${f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 
 - \`node ${cli} review-context --pr ${f.pr.number} --issue ${f.issue.number} --claim\`
@@ -308,7 +318,7 @@ verdict, PR, head, round, tag counts.
 export function plannerBrief(f) {
   return `# Planner brief: #${f.issue.number} ${f.issue.title}
 
-Task: ${f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Invoke the `plan` skill to create the final refinement slice' : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first) and hand back \`sliced\``}. Invoke the \`spec\` skill for the issue form.
+Task: ${f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Invoke the `plan` skill to create the final refinement slice' : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Ignore base conflicts when narrowing scope; the implementer merges the base. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first) and hand back \`sliced\``}. Invoke the \`spec\` skill for the issue form.
 Issue: ${f.issue.url}
 Commands: \`node ${cli} issue create ...\`, \`node ${cli} issue edit ...\`, \`gh api\` to link sub-issues and blocked-by dependencies.
 Never write code and never start an agent. Agree each slice with the owner.
@@ -486,6 +496,16 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       writeFileSync(body, updatePrBody(pr.body || '', hb, hb.body ? readFileSync(hb.body, 'utf8') : undefined));
       run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--body-file', body]);
     },
+    reviewSession: (pr, tree) => {
+      const root = tree?.path || git('rev-parse', '--show-toplevel');
+      try { const session = sessionClaim(root, repo, lanes.reviewer, pr.number); return session ? { oid: session.oid, dead: localClaimIsDead(session, session.claim?.head), startedAt: session.claim?.startedAt } : null; } catch { return { unavailable: true }; }
+    },
+    reviewPostFailed: (pr, since) => {
+      if (!since) return false;
+      const comments = gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${pr.number}/comments?per_page=100`]).flat();
+      const lastVerdict = Math.max(0, ...(pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && /<!-- agent-review\b[^>]*\bverdict=/.test(review.body || '')).map(review => Date.parse(review.submittedAt || '') || 0));
+      return comments.some(comment => comment.user?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && Date.parse(comment.created_at || '') >= since && Date.parse(comment.created_at || '') > lastVerdict && comment.body?.includes(`<!-- agent-review post-failed sha=${pr.headRefOid} -->`));
+    },
     // When `state:reviewing` was last added to the PR, from its timeline; null when it never was.
     reviewingSince: pr => {
       const events = gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${pr.number}/timeline?per_page=100`]).flat();
@@ -493,7 +513,10 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       return at ? Date.parse(at) : null;
     },
     linkIssue: (pr, issue) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--body', `Closes #${issue.number}\n\n${pr.body || ''}`]),
-    releaseReview: pr => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--remove-label', 'state:reviewing']),
+    releaseReview: (pr, tree, claim) => {
+      if (claim && !releaseSessionClaim(tree.path, repo, lanes.reviewer, pr.number, claim)) throw new Error('Reviewer claim changed; retry');
+      if ((pr.labels || []).some(label => label.name === 'state:reviewing')) run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--remove-label', 'state:reviewing']);
+    },
     risk: (pr, from, to) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, ...(from ? ['--remove-label', `risk:${from}`] : []), '--add-label', `risk:${to}`]),
     ready: (pr, tree) => self(['pr', 'ready', '--pr', String(pr.number)], tree?.path || process.cwd()),
     unclaim: issue => run('gh', ['issue', 'edit', String(issue.number), '--repo', repo, ...stateLabels(issue).flatMap(name => ['--remove-label', name])]),
@@ -537,11 +560,13 @@ function readIssueFacts(io, n, handBack) {
   const { blockers, dropped } = splitDependencies(io.dependencies(issue));
   const diffPaths = [...new Set([...(tree?.diffPaths || []), ...(pr?.files || []).map(file => file.path)])];
   const claimed = (pr?.labels || []).some(label => label.name === 'state:reviewing');
-  const reviewingSince = claimed ? io.reviewingSince(pr) : null;
+  const reviewingSince = pr?.state === 'OPEN' ? io.reviewingSince(pr) : null;
+  const reviewSession = pr?.state === 'OPEN' ? io.reviewSession?.(pr, tree) : null;
+  const postFailed = !reviewSession && reviewingSince ? io.reviewPostFailed?.(pr, reviewingSince) === true : false;
   // Only the assessment of the current phase is read: the issue's before a draft exists, then the PR's.
   const assessment = io.assessment(issue, pr?.state === 'OPEN' ? pr : null);
   const assessments = pr?.state === 'OPEN' ? { prAssessment: assessment } : { issueAssessment: assessment };
-  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, ...assessments, reviewingSince, now: io.now?.() ?? Date.now() };
+  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, ...assessments, reviewingSince, reviewSession, postFailed, now: io.now?.() ?? Date.now() };
 }
 // The risk that picks the models: the PR's label once a draft exists, else the issue assessment; never below the floor.
 function currentRisk(facts, step) {
@@ -566,7 +591,7 @@ function instruction(io, facts, step, lanes) {
   if (step.reason) out.reason = step.reason;
   if (step.resume) out.resume = true;
   if (host === 'agy') out.command = ['node', fileURLToPath(new URL('../agy-session.mjs', import.meta.url)), lanes.delivery?.executables?.agy || 'agy', step.agent, model, brief];
-  if (step.agent === 'reviewer') out.command = reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host);
+  if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host)];
   return out;
 }
 function finish(step) {
@@ -594,7 +619,7 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
     else if (step.do === 'push') io.push(tree);
     else if (step.do === 'open') { io.open(issue, tree, maxRisk(riskLabel(issue.labels || []), facts.issueAssessment?.risk || 'R1'), handBack); bodyUpdated = true; }
-    else if (step.do === 'release-review') io.releaseReview(pr);
+    else if (step.do === 'release-review') io.releaseReview(pr, tree, step.claim);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
     // A draft PR keeps its issue In progress; Review starts when the PR is marked ready. A ready PR also drops the
