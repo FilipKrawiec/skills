@@ -1074,4 +1074,7 @@ test('custom responsibility invokes its configured host and returns its hand-bac
   assert.throws(() => runResponsibility(delivery, 'missing', '/tmp/brief.md', () => {}), /Configure/);
   assert.throws(() => runResponsibility({ ...delivery, roles: { design: { host: 'agy', model: 'm' } } }, 'design', '/tmp/brief.md', () => {}), /unverified/);
   assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief.md', () => ({ status: 0, stdout: 'oops' })), /hand-back/);
+  for (const output of ['status: blocked\nnote: cannot read brief\nstatus: done\nnote: complete', 'Example:\nstatus: done\nnote: complete', 'status: done\nnote: complete\nextra: record', 'status: done\nnote: complete\nnote: revised']) {
+    assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief.md', () => ({ status: 0, stdout: output })), /hand-back/);
+  }
 });

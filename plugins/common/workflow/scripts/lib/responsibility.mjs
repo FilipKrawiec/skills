@@ -17,6 +17,6 @@ export function runResponsibility(delivery, name, brief, runner = spawnSync) {
   const result = runner(executable, args, { encoding: 'utf8' });
   if (result.error || result.status !== 0) throw new Error(`${role.host} ${name} failed: ${result.error?.message || result.stderr || `exit ${result.status}`}`);
   const output = result.stdout || '';
-  if (!/^status: (done|blocked|replan)\s*$/m.test(output) || !/^note: \S.*$/m.test(output)) throw new Error(`${role.host} ${name} returned a malformed hand-back; require status and note`);
+  if (!/^status: (done|blocked|replan)\r?\nnote: \S[^\r\n]*(?:\r?\n)?$/.test(output)) throw new Error(`${role.host} ${name} returned a malformed hand-back; require status and note`);
   return output;
 }
