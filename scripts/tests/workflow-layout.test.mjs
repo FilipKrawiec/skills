@@ -171,3 +171,20 @@ test('every agent drive can dispatch has a definition in the workflow agents', (
   const defined = new Set(readdirSync(join(commonRoot, 'workflow/agents')).map(file => file.replace(/\.md$/, '')));
   assert.deepEqual([...names].filter(name => !defined.has(name)).sort(), []);
 });
+
+test('docs give the measured Codex status and keep AGY advisory only', () => {
+  const record = readFileSync(join(root, 'docs/records/2026-11-14-library-host-portability.md'), 'utf8');
+  const concepts = readFileSync(join(root, 'docs/CONCEPTS.md'), 'utf8');
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  assert.match(concepts, /Codex implementer passed the independent gate in 3 of 4 runs and was judged at or above Opus/);
+  assert.match(concepts, /Codex Reviewer caught 1 of 3 known defects against Opus's 2 of 3, so it is not recommended as the sole Reviewer/);
+  assert.match(concepts, /Codex-hosted drive orchestration is unmeasured/);
+  assert.match(concepts, /AGY stays advisory only/);
+  assert.match(readme, /Codex implementer measured, Codex Reviewer below the Opus baseline and not recommended as sole Reviewer, Codex-hosted orchestration unmeasured, AGY advisory only/);
+  assert.match(readme, /host-portability\.md#codex-dry-run-2026-11-16/);
+  assert.match(record, /Claude delivery dispatch is measured\. Codex: implementer measured, Reviewer below the Opus baseline, Codex-hosted orchestration unmeasured \(see Codex dry run below\)\. Antigravity dispatch explicitly stops\./);
+  assert.match(record, /^## Codex dry run, 2026-11-16$/m);
+  for (const fact of ['codex-cli 0.167.1', 'gpt-6.1-terra', '| #549 | gate fail |', '#539 missed', '#555 caught', '$1.13']) assert.ok(record.includes(fact), fact);
+  assert.doesNotMatch(record, /Delivery dispatch supports configured Codex and Claude|Measured status/);
+  for (const doc of [concepts, readme, record]) assert.doesNotMatch(doc, /unmeasured and unsupported until measured/);
+});
