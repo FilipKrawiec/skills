@@ -8,11 +8,12 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 
 Review at head. Never start a subagent, finder or verifier. Never implement, commit or push; refuse a head this session committed or pushed. Post only with `review-post`: it acts as the configured Reviewer and never prints the token. Run one plain command per Bash call. `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
 
-Outside drive, launch with `node <this-skill-directory>/../../scripts/review-session.mjs <PR> <HEAD> <reviewer-command>...`.
+Outside drive, run `node <this-skill-directory>/../../scripts/review-session.mjs <PR> <HEAD> <reviewer-command>...`.
 
 Branch on the assignment, first match wins:
 
 - a technical fork: read [assignments.md](references/assignments.md);
+- epic outcome: [epic-outcome.md](references/epic-outcome.md);
 - approve a ready PR whose newest verdict at its head is `ready`: read [approval.md](references/approval.md);
 - an area, diff or branch with no PR: read [area-audit.md](references/area-audit.md) for a whole area, do steps 3 and 4 and return the step 5 envelope without posting;
 - a PR: steps 1 to 5.

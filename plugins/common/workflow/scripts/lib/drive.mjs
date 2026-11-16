@@ -12,7 +12,7 @@ import { boardStatus, dependenciesFromIssueBody, pathsFromIssueBody, pathsWithin
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { consolidatedInto, droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { checkState, failedStates, prFields } from './pr.mjs';
-import { verifyEpicClosure } from './epic-closure.mjs';
+import { addCriterionIds, tickCriteria, verifyEpicClosure } from './epic-closure.mjs';
 import { prState } from './state.mjs';
 import { exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
@@ -380,7 +380,23 @@ function improverBrief(f) {
 Invoke the \`improve\` skill for process lessons from the delivered epic ${f.issue.url}. Follow its idempotency and recording steps; the refinement PR has merged. Return its output in at most 5 lines.
 `;
 }
+function epicOutcomeBrief(f) {
+  return `# Reviewer brief: epic #${f.issue.number} outcome review
+
+Task: post the epic outcome comment for ${f.issue.url} (review skill, references/epic-outcome.md). ${f.step.reason}.
+Read the epic, its linked children (\`gh api repos/${f.repo}/issues/${f.issue.number}/sub_issues\`) and the PRs merged into ${f.base} that closed them. Judge each criterion against the merged code and cite those PRs; mark one \`unmet\` or \`unverifiable\` when the evidence does not show it, with a concrete \`nextAction\`. Never edit, commit or push, never start an agent and never print a token.
+
+## Hand-back, at most 5 lines
+
+epic, the comment link, one \`met\`/\`unmet\`/\`unverifiable\` count per state.
+
+## Epic
+
+${f.issue.body || '(no body)'}
+`;
+}
 export function reviewerBrief(f) {
+  if (f.step.mode === 'epic-outcome') return epicOutcomeBrief(f);
   return `# Reviewer brief: PR #${f.pr.number} for #${f.issue.number}
 
 ${f.packet ? `Read the review packet first: ${f.packet}. It holds the issue criteria, CI, the project gate, the diff by area, the delta since your last verdict with open threads, and call sites of changed exports. Do not re-gather them; check blast radius outside it yourself.\n\n` : ''}Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
@@ -544,6 +560,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const number = result.data.createIssue.issue.number;
       return gh(['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
     },
+    editEpicBody: (epic, body) => { run('gh', ['issue', 'edit', String(epic.number), '--repo', repo, '--body', body]); },
     uncheckEpicCriteria: (epic, ids) => {
       const body = epic.body.replace(/^(\s*[-*] \[[ xX]\] .+?\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->\s*)$/gm, (line, whole, id) => ids.includes(id) ? line.replace(/\[[xX]\]/, '[ ]') : line);
       if (body !== epic.body) run('gh', ['issue', 'edit', String(epic.number), '--repo', repo, '--body', body]);
@@ -744,7 +761,7 @@ function instruction(io, facts, step, lanes) {
   const { model, host, session } = assignment;
   const brief = join(io.scratch(tree), `drive-${issue.number}-${step.agent}.md`);
   const round = pr ? prState(pr, lanes).round : 0;
-  const packet = step.agent === 'reviewer' ? join(io.scratch(tree), 'review-packet.md') : null;
+  const packet = step.agent === 'reviewer' && pr ? join(io.scratch(tree), 'review-packet.md') : null;
   const context = { issue, pr, tree, step, risk, model, round, packet, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
   if (packet) writePacket(io, packet, { issue, pr, tree, round, lanes });
   io.write(brief, briefs[step.agent](context));
@@ -755,7 +772,9 @@ function instruction(io, facts, step, lanes) {
   if (step.reason) out.reason = step.reason;
   if (step.resume) out.resume = true;
   if (host === 'agy') out.command = ['node', fileURLToPath(new URL('../agy-session.mjs', import.meta.url)), lanes.delivery?.executables?.agy || 'agy', step.agent, model, brief];
-  if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host)];
+  // The epic outcome review has no PR to claim: the Reviewer runs in its own session and posts one comment.
+  if (step.agent === 'reviewer' && !pr) out.command = reviewerCommand(model, brief, `epic-${issue.number}-outcome`, host, lanes.delivery?.executables?.[host] || host);
+  else if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host)];
   return out;
 }
 // The packet is an aid: when it cannot be built the Reviewer is told to gather the context itself.
@@ -788,7 +807,8 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     const { issue, pr, tree } = facts;
     if (step.do === 'start') {
       // Unstarted issues that overlap this one go to the planner first; drive starts nothing until they are consolidated.
-      const overlaps = io.overlaps?.(issue) || [];
+      // An issue with an open PR is never merged, so the planner would only hand back `distinct`.
+      const overlaps = pr?.state === 'OPEN' ? [] : io.overlaps?.(issue) || [];
       if (overlaps.length) {
         if (['consolidated', 'distinct'].includes(handBack.status)) return { blocked: { issue: n, reason: `the planner handed back ${handBack.status}, yet ${overlaps.map(o => `#${o}`).join(', ')} still overlap${overlaps.length === 1 ? 's' : ''} it` } };
         return finish(instruction(io, facts, agent('planner', 'consolidate', { reason: `${overlaps.map(o => `#${o}`).join(', ')} overlap${overlaps.length === 1 ? 's' : ''} the scope and epic of #${n}`, overlaps }), lanes));
@@ -882,9 +902,21 @@ export function driveEpic(io, epic, lanes) {
         const result = io.verifyEpic(current, children, lanes.base, merged);
         return { current, children, delivery, result };
       };
-      const first = read();
+      // Drive owns the criterion markers: it adds a missing ID before the Reviewer judges, and ticks a `met` one before closing.
+      if (step.do === 'close-epic') {
+        const current = io.issue(epic.number);
+        const withIds = addCriterionIds(current.body);
+        if (withIds !== current.body) io.editEpicBody(current, withIds);
+      }
+      let first = read();
+      if (step.do === 'close-epic' && first.result.unchecked?.length) {
+        io.editEpicBody(first.current, tickCriteria(first.current.body, first.result.unchecked));
+        first = read();
+      }
       if (!first.result.complete) {
         const outstanding = first.result.outstanding || [];
+        // No current outcome comment: the per-criterion evidence is the Reviewer's to post, not the owner's.
+        if (first.result.needsReview && !outstanding.length && step.do === 'close-epic') return finish(instruction(io, { issue: epic, pr: null, tree: null }, agent('reviewer', 'epic-outcome', { reason: first.result.issues.join('; ') }), lanes));
         if (outstanding.length) {
           const matches = outstanding.map(criterion => ({ criterion, found: first.children.filter(child => (child.body || '').includes(`<!-- workflow:epic-follow-up ${epic.number} ${criterion.id} -->`)) }));
           if (matches.some(item => item.found.length > 1 || item.found.some(child => child.state !== 'OPEN'))) throw new Error('Duplicate or closed follow-up needs classification');

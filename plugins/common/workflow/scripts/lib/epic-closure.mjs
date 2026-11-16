@@ -4,6 +4,30 @@ import { resolveNativeEpicEvidence } from './epic-attestation.mjs';
 const unique = values => new Set(values).size === values.length;
 const nonempty = s => typeof s === 'string' && s.trim().length > 0;
 const fail = message => { throw new Error(message); };
+// What only a newer Reviewer outcome comment can fix; drive dispatches the Reviewer for these instead of asking the owner.
+const stale = message => { throw Object.assign(new Error(message), { needsReview: true }); };
+
+const criteriaSection = /^(#{2,4} Acceptance criteria\s*$)([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/mi;
+const slug = text => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
+// Gives every criterion without one a stable `workflow:criterion` ID, so no epic needs a hand edit; existing IDs stay.
+export function addCriterionIds(body) {
+  const section = (body || '').match(criteriaSection);
+  if (!section) return body;
+  const used = new Set([...section[2].matchAll(/<!-- workflow:criterion ([A-Za-z0-9._-]+) -->/g)].map(m => m[1]));
+  let count = 0;
+  const lines = section[2].split('\n').map(line => {
+    const m = line.match(/^(\s*[-*] \[[ xX]\] )(.+?)\s*$/);
+    if (!m || /<!-- workflow:criterion /.test(line)) return line;
+    count++;
+    let id = slug(m[2]) || `criterion-${count}`; let n = 2;
+    while (used.has(id)) id = `${slug(m[2]) || `criterion-${count}`}-${n++}`;
+    used.add(id);
+    return `${m[1]}${m[2]} <!-- workflow:criterion ${id} -->`;
+  });
+  return (body || '').replace(criteriaSection, () => `${section[1]}${lines.join('\n')}`);
+}
+// Ticks the criteria `ids` name; every other line stays as it is.
+export const tickCriteria = (body, ids) => (body || '').replace(/^(\s*[-*] )\[ \]( .+?\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->\s*)$/gm, (line, head, rest, id) => ids.includes(id) ? `${head}[x]${rest}` : line);
 
 function parseCriteria(body) {
   const section = (body || '').match(/^#{2,4} Acceptance criteria\s*$([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/mi)?.[1];
@@ -45,12 +69,12 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
     if (!criteria.length || !unique(criteria.map(c => c.id))) fail('Missing or duplicate criteria');
     if (!packet || packet.version !== 1 || packet.epic !== epic.number || !Array.isArray(packet.children) || !Array.isArray(packet.outcomes)) fail('Invalid epic outcome review');
     const inventory = slices.map(s => s.number);
-    if (!inventory.length || !unique(inventory) || !unique(packet.children) || packet.children.length !== inventory.length || packet.children.some(n => !inventory.includes(n))) fail('Epic review child inventory is stale; the Reviewer must post a newer outcome comment covering every linked child');
-    if (packet.outcomes.length !== criteria.length || !unique(packet.outcomes.map(o => o?.criterion?.id))) fail('Epic review must cover every criterion once');
-    const outstanding = [];
+    if (!inventory.length || !unique(inventory) || !unique(packet.children) || packet.children.length !== inventory.length || packet.children.some(n => !inventory.includes(n))) stale('Epic review child inventory is stale; the Reviewer must post a newer outcome comment covering every linked child');
+    if (packet.outcomes.length !== criteria.length || !unique(packet.outcomes.map(o => o?.criterion?.id))) stale('Epic review must cover every criterion once');
+    const outstanding = []; const unchecked = [];
     for (const c of criteria) {
       const outcome = packet.outcomes.find(o => o?.criterion?.id === c.id);
-      if (!outcome || outcome.criterion.text !== c.text || !['met', 'unmet', 'unverifiable'].includes(outcome.state)) fail(`Review criterion ${c.id} against its current text`);
+      if (!outcome || outcome.criterion.text !== c.text || !['met', 'unmet', 'unverifiable'].includes(outcome.state)) stale(`Review criterion ${c.id} against its current text`);
       if (!nonempty(outcome.explanation)) fail(`Criterion ${c.id} needs an explanation connecting its evidence to the outcome`);
       if (!Array.isArray(outcome.evidence) || !outcome.evidence.length) fail(`Criterion ${c.id} needs evidence links`);
       for (const link of outcome.evidence) {
@@ -63,10 +87,11 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
       if (outcome.state !== 'met') {
         if (!nonempty(outcome.nextAction)) fail(`Criterion ${c.id} needs a concrete next action`);
         outstanding.push({ id: c.id, text: c.text, nextAction: outcome.nextAction });
-      } else if (!c.checked) fail(`Check verified criterion ${c.id}`);
+      } else if (!c.checked) unchecked.push(c.id);
     }
     if (outstanding.length) return { complete: false, issues: outstanding.map(c => `Criterion ${c.id} is incomplete: ${c.nextAction}`), outstanding };
+    if (unchecked.length) return { complete: false, issues: [`Check verified criteria ${unchecked.join(', ')}`], outstanding: [], unchecked };
     if (slices.some(s => s.state !== 'CLOSED' || !merged(s.number, base))) fail('Required child is open or lacks a merged closing PR');
     return { complete: true, issues: [], outstanding: [], criteria, packet };
-  } catch (error) { return { complete: false, issues: [error.message], outstanding: [] }; }
+  } catch (error) { return { complete: false, issues: [error.message], outstanding: [], ...(error.needsReview ? { needsReview: true } : {}) }; }
 }

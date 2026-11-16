@@ -17,6 +17,6 @@ export function resolveNativeEpicEvidence({ repo, issue }, adapters = {}) {
     .map((item, index) => ({ item, index, time: Date.parse(item.created_at) }))
     .filter(entry => Number.isFinite(entry.time))
     .sort((a, b) => a.time - b.time || a.index - b.index);
-  if (!mine.length) throw new Error('The configured Reviewer has not posted an epic outcome comment');
+  if (!mine.length) throw Object.assign(new Error('The configured Reviewer has not posted an epic outcome comment'), { needsReview: true });
   return parse(mine.at(-1).item.body);
 }

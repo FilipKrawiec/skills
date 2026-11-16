@@ -1,4 +1,4 @@
-import { verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
+import { addCriterionIds, verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
@@ -877,11 +877,79 @@ test('native review refuses unaccounted linked work without creating follow-ups'
   const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
   const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }), 99: refinement }, subs: { 9: [10, 99] }, merged: [10, 99], lessons: [9] });
   repo.io.verifyEpic = (current, children, base, merged) => verifyEpicClosure({ epic: current, slices: children, base, repo: 'acme/app' }, { merged, native: () => ({ version: 1, epic: 9, children: [99], outcomes: [{ criterion: { id: 'a', text: 'Works' }, state: 'met', explanation: 'The evidence demonstrates the outcome.', evidence: ['https://example.org/proof'] }] }) });
-  assert.match(drive(repo.io, 9, lanes, {}).owner, /inventory is stale/);
+  const step = drive(repo.io, 9, lanes, {});
+  assert.equal(step.owner, undefined, 'a stale outcome comment is the Reviewer\'s to refresh');
+  assert.match(step.reason, /inventory is stale/);
   assert.deepEqual(repo.s.subs[9], [10, 99]);
   assert.equal(repo.s.issues[9].state, 'OPEN');
 });
 
+
+test('a fully merged epic without an outcome comment dispatches the Reviewer, then closes on met and holds on unmet', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '### Acceptance criteria\n- [x] Works <!-- workflow:criterion a -->\n' });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  let packet = null;
+  repo.io.verifyEpic = (current, children, base, merged) => verifyEpicClosure({ epic: current, slices: children, base, repo: 'acme/app' }, {
+    merged, native: () => { if (!packet) throw Object.assign(new Error('The configured Reviewer has not posted an epic outcome comment'), { needsReview: true }); return packet; }
+  });
+  const step = drive(repo.io, 9, lanes, {});
+  assert.deepEqual([step.agent, step.mode, step.session, step.model, step.issue, step.pr, step.owner], ['reviewer', 'epic-outcome', 'separate', 'opus', 9, null, undefined]);
+  assert.match(step.reason, /has not posted an epic outcome comment/);
+  assert.ok(step.command.includes('--agent') && step.command.includes('filipkrawiec-workflow:reviewer'), 'a separate Reviewer session');
+  assert.ok(!step.command.some(part => String(part).endsWith('review-session.mjs')), 'no PR claim for an epic');
+  const brief = repo.writes[step.brief];
+  assert.match(brief, /epic #9 outcome review/);
+  assert.match(brief, /unmet.*nextAction/s);
+  assert.equal(repo.s.issues[9].state, 'OPEN');
+  // The Reviewer posts met: drive closes the epic.
+  packet = { version: 1, epic: 9, children: [99], outcomes: [{ criterion: { id: 'a', text: 'Works' }, state: 'met', explanation: 'The merged PR shows it.', evidence: ['https://example.org/proof'] }] };
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  // An unmet verdict goes to the owner with a follow-up, never closes.
+  const open = issue({ number: 9, labels: [label('type:epic')], body: '### Acceptance criteria\n- [ ] Works <!-- workflow:criterion a -->\n' });
+  const held = fakeRepo({ issues: { 9: open, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  const unmet = { ...packet, outcomes: [{ ...packet.outcomes[0], state: 'unmet', nextAction: 'Fix gap' }] };
+  held.io.verifyEpic = (current, children, base, merged) => verifyEpicClosure({ epic: current, slices: children, base, repo: 'acme/app' }, { merged, native: () => unmet });
+  held.io.uncheckEpicCriteria = () => {};
+  held.io.createEpicFollowUp = () => { const child = issue({ number: 100, body: '<!-- workflow:epic-follow-up 9 a -->\nFix gap' }); held.s.issues[100] = child; held.s.subs[9].push(100); return child; };
+  assert.match(drive(held.io, 9, lanes, {}).owner, /Fix gap/);
+  assert.equal(held.s.issues[9].state, 'OPEN');
+  // An owner-lane epic still goes to the owner.
+  const owned = fakeRepo({ issues: { 9: issue({ ...epic, labels: [label('type:epic'), label('lane:owner')] }), 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  assert.ok(drive(owned.io, 9, lanes, {}).owner);
+});
+
+test('an epic created without criterion IDs gets them, is judged by the Reviewer, has met criteria ticked and closes', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '## Outcome\nx\n\n### Acceptance criteria\n- [ ] Users can sign in\n- [ ] Users can sign out\n\n## Notes\n- [ ] not a criterion\n' });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  repo.io.editEpicBody = (e, body) => { repo.s.issues[e.number].body = body; };
+  let packet = null;
+  repo.io.verifyEpic = (current, children, base, merged) => verifyEpicClosure({ epic: current, slices: children, base, repo: 'acme/app' }, {
+    merged, native: () => { if (!packet) throw Object.assign(new Error('The configured Reviewer has not posted an epic outcome comment'), { needsReview: true }); return packet; }
+  });
+  const step = drive(repo.io, 9, lanes, {});
+  assert.equal(step.agent, 'reviewer');
+  assert.match(repo.s.issues[9].body, /- \[ \] Users can sign in <!-- workflow:criterion users-can-sign-in -->/);
+  assert.match(repo.s.issues[9].body, /- \[ \] Users can sign out <!-- workflow:criterion users-can-sign-out -->/);
+  assert.match(repo.s.issues[9].body, /- \[ \] not a criterion\n/, 'other sections stay as they are');
+  const met = (id, text) => ({ criterion: { id, text }, state: 'met', explanation: 'The merged PR shows it.', evidence: ['https://example.org/proof'] });
+  packet = { version: 1, epic: 9, children: [99], outcomes: [met('users-can-sign-in', 'Users can sign in'), met('users-can-sign-out', 'Users can sign out')] };
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  assert.match(repo.s.issues[9].body, /- \[x\] Users can sign in <!-- workflow:criterion users-can-sign-in -->/);
+  assert.match(repo.s.issues[9].body, /- \[x\] Users can sign out/);
+  assert.equal(repo.s.issues[9].state, 'CLOSED');
+});
+
+test('criterion IDs are added once, stay unique and keep existing ones', () => {
+  const body = '### Acceptance criteria\n- [x] Same <!-- workflow:criterion keep -->\n- [ ] Same\n- [ ] Same\n- [ ] !!!\n';
+  const once = addCriterionIds(body);
+  assert.match(once, /Same <!-- workflow:criterion keep -->/);
+  assert.match(once, /- \[ \] Same <!-- workflow:criterion same -->/);
+  assert.match(once, /- \[ \] Same <!-- workflow:criterion same-2 -->/);
+  assert.match(once, /- \[ \] !!! <!-- workflow:criterion criterion-3 -->/);
+  assert.equal(addCriterionIds(once), once);
+});
 
 test('verified consolidated children and refinements close an epic without another PR', () => {
   for (const consolidated of [10, 99]) {
@@ -1327,6 +1395,15 @@ test('drive sends an overlapping unstarted issue to the planner, starting nothin
   assert.match(brief, /never by size/);
   assert.match(brief, /Never merge a started issue.*different epics without a shared outcome.*lane:owner/);
   assert.doesNotMatch(brief, /Agree each slice with the owner/);
+});
+
+test('drive never asks the planner about an issue whose PR is open, even without state:started', () => {
+  const repo = fakeRepo({ issues: { 3: scoped(3, ['src/']), 4: scoped(4, ['src/a.js']) }, prs: [pr({ issue: 3, reviews: [review('fixes')] })] });
+  let asked = 0;
+  repo.io.overlaps = i => { asked++; return findOverlaps(i, repo.io.openIssues(), facts()); };
+  const step = drive(repo.io, 3, lanes, {});
+  assert.equal(asked, 0, 'the planner is never consulted for an open-PR issue');
+  assert.notEqual(step.agent, 'planner');
 });
 
 test('drive starts an issue once no overlap is left, and reports what the planner merged', () => {
