@@ -16,6 +16,8 @@ const verdicts = ['ready', 'fixes', 'split'];
 const severities = ['Blocker', 'Important', 'Nit', 'Pre-existing', 'Follow-up'];
 const blocking = new Set(['Blocker', 'Important']);
 const maxPrompt = 100_000;
+// A hung agy would hold the claim forever and the owner will not kill processes, so the CLI bounds the call itself.
+const agyTimeoutMs = () => { const set = Number(process.env.WORKFLOW_AGY_TIMEOUT_MS); return Number.isFinite(set) && set > 0 ? set : 900_000; };
 const cli = join(dirname(fileURLToPath(import.meta.url)), 'workflow.mjs');
 
 // Right-side line numbers a review comment may anchor to, per file, read from the unified diff.
@@ -91,7 +93,8 @@ ${fence}>>>
 
 function agyEnvironment() { const env = cleanEnvironment(); delete env.WORKFLOW_REVIEW_NONCE; return env; }
 function agy(executable, role, model, text) {
-  const result = spawnSync(executable, ['--agent', role, '--model', model, '-p', text], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, env: agyEnvironment() });
+  const result = spawnSync(executable, ['--agent', role, '--model', model, '-p', text], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, env: agyEnvironment(), timeout: agyTimeoutMs(), killSignal: 'SIGKILL' });
+  if (result.error?.code === 'ETIMEDOUT') throw new Error(`AGY review timed out after ${agyTimeoutMs() / 1000} s; nothing was posted`);
   if (result.error || result.status !== 0) throw new Error(`AGY review failed: ${result.error?.message || result.stderr || `exit ${result.status}`}`);
   if (!result.stdout.trim() && /permission.*(?:denied|cannot prompt)|(?:denied|cannot prompt).*permission/i.test(result.stderr)) throw new Error('AGY headless tool permission was denied; the review needs no tools, so check the agent configuration');
   return result.stdout;

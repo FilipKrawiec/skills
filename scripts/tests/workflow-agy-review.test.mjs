@@ -61,10 +61,11 @@ function setup(t, reply, { agents = 'reviewer', mode = 'review', round = '1' } =
   const fake = join(f.root, 'agy');
   const reply_ = join(f.root, 'reply.txt'); writeFileSync(reply_, typeof reply === 'function' ? reply(tip) : reply);
   const record = join(f.root, 'agy-call.json');
-  writeFileSync(fake, `#!${process.execPath}\nconst fs = require('node:fs'); const a = process.argv.slice(2);\nif (a[0] === 'agents') console.log(${JSON.stringify(agents)}); else if (a[0] === 'models') console.log('m'); else { fs.writeFileSync(${JSON.stringify(record)}, JSON.stringify({ args: a.slice(0, 4), prompt: a[5], keys: Object.keys(process.env) })); process.stdout.write(fs.readFileSync(${JSON.stringify(reply_)}, 'utf8')); }\n`, { mode: 0o755 });
+  writeFileSync(fake, `#!${process.execPath}\nconst fs = require('node:fs'); const a = process.argv.slice(2);\nif (a[0] === 'agents') console.log(${JSON.stringify(agents)}); else if (a[0] === 'models') console.log('m'); else if (fs.existsSync(${JSON.stringify(join(f.root, 'hang'))})) setInterval(() => {}, 1000); else { fs.writeFileSync(${JSON.stringify(record)}, JSON.stringify({ args: a.slice(0, 4), prompt: a[5], keys: Object.keys(process.env) })); process.stdout.write(fs.readFileSync(${JSON.stringify(reply_)}, 'utf8')); }\n`, { mode: 0o755 });
   const run = () => spawnSync(process.execPath, [join(scripts, 'review-session.mjs'), '5', tip, process.execPath, join(scripts, 'agy-review.mjs'), fake, 'm', '5', tip, '9', round, mode], { cwd: f.repo, env: f.env, encoding: 'utf8' });
   const called = () => (existsSync(record) ? JSON.parse(readFileSync(record, 'utf8')) : null);
-  return { f, remote, tip, run, called, posted: () => (existsSync(f.env.REVIEW_RECORD) ? JSON.parse(readFileSync(f.env.REVIEW_RECORD, 'utf8')) : null) };
+  const hang = () => writeFileSync(join(f.root, 'hang'), '');
+  return { f, remote, tip, run, called, hang, posted: () => (existsSync(f.env.REVIEW_RECORD) ? JSON.parse(readFileSync(f.env.REVIEW_RECORD, 'utf8')) : null) };
 }
 const goodReply = tip => JSON.stringify({ verdict: 'fixes', sha: tip, summary: 'Needs a fix.', findings: [{ severity: 'Blocker', path: 'a.txt', line: 3, body: 'wrong' }, { severity: 'Nit', path: 'a.txt', line: 1, body: 'rename' }] });
 
@@ -113,6 +114,14 @@ test('an unlisted role or a failed review-post fails clearly and releases the cl
   const bad = mode.run();
   assert.equal(bad.status, 1); assert.match(bad.stderr, /Invalid AGY reviewer mode/);
   assert.equal(mode.called(), null); assert.equal(fetchReviewRef(mode.f.repo, mode.remote, 5), null);
+});
+
+test('a hung agy call is bounded: nothing is posted, the claim is released and the diagnostic names the timeout', t => {
+  const s = setup(t, goodReply);
+  s.hang(); s.f.env.WORKFLOW_AGY_TIMEOUT_MS = '1500';
+  const result = s.run();
+  assert.equal(result.status, 1); assert.match(result.stderr, /AGY review timed out after 1\.5 s; nothing was posted/);
+  assert.equal(s.posted(), null); assert.equal(fetchReviewRef(s.f.repo, s.remote, 5), null);
 });
 
 const readyReply = tip => JSON.stringify({ verdict: 'ready', sha: tip, summary: 'Delivers the criteria.', findings: [{ severity: 'Nit', path: 'a.txt', line: 1, body: 'rename' }] });
