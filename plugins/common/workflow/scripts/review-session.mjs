@@ -49,7 +49,6 @@ child.on('close', () => {
   if (usageOf) process.stdout.write(output ? `${visibleResult(usageOf, output).replace(/\n?$/, '\n')}` : '');
   // A parse failure or a missing field records "unreported"; it never changes the exit code.
   try {
-    const host = usageOf || (/agy-review/.test(command[1] || '') ? 'agy' : null);
-    recordUsage({ repo: lanes.repo, pr, author: lanes.implementer, entry: usageEntry({ role: 'reviewer', host, model: commandModel(command) || (host === 'agy' ? command[3] : null), usage: usageOf ? parseUsage(usageOf, output) : null }) });
+    recordUsage({ repo: lanes.repo, pr, author: lanes.implementer, entry: usageEntry({ role: 'reviewer', host: usageOf, model: commandModel(command), usage: usageOf ? parseUsage(usageOf, output) : null }) });
   } catch { /* usage is optional */ }
 });

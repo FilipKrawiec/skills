@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { effectiveBranchPolicy } from '../safety.mjs';
 import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
-import { boardStatus, prRecord } from './board.mjs';
+import { boardStatus, pathsFromIssueBody, pathsWithinScope, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { checkState, failedStates, prFields } from './pr.mjs';
@@ -23,26 +23,38 @@ const cli = fileURLToPath(new URL('../workflow.mjs', import.meta.url));
 const riskGuide = fileURLToPath(new URL('../../skills/review/references/risk.md', import.meta.url));
 const risks = ['R0', 'R1', 'R2'];
 export const maxRisk = (...values) => risks[Math.max(...values.filter(Boolean).map(value => risks.indexOf(value)), 0)];
-// Models follow risk for both the implementer and the Reviewer: Opus only for R2.
+// The implementer's model follows risk: Opus only for R2. The Reviewer runs Opus at every risk (2026-11-16 dry run: Flash
+// approved two defective PRs), so risk picks the implementer's model alone.
 export const modelFor = risk => (risk === 'R2' ? 'opus' : 'sonnet');
 // From the third blocking verdict on, narrow fixes have stopped converging: one fresh implementer on the strongest model
 // takes the whole open set. A blocking verdict after that fresh round cuts scope through the planner (`spec`), who narrows
 // the issue to what the PR delivers, never a further fix round. The rounds never hand an unapproved PR to the owner.
 export const freshFixRound = 3;
-// The risk assessor runs on Sonnet whatever the risk.
-export const modelForStep = (step, risk) => (step.agent === 'devops' ? 'sonnet' : step.agent === 'planner' || step.fresh ? 'opus' : modelFor(risk));
+// The risk assessor runs on Sonnet whatever the risk; the Reviewer runs Opus whatever the risk.
+export const modelForStep = (step, risk) => (step.agent === 'devops' ? 'sonnet' : step.agent === 'planner' || step.agent === 'reviewer' || step.fresh ? 'opus' : modelFor(risk));
+// AGY is advisory only: in the 2026-11-16 dry run its Flash reviewer approved two defective PRs. It may second-guess a risk,
+// improve the process or take a custom responsibility, never deliver or judge a PR.
+const advisoryAgy = 'AGY is advisory only; it may take the devops risk second opinion, the improver or a custom responsibility';
+const deliveryRoles = ['reviewer', 'implementer', 'freshImplementer'];
+export function validateDelivery(delivery) {
+  if (delivery == null) return;
+  for (const role of deliveryRoles) {
+    const configured = delivery.roles?.[role];
+    if ((Array.isArray(configured) ? configured : [configured]).some(choice => choice?.host === 'agy')) throw new Error(`delivery.roles.${role} cannot use host "agy": ${advisoryAgy}`);
+  }
+}
 // Missing configuration retains the existing Claude delivery behavior for migration.
 export function deliveryAssignment(delivery, step, risk) {
   if (delivery == null) return { host: 'claude', model: modelForStep(step, risk), session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
   if (!delivery || typeof delivery !== 'object' || !['codex', 'claude'].includes(delivery.orchestrator)) throw new Error('Unsupported delivery orchestrator; configure codex or claude after verifying host capabilities');
   if (delivery.executables != null && (typeof delivery.executables !== 'object' || Array.isArray(delivery.executables) || Object.entries(delivery.executables).some(([host, path]) => !['codex', 'claude', 'agy'].includes(host) || typeof path !== 'string' || !path.trim()))) throw new Error('Configure delivery.executables as host-to-executable paths');
+  validateDelivery(delivery);
   const roleName = step.agent === 'implementer' && step.fresh ? 'freshImplementer' : step.agent;
   const configured = delivery.roles?.[roleName];
   const choices = Array.isArray(configured) ? configured : [configured];
   if (!choices.length || choices.some(role => !role || !['codex', 'claude', 'agy'].includes(role.host) || typeof role.model !== 'string' || !role.model.trim())) throw new Error(`Configure delivery.roles.${roleName} with a supported host and model`);
   const role = choices[0];
   if (role.host === 'agy') {
-    if (step.agent === 'reviewer') return { host: role.host, model: role.model, session: 'separate' };
     if (step.agent !== 'devops') throw new Error(`AGY ${step.agent} dispatch is unverified; reorder delivery.roles.${roleName} to a supported host and rerun drive with the existing work state`);
     return { host: role.host, model: role.model, session: 'native' };
   }
@@ -119,6 +131,12 @@ export function parseHandBack(text) {
 
 
 const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...extra });
+// The branch's changed paths no `scope.paths` entry covers; none for an issue without a packet.
+export function outOfScopePaths(issue, tree) {
+  const scope = pathsFromIssueBody(issue?.body || '');
+  return scope === null ? [] : (tree?.diffPaths || []).filter(path => !pathsWithinScope([path], scope));
+}
+const scopeStep = (mode, paths) => agent('implementer', mode, { reason: `the branch touches ${paths.length === 1 ? 'a path' : 'paths'} outside the issue's scope: ${paths.slice(0, 10).join(', ')}${paths.length > 10 ? `, and ${paths.length - 10} more` : ''}`, outOfScope: paths, resume: true });
 const stateLabels = issue => (issue.labels || []).map(label => label.name ?? label).filter(name => name.startsWith('state:'));
 const isEpic = issue => (issue.labels || []).some(label => (label.name ?? label) === 'type:epic');
 
@@ -144,6 +162,8 @@ export function decideIssue(facts, lanes) {
     if (hb.status !== 'done') return agent('implementer', 'build');
     if (tree.dirty) return hb.commit && hb.paths?.length ? { do: 'commit' } : agent('implementer', 'build', { reason: 'uncommitted changes and no commit/paths in the hand-back' });
     if (!tree.commits) return agent('implementer', 'build', { reason: 'no commits ahead of the base' });
+    const stray = outOfScopePaths(issue, tree);
+    if (stray.length) return scopeStep('build', stray);
     return tree.unpushed ? { do: 'push' } : { do: 'open' };
   }
   const state = prState(pr, lanes);
@@ -178,7 +198,13 @@ export function decideIssue(facts, lanes) {
   if (tree && (tree.dirty || tree.unpushed)) {
     if (hb.status !== 'done') return agent('implementer', 'fix', { reason: 'fix in progress' });
     if (tree.dirty) return hb.commit && hb.paths?.length ? { do: 'commit' } : agent('implementer', 'fix', { reason: 'uncommitted changes and no commit/paths in the hand-back' });
-    return { do: 'push' };
+    const stray = outOfScopePaths(issue, tree);
+    return stray.length ? scopeStep('fix', stray) : { do: 'push' };
+  }
+  // A finished fix is held for scope before the Reviewer sees it, even when it added no commit.
+  if (tree && hb.status === 'done') {
+    const stray = outOfScopePaths(issue, tree);
+    if (stray.length) return scopeStep('fix', stray);
   }
   const assess = assessmentStep(facts);
   if (assess) return assess;
@@ -260,7 +286,8 @@ export function implementerBrief(f) {
   const fix = f.step.mode === 'fix';
   return `# Implementer brief: #${f.issue.number} ${f.issue.title}
 
-Mode: ${f.step.mode}${f.step.reason ? ` (${f.step.reason})` : ''}. Risk ${f.risk}. Model ${f.model || modelForStep(f.step, f.risk)}.
+Mode: ${f.step.mode}${f.step.reason ? ` (${f.step.reason})` : ''}. Risk ${f.risk}. Model ${f.model || modelForStep(f.step, f.risk)}.${f.step.outOfScope?.length ? `
+Out of scope: ${f.step.outOfScope.join(', ')}. Revert each of these paths (the issue's scope packet does not cover them), or hand back \`replan\` naming why the issue needs them.` : ''}
 Issue: ${f.issue.url}
 Worktree: ${f.tree.path} (branch ${f.tree.branch}, base origin/${f.base})
 PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}, round ${f.round}` : 'none yet; drive opens it'}
@@ -362,10 +389,8 @@ ${f.issue.body || '(no body)'}
 `;
 }
 // The Reviewer runs as a separate non-interactive session, so the session that wrote the PR never approves it.
-export function reviewerCommand(model, brief, name, host = 'claude', executable = host, context = {}) {
+export function reviewerCommand(model, brief, name, host = 'claude', executable = host) {
   if (host === 'codex') return [executable, 'exec', '--json', '-m', model, `Read ${fileURLToPath(new URL('../../skills/review/SKILL.md', import.meta.url))}, then follow your brief at ${brief}. Return at most 5 lines.`];
-  // AGY's reviewer has no shell tool: the adapter gathers the exact-head context, validates AGY's verdict and posts it itself.
-  if (host === 'agy') return ['node', fileURLToPath(new URL('../agy-review.mjs', import.meta.url)), executable, model, String(context.pr), String(context.head), String(context.issue), String(context.round), context.mode || 'review'];
   if (host !== 'claude') throw new Error('Unsupported reviewer host');
   return [executable, '--print', '--output-format', 'json', '--agent', 'filipkrawiec-workflow:reviewer', '--model', model, '--permission-mode', 'auto', '--name', name, `Follow your brief at ${brief}. Return at most 5 lines.`];
 }
@@ -690,7 +715,7 @@ function instruction(io, facts, step, lanes) {
   if (step.reason) out.reason = step.reason;
   if (step.resume) out.resume = true;
   if (host === 'agy') out.command = ['node', fileURLToPath(new URL('../agy-session.mjs', import.meta.url)), lanes.delivery?.executables?.agy || 'agy', step.agent, model, brief];
-  if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host, { pr: pr.number, head: pr.headRefOid, issue: issue.number, round: step.round, mode: step.mode })];
+  if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host)];
   return out;
 }
 // The packet is an aid: when it cannot be built the Reviewer is told to gather the context itself.

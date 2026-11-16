@@ -127,7 +127,8 @@ test('strict policy: of two approved PRs, the second is updated and approved aga
 test('the owner is asked only on an approved PR; the round cap and line count never ask', () => {
   const base = { issue: started, tree: tree({ commits: 1 }) };
   const approved = [review('ready', 'APPROVED')];
-  assert.equal(decide({ ...base, pr: pr({ isDraft: false, labels: [label('risk:R2')], reviews: approved }) }).owner, 'risk R2');
+  assert.equal(decide({ ...base, pr: pr({ isDraft: false, labels: [label('risk:R2')], reviews: approved }) }).do, 'auto-merge', 'risk R2 alone never asks the owner');
+  assert.equal(decide({ ...base, pr: pr({ isDraft: false, labels: [label('risk:R1'), label('review:owner')], reviews: [review('owner', 'APPROVED')] }) }).owner, 'review:owner', 'a reserved effect does');
   assert.equal(decide({ ...base, pr: pr({ labels: [label('risk:R2')], reviews: [review('ready')] }) }).do, 'ready', 'an R2 draft goes to its approval first');
   assert.equal(decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes')] }) }).owner, undefined);
   const huge = Array.from({ length: 5000 }, (_, i) => `src/file${i}.js`);
@@ -364,7 +365,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   assert.equal(reviewer.agent, 'reviewer');
   assert.equal(reviewer.session, 'separate');
   assert.equal(reviewer.pr, 53);
-  assert.deepEqual(reviewer.command.slice(4, 12), ['claude', '--print', '--output-format', 'json', '--agent', 'filipkrawiec-workflow:reviewer', '--model', 'sonnet']);
+  assert.deepEqual(reviewer.command.slice(4, 12), ['claude', '--print', '--output-format', 'json', '--agent', 'filipkrawiec-workflow:reviewer', '--model', 'opus'], 'the Reviewer runs Opus even at R0');
   assert.deepEqual(drive(repo.io, 3, lanes, { risk: 'R0', reason: 'text only' }), reviewer, 'a repeated hand-back changes nothing');
   repo.s.prs[0].reviews = [review('ready', 'APPROVED')];
   const wait = drive(repo.io, 3, lanes, {});
@@ -550,10 +551,7 @@ test('configured dispatch produces an implementer brief and accepts its intact h
 });
 
 test('the reviewer runs as a separate non-interactive session', () => {
-  const agy = reviewerCommand('m', '/w/.wf/b.md', 'review-5-r1', 'agy', '/bin/agy', { pr: 5, head: 'a'.repeat(40), issue: 9, round: 2, mode: 'review' });
-  assert.deepEqual([agy[0], agy.slice(2)], ['node', ['/bin/agy', 'm', '5', 'a'.repeat(40), '9', '2', 'review']]);
-  assert.match(agy[1], /agy-review\.mjs$/);
-  assert.equal(reviewerCommand('m', '/b', 'n', 'agy', '/bin/agy', { pr: 5, head: 'a'.repeat(40), issue: 9, round: 2, mode: 'approve' }).at(-1), 'approve');
+  assert.throws(() => reviewerCommand('m', '/b', 'n', 'agy', '/bin/agy'), /Unsupported reviewer host/, 'AGY has no review adapter');
   assert.throws(() => reviewerCommand('m', '/b', 'n', 'other'), /Unsupported reviewer host/);
   const argv = reviewerCommand('opus', '/w/.wf/b.md', 'review-5-r1');
   assert.deepEqual(argv.slice(0, 2), ['claude', '--print']);
@@ -1177,7 +1175,7 @@ test('ranked delivery reports choices and rejects unsupported handoffs', () => {
   assert.deepEqual([result.host, result.model, result.alternatives], ['claude', 'sonnet', [choices[1]]]);
   assert.throws(() => deliveryAssignment({ orchestrator: 'codex', roles: { implementer: choices } }, { agent: 'implementer' }, 'R1'), /resume drive.*reorder/i);
   assert.throws(() => deliveryAssignment({ orchestrator: 'claude', roles: { planner: [{host: 'agy', model: 'x'}, choices[1]] } }, { agent: 'planner' }, 'R1'), /unverified.*reorder/i);
-  assert.deepEqual(deliveryAssignment({ orchestrator: 'claude', roles: { reviewer: [{host: 'agy', model: 'x'}, choices[1]] } }, { agent: 'reviewer' }, 'R1'), { host: 'agy', model: 'x', session: 'separate' });
+  assert.throws(() => deliveryAssignment({ orchestrator: 'claude', roles: { reviewer: [{host: 'agy', model: 'x'}, choices[1]] } }, { agent: 'reviewer' }, 'R1'), /advisory only/);
   assert.throws(() => deliveryAssignment({ orchestrator: 'claude', roles: { reviewer: [] } }, { agent: 'reviewer' }, 'R1'), /configure/i);
 });
 
@@ -1197,4 +1195,49 @@ test('review: a later round judges the delta, round 1 the whole diff, and a revi
   assert.match(later, /Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria/);
   assert.match(later, /no earlier verdict of yours reviewed the whole diff.*whole diff at head/);
   assert.doesNotMatch(later, /judge the whole diff and use/);
+});
+
+test('the Reviewer runs Opus at R0, R1 and R2 without delivery configuration; implementer models by risk are unchanged', () => {
+  for (const risk of ['R0', 'R1', 'R2']) {
+    assert.equal(modelForStep({ agent: 'reviewer' }, risk), 'opus');
+    assert.deepEqual(deliveryAssignment(undefined, { agent: 'reviewer', mode: 'approve' }, risk), { host: 'claude', model: 'opus', session: 'separate' });
+  }
+  assert.deepEqual(['R0', 'R1', 'R2'].map(risk => modelForStep({ agent: 'implementer' }, risk)), ['sonnet', 'sonnet', 'opus']);
+});
+
+test('configuration refuses AGY as reviewer, implementer or fresh implementer and names the advisory roles it may take', () => {
+  const choice = { host: 'agy', model: 'm' }; const other = { host: 'claude', model: 'opus' };
+  for (const [role, step] of [['reviewer', { agent: 'reviewer' }], ['implementer', { agent: 'implementer' }], ['freshImplementer', { agent: 'implementer', fresh: true }]]) {
+    for (const configured of [choice, [other, choice]]) {
+      assert.throws(() => deliveryAssignment({ orchestrator: 'claude', roles: { [role]: configured } }, step, 'R1'), error => error.message.includes(`delivery.roles.${role}`) && /advisory only/.test(error.message) && /devops risk second opinion, the improver or a custom responsibility/.test(error.message));
+    }
+  }
+  assert.deepEqual(deliveryAssignment({ orchestrator: 'claude', roles: { devops: choice } }, { agent: 'devops' }, 'R1'), { host: 'agy', model: 'm', session: 'native' });
+  const refused = { ...lanes, delivery: { orchestrator: 'claude', roles: { reviewer: choice, implementer: other } } };
+  assert.throws(() => drive(fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } }).io, 3, refused, {}), /advisory only/, 'drive stops before dispatching any role');
+});
+
+test('scope: a diff path no scope.paths entry covers returns the implementer instead of opening the PR', () => {
+  const scoped = issue({ labels: [label('state:started')], body: '```scope\n{"paths":["src/feature/","docs/a.md"]}\n```', assessment: assessed() });
+  const done = { status: 'done', commit: 'feat(app): x', paths: ['src/feature/a.js'] };
+  const inScope = tree({ commits: 1, diffPaths: ['src/feature/a.js', 'src/feature/deep/b.js', 'docs/a.md'] });
+  assert.deepEqual(decide({ issue: scoped, tree: inScope, handBack: done }), { do: 'open' }, 'a trailing slash covers its subtree');
+  const stray = decide({ issue: scoped, tree: tree({ commits: 1, unpushed: true, diffPaths: ['src/feature/a.js', 'src/featurex/b.js', 'plugins/c.js'] }), handBack: done });
+  assert.deepEqual([stray.agent, stray.mode, stray.outOfScope, stray.resume], ['implementer', 'build', ['src/featurex/b.js', 'plugins/c.js'], true]);
+  assert.match(stray.reason, /outside the issue's scope: src\/featurex\/b\.js, plugins\/c\.js/);
+  assert.match(implementerBrief({ issue: scoped, risk: 'R1', model: 'sonnet', base: 'main', tree: tree(), pr: null, step: stray, round: 0 }), /Revert each of these paths.*hand back `replan`/);
+});
+
+test('scope: an issue without a packet and a fix inside the scope are unaffected, and an out-of-scope fix is held before it is pushed', () => {
+  const free = issue({ labels: [label('state:started')], body: 'no packet', assessment: assessed() });
+  const done = { status: 'done', commit: 'feat(app): x', paths: ['a'] };
+  assert.deepEqual(decide({ issue: free, tree: tree({ commits: 1, diffPaths: ['anywhere/x.js'] }), handBack: done }), { do: 'open' });
+  const scoped = issue({ labels: [label('state:started')], body: '```scope\n{"paths":["src/"]}\n```', assessment: assessed() });
+  const fixing = (diffPaths, extra = {}) => decide({ issue: scoped, tree: tree({ commits: 2, unpushed: true, diffPaths, ...extra }), pr: pr({ reviews: [review('fixes')] }), handBack: done });
+  assert.deepEqual(fixing(['src/a.js']), { do: 'push' });
+  const held = fixing(['src/a.js', 'docs/z.md']);
+  assert.deepEqual([held.agent, held.mode, held.outOfScope], ['implementer', 'fix', ['docs/z.md']]);
+  const pushed = decide({ issue: scoped, tree: tree({ commits: 2, diffPaths: ['src/a.js', 'docs/z.md'] }), pr: pr({ reviews: [review('fixes')] }), handBack: done });
+  assert.deepEqual([pushed.agent, pushed.mode], ['implementer', 'fix'], 'a clean done fix is held for scope before another review');
+  assert.equal(decide({ issue: scoped, tree: tree({ commits: 2, diffPaths: ['docs/z.md'] }), pr: pr({ reviews: [review('fixes')] }) }).outOfScope, undefined, 'only a done hand-back is checked');
 });

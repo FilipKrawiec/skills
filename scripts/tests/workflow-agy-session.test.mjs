@@ -7,15 +7,14 @@ import { spawnSync } from 'node:child_process';
 import { deliveryAssignment } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 
 const adapter = new URL('../../plugins/common/workflow/scripts/agy-session.mjs', import.meta.url).pathname;
-test('AGY risk assignment is native, the reviewer is separate and other responsibilities stop', () => {
-  const delivery = { orchestrator: 'codex', roles: { devops: { host: 'agy', model: 'model' }, reviewer: { host: 'agy', model: 'model' }, planner: { host: 'agy', model: 'model' } } };
+test('AGY risk assignment is native and other delivery responsibilities stop', () => {
+  const delivery = { orchestrator: 'codex', roles: { devops: { host: 'agy', model: 'model' }, planner: { host: 'agy', model: 'model' } } };
   assert.deepEqual(deliveryAssignment(delivery, { agent: 'devops' }, 'R1'), { host: 'agy', model: 'model', session: 'native' });
-  assert.deepEqual(deliveryAssignment(delivery, { agent: 'reviewer' }, 'R1'), { host: 'agy', model: 'model', session: 'separate' });
   assert.throws(() => deliveryAssignment(delivery, { agent: 'planner' }, 'R1'), /unverified/);
 });
-test('the native devops session refuses the reviewer role, which runs through agy-review.mjs', () => {
+test('the native devops session refuses the reviewer role: AGY is advisory only', () => {
   const result = spawnSync(process.execPath, [adapter, 'agy', 'reviewer', 'model', '/tmp/brief'], { encoding: 'utf8' });
-  assert.equal(result.status, 1); assert.match(result.stderr, /only the verified devops.*agy-review/);
+  assert.equal(result.status, 1); assert.match(result.stderr, /advisory only.*only the verified devops/);
 });
 test('native session checks role and model, passes arguments and preserves the hand-back', t => {
   const dir = mkdtempSync(join(tmpdir(), 'agy-test-')); t.after(() => rmSync(dir, { recursive: true, force: true }));

@@ -95,6 +95,7 @@ export function config(requireLanes = true, allowBootstrap = false, allowBootstr
   const roles = codeownersRoles(baseRef, lanes.repo, allowBootstrapBranchOwner && source === 'branch bootstrap');
   const { owner, defaultReviewer } = roles;
   lanes.owner = owner;
+  lanes.codeowners = roles.contents;
   if (lanes.reviewer != null && (typeof lanes.reviewer !== 'string' || !/^[A-Za-z0-9-]+$/.test(lanes.reviewer))) throw new Error('identities.reviewer must be a GitHub login');
   if (!defaultReviewer) throw new Error('The trusted .github/CODEOWNERS must name exactly one user for the default Reviewer');
   if (lanes.reviewer && lanes.reviewer.toLowerCase() !== defaultReviewer.toLowerCase()) throw new Error('identities.reviewer must match the default .github/CODEOWNERS reviewer');
@@ -109,7 +110,7 @@ function codeownersRoles(baseRef, repo, allowBranchOwner = false) {
   let contents;
   try { contents = git('show', `${baseRef}:.github/CODEOWNERS`); }
   catch { throw new Error('The trusted base must contain .github/CODEOWNERS to identify review roles'); }
-  const roles = codeownersRolesFrom(contents, repo, !allowBranchOwner);
+  const roles = { ...codeownersRolesFrom(contents, repo, !allowBranchOwner), contents };
   if (roles.owner || !allowBranchOwner) return roles;
   let branchContents;
   try { branchContents = git('show', 'HEAD:.github/CODEOWNERS'); }
