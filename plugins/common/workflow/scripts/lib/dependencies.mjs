@@ -36,8 +36,7 @@ export function findCycle(nodes) {
 }
 
 const defaultRead = args => jsonCommand('gh', args);
-// The planner closes a consolidated issue after appending this marker with the canonical issue's number.
-export const consolidatedMarker = target => `<!-- workflow:consolidated-into ${target} -->`;
+// The planner closes a consolidated issue after appending `<!-- workflow:consolidated-into N -->`, N being the canonical issue.
 export const consolidatedInto = (body = '') => Number(/<!-- workflow:consolidated-into (\d+) -->/.exec(body)?.[1]) || null;
 // What GitHub says about one dependency: an issue or a PR, whether it closed and whether its change merged.
 // A closed issue folded into another by the planner stands for its consolidation target.
