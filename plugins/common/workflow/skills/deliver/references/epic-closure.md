@@ -2,6 +2,8 @@
 
 Give each acceptance criterion a stable ID, for example `- [ ] Users can sign in <!-- workflow:criterion sign-in -->`. Drive closes the epic when every linked child is closed with a merged PR into the base (or is a consolidated child, below), every criterion is checked, and the newest outcome comment by the configured Reviewer covers every criterion and child with state `met` and an explanation.
 
+When every slice is merged and lessons are recorded but no current outcome comment exists (none, or one that misses a child or criterion), drive dispatches the Reviewer in a separate session to post it (`review`'s `epic-outcome.md`) instead of asking the owner. Drive returns an owner step only when the Reviewer marks a criterion `unmet` or `unverifiable`, or the epic is `lane:owner`.
+
 The Reviewer posts a JSON comment on the epic; a newer comment supersedes an older one without deleting it:
 
 ```json
