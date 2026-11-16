@@ -13,20 +13,9 @@ test('AGY risk assignment is native, the reviewer is separate and other responsi
   assert.deepEqual(deliveryAssignment(delivery, { agent: 'reviewer' }, 'R1'), { host: 'agy', model: 'model', session: 'separate' });
   assert.throws(() => deliveryAssignment(delivery, { agent: 'planner' }, 'R1'), /unverified/);
 });
-test('AGY reviewer session verifies role and model, sends the brief and fails clearly', t => {
-  const dir = mkdtempSync(join(tmpdir(), 'agy-review-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const fake = join(dir, 'agy');
-  const script = agents => `#!/bin/sh\ncase "$1" in agents) echo ${agents};; models) echo model;; --agent) [ "$2" = reviewer ] && [ "$3" = --model ] && [ "$4" = model ] && [ "$5" = -p ] && [ "$6" = "Follow your brief at /tmp/brief. Return at most 5 lines." ] || exit 4; echo "approved at abc";; *) exit 5;; esac\n`;
-  const run = (role = 'reviewer', model = 'model') => spawnSync(process.execPath, [adapter, fake, role, model, '/tmp/brief'], { encoding: 'utf8' });
-  writeFileSync(fake, script('reviewer'), { mode: 0o755 });
-  const good = run(); assert.equal(good.status, 0); assert.equal(good.stdout, 'approved at abc\n');
-  const model = run('reviewer', 'missing'); assert.equal(model.status, 1); assert.match(model.stderr, /model missing unavailable/);
-  writeFileSync(fake, script('devops'), { mode: 0o755 });
-  const role = run(); assert.equal(role.status, 1); assert.match(role.stderr, /role reviewer unavailable/);
-  writeFileSync(fake, '#!/bin/sh\ncase "$1" in agents) echo reviewer;; models) echo model;; *) echo "a tool required the run_command permission that headless mode cannot prompt for, so it was auto-denied" >&2;; esac\n', { mode: 0o755 });
-  const denied = run(); assert.equal(denied.status, 1); assert.match(denied.stderr, /permission was denied/);
-  writeFileSync(fake, '#!/bin/sh\ncase "$1" in agents) echo reviewer;; models) echo model;; esac\n', { mode: 0o755 });
-  const empty = run(); assert.equal(empty.status, 1); assert.match(empty.stderr, /malformed|empty/);
+test('the native devops session refuses the reviewer role, which runs through agy-review.mjs', () => {
+  const result = spawnSync(process.execPath, [adapter, 'agy', 'reviewer', 'model', '/tmp/brief'], { encoding: 'utf8' });
+  assert.equal(result.status, 1); assert.match(result.stderr, /only the verified devops.*agy-review/);
 });
 test('native session checks role and model, passes arguments and preserves the hand-back', t => {
   const dir = mkdtempSync(join(tmpdir(), 'agy-test-')); t.after(() => rmSync(dir, { recursive: true, force: true }));

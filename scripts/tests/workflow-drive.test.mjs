@@ -552,9 +552,10 @@ test('configured dispatch produces an implementer brief and accepts its intact h
 });
 
 test('the reviewer runs as a separate non-interactive session', () => {
-  const agy = reviewerCommand('m', '/w/.wf/b.md', 'review-5-r1', 'agy', '/bin/agy');
-  assert.deepEqual([agy[0], agy.slice(2)], ['node', ['/bin/agy', 'reviewer', 'm', '/w/.wf/b.md']]);
-  assert.match(agy[1], /agy-session\.mjs$/);
+  const agy = reviewerCommand('m', '/w/.wf/b.md', 'review-5-r1', 'agy', '/bin/agy', { pr: 5, head: 'a'.repeat(40), issue: 9, round: 2, mode: 'review' });
+  assert.deepEqual([agy[0], agy.slice(2)], ['node', ['/bin/agy', 'm', '5', 'a'.repeat(40), '9', '2', 'review']]);
+  assert.match(agy[1], /agy-review\.mjs$/);
+  assert.equal(reviewerCommand('m', '/b', 'n', 'agy', '/bin/agy', { pr: 5, head: 'a'.repeat(40), issue: 9, round: 2, mode: 'approve' }).at(-1), 'approve');
   assert.throws(() => reviewerCommand('m', '/b', 'n', 'other'), /Unsupported reviewer host/);
   const argv = reviewerCommand('opus', '/w/.wf/b.md', 'review-5-r1');
   assert.deepEqual(argv.slice(0, 2), ['claude', '--print']);
