@@ -36,7 +36,7 @@ export const modelForStep = (step, risk) => (step.agent === 'devops' ? 'sonnet' 
 // improve the process or take a custom responsibility, never deliver or judge a PR.
 const advisoryAgy = 'AGY is advisory only; it may take the devops risk second opinion, the improver or a custom responsibility';
 const deliveryRoles = ['reviewer', 'implementer', 'freshImplementer'];
-export function validateDelivery(delivery) {
+function validateDelivery(delivery) {
   if (delivery == null) return;
   for (const role of deliveryRoles) {
     const configured = delivery.roles?.[role];
@@ -162,7 +162,7 @@ const consolidatedNumbers = text => (String(text || '').match(/\d+/g) || []).map
 // What a `consolidated` hand-back says the planner merged: the canonical issue and the issues it closed.
 export const consolidationReport = hb => ({ into: consolidatedNumbers(hb.into)[0] ?? null, closed: consolidatedNumbers(hb.closed), ...(hb.note ? { note: hb.note } : {}) });
 // The branch's changed paths no `scope.paths` entry covers; none for an issue without a packet.
-export function outOfScopePaths(issue, tree) {
+function outOfScopePaths(issue, tree) {
   const scope = pathsFromIssueBody(issue?.body || '');
   return scope === null ? [] : (tree?.diffPaths || []).filter(path => !pathsWithinScope([path], scope));
 }
@@ -284,7 +284,7 @@ export function dependencyOrder(slices) {
 // Unticked epic criteria that no slice (the final refinement excepted) cites by its `workflow:criterion` ID or its text.
 // Plain text matching keeps this deterministic; a miss only sends the planner to cite the criterion, never blocks a merge.
 const squash = text => String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
-export function uncoveredCriteria(epic, slices) {
+function uncoveredCriteria(epic, slices) {
   const section = (epic.body || '').match(/^#{2,4} Acceptance criteria\s*$([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/mi)?.[1] || '';
   // Once every slice is closed, the Reviewer's outcome judgement owns the criteria.
   if (!slices.some(slice => slice.state === 'OPEN')) return [];

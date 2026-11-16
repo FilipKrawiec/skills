@@ -5,7 +5,7 @@ import { jsonCommand, run } from './core.mjs';
 // Nothing here may fail a delivery: a parse failure or a missing field reads as "unreported".
 
 export const unreported = 'unreported';
-export const usageBaseline = '2026-11-16 dry-run baseline (Opus reviews without a packet): $0.21-0.46 per review';
+const usageBaseline = '2026-11-16 dry-run baseline (Opus reviews without a packet): $0.21-0.46 per review';
 const usageMarker = /<!-- workflow:usage (\{.*?\}) -->/s;
 const maxEntries = 200;
 const count = value => (Number.isFinite(value) && value >= 0 ? value : null);
