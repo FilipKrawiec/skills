@@ -7,10 +7,15 @@ import { spawnSync } from 'node:child_process';
 import { deliveryAssignment } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 
 const adapter = new URL('../../plugins/common/workflow/scripts/agy-session.mjs', import.meta.url).pathname;
-test('AGY risk assignment is native while unsupported responsibilities stop', () => {
-  const delivery = { orchestrator: 'codex', roles: { devops: { host: 'agy', model: 'model' }, reviewer: { host: 'agy', model: 'model' } } };
+test('AGY risk assignment is native, the reviewer is separate and other responsibilities stop', () => {
+  const delivery = { orchestrator: 'codex', roles: { devops: { host: 'agy', model: 'model' }, reviewer: { host: 'agy', model: 'model' }, planner: { host: 'agy', model: 'model' } } };
   assert.deepEqual(deliveryAssignment(delivery, { agent: 'devops' }, 'R1'), { host: 'agy', model: 'model', session: 'native' });
-  assert.throws(() => deliveryAssignment(delivery, { agent: 'reviewer' }, 'R1'), /unverified/);
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'reviewer' }, 'R1'), { host: 'agy', model: 'model', session: 'separate' });
+  assert.throws(() => deliveryAssignment(delivery, { agent: 'planner' }, 'R1'), /unverified/);
+});
+test('the native devops session refuses the reviewer role, which runs through agy-review.mjs', () => {
+  const result = spawnSync(process.execPath, [adapter, 'agy', 'reviewer', 'model', '/tmp/brief'], { encoding: 'utf8' });
+  assert.equal(result.status, 1); assert.match(result.stderr, /only the verified devops.*agy-review/);
 });
 test('native session checks role and model, passes arguments and preserves the hand-back', t => {
   const dir = mkdtempSync(join(tmpdir(), 'agy-test-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -19,7 +24,7 @@ test('native session checks role and model, passes arguments and preserves the h
   const run = (role, model) => spawnSync(process.execPath, [adapter, fake, role, model, '/tmp/brief'], { encoding: 'utf8' });
   const good = run('devops', 'model'); assert.equal(good.status, 0); assert.equal(good.stdout, 'risk: R1\nreason: evidence\n');
   const missing = run('devops', 'missing'); assert.equal(missing.status, 1); assert.match(missing.stderr, /model missing unavailable/);
-  const unsupported = run('reviewer', 'model'); assert.equal(unsupported.status, 1); assert.match(unsupported.stderr, /only the verified devops/);
+  const unsupported = run('planner', 'model'); assert.equal(unsupported.status, 1); assert.match(unsupported.stderr, /only the verified devops/);
   writeFileSync(fake, '#!/bin/sh\ncase "$1" in agents) echo devops;; models) echo model;; *) echo invalid;; esac\n', { mode: 0o755 });
   writeFileSync(fake, '#!/bin/sh\ncase "$1" in agents) echo devops;; models) echo model;; *) echo "a tool required the read_file permission that headless mode cannot prompt for, so it was auto-denied" >&2;; esac\n', { mode: 0o755 });
   const denied = run('devops', 'model'); assert.equal(denied.status, 1); assert.match(denied.stderr, /headless tool permission was denied/);

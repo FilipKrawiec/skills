@@ -38,6 +38,7 @@ export function deliveryAssignment(delivery, step, risk) {
   if (!choices.length || choices.some(role => !role || !['codex', 'claude', 'agy'].includes(role.host) || typeof role.model !== 'string' || !role.model.trim())) throw new Error(`Configure delivery.roles.${roleName} with a supported host and model`);
   const role = choices[0];
   if (role.host === 'agy') {
+    if (step.agent === 'reviewer') return { host: role.host, model: role.model, session: 'separate' };
     if (step.agent !== 'devops') throw new Error(`AGY ${step.agent} dispatch is unverified; reorder delivery.roles.${roleName} to a supported host and rerun drive with the existing work state`);
     return { host: role.host, model: role.model, session: 'native' };
   }
@@ -348,8 +349,10 @@ ${f.issue.body || '(no body)'}
 `;
 }
 // The Reviewer runs as a separate non-interactive session, so the session that wrote the PR never approves it.
-export function reviewerCommand(model, brief, name, host = 'claude', executable = host) {
+export function reviewerCommand(model, brief, name, host = 'claude', executable = host, context = {}) {
   if (host === 'codex') return [executable, 'exec', '-m', model, `Read ${fileURLToPath(new URL('../../skills/review/SKILL.md', import.meta.url))}, then follow your brief at ${brief}. Return at most 5 lines.`];
+  // AGY's reviewer has no shell tool: the adapter gathers the exact-head context, validates AGY's verdict and posts it itself.
+  if (host === 'agy') return ['node', fileURLToPath(new URL('../agy-review.mjs', import.meta.url)), executable, model, String(context.pr), String(context.head), String(context.issue), String(context.round), context.mode || 'review'];
   if (host !== 'claude') throw new Error('Unsupported reviewer host');
   return [executable, '--print', '--agent', 'filipkrawiec-workflow:reviewer', '--model', model, '--permission-mode', 'auto', '--name', name, `Follow your brief at ${brief}. Return at most 5 lines.`];
 }
@@ -632,7 +635,7 @@ function instruction(io, facts, step, lanes) {
   if (step.reason) out.reason = step.reason;
   if (step.resume) out.resume = true;
   if (host === 'agy') out.command = ['node', fileURLToPath(new URL('../agy-session.mjs', import.meta.url)), lanes.delivery?.executables?.agy || 'agy', step.agent, model, brief];
-  if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host)];
+  if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host, { pr: pr.number, head: pr.headRefOid, issue: issue.number, round: step.round, mode: step.mode })];
   return out;
 }
 function finish(step) {
