@@ -144,7 +144,7 @@ test('delivery skills keep one plain command per Bash call, inline plan scoring,
 });
 
 test('workflow role definitions leave model selection to the host', () => {
-  for (const role of ['devops', 'implementer', 'planner', 'reviewer']) {
+  for (const role of ['devops', 'implementer', 'improver', 'planner', 'reviewer']) {
     const text = readFileSync(join(commonRoot, 'workflow/agents', `${role}.md`), 'utf8');
     assert.doesNotMatch(text.split('---')[1], /^model:/m, role);
   }
@@ -159,4 +159,15 @@ test('refine, spec and plan leave unstarted-issue consolidation to the team and 
   assert.match(readFileSync(join(commonRoot, 'workflow/skills/spec/references/split.md'), 'utf8'), /workflow:consolidated-into N.*Only a started or `lane:owner` duplicate needs owner authority/s);
   assert.match(skillText('plan'), /Slices follow the epic's approved outcome/);
   assert.match(skillText('deliver'), /Report a result's `consolidated` merge/);
+});
+
+test('every agent drive can dispatch has a definition in the workflow agents', () => {
+  const source = readFileSync(join(commonRoot, 'workflow/scripts/lib/drive.mjs'), 'utf8');
+  const briefMap = source.match(/^const briefs = \{([^}]*)\}/m);
+  assert.ok(briefMap, 'drive.mjs briefs map');
+  const names = new Set([...briefMap[1].matchAll(/(\w+)\s*:/g)].map(match => match[1]));
+  for (const match of source.matchAll(/\bagent\(\s*'([a-z][a-z0-9-]*)'/g)) names.add(match[1]);
+  assert.ok(names.size >= 5, [...names].join());
+  const defined = new Set(readdirSync(join(commonRoot, 'workflow/agents')).map(file => file.replace(/\.md$/, '')));
+  assert.deepEqual([...names].filter(name => !defined.has(name)).sort(), []);
 });
