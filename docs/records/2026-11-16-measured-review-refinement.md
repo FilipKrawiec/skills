@@ -76,7 +76,7 @@ Accepted, with this reason: the cost sits within the epic's $0.44-$0.93 round-1 
 
 | | Opened to merged | Reviewer sessions | Reviewer cost |
 |---|---|---|---|
-| Before (#570, #568, #567) | 20 m 18 s, 19 m 48 s, 3 m 11 s | 2 (verdict, approval-only) | unreported |
+| Before (#568, #567) | 19 m 48 s, 3 m 11 s | 2 (verdict, approval-only) | unreported |
 | After (#574, first clean PR) | 5 m 22 s | 2 (round-1 verdict, then approval) | $1.30 |
 
 The delivery record `docs/delivery-session-counts.md` holds the same figures.
