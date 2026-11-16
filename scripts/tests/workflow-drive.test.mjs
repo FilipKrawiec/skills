@@ -1487,3 +1487,43 @@ test('the planner agent is defined, planner brief follows the epic outcome and t
   assert.match(agentText, /Split only for an independent outcome.*never by size/);
   assert.match(plannerBrief({ issue: issue(), step: { mode: 'slice' } }), /Slices follow the epic's approved outcome/);
 });
+
+test('epic repair skips a sub-issue closed as duplicate or not planned and ignores a link to it', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const closed = { state: 'CLOSED' };
+  const repo = fakeRepo({
+    issues: {
+      9: epic, 10: issue({ number: 10 }),
+      11: issue({ number: 11, ...closed, stateReason: 'NOT_PLANNED' }),
+      12: issue({ number: 12, ...closed, body: '<!-- workflow:consolidated-into 10 -->' }),
+      13: issue({ number: 13, ...closed }),
+    },
+    subs: { 9: [10, 11, 12] },
+  });
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 10);
+  assert.deepEqual(repo.calls.filter(call => call[0] === 'blocker'), [['blocker', 99, 10]], 'neither closed duplicate nor not-planned slice becomes a blocker');
+  // An existing link to the retired slices no longer yields the owner step.
+  repo.s.deps = { 99: [11, 12].map(number => ({ number, kind: 'issue', state: 'CLOSED', reason: 'not_planned', merged: false })) };
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 10);
+  // A closed slice with neither marker nor reason and no merged change still yields it.
+  repo.s.subs[9].push(13);
+  repo.s.issues[10].state = 'CLOSED';
+  repo.s.merged = [10];
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#13/);
+});
+
+test('epic with an unticked criterion no slice references dispatches the planner before the refinement', () => {
+  const body = '## Outcome\nx\n\n### Acceptance criteria\n- [x] Done thing <!-- workflow:criterion done-thing -->\n- [ ] Benchmark the parser <!-- workflow:criterion benchmark-the-parser -->\n- [ ] Measure memory use\n';
+  const epic = issue({ number: 9, body, labels: [label('type:epic')] });
+  const refinement = issue({ number: 99, body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, body: 'Delivers Measure memory use' }), 99: refinement }, subs: { 9: [10, 99] } });
+  const step = drive(repo.io, 9, lanes, {});
+  assert.deepEqual([step.agent, step.mode], ['planner', 'slice']);
+  assert.match(repo.writes[step.brief], /benchmark-the-parser/);
+  assert.doesNotMatch(repo.writes[step.brief], /`done-thing`/);
+  assert.deepEqual(repo.calls, [], 'nothing is linked or built first');
+  // The refinement itself never covers a criterion; once a slice cites the ID, behaviour is unchanged.
+  repo.s.issues[10].body += '\nbenchmark-the-parser';
+  assert.equal(drive(repo.io, 9, lanes, {}).issue, 10);
+  assert.deepEqual(decideEpic({ epic: issue({ number: 9, body }), slices: [{ number: 99, state: 'OPEN', blockers: [], body: '<!-- workflow:epic-refinement -->\nBenchmark the parser Measure memory use' }, { number: 10, state: 'OPEN', blockers: [], body: 'x' }] }).uncovered.map(c => c.id), ['benchmark-the-parser', null]);
+});
