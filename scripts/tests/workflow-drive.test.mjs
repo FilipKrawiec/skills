@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, holdBaseUpdates, latestAssessment,
-  driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  driveCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
@@ -1281,4 +1281,132 @@ test('scope: an issue without a packet and a fix inside the scope are unaffected
   const pushed = decide({ issue: scoped, tree: tree({ commits: 2, diffPaths: ['src/a.js', 'docs/z.md'] }), pr: pr({ reviews: [review('fixes')] }), handBack: done });
   assert.deepEqual([pushed.agent, pushed.mode], ['implementer', 'fix'], 'a clean done fix is held for scope before another review');
   assert.equal(decide({ issue: scoped, tree: tree({ commits: 2, diffPaths: ['docs/z.md'] }), pr: pr({ reviews: [review('fixes')] }) }).outOfScope, undefined, 'only a done hand-back is checked');
+});
+
+// ---- #571: the planner consolidates overlapping unstarted issues before drive starts one.
+
+const scoped = (n, paths, extra = {}) => issue({ number: n, url: `https://github.com/acme/app/issues/${n}`, body: `\`\`\`scope\n${JSON.stringify({ paths })}\n\`\`\``, assessment: assessed('R0'), ...extra });
+const facts = (over = {}) => ({ parentOf: () => null, hasPr: () => false, blockedBy: () => [], ...over });
+
+test('overlap: same epic and overlapping scope paths are found, in number order', () => {
+  const me = scoped(3, ['src/a/']);
+  const others = [scoped(9, ['src/a/b.js']), scoped(5, ['src/']), scoped(7, ['docs/']), scoped(8, ['src/ab/'])];
+  assert.deepEqual(findOverlaps(me, others, facts()), [5, 9], 'a subtree overlaps its parent or child path; a sibling prefix does not');
+  assert.deepEqual(findOverlaps(me, others, facts({ parentOf: n => (n === 3 || n === 5 ? 20 : n === 9 ? 20 : 30) })), [5, 9], 'the same epic overlaps');
+  assert.deepEqual(findOverlaps(issue({ number: 3, body: 'no packet' }), others, facts()), [], 'an issue with no scope packet cannot be compared');
+});
+
+test('overlap: started, owner-lane, epic, PR-backed, other-epic, dependent and distinct issues are never merged', () => {
+  const me = scoped(3, ['src/']);
+  const found = others => findOverlaps(me, others, facts());
+  assert.deepEqual(found([scoped(4, ['src/'], { labels: [label('state:started')] })]), [], 'started');
+  assert.deepEqual(found([scoped(4, ['src/'], { labels: [label('lane:owner')] })]), [], 'lane:owner');
+  assert.deepEqual(found([scoped(4, ['src/'], { labels: [label('type:epic')] })]), [], 'an epic');
+  assert.deepEqual(findOverlaps(scoped(3, ['src/'], { labels: [label('lane:owner')] }), [scoped(4, ['src/'])], facts()), [], 'the issue itself under lane:owner');
+  assert.deepEqual(findOverlaps(me, [scoped(4, ['src/'])], facts({ hasPr: n => n === 4 })), [], 'an open PR');
+  assert.deepEqual(findOverlaps(me, [scoped(4, ['src/'])], facts({ parentOf: n => (n === 4 ? 20 : null) })), [], 'a different epic, or an epic and a standalone issue');
+  assert.deepEqual(findOverlaps(me, [scoped(4, ['src/'])], facts({ parentOf: n => (n === 4 ? 20 : 21) })), [], 'two different epics');
+  assert.deepEqual(findOverlaps(me, [scoped(4, ['src/'])], facts({ blockedBy: n => (n === 4 ? [3] : []) })), [], 'a blocked-by link');
+  assert.deepEqual(findOverlaps(scoped(3, ['src/'], { body: '```scope\n{"paths":["src/"],"dependencies":[4]}\n```' }), [scoped(4, ['src/'])], facts()), [], 'a packet dependency');
+  assert.deepEqual(findOverlaps(me, [scoped(4, ['src/'], { body: `${scoped(4, ['src/']).body}\n${distinctMarker(3)}` })], facts()), [], 'marked distinct by the other');
+  assert.deepEqual(findOverlaps({ ...me, body: `${me.body}\n${distinctMarker(4)}` }, [scoped(4, ['src/'])], facts()), [], 'marked distinct by the planner on this issue');
+  assert.deepEqual(found([scoped(4, ['src/'], { body: 'no packet' })]), [], 'an issue with no packet');
+});
+
+test('drive sends an overlapping unstarted issue to the planner, starting nothing', () => {
+  const repo = fakeRepo({ issues: { 3: scoped(3, ['src/']), 4: scoped(4, ['src/a.js']) } });
+  repo.io.overlaps = i => findOverlaps(i, repo.io.openIssues(), facts());
+  const step = drive(repo.io, 3, lanes, {});
+  assert.deepEqual([step.agent, step.mode, step.model, step.issue, step.overlaps], ['planner', 'consolidate', 'opus', 3, undefined]);
+  assert.match(step.reason, /#4 overlaps the scope and epic of #3/);
+  assert.deepEqual(repo.calls, [], 'no claim, no worktree');
+  const brief = repo.writes[step.brief];
+  assert.match(brief, /Merge the overlapping unstarted issues #4 and #3 into one canonical issue/);
+  assert.match(brief, /every outcome, criterion, dependency, decision and milestone/);
+  assert.match(brief, /consolidated-into N/);
+  assert.match(brief, /never by size/);
+  assert.match(brief, /Never merge a started issue.*different epics without a shared outcome.*lane:owner/);
+  assert.doesNotMatch(brief, /Agree each slice with the owner/);
+});
+
+test('drive starts an issue once no overlap is left, and reports what the planner merged', () => {
+  const repo = fakeRepo({ issues: { 3: scoped(3, ['src/']), 4: scoped(4, ['src/a.js']) } });
+  repo.io.overlaps = i => findOverlaps(i, repo.io.openIssues(), facts());
+  repo.s.issues[4].state = 'CLOSED';
+  const done = drive(repo.io, 3, lanes, parseHandBack('status: consolidated\ninto: 3\nclosed: 4\nnote: folded the doc criteria in'));
+  assert.deepEqual(done.consolidated, { into: 3, closed: [4], note: 'folded the doc criteria in' });
+  assert.equal(done.agent, 'implementer');
+  assert.deepEqual(repo.calls, [['start', 3]]);
+});
+
+test('drive follows a driven issue the planner closed to its canonical issue', () => {
+  const repo = fakeRepo({ issues: { 3: scoped(3, ['src/'], { state: 'CLOSED' }), 4: scoped(4, ['src/']) } });
+  repo.io.overlaps = i => findOverlaps(i, repo.io.openIssues(), facts());
+  const result = drive(repo.io, 3, lanes, { status: 'consolidated', into: '#4', closed: '#3' });
+  assert.deepEqual([result.agent, result.issue, result.consolidated.into, result.consolidated.closed], ['implementer', 4, 4, [3]]);
+});
+
+test('drive refuses a consolidation report GitHub does not back', () => {
+  const repo = fakeRepo({ issues: { 3: scoped(3, ['src/']), 4: scoped(4, ['src/a.js']) } });
+  repo.io.overlaps = i => findOverlaps(i, repo.io.openIssues(), facts());
+  const unbacked = drive(repo.io, 3, lanes, { status: 'consolidated', into: '3', closed: '4' });
+  assert.match(unbacked.blocked.reason, /#4 stay open/);
+  assert.deepEqual(repo.calls, []);
+  const persists = drive(repo.io, 3, lanes, { status: 'distinct' });
+  assert.match(persists.blocked.reason, /handed back distinct, yet #4 still overlaps it/);
+  assert.deepEqual(consolidationReport({ into: '#12', closed: '#5, #6' }), { into: 12, closed: [5, 6] });
+});
+
+test('githubIo reads the epic and open PR of only the issues whose scope overlaps', () => {
+  const asked = [];
+  const open = [scoped(3, ['src/']), scoped(4, ['src/a.js']), scoped(5, ['docs/'])].map(({ number, labels, body }) => ({ number, labels, body }));
+  const gh = args => {
+    asked.push(args.join(' '));
+    if (args[0] === 'issue' && args[1] === 'list') return open;
+    if (args[0] === 'pr' && args[1] === 'list') return [];
+    if (args.some(arg => arg.endsWith('/parent'))) return { number: 20 };
+    if (args.some(arg => arg.includes('/dependencies/blocked_by'))) return [[]];
+    throw new Error(`unexpected ${args.join(' ')}`);
+  };
+  const io = githubIo({ repo: 'acme/app', base: 'main' }, gh);
+  assert.deepEqual(io.overlaps(open[0]), [4]);
+  assert.equal(asked.some(call => /issues\/5\//.test(call)), false, 'the docs-only issue is never read');
+});
+
+test('a dependency on an issue closed as consolidated follows its target, never an owner step', () => {
+  const read = (targetState, extra = {}) => args => {
+    const [kind, path] = args;
+    if (path?.endsWith('/dependencies/blocked_by')) return [{ number: 422 }, { number: 560 }];
+    if (path === 'repos/acme/app/issues/422') return { state: 'closed', state_reason: 'not_planned', labels: [], body: 'old\n<!-- workflow:consolidated-into 560 -->' };
+    if (path === 'repos/acme/app/issues/560') return { state: targetState, state_reason: 'completed', labels: [], body: '```scope\n{"paths":["a/"]}\n```', ...extra };
+    if (args[1] === 'graphql') return { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [{ merged: true }] } } } } };
+    throw new Error(`unexpected ${args.join(' ')} ${kind}`);
+  };
+  assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 551, body: '' }, read('open'))), { blockers: [560], dropped: [] }, 'waits on the target, once');
+  assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 551, body: '' }, read('closed'))), { blockers: [], dropped: [] }, 'met when the target merged');
+  const dropped = args => (args[1]?.endsWith('/dependencies/blocked_by') ? [{ number: 422 }] : { state: 'closed', state_reason: 'not_planned', labels: [], body: 'no marker' });
+  assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 551, body: '' }, dropped)), { blockers: [], dropped: [422] }, 'closed as not planned with no consolidation target is still dropped');
+  const itself = args => (args[1]?.endsWith('/dependencies/blocked_by') ? [{ number: 422 }] : { state: 'closed', state_reason: 'not_planned', labels: [], body: '<!-- workflow:consolidated-into 551 -->' });
+  assert.deepEqual(readDependencies('acme/app', { number: 551, body: '' }, itself), [], 'a dependency folded into the issue itself disappears');
+});
+
+test('an epic counts a slice the planner folded into another by the target\'s delivery', () => {
+  const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
+  const folded = issue({ number: 10, state: 'CLOSED', body: '<!-- workflow:consolidated-into 11 -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 10: folded, 11: issue({ number: 11, state: 'CLOSED' }) }, subs: { 9: [10, 11] }, merged: [11], lessons: [9] });
+  drive(repo.io, 9, lanes, {});
+  repo.s.issues[99].state = 'CLOSED';
+  repo.s.merged = [11, 99];
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  repo.s.merged = [99]; repo.s.issues[9].state = 'OPEN';
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #11/, 'the folded slice stands for its target, which has no merged PR');
+});
+
+test('the planner agent is defined, planner brief follows the epic outcome and the final refinement assesses delivery flow', () => {
+  const agentText = readFileSync(new URL('../../plugins/common/workflow/agents/planner.md', import.meta.url), 'utf8');
+  assert.match(agentText, /^name: planner$/m);
+  assert.doesNotMatch(agentText.split('---')[1], /^model:/m);
+  assert.match(agentText, /Never write code.*never start another agent/s);
+  assert.match(agentText, /Split only for an independent outcome.*never by size/);
+  assert.match(plannerBrief({ issue: issue(), step: { mode: 'slice' } }), /Slices follow the epic's approved outcome/);
 });

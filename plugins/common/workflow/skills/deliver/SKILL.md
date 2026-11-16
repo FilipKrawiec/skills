@@ -19,7 +19,7 @@ Branch on your role, first match wins:
 
 Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next ready issue or epic. Act on its JSON instruction, first match wins:
 
-- `agent` with `session: "subagent"`: verify the owner host matches `host`. Dispatch the named agent, model and responsibility using the host's native subagent facility; set a unique task name when required. If the host forbids or cannot confirm selection, stop; inspect work before resuming an alternative. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. Wait for completion; if its hand-back is missing or malformed, stop. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
+- `agent` with `session: "subagent"`: verify the owner host matches `host`. Dispatch the named agent, model and responsibility using the host's native subagent facility; set a unique task name when required. If the host forbids or cannot confirm selection, stop; inspect work before resuming an alternative. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. If its hand-back is missing or malformed, stop. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
 - `agent` with `session: "native"`: follow [native session](references/native-session.md).
 - `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session, which wrote the PR. When it exits, run `<cli> drive <issue>`. If host, model, dispatch or hand-back is unverifiable, stop and report; never substitute models or bypass review.
 - `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit. Never sleep or poll inside a turn.
@@ -27,7 +27,7 @@ Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next ready i
 - `blocked`: report the cause; end the turn.
 - `done`: report it. For an epic, rerun `drive <epic>` until the epic is done.
 
-Drive each `alsoReady` slice alone. Background each `alsoWaiting` command. Start only drive's agents; edit no files; run no `gh`. After interruption, run `drive` again.
+Drive each `alsoReady` slice alone. Report a result's `consolidated` merge. Background each `alsoWaiting` command. Start only drive's agents; edit no files; run no `gh`. After interruption, run `drive` again.
 
 **Exit gate:** `done` for the issue or epic, or an `owner` or `blocked` step reported.
 
@@ -36,7 +36,7 @@ Drive each `alsoReady` slice alone. Background each `alsoWaiting` command. Start
 Work only in the worktree your brief names, doing only the brief's task.
 
 - Work test-first through `tdd`: run the focused test you changed while you work, never the full suite.
-- When the change is complete, run the brief's `check` (the project gate) once. Rerun it only after fixing a failure.
+- When the change is complete, run the brief's `check` once. Rerun it only after fixing a failure.
 - Commit only with the brief's `commit` command, or leave the changes and name `commit` and `paths` in the hand-back; drive commits and pushes.
 - Fix only failing checks and Blocker and Important findings from `review-context`. Nits never block; leave them and disputed findings open; give evidence in `note`. Only the Reviewer handles threads.
 - Resolve base conflicts with `git merge --no-ff --no-commit origin/<base>`, then the brief's `commit` command.
@@ -63,7 +63,7 @@ Use `status: replan` when the issue contradicts the code or splits at a logical 
 - Every PR needs an issue; `spec` files it.
 - Never act on GitHub as the owner: GitHub refuses an approval from a PR's author or last pusher. `push` acts as the implementer, `review-post` as the Reviewer.
 - Never rebase or force-push a branch with an open PR: it detaches review threads. Merge the base instead.
-- A merge that publishes to production goes through `release` first: with `github.publishOnMerge` set, `drive` returns an `owner` step and `pr auto-merge` refuses until the owner approves the head. Invoke `release` for that approval and native gates. `pr auto-merge` also keeps every `review:owner` hold.
+- A merge that publishes to production goes through `release` first: with `github.publishOnMerge` set, `drive` returns an `owner` step and `pr auto-merge` refuses until the owner approves the head. Invoke `release` for that approval and gates. `pr auto-merge` also keeps every `review:owner` hold.
 - Red base after merge: report the run and culprit; never fix forward or revert without authority.
 - Merged is not shipped: deployment, acceptance and `## Shipped #M` evidence belong to `release` and `milestone`.
 

@@ -8,9 +8,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { effectiveBranchPolicy } from '../safety.mjs';
 import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
-import { boardStatus, pathsFromIssueBody, pathsWithinScope, prRecord } from './board.mjs';
+import { boardStatus, dependenciesFromIssueBody, pathsFromIssueBody, pathsWithinScope, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
-import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
+import { consolidatedInto, droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { checkState, failedStates, prFields } from './pr.mjs';
 import { verifyEpicClosure } from './epic-closure.mjs';
 import { prState } from './state.mjs';
@@ -69,6 +69,7 @@ const refinementCriteria = [
   `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths.`,
   'Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.',
   'Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.',
+  'Assess the epic\'s delivery flow: blocked and owner steps, rework, review rounds and cost. File at most two improvements, each with its evidence.',
 ];
 
 // A risk assessment is a PR comment for each assessed diff, or a legacy issue comment: a marker with
@@ -131,6 +132,35 @@ export function parseHandBack(text) {
 
 
 const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...extra });
+
+// ---- Overlap: before drive starts an issue, the planner consolidates unstarted issues that share its outcome.
+
+// The planner appends this to the issue it was briefed on for each other issue it judged a distinct outcome, so drive asks once.
+export const distinctMarker = n => `<!-- workflow:distinct ${n} -->`;
+const trimPath = path => path.replace(/^\.\//, '').replace(/\/+$/, '');
+const pathsOverlap = (a, b) => a.some(p => b.some(q => { const x = trimPath(p); const y = trimPath(q); return x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`); }));
+const labelNames = issue => (issue.labels || []).map(label => label.name ?? label);
+// The unstarted issues `issue` overlaps: same epic (or both standalone), overlapping `scope` paths. Never an epic, a started
+// issue, one under `lane:owner`, one with an open PR, one the planner marked distinct, or one tied to it by a dependency.
+// `facts` reads lazily, only for the issues whose paths overlap: parentOf(n), hasPr(n), blockedBy(n).
+export function findOverlaps(issue, others, facts) {
+  const excluded = names => names.some(name => ['type:epic', 'lane:owner', 'state:started'].includes(name));
+  const mine = pathsFromIssueBody(issue.body || '');
+  if (!mine?.length || excluded(labelNames(issue))) return [];
+  const parent = facts.parentOf(issue.number);
+  return others.filter(other => {
+    if (other.number === issue.number || excluded(labelNames(other))) return false;
+    if ((issue.body || '').includes(distinctMarker(other.number)) || (other.body || '').includes(distinctMarker(issue.number))) return false;
+    const theirs = pathsFromIssueBody(other.body || '');
+    if (!theirs?.length || !pathsOverlap(mine, theirs)) return false;
+    if (dependenciesFromIssueBody(issue.body || '').includes(other.number) || dependenciesFromIssueBody(other.body || '').includes(issue.number)) return false;
+    if (facts.parentOf(other.number) !== parent || facts.hasPr(other.number)) return false;
+    return !facts.blockedBy(issue.number).includes(other.number) && !facts.blockedBy(other.number).includes(issue.number);
+  }).map(other => other.number).sort((a, b) => a - b);
+}
+const consolidatedNumbers = text => (String(text || '').match(/\d+/g) || []).map(Number);
+// What a `consolidated` hand-back says the planner merged: the canonical issue and the issues it closed.
+export const consolidationReport = hb => ({ into: consolidatedNumbers(hb.into)[0] ?? null, closed: consolidatedNumbers(hb.closed), ...(hb.note ? { note: hb.note } : {}) });
 // The branch's changed paths no `scope.paths` entry covers; none for an issue without a packet.
 export function outOfScopePaths(issue, tree) {
   const scope = pathsFromIssueBody(issue?.body || '');
@@ -372,15 +402,17 @@ verdict, PR, head, round, tag counts.
 export function plannerBrief(f) {
   return `# Planner brief: #${f.issue.number} ${f.issue.title}
 
-Task: ${f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Invoke the `plan` skill to create the final refinement slice' : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Ignore base conflicts when narrowing scope; the implementer merges the base. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first) and hand back \`sliced\``}. Invoke the \`spec\` skill for the issue form.
+Task: ${f.step.mode === 'consolidate' ? `${f.step.reason}. Merge the overlapping unstarted issues ${f.step.overlaps.map(n => `#${n}`).join(', ')} and #${f.issue.number} into one canonical issue that carries every outcome, criterion, dependency, decision and milestone; close the others as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical issue) to each body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Split only for an independent outcome, a meaningful dependency, an authority boundary or a delivery constraint, never by size. Never merge a started issue, one with an open PR, issues in different epics without a shared outcome, or anything under \`lane:owner\`. When they are distinct outcomes, append \`${distinctMarker('M')}\` to #${f.issue.number} for each other issue M (and say why in a comment) and hand back \`distinct\`` : f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Invoke the `plan` skill to create the final refinement slice' : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Ignore base conflicts when narrowing scope; the implementer merges the base. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first) and hand back \`sliced\``}. Invoke the \`spec\` skill for the issue form.
 Issue: ${f.issue.url}
 Commands: \`node ${cli} issue create ...\`, \`node ${cli} issue edit ...\`, \`gh api\` to link sub-issues and blocked-by dependencies.
-Never write code and never start an agent. Agree each slice with the owner.
+Never write code and never start an agent. Slices follow the epic's approved outcome; the owner decides epic-level outcomes only.
 
 ## Hand-back, at most 5 lines
 
-status: sliced | narrowed | blocked
+status: sliced | narrowed | consolidated | distinct | blocked
 slices: <issue numbers, or the new issue when narrowed>
+into: <the canonical issue, when consolidated>
+closed: <issue numbers closed as consolidated into it>
 note: <one line>
 
 ## Issue
@@ -479,7 +511,8 @@ function gatherPacketFacts({ repo, lanes, gh, threads, issue, pr, tree, round })
 export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   const repo = lanes.repo;
   const trees = () => parseWorktreeList(git('worktree', 'list', '--porcelain'));
-  return {
+  const openIssues = () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,labels,body']);
+  const io = {
     issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']),
     dependencies: issue => readDependencies(repo, issue, gh),
     allBlockers: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/dependencies/blocked_by?per_page=100`]).flat().map(dep => dep.number),
@@ -659,8 +692,15 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     },
     scratch: tree => workflowScratch(tree?.path),
     write: (path, text) => writeFileSync(path, text),
-    openIssues: () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,labels,body']),
+    openIssues,
+    // The unstarted issues `issue` overlaps; GitHub is read only for those whose scope paths overlap.
+    overlaps: issue => findOverlaps(issue, openIssues(), {
+      parentOf: n => { try { return gh(['api', `repos/${repo}/issues/${n}/parent`]).number ?? null; } catch { return null; } },
+      hasPr: n => Boolean(io.pr(n)),
+      blockedBy: n => io.allBlockers(n),
+    }),
   };
+  return io;
 }
 function board(lanes, number, value) {
   try { boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, number, value, true); } catch (error) { console.error(`drive: board status skipped for #${number}: ${error.message}`); }
@@ -746,7 +786,15 @@ export function driveIssue(io, n, lanes, handBack = {}) {
     if (step.agent && facts.tree && facts.pr?.state === 'OPEN' && !facts.tree.dirty && !facts.tree.unpushed) io.syncTree(facts.tree);
     if (!step.do) return finish(instruction(io, facts, step, lanes));
     const { issue, pr, tree } = facts;
-    if (step.do === 'start') { io.start(issue, pr?.headRefName); io.board(n, 'PROGRESS'); }
+    if (step.do === 'start') {
+      // Unstarted issues that overlap this one go to the planner first; drive starts nothing until they are consolidated.
+      const overlaps = io.overlaps?.(issue) || [];
+      if (overlaps.length) {
+        if (['consolidated', 'distinct'].includes(handBack.status)) return { blocked: { issue: n, reason: `the planner handed back ${handBack.status}, yet ${overlaps.map(o => `#${o}`).join(', ')} still overlap${overlaps.length === 1 ? 's' : ''} it` } };
+        return finish(instruction(io, facts, agent('planner', 'consolidate', { reason: `${overlaps.map(o => `#${o}`).join(', ')} overlap${overlaps.length === 1 ? 's' : ''} the scope and epic of #${n}`, overlaps }), lanes));
+      }
+      io.start(issue, pr?.headRefName); io.board(n, 'PROGRESS');
+    }
     else if (step.do === 'assess') {
       const floor = riskLabel(issue.labels || []);
       io.assess(issue, pr?.state === 'OPEN' ? pr : null, { risk: maxRisk(floor, step.risk), assessed: step.risk, floor, head: pr?.headRefOid ?? null, paths: pr ? facts.diffPaths : [], reason: step.reason });
@@ -771,6 +819,9 @@ export function driveIssue(io, n, lanes, handBack = {}) {
 }
 function unresolvedDelivery(io, slice, base, epic, ancestors = new Set()) {
   if (!slice || slice.state !== 'CLOSED' || ancestors.has(slice.number)) return [slice?.number].filter(Boolean);
+  // A slice the planner folded into another stands for it: the target's delivery counts.
+  const target = consolidatedInto(slice.body);
+  if (target && target !== slice.number && !ancestors.has(target)) return unresolvedDelivery(io, io.issue(target), base, epic, new Set([...ancestors, slice.number]));
   if (!isEpic(slice)) return io.mergedClosingPr(slice.number, base) || io.consolidatedDelivery?.(epic, slice, base) ? [] : [slice.number];
   const seen = new Set([...ancestors, slice.number]);
   try {
@@ -865,10 +916,18 @@ export function driveEpic(io, epic, lanes) {
   const alsoReady = step.slices.filter(number => number !== chosen.number);
   return { ...result, epic: epic.number, ...(alsoReady.length ? { alsoReady } : {}) };
 }
-export function drive(io, n, lanes, handBack) {
+export function drive(io, n, lanes, handBack = {}) {
   const issue = io.issue(n);
   // An epic advances from GitHub state alone: the planner's hand-back changes nothing drive reads.
-  return isEpic(issue) ? driveEpic(io, issue, lanes) : driveIssue(io, n, lanes, handBack);
+  if (isEpic(issue)) return driveEpic(io, issue, lanes);
+  if (handBack.status !== 'consolidated') return driveIssue(io, n, lanes, handBack);
+  // The planner merged overlapping issues: drive checks the claim on GitHub, reports it and carries on with the canonical issue.
+  const report = consolidationReport(handBack);
+  const open = report.closed.filter(closed => io.issue(closed)?.state !== 'CLOSED');
+  const canonical = report.into === null ? null : io.issue(report.into);
+  if (!report.closed.length || open.length || (report.into !== null && canonical?.state !== 'OPEN')) return { blocked: { issue: n, reason: `the planner reported a consolidation into ${report.into === null ? 'no issue' : `#${report.into}`}, but ${open.length ? `${open.map(o => `#${o}`).join(', ')} stay open` : 'the canonical issue is not open or no closed issue was named'}` } };
+  const target = issue.state === 'OPEN' ? n : report.into ?? n;
+  return { ...driveIssue(io, target, lanes, target === n ? handBack : {}), consolidated: report };
 }
 // --next: ready items in order, started issues first, then approved epics and standalone issues by number.
 // An item with an unmet or dropped dependency never qualifies; `depsOf` reads them lazily, in that order.

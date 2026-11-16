@@ -6,13 +6,13 @@ allowed-tools: Read Bash(gh:*,git:*)
 
 # Spec
 
-Own issue semantics under a trusted direct owner request or matching approved milestone; record its source. Silence, labels and bot summaries grant no authority. Routine refinement needs no per-story approval. Only this and `plan` wait for the developer: clarify intent here.
+Own issue semantics under a trusted direct owner request or matching approved milestone; record its source. Silence, labels and bot summaries grant no authority. Routine refinement needs no per-story approval; the owner decides epic outcomes only. Only this and `plan` wait for the developer: clarify intent here.
 
 ## 1. Define
 
 Reuse an issue or template; read relevant code, tests, rules, ADRs and decisions. Record intent, constraints, non-goals and observable `### Acceptance criteria`; test-only work needs behavior criteria. Bound investigations by question, time and evidence. New interactions need owner prototype direction or an accepted pattern. Record product choices as [decision records](references/decision-records.md). Reserve changed strategy, new paid services or budget increases, and weakened authority, credential, release or quality gates for the owner; continue independent work during a wait.
 
-Each open issue has a native milestone and one type; it carries `lane:owner` only while the owner must take part, and an epic only while a draft. Types are story, bug, chore, task or epic. Titles use `feat`, `fix`, `chore/docs/test/ci/refactor/perf`, `task` or `epic`, plus area and outcome. Group related fixes, implementation, tests and docs that ship together into one bounded, reviewable issue and PR, reducing coordination costs. Split for an independent outcome, meaningful dependency, authority boundary or delivery constraint, never size, estimate or layer alone; use one-PR epic sub-issues when needed; follow [split.md](references/split.md). Avoid process-only tickets and nesting without an outcome. Only epics, never started, have children. Read [epics.md](references/epics.md) when drafting, slicing, updating or closing a `type:epic`. Each slice ends where a user observes it: a slice building a unit also places it where its criteria name, unless it is a separate reusable component its own tests observe. Never write a conditional criterion ("mounts it if #N is merged"). Record outcome dependencies as blocked-by links, not file ordering; verify outcomes, not closure.
+Each open issue has a native milestone and one type; it carries `lane:owner` only while the owner must take part, and an epic only while a draft. Types are story, bug, chore, task or epic. Titles use `feat`, `fix`, `chore/docs/test/ci/refactor/perf`, `task` or `epic`, plus area and outcome. Group related fixes, implementation, tests and docs that ship together into one bounded, reviewable issue and PR, reducing coordination costs. Split only at the seams [split.md](references/split.md) names, never by size; use one-PR epic sub-issues when needed. Avoid process-only tickets and nesting without an outcome. Only epics, never started, have children. Read [epics.md](references/epics.md) when drafting, slicing, updating or closing a `type:epic`. Each slice ends where a user observes it: a slice building a unit also places it where its criteria name, unless it is a separate reusable component its own tests observe. Never write a conditional criterion ("mounts it if #N is merged"). Record outcome dependencies as blocked-by links, not file ordering; verify outcomes, not closure.
 
 **Exit gate:** grounded issue, authority, acceptance, dependencies and reserved decisions recorded.
 
@@ -40,6 +40,6 @@ Temporary dependency, CI, capability or owner waits retain lane, milestone and a
 
 ## 3. Record
 
-Preserve template markers; write summary, scope, risks, decision and acceptance, with estimate/packet when applicable. Link merged evidence per criterion. Duplicate or withdrawn scope needs its decision. Re-read the saved issue.
+Preserve template markers; write summary, scope, risks, decision and acceptance, with estimate/packet when applicable. Link merged evidence per criterion. Withdrawn scope needs its decision; close unstarted duplicates per [split.md](references/split.md), no owner. Re-read the saved issue.
 
 **Exit gate/output:** at most 5 lines: **Summary:** issue, criteria, lanes and waits. **Decision:** next action/actor or reserved options and recommendation.

@@ -19,6 +19,7 @@ test('epic slicing directs the planner to create one final refinement with nativ
   assert.match(plan, /before and after times per project gate and CI part/);
   assert.match(plan, /missing evidence/);
   assert.match(plan, /implementer brief and review expectations/);
+  assert.match(plan, /delivery flow: blocked and owner steps, rework, review rounds and cost\. File at most two improvements/);
 });
 
 test('drive creates a missing refinement with the marker and exactly the criteria the plan skill gives the planner', () => {
@@ -34,6 +35,6 @@ test('drive creates a missing refinement with the marker and exactly the criteri
   assert.ok(body.includes('```scope\n{"paths":["a/"]}\n```'));
   const created = body.split('\n').filter(line => line.startsWith('- [ ] ')).map(line => line.slice(6));
   const planned = read('plan/SKILL.md').split('\n').filter(line => line.startsWith('- ')).map(line => line.slice(2));
-  assert.equal(created.length, 3);
+  assert.equal(created.length, 4);
   assert.deepEqual(created, planned.filter(line => created.includes(line)));
 });
