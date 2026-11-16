@@ -799,8 +799,8 @@ function instruction(io, facts, step, lanes) {
   if (step.reason) out.reason = step.reason;
   if (step.resume) out.resume = true;
   if (host === 'agy') out.command = ['node', fileURLToPath(new URL('../agy-session.mjs', import.meta.url)), lanes.delivery?.executables?.agy || 'agy', step.agent, model, brief];
-  // The epic outcome review has no PR to claim: the Reviewer runs in its own session and posts one comment.
-  if (step.agent === 'reviewer' && !pr) out.command = reviewerCommand(model, brief, `epic-${issue.number}-outcome`, host, lanes.delivery?.executables?.[host] || host);
+  // The epic outcome review has no PR to claim: the Reviewer runs in its own session and posts one comment; the wrapper only records its usage on the epic.
+  if (step.agent === 'reviewer' && !pr) out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), '--epic', String(issue.number), ...reviewerCommand(model, brief, `epic-${issue.number}-outcome`, host, lanes.delivery?.executables?.[host] || host)];
   else if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host)];
   return out;
 }
