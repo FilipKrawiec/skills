@@ -33,13 +33,15 @@ export function deliveryAssignment(delivery, step, risk) {
   if (!delivery || typeof delivery !== 'object' || !['codex', 'claude'].includes(delivery.orchestrator)) throw new Error('Unsupported delivery orchestrator; configure codex or claude after verifying host capabilities');
   if (delivery.executables != null && (typeof delivery.executables !== 'object' || Array.isArray(delivery.executables) || Object.entries(delivery.executables).some(([host, path]) => !['codex', 'claude', 'agy'].includes(host) || typeof path !== 'string' || !path.trim()))) throw new Error('Configure delivery.executables as host-to-executable paths');
   const roleName = step.agent === 'implementer' && step.fresh ? 'freshImplementer' : step.agent;
-  const role = delivery.roles?.[roleName];
-  if (!role || !['codex', 'claude', 'agy'].includes(role.host) || typeof role.model !== 'string' || !role.model.trim()) throw new Error(`Configure delivery.roles.${roleName} with a supported host and model`);
+  const configured = delivery.roles?.[roleName];
+  const choices = Array.isArray(configured) ? configured : [configured];
+  if (!choices.length || choices.some(role => !role || !['codex', 'claude', 'agy'].includes(role.host) || typeof role.model !== 'string' || !role.model.trim())) throw new Error(`Configure delivery.roles.${roleName} with a supported host and model`);
+  const role = choices[0];
   if (role.host === 'agy') {
-    if (step.agent !== 'devops') throw new Error(`AGY ${step.agent} dispatch is unverified; configure a supported host for this responsibility`);
+    if (step.agent !== 'devops') throw new Error(`AGY ${step.agent} dispatch is unverified; reorder delivery.roles.${roleName} to a supported host and rerun drive with the existing work state`);
     return { host: role.host, model: role.model, session: 'native' };
   }
-  if (step.agent !== 'reviewer' && role.host !== delivery.orchestrator) throw new Error(`Unsupported cross-host subagent for ${step.agent}; use the orchestrator host`);
+  if (step.agent !== 'reviewer' && role.host !== delivery.orchestrator) throw new Error(`Unsupported cross-host subagent for ${step.agent}; resume drive in the ${role.host} orchestrator or reorder delivery.roles.${roleName} to the current orchestrator, preserving the work state`);
   return { host: role.host, model: role.model, session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
 }
 const riskLabel = labels => labels.map(label => label.name ?? label).find(name => /^risk:R\d$/.test(name))?.slice(5) || null;
@@ -624,6 +626,8 @@ function instruction(io, facts, step, lanes) {
   const context = { issue, pr, tree, step, risk, model, round, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
   io.write(brief, briefs[step.agent](context));
   const out = { agent: step.agent, host, model, brief, issue: issue.number, pr: pr?.number ?? null, session, mode: step.mode, cwd: tree?.path || null };
+  const configured = lanes.delivery?.roles?.[step.agent === 'implementer' && step.fresh ? 'freshImplementer' : step.agent];
+  if (Array.isArray(configured)) out.alternatives = configured.slice(1);
   if (step.task) out.task = step.task;
   if (step.reason) out.reason = step.reason;
   if (step.resume) out.resume = true;

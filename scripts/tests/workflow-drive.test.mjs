@@ -1149,3 +1149,41 @@ test('AGY native probe runs independently of other hosts', async t => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^agy: brief and hand-back passed/);
 });
+
+
+test('ranked custom responsibilities skip only an executable that failed to start', async () => {
+  const { runResponsibility } = await import('../../plugins/common/workflow/scripts/lib/responsibility.mjs');
+  const delivery = { orchestrator: 'claude', roles: { design: [{ host: 'claude', model: 'sonnet' }, { host: 'codex', model: 'terra' }] } };
+  const calls = [];
+  const result = runResponsibility(delivery, 'design', '/tmp/brief', (host) => {
+    calls.push(host);
+    return host === 'claude' ? { error: Object.assign(new Error('missing'), { code: 'ENOENT' }) } : { status: 0, stdout: 'status: done\nnote: complete\n' };
+  });
+  assert.equal(result, 'status: done\nnote: complete\n');
+  assert.deepEqual(calls, ['claude', 'codex']);
+  for (const failure of [{ status: 1, stderr: 'quota exhausted' }, { status: 1, stderr: 'permission denied' }, { status: 0, stdout: 'ambiguous' }]) {
+    const attempted = [];
+    assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief', host => { attempted.push(host); return failure; }), /resum|hand-back/i);
+    assert.deepEqual(attempted, ['claude']);
+  }
+});
+
+
+test('ranked delivery reports choices and rejects unsupported handoffs', () => {
+  const choices = [{ host: 'claude', model: 'sonnet' }, { host: 'codex', model: 'terra' }];
+  const repo = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
+  const configured = { ...lanes, delivery: { orchestrator: 'claude', roles: { implementer: choices } } };
+  const result = drive(repo.io, 3, configured, {});
+  assert.deepEqual([result.host, result.model, result.alternatives], ['claude', 'sonnet', [choices[1]]]);
+  assert.throws(() => deliveryAssignment({ orchestrator: 'codex', roles: { implementer: choices } }, { agent: 'implementer' }, 'R1'), /resume drive.*reorder/i);
+  assert.throws(() => deliveryAssignment({ orchestrator: 'claude', roles: { reviewer: [{host: 'agy', model: 'x'}, choices[1]] } }, { agent: 'reviewer' }, 'R1'), /unverified.*reorder/i);
+  assert.throws(() => deliveryAssignment({ orchestrator: 'claude', roles: { reviewer: [] } }, { agent: 'reviewer' }, 'R1'), /configure/i);
+});
+
+test('ranked custom responsibility reports exhaustion without invoking work', async () => {
+  const { runResponsibility } = await import('../../plugins/common/workflow/scripts/lib/responsibility.mjs');
+  const delivery = { orchestrator: 'claude', roles: { design: [{ host: 'claude', model: 'a' }, { host: 'codex', model: 'b' }] } };
+  const calls = [];
+  assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief', host => { calls.push(host); return { error: Object.assign(new Error('missing'), { code: 'ENOENT' }) }; }), /all configured candidates unavailable/i);
+  assert.deepEqual(calls, ['claude', 'codex']);
+});
