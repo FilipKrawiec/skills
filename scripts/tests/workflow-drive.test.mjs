@@ -50,7 +50,7 @@ test('review, fix, ready, merge and close follow the PR state', () => {
   assert.deepEqual(decide({ ...base, pr: pr({ reviews: [review('fixes')] }) }), { agent: 'implementer', mode: 'fix', reason: 'blocking review findings', resume: true });
   assert.deepEqual(decide({ ...base, tree: tree({ dirty: true }), pr: pr({ reviews: [review('fixes')] }), handBack: { status: 'done', commit: 'fix(app): x', paths: ['a'] } }), { do: 'commit' });
   assert.deepEqual(decide({ ...base, pr: pr({ reviews: [review('ready')] }) }), { do: 'ready' });
-  assert.deepEqual(decide({ ...base, pr: pr({ isDraft: false, reviews: [review('ready')] }) }), { agent: 'reviewer', mode: 'approve', reason: 'no approval at the head', round: 1 });
+  assert.deepEqual(decide({ ...base, pr: pr({ isDraft: false, reviews: [review('ready')] }) }), { do: 'approve', round: 1 });
   assert.deepEqual(decide({ ...base, pr: pr({ isDraft: false, reviews: [review('ready', 'APPROVED')] }) }), { do: 'auto-merge' });
   assert.deepEqual(decide({ ...base, pr: pr({ isDraft: false, reviews: [review('ready', 'APPROVED')], autoMergeRequest: { enabledAt: 'x' } }) }), { wait: { pr: 5, until: 'merged' } });
   assert.deepEqual(decide({ ...base, pr: pr({ state: 'MERGED' }) }), { do: 'close' });
@@ -441,9 +441,29 @@ test('a clean round-1 review approves in its own session; drive readies and enab
   assert.deepEqual(repo.calls.filter(call => ['ready', 'auto-merge'].includes(call[0])), [['ready'], ['auto-merge']]);
 });
 
+test('a ready verdict at a green head is approved by drive as the Reviewer, then auto-merge follows with no agent', () => {
+  const ready = pr({ issue: 3, isDraft: false, reviews: [review('ready')] });
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [ready] });
+  repo.io.approve = (p, round) => { repo.calls.push(['approve', p.headRefOid, round]); p.reviews.push(review('ready', 'APPROVED')); };
+  const result = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(result.wait, { pr: 5, until: 'merged' });
+  assert.equal(result.agent, undefined);
+  assert.deepEqual(repo.calls.filter(call => ['approve', 'auto-merge'].includes(call[0])), [['approve', head, 1], ['auto-merge']], 'pr auto-merge accepts the posted approval');
+});
+
+test('when drive cannot post the approval, the Reviewer is launched for it', () => {
+  const ready = pr({ issue: 3, isDraft: false, reviews: [review('ready')] });
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [ready] });
+  repo.io.approve = () => { throw new Error('GitHub did not confirm the approval'); };
+  assert.equal(drive(repo.io, 3, lanes, {}).mode, 'approve');
+});
+
 test('an approval-only session runs only when a ready verdict at the head lacks its approval; a moved head is reviewed afresh', () => {
   const base = { issue: started, tree: tree({ commits: 1 }) };
-  assert.equal(decide({ ...base, pr: pr({ isDraft: false, reviews: [review('ready')] }) }).mode, 'approve');
+  const unapproved = { isDraft: false, reviews: [review('ready')] };
+  assert.equal(decide({ ...base, pr: pr({ ...unapproved, statusCheckRollup: [{ name: 'verify', status: 'QUEUED' }] }) }).do, undefined, 'pending CI never approves');
+  assert.equal(decide({ ...base, pr: pr({ ...unapproved, statusCheckRollup: [{ name: 'verify', conclusion: 'FAILURE' }] }) }).agent, 'implementer', 'red CI never approves');
+  assert.equal(decide({ ...base, pr: pr({ ...unapproved, labels: [label('risk:R1'), label('review:owner')] }) }).mode, 'approve', 'an owner hold stays with the Reviewer');
   const moved = pr({ isDraft: false, headRefOid: 'b'.repeat(40), reviews: [review('ready', 'APPROVED')] });
   assert.deepEqual([decide({ ...base, pr: moved }).agent, decide({ ...base, pr: moved }).mode], ['reviewer', 'review']);
 });

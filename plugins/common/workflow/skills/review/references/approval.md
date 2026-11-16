@@ -2,6 +2,8 @@
 
 Serves a ready PR whose newest Reviewer verdict at its head is `ready`. Find nothing new and start no round.
 
+Drive posts this approval itself, as the Reviewer, when CI is green at the head and nothing holds it for the owner; you are launched only for `review:owner`, an earlier `Owner decision`, or a failed post.
+
 The owner sees a PR only after this approval; review rounds and line count never involve them.
 
 1. Run `<cli> wait <N> --until ci`; approve only a green head.

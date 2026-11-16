@@ -16,7 +16,7 @@ import { addCriterionIds, tickCriteria, verifyEpicClosure } from './epic-closure
 import { prState } from './state.mjs';
 import { exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
-import { previousReviewedHead } from './vcs.mjs';
+import { approveReady, previousReviewedHead } from './vcs.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
 
 const cli = fileURLToPath(new URL('../workflow.mjs', import.meta.url));
@@ -257,6 +257,10 @@ export function decideIssue(facts, lanes) {
   // An unapproved `ready` verdict on a ready PR asks only for the approval; anything else is a review round.
   if (next.action === 'review') {
     const approve = !pr.isDraft && state.verdict === 'ready';
+    // A `ready` verdict at a green head needs no second session: drive posts the approval as the Reviewer. A hold the owner joins
+    // (`review:owner`, or an earlier `Owner decision`) is the Reviewer's to judge, so it still launches.
+    const ownerHeld = state.labels.includes('review:owner') || (pr.reviews || []).some(review => review.author?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && /Owner decision/.test(review.body || ''));
+    if (approve && state.ci === 'green' && !ownerHeld) return { do: 'approve', round: state.round };
     return agent('reviewer', approve ? 'approve' : 'review', { reason: approve ? 'no approval at the head' : next.reason || 'no verdict at the head', round: approve ? state.round : state.round + 1 });
   }
   // The PR was found through this issue, so drive links it in the body; never an owner step.
@@ -702,6 +706,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     },
     risk: (pr, from, to) => run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, ...(from ? ['--remove-label', `risk:${from}`] : []), '--add-label', `risk:${to}`]),
     ready: (pr, tree) => self(['pr', 'ready', '--pr', String(pr.number)], tree?.path || process.cwd()),
+    approve: (pr, round) => approveReady({ root: git('rev-parse', '--show-toplevel'), repo, login: lanes.reviewer, pr: pr.number, sha: pr.headRefOid, round }),
     unclaim: issue => run('gh', ['issue', 'edit', String(issue.number), '--repo', repo, ...stateLabels(issue).flatMap(name => ['--remove-label', name])]),
     // A merge, never a rebase: the open PR keeps its review threads. Runs as the session's identity, the implementer.
     syncTree: tree => { if (gitIn(tree.path, ['fetch', '--quiet', 'origin', tree.branch]) !== null) gitIn(tree.path, ['merge', '--ff-only', '--quiet', 'FETCH_HEAD']); },
@@ -863,6 +868,9 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     // issue's claim, as spec's transition table states; the open PR still excludes reassignment.
     else if (step.do === 'ready') { io.ready(pr, tree); io.board(n, 'REVIEW'); if (stateLabels(issue).length) io.unclaim(issue); }
     else if (step.do === 'unclaim') io.unclaim(issue);
+    else if (step.do === 'approve') {
+      try { io.approve(pr, step.round); } catch (error) { console.error(`drive: could not post the approval on #${pr.number} (${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}); the Reviewer will`); return finish(instruction(io, facts, agent('reviewer', 'approve', { reason: 'drive could not post the approval', round: step.round }), lanes)); }
+    }
     else if (step.do === 'auto-merge') { if (!io.strictPolicy()) return { owner: `${lanes.base} must require configured checks on an up-to-date branch`, url: `https://github.com/${lanes.repo}/settings/rules` }; io.autoMerge(pr, tree); }
     // GitHub reports the merge state late, so drive waits on the new head's CI instead of reading BEHIND again.
     else if (step.do === 'update-branch') { if (pr.autoMergeRequest) io.disableAutoMerge(pr); io.updateBranch(pr); return finish({ wait: { pr: pr.number, until: 'ci' }, reason: 'merged the base into the head' }); }

@@ -331,6 +331,18 @@ function resolveThread(thread, options) {
 function releaseClaim(pr, repo, options) {
   try { run('gh', ['pr', 'edit', pr, '--repo', `github.com/${repo}`, '--remove-label', 'state:reviewing'], options); return true; } catch { console.error(`Warning: could not remove state:reviewing from #${pr}; remove it by hand.`); return false; }
 }
+// Drive posts the approval of a `ready` verdict itself, as the Reviewer, at the head the verdict judged: no agent runs only to restate it.
+// It resolves the Reviewer's own Nit, Pre-existing and Follow-up threads like an approving review-post and throws when GitHub does not confirm.
+export function approveReady({ root, repo, login, pr, sha, round }) {
+  const options = { cwd: root, env: { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) } };
+  const body = `<!-- agent-review sha=${sha} round=${round} verdict=ready -->\nApproved by drive at ${sha}: the Reviewer's \`ready\` verdict at this head stands and CI is green.`;
+  const posted = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/pulls/${pr}/reviews`, '--input', '-'], { ...options, input: JSON.stringify({ commit_id: sha, body, event: 'APPROVE' }) });
+  if (!Number.isInteger(posted?.id)) throw new Error('GitHub did not confirm the approval');
+  try {
+    const threads = readThreads(repo, pr, options);
+    if (!threads.pageInfo.hasNextPage) for (const thread of reviewerThreads(threads, login, true, new Set())) resolveThread(thread, options);
+  } catch (error) { console.error(`Warning: approval posted, but could not resolve the Reviewer's Nit threads on #${pr} (${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}).`); }
+}
 export function reviewPost(args) {
   const { root, lanes } = config();
   const login = lanes.reviewer;
