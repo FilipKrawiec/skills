@@ -22,7 +22,7 @@ The Product partner, Craftsman, Reviewer and Delivery steward are responsibiliti
 
 ## Load the library
 
-Generated manifests target Claude Code and Codex plugin formats; validate loading and execution in your configured host. Common instructions are provider-neutral, but role definitions, tool permissions and hooks are host-specific. Discovery does not prove reviewer credentials, safe concurrency or production approval. See the [host portability audit](docs/records/2026-11-14-library-host-portability.md) for evidence and limitations.
+Generated manifests target Claude Code and Codex plugin formats; validate loading and execution in your configured host. Common instructions are provider-neutral, but role definitions, tool permissions and hooks are host-specific. Discovery does not prove reviewer credentials, safe concurrency or production approval. Codex implementer measured and usable behind the unchanged gate and Reviewer, Codex Reviewer below the Opus baseline and not recommended as sole Reviewer, Codex-hosted orchestration unmeasured, AGY advisory only; see the [Codex dry run](docs/records/2026-11-14-library-host-portability.md#codex-dry-run-2026-11-16) for figures. See the [host portability audit](docs/records/2026-11-14-library-host-portability.md) for evidence and limitations.
 
 Install released versions from the `release` branch, not `main`, which carries a fixed placeholder version:
 
