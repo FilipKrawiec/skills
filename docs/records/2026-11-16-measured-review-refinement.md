@@ -44,7 +44,22 @@ The packet shipped in #567. Usage recording shipped with it, so no per-PR cost e
 
 ## Benchmark before and after
 
-Before (2026-11-16 dry run, Opus without a packet): Opus caught 2 of 3 known defects at $0.21-0.46 per review, Argon 1 of 3, Gemini Flash approved two PRs with known defects, and no reviewer caught #539's reversal of delta-only rounds. After: [`docs/review-benchmark.json`](../review-benchmark.json) (3 known-defect, 5 known-clean PRs) was validated with `bench` in dry listing mode, which spends nothing. The replay was not run, because it starts eight Opus reviewers (about $5 at the $0.66 mean round-1 cost below) and an implementer starts no agents. There is therefore no packet-era catch or false-positive count, and no improvement is claimed. The owner can run `node plugins/common/workflow/scripts/workflow.mjs bench --run --out bench.json` once and append the result here.
+Before (2026-11-16 dry run, Opus without a packet, the harness is not in the repository): Opus caught 2 of 3 known defects at $0.21-0.46 per review, Argon 1 of 3, Gemini Flash approved two PRs with known defects, and no reviewer caught #539's reversal of delta-only rounds.
+
+After (packet era, one `workflow.mjs bench --run` on Opus over [`docs/review-benchmark.json`](../review-benchmark.json), run by the owner's approval): caught 2 of 3 known defects, 1 false positive on 5 known-clean PRs, total $3.70, mean $0.46 per review, 0 unreported.
+
+| PR | Kind | Verdict | Result | Cost |
+|---|---|---|---|---|
+| #539 | defect | fixes | caught | $0.34 |
+| #555 | defect | fixes | caught | $0.81 |
+| #500 | defect | ready | missed | $0.27 |
+| #568 | clean | ready | clean | $0.43 |
+| #559 | clean | ready | clean | $0.64 |
+| #540 | clean | ready | clean | $0.24 |
+| #526 | clean | fixes | false positive | $0.44 |
+| #478 | clean | ready | clean | $0.53 |
+
+Compared with the dry run: the catch rate is unchanged (2 of 3), the mean cost per review ($0.46) sits at the top of the dry-run $0.21-0.46 range, and #539's reversal, which no dry-run reviewer caught, is caught with the packet. The #500 miss (nested epic descendants) and the #526 false positive remain. The sets are not identical (the dry-run PRs were reconstructed, and 8 PRs is a small sample), so this shows no packet regression in catches or cost rather than a measured gain. The result JSON is not committed: the repository has no results location, only the snapshot.
 
 ## Packet review cost
 
