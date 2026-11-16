@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanEnvironment, jsonCommand, workflowScratch } from './core.mjs';
-import { reviewerCommand } from './drive.mjs';
+import { changedExportSites, reviewerCommand } from './drive.mjs';
 import { reviewPacket } from './packet.mjs';
 import { commandModel, parseUsage, unreported, usageHost, visibleResult } from './usage.mjs';
 
@@ -26,6 +26,7 @@ export function validateSnapshot(snapshot) {
     if (!Number.isInteger(entry?.pr) || entry.pr < 1) { problems.push(`${label}: pr must be a positive integer`); continue; }
     if (seen.has(entry.pr)) problems.push(`${label}: duplicate PR`);
     seen.add(entry.pr);
+    if (!Number.isInteger(entry.issue) || entry.issue < 1) problems.push(`${label}: issue must be the closing issue number`);
     for (const field of ['base', 'head']) if (!commitId.test(entry[field] || '')) problems.push(`${label}: ${field} must be a 40 or 64 character commit id`);
     if (entry.kind === 'defect') {
       const named = typeof entry.defect?.name === 'string' && entry.defect.name && Array.isArray(entry.defect.keywords) && entry.defect.keywords.length && entry.defect.keywords.every(word => typeof word === 'string' && word);
@@ -125,7 +126,7 @@ export function reviewerIo(lanes, root, options = {}) {
     const range = `${entry.base}...${entry.head}`;
     const files = git('diff', '--name-only', range).split('\n').filter(Boolean).map(path => ({ path }));
     const diffs = Object.fromEntries(files.map(file => [file.path, git('diff', range, '--', file.path)]));
-    return reviewPacket({ issue, pr: { number: entry.pr, url: `https://github.com/${lanes.repo}/pull/${entry.pr}`, head: entry.head, base: entry.base }, round: 1, requiredChecks: [], checks: [], gate: null, files, diffs, range, previous: null, threads: [], callSites: [] });
+    return reviewPacket({ issue, pr: { number: entry.pr, url: `https://github.com/${lanes.repo}/pull/${entry.pr}`, head: entry.head, base: entry.base }, round: 1, requiredChecks: [], checks: [], gate: null, files, diffs, range, previous: null, threads: [], callSites: changedExportSites({ files, diffs, head: entry.head, git: (...args) => git(...args) }) });
   };
   return {
     model,

@@ -5,38 +5,38 @@
   "counts": { "defect": 3, "clean": 5 },
   "entries": [
     {
-      "pr": 539, "kind": "defect", "title": "fix(review): review the whole diff every round",
+      "pr": 539, "issue": 481, "kind": "defect", "title": "fix(review): review the whole diff every round",
       "base": "18199f6b6e8d20454d13304064472625f5b7536f", "head": "d9093a6e72d83bd672457611e1ac0b2fad182c56",
       "defect": { "name": "reverses the owner decision on delta-only later review rounds (fixed by #558)", "keywords": ["delta", "whole diff", "later round", "owner decision"] }
     },
     {
-      "pr": 555, "kind": "defect", "title": "feat(workflow): support independent AGY reviewer sessions",
+      "pr": 555, "issue": 554, "kind": "defect", "title": "feat(workflow): support independent AGY reviewer sessions",
       "base": "f917c7a7cc3e84f22b4a68fab93e217a3767dd5a", "head": "e0c60f056d27a55f85041b17e79de99a35d740b9",
       "defect": { "name": "AGY review session has no timeout, so a hung session holds its claim (fixed by #558)", "keywords": ["timeout", "hang", "hung", "claim", "unbounded"] }
     },
     {
-      "pr": 500, "kind": "defect", "title": "fix(drive): verify nested epic delivery evidence",
+      "pr": 500, "issue": 499, "kind": "defect", "title": "fix(drive): verify nested epic delivery evidence",
       "base": "1389536c6a08b8ccbf24d2a0850018cdf657be27", "head": "99a33cacedc7acbc75b89b6e36a9819208fcfae3",
       "defect": { "name": "nested epic descendants not checked when closing (fixed by #529)", "keywords": ["nested", "descendant", "closure"] }
     },
     {
-      "pr": 568, "kind": "clean", "title": "chore(release): publish versions on a release branch so main stops moving on every release",
+      "pr": 568, "issue": 462, "kind": "clean", "title": "chore(release): publish versions on a release branch so main stops moving on every release",
       "base": "b496df470ec55c984625bcc7653197e7186c415f", "head": "fa26a39a05be5e20727f5e0119f75714e31d0435"
     },
     {
-      "pr": 559, "kind": "clean", "title": "chore(workflow): simplify epic closure to merged children plus one Reviewer outcome comment",
+      "pr": 559, "issue": 557, "kind": "clean", "title": "chore(workflow): simplify epic closure to merged children plus one Reviewer outcome comment",
       "base": "a4409e9519410abc36d0df56a66c561c2469fc2c", "head": "e3e3d31fe75aacae45d4763b2a61ff86c92ac666"
     },
     {
-      "pr": 540, "kind": "clean", "title": "chore(workflow): sweep historical reviewer nits",
+      "pr": 540, "issue": 492, "kind": "clean", "title": "chore(workflow): sweep historical reviewer nits",
       "base": "b26334ead00e2097a81172245ada69d21e62131f", "head": "12144f40c78b2183456ffcc6cb9fbd197a262553"
     },
     {
-      "pr": 526, "kind": "clean", "title": "fix(drive): update PR body from implementer hand-back",
+      "pr": 526, "issue": 474, "kind": "clean", "title": "fix(drive): update PR body from implementer hand-back",
       "base": "015d583206bb532b67b27d1623c1e18a6a6779c1", "head": "f7db3d706123dd6509e0e88af4776e370d0390de"
     },
     {
-      "pr": 478, "kind": "clean", "title": "fix(drive): a ready PR behind its base merges the base in before any owner step",
+      "pr": 478, "issue": 471, "kind": "clean", "title": "fix(drive): a ready PR behind its base merges the base in before any owner step",
       "base": "21a9ee2775fb701d80ac8a22b57b46dfd1438ca3", "head": "3f1cbaa9c4d006d37391f0352262d9a558053e60"
     }
   ]

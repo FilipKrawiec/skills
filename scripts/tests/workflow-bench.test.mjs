@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { benchCommand, compareResults, parseVerdict, renderResults, scoreEntry, summarize, validateSnapshot } from '../../plugins/common/workflow/scripts/lib/bench.mjs';
 
 const sha = char => char.repeat(40);
-const defect = { pr: 1, title: 'feat: a', kind: 'defect', base: sha('a'), head: sha('b'), defect: { name: 'reverses delta-only rounds', keywords: ['delta', 'whole diff'] } };
-const clean = { pr: 2, title: 'chore: b', kind: 'clean', base: sha('c'), head: sha('d') };
+const defect = { pr: 1, issue: 11, title: 'feat: a', kind: 'defect', base: sha('a'), head: sha('b'), defect: { name: 'reverses delta-only rounds', keywords: ['delta', 'whole diff'] } };
+const clean = { pr: 2, issue: 12, title: 'chore: b', kind: 'clean', base: sha('c'), head: sha('d') };
 const snapshot = { version: 1, repo: 'o/r', counts: { defect: 1, clean: 1 }, entries: [defect, clean] };
 const review = (verdict, text = '', cost = 0.25) => ({ verdict, text, usage: { cost } });
 
@@ -42,6 +42,7 @@ test('snapshot validation names each problem', () => {
   const problems = validateSnapshot(bad).join('\n');
   assert.match(problems, /#1: head must be a 40 or 64 character commit id/);
   assert.match(problems, /#1: duplicate PR/);
+  assert.match(validateSnapshot({ ...snapshot, entries: [{ ...defect, issue: undefined }, clean] }).join('\n'), /#1: issue must be the closing issue number/);
   assert.match(problems, /#1: a known-defect PR names its defect and keywords/);
   assert.match(problems, /#2: a known-clean PR has no defect/);
   assert.match(problems, /counts do not match/);

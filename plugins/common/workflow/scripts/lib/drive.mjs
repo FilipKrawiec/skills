@@ -490,6 +490,17 @@ function self(args, cwd) {
   const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: ['ignore', 2, 2], env: process.env });
   if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
 }
+// Call sites of the exports a diff adds, found with git grep at head; shared with the reviewer benchmark so its packet matches drive's.
+export function changedExportSites({ files, diffs, head, git }) {
+  const callSites = [];
+  for (const file of files) {
+    for (const symbol of exportedSymbols(diffs[file.path] || '')) {
+      const hits = git('grep', '-n', '-w', '-F', '-e', symbol, head).split('\n').map(line => line.slice(head.length + 1)).filter(line => line && !line.startsWith(`${file.path}:`));
+      callSites.push({ symbol, file: file.path, sites: hits });
+    }
+  }
+  return callSites.slice(0, 20);
+}
 // What the review packet reads, gathered from GitHub and the worktree at the PR's head; the PR description and the hand-back are never read.
 function gatherPacketFacts({ repo, lanes, gh, threads, issue, pr, tree, round }) {
   const head = pr.headRefOid; const base = `origin/${lanes.base}`; const range = `${base}...${head}`;
@@ -515,14 +526,8 @@ function gatherPacketFacts({ repo, lanes, gh, threads, issue, pr, tree, round })
   }
   let found = [];
   try { found = threads(pr).nodes.map(thread => ({ path: thread.path, line: thread.line, isResolved: thread.isResolved, isOutdated: thread.isOutdated, body: thread.comments?.nodes?.[0]?.body })); } catch { /* threads unavailable */ }
-  const callSites = [];
-  for (const file of files) {
-    for (const symbol of exportedSymbols(diffs[file.path] || '')) {
-      const hits = git('grep', '-n', '-w', '-F', '-e', symbol, head).split('\n').map(line => line.slice(head.length + 1)).filter(line => line && !line.startsWith(`${file.path}:`));
-      callSites.push({ symbol, file: file.path, sites: hits });
-    }
-  }
-  return { issue: { url: issue.url, body: issue.body }, pr: { number: pr.number, url: pr.url, head, base }, round, requiredChecks: lanes.requiredChecks || [], checks, gate, files, diffs, range, previous, threads: found, callSites: callSites.slice(0, 20) };
+  const callSites = changedExportSites({ files, diffs, head, git });
+  return { issue: { url: issue.url, body: issue.body }, pr: { number: pr.number, url: pr.url, head, base }, round, requiredChecks: lanes.requiredChecks || [], checks, gate, files, diffs, range, previous, threads: found, callSites };
 }
 export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   const repo = lanes.repo;
