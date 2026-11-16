@@ -145,6 +145,20 @@ test('a host that prints no figures still records an unreported row per role, on
   assert.deepEqual(rows.map(row => [row.role, row.model, row.cost, row.sessions]), [['devops', 'sonnet', 'unreported', 1], ['implementer', 'unreported', 'unreported', 1]]);
 });
 
+test('an epic hand-back records one usage row on the epic before driveEpic, unreported without figures, and a failure never blocks', () => {
+  const recorded = [];
+  const epic = { number: 9, url: 'https://github.com/acme/app/issues/9', state: 'CLOSED', title: 'epic', body: '', labels: [{ name: 'type:epic' }] };
+  const io = { issue: () => epic, dependencies: () => [], subIssues: () => [], recordUsage: (target, hb) => { recorded.push([target.number, handBackRole(hb), hb.usage]); } };
+  drive(io, 9, lanes, { status: 'done' });
+  assert.deepEqual(recorded.splice(0), [[9, 'improver', undefined]], 'no usage line still records an unreported row on the epic');
+  drive(io, 9, lanes, { agent: 'reviewer', usage: 'in=1 out=2 model=opus' });
+  assert.deepEqual(recorded.splice(0), [[9, 'reviewer', 'in=1 out=2 model=opus']]);
+  drive(io, 9, lanes, {});
+  assert.deepEqual(recorded, [], 'no hand-back, no row');
+  io.recordUsage = () => { throw new Error('down'); };
+  assert.doesNotThrow(() => drive(io, 9, lanes, { status: 'done' }));
+});
+
 const spec = `## Outcome
 Something.
 
