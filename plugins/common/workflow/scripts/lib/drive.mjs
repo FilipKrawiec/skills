@@ -674,8 +674,9 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     },
     recordUsage: (pr, hb) => {
       const parsed = parseUsageLine(hb.usage);
-      const key = createHash('sha1').update(`${pr.number}\0${pr.headRefOid}\0${hb.usage}`).digest('hex').slice(0, 12);
-      recordUsage({ repo, pr: pr.number, author: lanes.implementer, entry: usageEntry({ role: hb.agent || 'implementer', host: parsed?.host, model: parsed?.model, usage: parsed?.usage, key }) }, { gh });
+      const role = handBackRole(hb);
+      const key = createHash('sha1').update([pr.number, pr.headRefOid, role, hb.status, hb.usage, hb.note, hb.commit].join('\0')).digest('hex').slice(0, 12);
+      recordUsage({ repo, pr: pr.number, author: lanes.implementer, entry: usageEntry({ role, host: parsed?.host, model: parsed?.model, usage: parsed?.usage, key }) }, { gh });
     },
     packetFacts(context) { return gatherPacketFacts({ repo, lanes, gh, threads: pr => this.reviewThreads(pr), ...context }); },
     reviewSession: (pr, tree) => {
@@ -808,13 +809,25 @@ function finish(step) {
   if (step.wait) return { ...step, command: waitCommandFor(step.wait.pr, step.wait.until) };
   return step;
 }
+// The session that wrote a hand-back: a `risk:` answer is devops, a planner answers consolidated or distinct, else the implementer.
+export const handBackRole = hb => hb.agent || (hb.risk ? 'devops' : ['consolidated', 'distinct', 'sliced', 'narrowed'].includes(hb.status) ? 'planner' : 'implementer');
+// Every subagent hand-back records one usage row, `unreported` when it carries no `usage:` line: on its PR once open, else on the issue.
 export function driveIssue(io, n, lanes, handBack = {}) {
-  let bodyUpdated = false; let usageRecorded = false;
+  const state = { recorded: false };
+  const result = driveIssueSteps(io, n, lanes, handBack, state);
+  if (!state.recorded && (handBack.status || handBack.risk || handBack.usage)) {
+    state.recorded = true;
+    try { io.recordUsage?.({ number: n, headRefOid: '' }, handBack); } catch { /* usage is optional */ }
+  }
+  return result;
+}
+function driveIssueSteps(io, n, lanes, handBack, state) {
+  let bodyUpdated = false;
   for (let i = 0; i < 12; i++) {
     const facts = readIssueFacts(io, n, handBack);
-    // A subagent's optional `usage:` line is recorded once its PR exists; a failure never blocks a step.
-    if (!usageRecorded && handBack.usage && facts.pr?.state === 'OPEN') {
-      usageRecorded = true;
+    // A failure never blocks a step.
+    if (!state.recorded && (handBack.status || handBack.risk || handBack.usage) && facts.pr?.state === 'OPEN') {
+      state.recorded = true;
       try { io.recordUsage?.(facts.pr, handBack); } catch { /* usage is optional */ }
     }
     if (!bodyUpdated && handBack.status === 'done' && (handBack.note || handBack.body) && facts.pr?.state === 'OPEN' && facts.tree && !facts.tree.dirty && !facts.tree.unpushed) {
