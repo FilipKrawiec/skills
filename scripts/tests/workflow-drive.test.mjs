@@ -1072,7 +1072,6 @@ test('custom responsibility invokes its configured host and returns its hand-bac
   assert.deepEqual(calls.map(call => ['design', 'documentation', 'security'].find(role => call.args.at(-1).includes(`responsibility: ${role}`))), ['design', 'documentation', 'security']);
   assert.throws(() => runResponsibility(delivery, 'reviewer', '/tmp/brief.md', () => {}), /built-in/);
   assert.throws(() => runResponsibility(delivery, 'missing', '/tmp/brief.md', () => {}), /Configure/);
-  assert.throws(() => runResponsibility({ ...delivery, roles: { design: { host: 'agy', model: 'm' } } }, 'design', '/tmp/brief.md', () => {}), /unverified/);
   assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief.md', () => ({ status: 0, stdout: 'oops' })), /hand-back/);
   for (const output of ['status: blocked\nnote: cannot read brief\nstatus: done\nnote: complete', 'Example:\nstatus: done\nnote: complete', 'status: done\nnote: complete\nextra: record', 'status: done\nnote: complete\nnote: revised']) {
     assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief.md', () => ({ status: 0, stdout: output })), /hand-back/);
@@ -1096,4 +1095,57 @@ test('draft title prefers a conventional issue title and skips base merge commit
     assert.equal(result.status, 0, result.stderr);
     assert.ok(readFileSync(log, 'utf8').includes(`--title ${expected} --body-file`));
   }
+});
+
+test('AGY custom responsibility grants only the existing brief and validates its hand-back', async t => {
+  const { runResponsibility } = await import('../../plugins/common/workflow/scripts/lib/responsibility.mjs');
+  const { mkdtempSync, writeFileSync, rmSync, realpathSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'agy-test-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const brief = join(dir, 'a "quoted" brief.md');
+  writeFileSync(brief, 'brief');
+  const delivery = { orchestrator: 'codex', roles: { design: { host: 'agy', model: 'model' } }, executables: { agy: 'custom-agy' } };
+  let invocation;
+  const output = runResponsibility(delivery, 'design', brief, (host, args) => { invocation = { host, args }; return { status: 0, stdout: 'status: done\nnote: complete\n' }; });
+  assert.equal(output, 'status: done\nnote: complete\n');
+  assert.equal(invocation.host, 'custom-agy');
+  assert.deepEqual(JSON.parse(invocation.args[invocation.args.indexOf('--settings') + 1]), { permissions: { allow: [`read_file(${realpathSync(brief)})`] } });
+  assert.equal(invocation.args[invocation.args.indexOf('--model') + 1], 'model');
+  assert.match(invocation.args.at(-1), /responsibility: design/);
+  assert.throws(() => runResponsibility(delivery, 'design', join(dir, 'missing'), () => { throw Error('must not invoke'); }), /brief/i);
+  assert.throws(() => runResponsibility(delivery, 'design', brief, () => ({ status: 1, stderr: 'unsupported model' })), /unsupported model/);
+  assert.throws(() => runResponsibility(delivery, 'design', brief, () => ({ status: 0, stdout: 'bad' })), /malformed hand-back/);
+});
+
+test('AGY rejects permission metacharacters in brief paths', async t => {
+  const { runResponsibility } = await import('../../plugins/common/workflow/scripts/lib/responsibility.mjs');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'agy-unsafe-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const delivery = { orchestrator: 'codex', roles: { design: { host: 'agy', model: 'm' } } };
+  for (const char of ['*', '?', '[', ']', '{', '}', '\\', '(', ')']) {
+    const brief = join(dir, `brief${char}.md`);
+    writeFileSync(brief, 'brief');
+    assert.throws(() => runResponsibility(delivery, 'design', brief, () => { throw Error('invoked'); }), /unsafe.*path/i);
+  }
+});
+
+test('AGY native probe runs independently of other hosts', async t => {
+  const { mkdtempSync, writeFileSync, chmodSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { spawnSync } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'agy-probe-test-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const executable = join(dir, 'agy');
+  writeFileSync(executable, `#!${process.execPath}\nconst fs = require('fs'); const a = process.argv; const rule = JSON.parse(a[a.indexOf('--settings') + 1]).permissions.allow[0]; const brief = fs.readFileSync(rule.slice(10, -1), 'utf8'); const marker = brief.match(/and ([a-f0-9]+)\\./)[1]; process.stdout.write('status: done\\nnote: design ' + marker + '\\n');\n`);
+  chmodSync(executable, 0o755);
+  const probe = new URL('../probe-responsibilities.mjs', import.meta.url);
+  const result = spawnSync(process.execPath, [probe.pathname, '--agy', 'model'], { encoding: 'utf8', env: { ...process.env, PATH: dir } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^agy: brief and hand-back passed/);
 });
