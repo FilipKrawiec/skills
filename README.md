@@ -24,6 +24,12 @@ The Product partner, Craftsman, Reviewer and Delivery steward are responsibiliti
 
 Generated manifests target Claude Code and Codex plugin formats; validate loading and execution in your configured host. Common instructions are provider-neutral, but role definitions, tool permissions and hooks are host-specific. Discovery does not prove reviewer credentials, safe concurrency or production approval. See the [host portability audit](docs/records/2026-11-14-library-host-portability.md) for evidence and limitations.
 
+Install released versions from the `release` branch, not `main`, which carries a fixed placeholder version:
+
+- Claude Code: `/plugin marketplace add FilipKrawiec/skills#release`
+- Codex: `codex plugin marketplace add FilipKrawiec/skills --ref release`
+- Antigravity: link or clone the `release` branch (`git clone -b release https://github.com/FilipKrawiec/skills`) and run `just link-agy` there.
+
 For local Claude Code development, load this checkout directly:
 
 ```bash

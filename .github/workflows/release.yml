@@ -1,9 +1,11 @@
 name: Release
 
 # Every verified push to main is released: the workflow CLI bumps the version from conventional
-# commits since the last tag, syncs the manifests, commits and tags. RELEASE_TOKEN, an admin's
-# fine-grained token with contents write on this repository, pushes both past main's review rule
-# and the v* tag ruleset. The release commit's own push verifies and finds nothing to release.
+# commits since the last tag, syncs the manifests, commits them on top of main to the release
+# branch and tags that commit. Nothing is pushed to main, so a release no longer puts open PRs
+# behind. release is reset to main plus one manifest-only commit each time. RELEASE_TOKEN, an
+# admin's fine-grained token with contents write on this repository, pushes the branch and the
+# v* tag past their rulesets.
 on:
   workflow_run:
     workflows: [Verify repository]
@@ -45,5 +47,5 @@ jobs:
             echo "Nothing to publish."
             exit 0
           fi
-          git push --atomic origin HEAD:main "refs/tags/${tag}"
+          git push --atomic --force origin HEAD:release "refs/tags/${tag}"
           gh release create "${tag}" -R "${GITHUB_REPOSITORY}" --verify-tag --generate-notes --title "${tag}"

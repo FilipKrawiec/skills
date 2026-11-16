@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { syncManifests, validateRepositoryReleaseVersion } from './manifests.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+export const RELEASE_BRANCH = 'release';
 const TAG = /^v(\d+)\.(\d+)\.(\d+)$/;
 function fail(message) { throw new Error(message); }
 function git(root, ...args) {
@@ -85,6 +86,8 @@ export function performRelease({ bump = 'auto', message, dryRun = false, root = 
   console.log(`=== Release Automation: ${current.join('.')} -> ${version} (${resolvedBump}) ===`);
   if (dryRun) { console.log(`[dry-run] Would bump version to ${version} and create tag ${tag}`); return version; }
 
+  // Versions live on the release branch only: main never moves. The branch is main's HEAD plus one manifest-only commit.
+  git(root, 'switch', '-q', '-C', RELEASE_BRANCH);
   for (const name of commonPackages(root)) {
     const path = resolve(root, 'plugins/common', name, 'package-metadata.json');
     const data = JSON.parse(readFileSync(path, 'utf8'));
@@ -93,10 +96,8 @@ export function performRelease({ bump = 'auto', message, dryRun = false, root = 
   }
   syncManifests(root);
   const paths = manifestPaths(root);
-  if (git(root, 'status', '--porcelain')) {
-    git(root, 'add', '--', ...paths);
-    git(root, 'commit', '-m', `chore(release): bump version to ${version}`);
-  }
+  git(root, 'add', '--', ...paths);
+  git(root, 'commit', '-q', '--allow-empty', '-m', `chore(release): bump version to ${version}`);
   git(root, 'tag', '-a', tag, '-m', message || `Release ${tag}: ${resolvedBump} release automated from conventional commits`);
   validateRepositoryReleaseVersion(root);
   console.log(`Successfully released and tagged ${tag}!`);
