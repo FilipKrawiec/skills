@@ -27,7 +27,7 @@ Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next ready i
 - `blocked`: report the cause; end the turn.
 - `done`: report it. For an epic, rerun `drive <epic>` until the epic is done.
 
-Drive each `alsoReady` slice separately. Start only agents drive names; edit no project file; run no `gh`. After interruption, run `drive` again.
+Drive each `alsoReady` slice alone. Background each `alsoWaiting` command. Start only drive's agents; edit no files; run no `gh`. After interruption, run `drive` again.
 
 **Exit gate:** `done` for the issue or epic, or an `owner` or `blocked` step reported.
 

@@ -870,14 +870,36 @@ export function drive(io, n, lanes, handBack) {
   // An epic advances from GitHub state alone: the planner's hand-back changes nothing drive reads.
   return isEpic(issue) ? driveEpic(io, issue, lanes) : driveIssue(io, n, lanes, handBack);
 }
-// --next: the lowest-numbered item that is ready, started issues first, then approved epics and standalone issues.
+// --next: ready items in order, started issues first, then approved epics and standalone issues by number.
 // An item with an unmet or dropped dependency never qualifies; `depsOf` reads them lazily, in that order.
-export function nextTarget(issues, depsOf = () => ({ blockers: [], dropped: [] })) {
+export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] })) {
   const names = issue => issue.labels.map(label => label.name ?? label);
   const candidates = issues.filter(issue => !names(issue).includes('lane:owner'));
   const rank = issue => Number(!names(issue).includes('state:started'));
   const ordered = [...candidates].sort((a, b) => rank(a) - rank(b) || a.number - b.number);
-  return ordered.find(issue => { const { blockers, dropped } = depsOf(issue); return !blockers.length && !dropped.length; })?.number ?? null;
+  for (const issue of ordered) { const { blockers, dropped } = depsOf(issue); if (!blockers.length && !dropped.length) yield issue.number; }
+}
+export const nextTarget = (issues, depsOf) => nextTargets(issues, depsOf).next().value ?? null;
+
+// A PR waiting on CI or its merge lets the next ready issue run; a later approved PR never merges before an earlier one.
+const overlaps = (step, earlierWaiting) => (step.wait && ['ci', 'merged'].includes(step.wait.until)) || (earlierWaiting && step.do === 'auto-merge');
+export function driveNext(io, numbers, lanes, handBack = {}) {
+  const waiting = [];
+  let chosen = null; let first = null;
+  for (const number of numbers) {
+    const index = first === null ? 0 : 1;
+    if (first === null) first = number;
+    const item = io.issue(number);
+    if (isEpic(item)) { chosen = number; break; }
+    const step = decideIssue(readIssueFacts(io, number, index === 0 ? handBack : {}), lanes);
+    if (overlaps(step, waiting.length)) { if (step.wait) waiting.push({ issue: number, step }); continue; }
+    chosen = number; break;
+  }
+  if (first === null) return { done: { reason: 'no started issue, approved epic or standalone issue is ready' } };
+  if (chosen === null) chosen = first;
+  const result = drive(io, chosen, lanes, chosen === first ? handBack : {});
+  const also = waiting.filter(entry => entry.issue !== chosen).map(entry => ({ issue: entry.issue, ...finish(entry.step) }));
+  return also.length ? { ...result, alsoWaiting: also } : result;
 }
 
 export function driveCommand(args, lanes, io = githubIo(lanes)) {
@@ -892,8 +914,9 @@ export function driveCommand(args, lanes, io = githubIo(lanes)) {
   if (args.length !== 1) throw new Error(usage);
   let n;
   if (args[0] === '--next') {
-    n = nextTarget(io.openIssues(), issue => splitDependencies(io.dependencies(issue)));
-    if (n === null) { console.log(JSON.stringify({ done: { reason: 'no started issue, approved epic or standalone issue is ready' } })); return; }
+    const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)));
+    console.log(JSON.stringify(driveNext(io, numbers, lanes, handBack)));
+    return;
   } else if (/^[1-9]\d*$/.test(args[0])) n = Number(args[0]);
   else throw new Error(usage);
   console.log(JSON.stringify(drive(io, n, lanes, handBack)));

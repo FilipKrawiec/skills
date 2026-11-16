@@ -23,7 +23,8 @@ function nextAction(pr, record, ci, verdict, owner) {
   if (!record.issues.length) return { action: 'link-issue', actor: 'planner', reason: 'no linked issue: spec files one and the body links it' };
   if (pr.mergeable === 'CONFLICTING' || pr.mergeStateStatus === 'DIRTY') return { action: 'fix', actor: 'implementer', reason: 'conflicts with its base' };
   if (ci === 'red') return { action: 'fix', actor: 'implementer', reason: 'a check failed' };
-  if (!pr.isDraft && pr.mergeStateStatus === 'BEHIND') return { action: 'update-branch', actor: 'cli', reason: 'behind its base' };
+  // A draft with no verdict yet also brings the base in first: the review then judges the head that merges.
+  if (pr.mergeStateStatus === 'BEHIND' && (!pr.isDraft || !verdict)) return { action: 'update-branch', actor: 'cli', reason: 'behind its base' };
   if (record.awaitingReview) return ci === 'pending' ? { action: 'wait-ci', actor: 'cli' } : { action: 'review', actor: 'reviewer' };
   if (verdict === 'fixes') return { action: 'fix', actor: 'implementer', reason: 'blocking review findings' };
   if (verdict === 'split') return { action: 'split', actor: 'planner' };

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
-  assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, holdBaseUpdates, latestAssessment,
+  assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, holdBaseUpdates, latestAssessment,
   driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -430,6 +430,47 @@ test('--next prefers started issues, then approved epics and standalone issues b
   assert.equal(nextTarget([{ number: 8, labels: [] }, { number: 5, labels: [label('type:epic')] }, { number: 2, labels: [label('lane:owner')] }]), 5);
   assert.equal(nextTarget([{ number: 2, labels: [label('lane:owner')] }]), null);
   assert.equal(nextTarget([]), null);
+});
+
+test('a clean round-1 review approves in its own session; drive readies and enables auto-merge with no approval-only session', () => {
+  const approved = pr({ issue: 3, reviews: [review('ready', 'APPROVED')] });
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [approved] });
+  const result = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(result.wait, { pr: 5, until: 'merged' });
+  assert.equal(result.agent, undefined, 'no reviewer session of any kind');
+  assert.deepEqual(repo.calls.filter(call => ['ready', 'auto-merge'].includes(call[0])), [['ready'], ['auto-merge']]);
+});
+
+test('an approval-only session runs only when a ready verdict at the head lacks its approval; a moved head is reviewed afresh', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  assert.equal(decide({ ...base, pr: pr({ isDraft: false, reviews: [review('ready')] }) }).mode, 'approve');
+  const moved = pr({ isDraft: false, headRefOid: 'b'.repeat(40), reviews: [review('ready', 'APPROVED')] });
+  assert.deepEqual([decide({ ...base, pr: moved }).agent, decide({ ...base, pr: moved }).mode], ['reviewer', 'review']);
+});
+
+test('a draft behind its base brings the base in before its review; one already reviewed is not updated', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  assert.deepEqual(decide({ ...base, pr: pr({ mergeStateStatus: 'BEHIND' }) }), { do: 'update-branch' });
+  assert.deepEqual(decide({ ...base, pr: pr({ mergeStateStatus: 'BEHIND', reviews: [review('ready')] }) }), { do: 'ready' });
+});
+
+test('overlap: while one PR waits on CI or merge the next ready issue starts, and merges stay one at a time in order', () => {
+  const issues = { 3: started, 4: issue({ number: 4, labels: [label('risk:R1')], assessment: assessed() }), 5: issue({ number: 5, labels: [label('state:started'), label('risk:R1')], assessment: assessed() }) };
+  const waiting = pr({ issue: 3, number: 53, isDraft: false, reviews: [review('ready', 'APPROVED')], autoMergeRequest: {} });
+  const repo = fakeRepo({ issues: { 3: issues[3], 4: issues[4] }, trees: { 3: tree({ commits: 1 }) }, prs: [waiting] });
+  const result = driveNext(repo.io, nextTargets(repo.io.openIssues()), lanes, {});
+  assert.deepEqual([result.agent, result.issue], ['implementer', 4], 'the next issue builds while #3 waits for its merge');
+  assert.deepEqual(result.alsoWaiting.map(entry => [entry.issue, entry.wait]), [[3, { pr: 53, until: 'merged' }]]);
+  assert.equal(repo.s.prs.length, 1, 'no second PR is opened or merged by the overlap');
+  // A later PR that is approved holds its auto-merge until the earlier one merges; every PR waiting returns the first wait.
+  const second = pr({ issue: 4, number: 54, isDraft: false, reviews: [review('ready', 'APPROVED')] });
+  const held = fakeRepo({ issues: { 3: issues[3], 4: { ...issues[4], labels: [label('state:started')] } }, trees: { 3: tree({ commits: 1 }), 4: tree({ commits: 1 }) }, prs: [waiting, second] });
+  const out = driveNext(held.io, [3, 4], lanes, {});
+  assert.deepEqual(out.wait, { pr: 53, until: 'merged' });
+  assert.equal(held.calls.some(call => call[0] === 'auto-merge'), false, 'merges are serial');
+  // Dependency order: an issue blocked by #3 is never started.
+  const deps = { 3: { blockers: [], dropped: [] }, 4: { blockers: [3], dropped: [] } };
+  assert.deepEqual([...nextTargets([{ number: 3, labels: [label('state:started')] }, { number: 4, labels: [] }], issue => deps[issue.number])], [3]);
 });
 
 const open = number => ({ number, kind: 'issue', state: 'OPEN' });
