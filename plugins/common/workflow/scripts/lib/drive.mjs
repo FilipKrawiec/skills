@@ -281,10 +281,27 @@ export function dependencyOrder(slices) {
   }
   return ordered;
 }
+// Unticked epic criteria that no slice (the final refinement excepted) cites by its `workflow:criterion` ID or its text.
+// Plain text matching keeps this deterministic; a miss only sends the planner to cite the criterion, never blocks a merge.
+const squash = text => String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+export function uncoveredCriteria(epic, slices) {
+  const section = (epic.body || '').match(/^#{2,4} Acceptance criteria\s*$([\s\S]*?)(?=^#{1,4} |(?![\s\S]))/mi)?.[1] || '';
+  // Once every slice is closed, the Reviewer's outcome judgement owns the criteria.
+  if (!slices.some(slice => slice.state === 'OPEN')) return [];
+  const bodies = slices.filter(slice => !(slice.body || '').includes(refinementMarker)).map(slice => squash(slice.body));
+  return section.split('\n').flatMap(line => {
+    const m = line.match(/^\s*[-*] \[ \] (.+?)\s*(?:<!-- workflow:criterion ([A-Za-z0-9._-]+) -->)?\s*$/);
+    if (!m) return [];
+    const text = squash(m[1]);
+    return bodies.some(body => body.includes(text) || (m[2] && body.includes(m[2].toLowerCase()))) ? [] : [{ id: m[2] || null, text: m[1] }];
+  });
+}
 export function decideEpic({ epic, slices }) {
   if (epic.state !== 'OPEN') return { done: { epic: epic.number } };
   if ((epic.labels || []).some(label => (label.name ?? label) === 'lane:owner')) return { owner: `epic #${epic.number} waits for the owner's approval`, url: epic.url };
   if (!slices.length) return agent('planner', 'slice', { reason: 'the epic has no slices' });
+  const uncovered = uncoveredCriteria(epic, slices);
+  if (uncovered.length) return agent('planner', 'slice', { reason: `epic criteria no slice covers: ${uncovered.map(c => c.id || c.text).join(', ')}`, uncovered });
   const dropped = slices.filter(slice => slice.state === 'OPEN' && slice.dropped?.length);
   if (dropped.length) return { owner: `epic #${epic.number}: ${dropped.map(slice => droppedReason(slice.number, slice.dropped)).join('; ')}`, url: epic.url };
   const cycle = findCycle(slices.filter(slice => slice.state === 'OPEN'));
@@ -418,7 +435,7 @@ verdict, PR, head, round, tag counts.
 export function plannerBrief(f) {
   return `# Planner brief: #${f.issue.number} ${f.issue.title}
 
-Task: ${f.step.mode === 'consolidate' ? `${f.step.reason}. Merge the overlapping unstarted issues ${f.step.overlaps.map(n => `#${n}`).join(', ')} and #${f.issue.number} into one canonical issue that carries every outcome, criterion, dependency, decision and milestone; close the others as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical issue) to each body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Split only for an independent outcome, a meaningful dependency, an authority boundary or a delivery constraint, never by size. Never merge a started issue, one with an open PR, issues in different epics without a shared outcome, or anything under \`lane:owner\`. When they are distinct outcomes, append \`${distinctMarker('M')}\` to #${f.issue.number} for each other issue M (and say why in a comment) and hand back \`distinct\`` : f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Invoke the `plan` skill to create the final refinement slice' : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Ignore base conflicts when narrowing scope; the implementer merges the base. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first) and hand back \`sliced\``}. Invoke the \`spec\` skill for the issue form.
+Task: ${f.step.mode === 'consolidate' ? `${f.step.reason}. Merge the overlapping unstarted issues ${f.step.overlaps.map(n => `#${n}`).join(', ')} and #${f.issue.number} into one canonical issue that carries every outcome, criterion, dependency, decision and milestone; close the others as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical issue) to each body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Split only for an independent outcome, a meaningful dependency, an authority boundary or a delivery constraint, never by size. Never merge a started issue, one with an open PR, issues in different epics without a shared outcome, or anything under \`lane:owner\`. When they are distinct outcomes, append \`${distinctMarker('M')}\` to #${f.issue.number} for each other issue M (and say why in a comment) and hand back \`distinct\`` : f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Invoke the `plan` skill to create the final refinement slice' + (f.step.uncovered?.length ? `. Epic criteria no slice covers yet: ${f.step.uncovered.map(c => `\`${c.id || c.text}\` (${c.text})`).join('; ')}. Add slices for them, each citing its criterion's ID or exact text in its body, or tick a criterion the epic already delivers` : '') : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Ignore base conflicts when narrowing scope; the implementer merges the base. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first) and hand back \`sliced\``}. Invoke the \`spec\` skill for the issue form.
 Issue: ${f.issue.url}
 Commands: \`node ${cli} issue create ...\`, \`node ${cli} issue edit ...\`, \`gh api\` to link sub-issues and blocked-by dependencies.
 Never write code and never start an agent. Slices follow the epic's approved outcome; the owner decides epic-level outcomes only.
@@ -529,7 +546,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   const trees = () => parseWorktreeList(git('worktree', 'list', '--porcelain'));
   const openIssues = () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,labels,body']);
   const io = {
-    issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']),
+    issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,stateReason,title,body,labels,assignees,milestone']),
     dependencies: issue => readDependencies(repo, issue, gh),
     allBlockers: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/dependencies/blocked_by?per_page=100`]).flat().map(dep => dep.number),
     addBlocker: (n, blocker) => {
@@ -867,18 +884,23 @@ export function driveEpic(io, epic, lanes) {
   // A legacy refinement slice is open and wears a refinement slice's own title (`refine: …`, `Refinement …`), not any title that mentions refining.
   const legacy = slices.filter(slice => slice.state === 'OPEN' && !(slice.body || '').includes(refinementMarker) && (/^refin(e|ement)\b/i.test((slice.title || '').trim()) || (slice.body || '').includes(refinementReview)));
   if (marked.length > 1 || legacy.length) return { owner: `epic #${epic.number}: classify refinement candidates ${[...marked, ...legacy].map(slice => `#${slice.number}`).join(', ')}`, url: epic.url };
+  // Criteria no slice covers go to the planner before the refinement is created or built.
+  if (uncoveredCriteria(epic, slices).length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices }), lanes);
   const refinement = marked[0] || io.createRefinement(epic);
   if (!marked.length) slices.push(refinement);
   const others = slices.filter(slice => slice !== refinement);
+  // A sub-issue closed as consolidated or not planned never blocks the refinement; a consolidated one still owes its target's delivery.
+  const notPlanned = slice => slice.state === 'CLOSED' && !consolidatedInto(slice.body) && /^not_?planned$/i.test(slice.stateReason || '');
+  const retired = new Set(others.filter(slice => notPlanned(slice) || (slice.state === 'CLOSED' && consolidatedInto(slice.body))).map(slice => slice.number));
   const existing = io.allBlockers(refinement.number);
-  for (const slice of others) if (!existing.includes(slice.number)) io.addBlocker(refinement.number, slice.number);
+  for (const slice of others.filter(slice => !retired.has(slice.number))) if (!existing.includes(slice.number)) io.addBlocker(refinement.number, slice.number);
   // A closed slice without a merged closing PR holds only refinement and epic completion, not other open slices.
-  const unresolved = others.filter(slice => slice.state !== 'OPEN').flatMap(slice => unresolvedDelivery(io, slice, lanes.base, epic.number));
+  const unresolved = others.filter(slice => slice.state !== 'OPEN' && !notPlanned(slice)).flatMap(slice => unresolvedDelivery(io, slice, lanes.base, epic.number));
   const unresolvedOwner = unresolved.length ? { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${[...new Set(unresolved)].map(number => `#${number}`).join(', ')}`, url: epic.url } : null;
   // Read the refinement's links again after the repair; every open slice blocks it even before GitHub shows a new link.
   const repaired = splitDependencies(io.dependencies(refinement));
   refinement.blockers = [...new Set([...repaired.blockers, ...others.filter(slice => slice.state === 'OPEN').map(slice => slice.number)])];
-  refinement.dropped = repaired.dropped;
+  refinement.dropped = repaired.dropped.filter(number => !retired.has(number));
   if (refinement.state !== 'OPEN' && unresolvedDelivery(io, refinement, lanes.base, epic.number).length) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for #${refinement.number}`, url: epic.url };
   const step = decideEpic({ epic, slices });
   if (unresolvedOwner && (step.do === 'close-epic' || step.slices?.includes(refinement.number))) return unresolvedOwner;
