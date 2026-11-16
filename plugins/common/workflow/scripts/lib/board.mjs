@@ -1,7 +1,7 @@
 import { gh, jsonCommand, missingProjectScope, run } from './core.mjs';
 
 // Issue and PR facts `drive`, `status`, `pr` and the issue commands read from GitHub, and the board's Status column.
-export function issueComments(cfg, issue) { return gh(['api', '--paginate', '--slurp', `repos/${cfg.repo}/issues/${issue}/comments`]).flat(); }
+
 // The issue's fenced `scope` JSON packet; an invalid packet is treated as absent.
 function scopePacket(body) {
   const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
