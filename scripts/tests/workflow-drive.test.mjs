@@ -928,7 +928,9 @@ test('a fully merged epic without an outcome comment dispatches the Reviewer, th
   assert.deepEqual([step.agent, step.mode, step.session, step.model, step.issue, step.pr, step.owner], ['reviewer', 'epic-outcome', 'separate', 'opus', 9, null, undefined]);
   assert.match(step.reason, /has not posted an epic outcome comment/);
   assert.ok(step.command.includes('--agent') && step.command.includes('filipkrawiec-workflow:reviewer'), 'a separate Reviewer session');
-  assert.ok(!step.command.some(part => String(part).endsWith('review-session.mjs')), 'no PR claim for an epic');
+  assert.ok(step.command.includes('--output-format'), 'machine-readable usage output is requested');
+  const wrapper = step.command.findIndex(part => String(part).endsWith('review-session.mjs'));
+  assert.deepEqual(step.command.slice(wrapper + 1, wrapper + 3), ['--epic', '9'], 'the wrapper records usage on the epic and claims no PR');
   const brief = repo.writes[step.brief];
   assert.match(brief, /epic #9 outcome review/);
   assert.match(brief, /unmet.*nextAction/s);

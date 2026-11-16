@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -113,4 +113,43 @@ test('missing reviewer head stops with a fetch diagnostic before starting the re
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /fetch.*5/i);
   assert.equal(existsSync(marker), false);
+});
+
+// The epic-outcome Reviewer has no PR claim; the wrapper prints its visible result and records one usage row on the epic.
+function epicSession(t, script) {
+  const f = fixture(t);
+  const log = join(f.root, 'usage-writes.log');
+  const shim = join(f.root, 'shim'); mkdirSync(shim);
+  const real = join(f.root, 'bin', 'gh');
+  writeFileSync(join(shim, 'gh'), `#!${process.execPath}
+const fs = require('node:fs'); const args = process.argv.slice(2);
+if (args[0] === 'api' && args.some(arg => /issues\\/9\\/comments/.test(arg))) {
+  if (args.includes('--slurp')) process.stdout.write('[[]]');
+  else fs.appendFileSync(${JSON.stringify(log)}, args.join(' ') + '\\n');
+} else { const r = require('node:child_process').spawnSync(${JSON.stringify(real)}, args, { stdio: 'inherit' }); process.exit(r.status ?? 1); }
+`, { mode: 0o755 });
+  f.env.PATH = `${shim}:${f.env.PATH}`;
+  const session = fileURLToPath(new URL('../../plugins/common/workflow/scripts/review-session.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [session, '--epic', '9', process.execPath, '-e', script, '--', '--output-format', 'json', '--model', 'opus'], { cwd: f.repo, env: f.env, encoding: 'utf8' });
+  return { result, written: existsSync(log) ? readFileSync(log, 'utf8') : '' };
+}
+const epicRow = written => JSON.parse(/<!-- workflow:usage (\{.*?\}) -->/s.exec(written)[1]).entries;
+
+test('the epic-outcome session records its tokens and cost on the epic and prints its result unchanged', t => {
+  const out = JSON.stringify({ type: 'result', result: 'epic 9: 2 met', total_cost_usd: 0.4, usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 30 } });
+  const { result, written } = epicSession(t, `process.stdout.write(${JSON.stringify(out)})`);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, 'epic 9: 2 met\n');
+  const [entry] = epicRow(written);
+  assert.deepEqual([entry.role, entry.host, entry.model, entry.input, entry.output, entry.cacheRead, entry.cost], ['reviewer', 'claude', 'opus', 10, 20, 30, 0.4]);
+});
+
+test('an epic-outcome session without usage data or with unparseable output records unreported and never fails', t => {
+  for (const script of ['process.stdout.write("")', 'process.stdout.write("not json at all")']) {
+    const { result, written } = epicSession(t, script);
+    assert.equal(result.status, 0, result.stderr);
+    const [entry] = epicRow(written);
+    assert.deepEqual([entry.input, entry.output, entry.cost], [null, null, null]);
+    assert.equal(entry.model, 'opus');
+  }
 });
