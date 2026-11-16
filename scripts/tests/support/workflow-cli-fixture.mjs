@@ -163,7 +163,6 @@ function fixture(t) {
     GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
     GIT_CONFIG_NOSYSTEM: '1',
   };
-  delete env.WORKFLOW_RUN_ID; delete env.WORKFLOW_ISSUE_NUMBER;
   env.REMOTE_BASE_SHA = git('rev-parse', 'HEAD').stdout.trim();
   // A trailing options object (such as { input }) passes through to the spawn.
   const cliRun = (...args) => { const extra = typeof args.at(-1) === 'object' ? args.pop() : {}; return run(process.execPath, [cli, ...args], { cwd: linked, env, ...extra }); };
