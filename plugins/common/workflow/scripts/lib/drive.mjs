@@ -968,10 +968,12 @@ export function driveEpic(io, epic, lanes) {
         if (first.result.needsReview && !outstanding.length && step.do === 'close-epic') return finish(instruction(io, { issue: epic, pr: null, tree: null }, agent('reviewer', 'epic-outcome', { reason: first.result.issues.join('; ') }), lanes));
         if (outstanding.length) {
           const matches = outstanding.map(criterion => ({ criterion, found: first.children.filter(child => (child.body || '').includes(`<!-- workflow:epic-follow-up ${epic.number} ${criterion.id} -->`)) }));
-          // One open follow-up is reused; a closed one was already verified as delivered above, so a new one is created. Several open ones need the owner.
+          // One open follow-up is reused; a new one is created only when every closed match was delivered by a merged PR (not closed as not planned). Several open ones, or an undelivered closed one, need the owner.
           for (const item of matches) {
             const open = item.found.filter(child => child.state === 'OPEN');
             if (open.length > 1) throw new Error(`Duplicate follow-ups ${open.map(child => `#${child.number}`).join(', ')} for criterion ${item.criterion.id} need classification`);
+            const undelivered = item.found.filter(child => child.state !== 'OPEN' && (/^not_?planned$/i.test(child.stateReason || '') || unresolvedDelivery(io, child, lanes.base, epic.number).length));
+            if (!open.length && undelivered.length) throw new Error(`Closed follow-up ${undelivered.map(child => `#${child.number}`).join(', ')} for criterion ${item.criterion.id} has no merged closing PR; classify it`);
             item.open = open[0];
           }
           io.uncheckEpicCriteria(first.current, outstanding.map(item => item.id));

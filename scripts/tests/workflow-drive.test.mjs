@@ -859,6 +859,23 @@ test('a closed follow-up without a merged closing PR stops at the owner with the
   assert.equal(repo.creates, 0);
 });
 
+test('an undelivered closed follow-up stops closure even while another slice is open', () => {
+  const repo = followUpFixture([[595, 'CLOSED', false]]);
+  repo.s.issues[700] = issue({ number: 700 });
+  repo.s.subs[9].push(700);
+  const result = drive(repo.io, 9, lanes, {});
+  assert.equal(repo.creates, 0);
+  assert.match(result.owner || '', /#595/);
+});
+
+test('a follow-up closed as not planned stops closure instead of creating a new one', () => {
+  const repo = followUpFixture([[595, 'CLOSED', false]]);
+  repo.s.issues[595].stateReason = 'NOT_PLANNED';
+  const result = drive(repo.io, 9, lanes, {});
+  assert.equal(repo.creates, 0);
+  assert.match(result.owner || '', /#595/);
+});
+
 test('one open follow-up is reused even beside a delivered closed one', () => {
   const repo = followUpFixture([[595, 'CLOSED', true], [596, 'OPEN', false]]);
   drive(repo.io, 9, lanes, {});
