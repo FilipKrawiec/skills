@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, holdBaseUpdates, latestAssessment,
-  driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerCommand,
+  driveCommand, githubIo, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
@@ -77,10 +77,9 @@ test('an approved PR behind its base under review:owner is updated from the base
   assert.deepEqual(repo.calls, [['update-branch', 5]]);
   assert.deepEqual(step.wait, { pr: 5, until: 'ci' }, 'the new head needs CI, then a fresh approval');
   repo.s.prs[0].statusCheckRollup = green;
-  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'devops');
-  const again = drive(repo.io, 3, lanes, { risk: 'R1', reason: 'updated diff' });
+  const again = drive(repo.io, 3, lanes, {});
   assert.deepEqual([again.agent, again.mode], ['reviewer', 'review'], 'the Reviewer judges the new head before the owner sees it');
-  assert.deepEqual(repo.s.synced, ['/repo/.worktrees/3-add-a-thing', '/repo/.worktrees/3-add-a-thing'], 'the worktree takes the merged head before the Reviewer works in it');
+  assert.deepEqual(repo.s.synced, ['/repo/.worktrees/3-add-a-thing'], 'the worktree takes the merged head before the Reviewer works in it');
 });
 
 test('behind PRs of an epic bring the base in one at a time, oldest first', () => {
@@ -107,8 +106,6 @@ test('strict policy: of two approved PRs, the second is updated and approved aga
   const approve = p => { p.statusCheckRollup = green; p.reviews.push(approvedAt(p.headRefOid)); };
   assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 61, until: 'ci' });
   assert.deepEqual(repo.calls.filter(c => ['disable-auto-merge', 'update-branch'].includes(c[0])), [['disable-auto-merge', 61], ['update-branch', 61]], 'disable before updating');
-  assert.equal(drive(repo.io, 9, lanes, {}).agent, 'devops');
-  repo.io.assess(repo.s.issues[10], first, { ...assessed(), head: first.headRefOid });
   assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 61, until: 'ci' }, 'held while the first is on its way');
   first.statusCheckRollup = green;
   assert.equal(drive(repo.io, 9, lanes, {}).agent, 'reviewer');
@@ -120,8 +117,6 @@ test('strict policy: of two approved PRs, the second is updated and approved aga
   assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 62, until: 'ci' });
   assert.deepEqual(repo.calls.filter(c => c[0] === 'update-branch'), [['update-branch', 61], ['update-branch', 62]]);
   second.statusCheckRollup = green;
-  assert.equal(drive(repo.io, 9, lanes, {}).agent, 'devops');
-  repo.io.assess(repo.s.issues[11], second, { ...assessed(), head: second.headRefOid });
   assert.equal(drive(repo.io, 9, lanes, {}).agent, 'reviewer', 'a fresh approval at the updated head');
   approve(second);
   assert.deepEqual(drive(repo.io, 9, lanes, {}).wait, { pr: 62, until: 'merged' });
@@ -214,10 +209,14 @@ test('risk: assess the draft rather than launching before build', () => {
   assert.equal(modelForStep({ agent: 'devops', fresh: true }, 'R2'), 'sonnet', 'the assessor runs on Sonnet');
 });
 
-test('risk: a changed head is reassessed even when it touches the same files', () => {
+test('risk: a fix-round head is reassessed only when it touches files the last assessment did not see', () => {
   const base = { issue: started, tree: tree({ commits: 2 }) };
-  const changed = pr({ headRefOid: 'b'.repeat(40), assessment: assessed('R1', ['src/a.js']), reviews: [review('fixes')] });
-  assert.deepEqual(decide({ ...base, diffPaths: ['src/a.js'], pr: changed }), { agent: 'devops', mode: 'risk', task: 'risk', reason: 'assess the changed head diff' });
+  const last = assessed('R1', ['src/a.js', 'test/a.test.js']);
+  const moved = { headRefOid: 'b'.repeat(40), assessment: last, reviews: [review('fixes')] };
+  assert.equal(decide({ ...base, diffPaths: ['src/a.js'], pr: pr(moved) }).agent, 'reviewer', 'a head touching only seen files keeps the last assessment');
+  const again = decide({ ...base, diffPaths: ['src/a.js', 'src/b.js'], pr: pr(moved) });
+  assert.deepEqual([again.agent, again.task], ['devops', 'risk']);
+  assert.match(again.reason, /1 file the last assessment did not see: src\/b\.js/);
 });
 
 test('risk: an owner-set issue label is a floor the PR label never goes below', () => {
@@ -1192,4 +1191,14 @@ test('ranked custom responsibility reports exhaustion without invoking work', as
   const calls = [];
   assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief', host => { calls.push(host); return { error: Object.assign(new Error('missing'), { code: 'ENOENT' }) }; }), /all configured candidates unavailable/i);
   assert.deepEqual(calls, ['claude', 'codex']);
+});
+
+test('review: a later round judges the delta, round 1 the whole diff, and a review without a whole-diff verdict the whole diff', () => {
+  const brief = (round, extra = {}) => reviewerBrief({ repo: 'acme/app', pr: pr(), issue: issue(), risk: 'R1', step: { mode: 'review', round, ...extra }, lanes, base: 'main' });
+  const first = brief(1);
+  assert.doesNotMatch(first, /Later round/);
+  const later = brief(2);
+  assert.match(later, /Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria/);
+  assert.match(later, /no earlier verdict of yours reviewed the whole diff.*whole diff at head/);
+  assert.doesNotMatch(later, /judge the whole diff and use/);
 });

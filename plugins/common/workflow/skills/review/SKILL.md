@@ -35,10 +35,11 @@ Run `<cli> wait <N> --until ci`. Record a red required check as an **Important**
 
 Round is `<cli> status <N>`'s round plus one; a new head never resets it. Agent rules and `REVIEW.md` define fit.
 
-- **Every round:** judge the whole diff at head against the criteria. Use `review-context`'s `comparison`, the delta since the last verdict, to check open threads and resolve fixed findings. Respect owner grouping. Split only with owner authorization or a genuine authority or compatibility boundary; use `round=0 verdict=split` and name the seam.
+- **Whole diff** when no earlier verdict of yours reviewed it: round 1, or after a red-CI or shape-only verdict. Respect owner grouping; split only with owner authorization or a real authority boundary (`round=0 verdict=split`, naming the seam).
+- **Later rounds:** judge only `review-context`'s `comparison.changedFiles` (the delta since your last verdict) against open threads and criteria.
 - **Large diff:** read `areas` one area at a time; skip `mechanical` (pure renames). For scripted mechanical edits, check the script and hand-written remainder.
 
-**Exit gate:** criteria, rules and the whole diff at head read.
+**Exit gate:** criteria, rules and diff or delta read.
 
 ## 4. Find and verify
 
@@ -55,7 +56,7 @@ Tag each candidate:
 - **Pre-existing:** a defect already on the base branch.
 - **Follow-up:** a real gap outside the acceptance criteria.
 
-Only Blocker and Important block. Verify each candidate at head: read the line, reproduce or trace the failure, and drop unconfirmed findings. Never report lint, taste, unstated rules or repeated findings.
+Only Blocker and Important block. Verify each candidate at head: read the line, reproduce or trace the failure, and drop unconfirmed findings. Never report lint, taste, unstated rules or repeats.
 
 **Exit gate:** each kept finding has a tag, a read `file:line`, a failure scenario and a remedy.
 

@@ -70,7 +70,8 @@ test('one review skill, one mode: one reviewer, no subagents, no round asks the 
   assert.doesNotMatch(review, /mode=|author mode|team mode/i);
   assert.doesNotMatch(review + approval, /verdict=cap|round cap/);
   assert.match(review, /`Owner decision`/);
-  assert.match(review, /Every round:.*judge the whole diff at head/);
+  assert.match(review, /Whole diff.*no earlier verdict of yours reviewed it: round 1, or after a red-CI or shape-only verdict/);
+  assert.match(review, /Later rounds:\*\* judge only `review-context`'s `comparison.changedFiles`/);
   assert.match(review, /red required check.*Important.*continue the review/);
   assert.match(deliver, /documented capture command.*native build.*Capture after the UI settles/);
   assert.match(review, /Nits never block and never earn another round/);

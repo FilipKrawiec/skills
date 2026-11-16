@@ -77,7 +77,7 @@ export function latestAssessment(comments, author) {
   }
   return null;
 }
-// Assess the draft diff and reassess each changed head before review.
+// Assess the draft diff, and reassess a changed head only when it touches files the last assessment did not see.
 // A `risk:` hand-back answers a due assessment.
 function assessmentStep(facts) {
   const { handBack: hb = {} } = facts;
@@ -85,7 +85,11 @@ function assessmentStep(facts) {
   const last = pr ? facts.prAssessment : facts.issueAssessment;
   let reason = null;
   if (!last) reason = pr ? 'assess the diff of the draft' : 'assess the issue before the build';
-  else if (pr && last.head !== pr.headRefOid) reason = 'assess the changed head diff';
+  else if (pr) {
+    const seen = new Set(last.paths || []);
+    const unseen = (facts.diffPaths || []).filter(path => !seen.has(path));
+    if (unseen.length) reason = `the head touches ${unseen.length} ${unseen.length === 1 ? 'file' : 'files'} the last assessment did not see: ${unseen.slice(0, 5).join(', ')}${unseen.length > 5 ? ', …' : ''}`;
+  }
   if (!reason) return null;
   if (risks.includes(hb.risk)) return { do: 'assess', risk: hb.risk, reason: hb.reason || '' };
   return agent('devops', 'risk', { task: 'risk', reason });
@@ -315,7 +319,7 @@ export function reviewerBrief(f) {
 
 Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
-${f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge the whole diff and use the `review-context` `comparison` to check open findings.\n' : ''}
+${f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 
 - \`node ${cli} review-context --pr ${f.pr.number} --issue ${f.issue.number} --claim\`
