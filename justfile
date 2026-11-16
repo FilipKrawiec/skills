@@ -6,6 +6,10 @@ default: verify
 unit:
     node --test scripts/tests/*.test.mjs
 
+# Reviewer benchmark: validates the snapshot and lists the replay; `just review-bench --run` spends model budget
+review-bench *args:
+    node plugins/common/workflow/scripts/workflow.mjs bench {{args}}
+
 # Validate plugin definitions and package manifests
 verify: unit
     node plugins/common/workflow/scripts/workflow.mjs manifests verify
