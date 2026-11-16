@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +10,8 @@ import { acquireReviewRef, createReviewClaim, localClaimIsDead, releaseSessionCl
 const [, , pr, head, ...command] = process.argv;
 if (!/^[1-9]\d*$/.test(pr || '') || !/^[0-9a-f]{40,64}$/i.test(head || '') || !command.length) throw new Error('Invalid reviewer session');
 const { root, lanes } = config();
+const available = spawnSync('git', ['cat-file', '-e', `${head}^{commit}`], { cwd: root, stdio: 'ignore' });
+if (available.status !== 0) throw new Error(`Reviewer head ${head} is unavailable locally; fetch PR #${pr} with git fetch origin refs/pull/${pr}/head, verify its head, and retry`);
 const nonce = randomUUID();
 mkdirSync(join(root, '.wf'), { recursive: true });
 const path = join(root, '.wf', `review-session-${nonce}.json`);

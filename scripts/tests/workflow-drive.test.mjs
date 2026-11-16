@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
@@ -1076,5 +1076,24 @@ test('custom responsibility invokes its configured host and returns its hand-bac
   assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief.md', () => ({ status: 0, stdout: 'oops' })), /hand-back/);
   for (const output of ['status: blocked\nnote: cannot read brief\nstatus: done\nnote: complete', 'Example:\nstatus: done\nnote: complete', 'status: done\nnote: complete\nextra: record', 'status: done\nnote: complete\nnote: revised']) {
     assert.throws(() => runResponsibility(delivery, 'design', '/tmp/brief.md', () => ({ status: 0, stdout: output })), /hand-back/);
+  }
+});
+
+
+test('draft title prefers a conventional issue title and skips base merge commits', t => {
+  const f = fixture(t);
+  const commit = (repo, message) => run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-qm', message], { cwd: repo });
+  assert.equal(commit(f.repo, 'feat(app): first change').status, 0);
+  assert.equal(commit(f.main, 'base update').status, 0);
+  assert.equal(f.linkedGit('update-ref', 'refs/remotes/origin/main', f.git('rev-parse', 'HEAD').stdout.trim()).status, 0);
+  assert.equal(run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'merge', '--no-ff', '-qm', 'Merge base', 'origin/main'], { cwd: f.repo }).status, 0);
+  const log = join(f.root, 'gh.log'); f.env.GH_LOG = log;
+  writeFileSync(join(f.root, 'bin', 'gh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "$GH_LOG"\n[ "$1 $2" = 'pr view' ] && printf '{"number":5}\\n'\nexit 0\n`);
+  const module = new URL('../../plugins/common/workflow/scripts/lib/drive.mjs', import.meta.url).href;
+  const code = `import { githubIo } from ${JSON.stringify(module)}; const io = githubIo(${JSON.stringify(lanes)}, () => ({number:5})); const tree = io.tree(3, 'feature/test'); io.open({number:3,title:process.argv[1]}, tree, 'R1', {});`;
+  for (const [title, expected] of [['fix(app): issue title', 'fix(app): issue title'], ['Plain issue', 'feat(app): first change']]) {
+    const result = run(process.execPath, ['--input-type=module', '-e', code, title], { cwd: f.repo, env: f.env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(readFileSync(log, 'utf8').includes(`--title ${expected} --body-file`));
   }
 });

@@ -101,3 +101,16 @@ test('an unverified legacy label or changed head prevents a reviewer session', t
     assert.equal(fetchReviewRef(f.repo, remote, 5), null);
   }
 });
+
+
+test('missing reviewer head stops with a fetch diagnostic before starting the reviewer', t => {
+  const f = fixture(t); const remote = nativeRemote(f); f.env.TEST_REVIEW_REMOTE = remote;
+  const head = 'a'.repeat(40);
+  f.env.PR_VIEW = JSON.stringify({ headRefOid: head, labels: [] });
+  const session = fileURLToPath(new URL('../../plugins/common/workflow/scripts/review-session.mjs', import.meta.url));
+  const marker = join(f.repo, 'reviewer-started');
+  const result = spawnSync(process.execPath, [session, '5', head, process.execPath, '-e', `require('fs').writeFileSync(${JSON.stringify(marker)}, '')`], { cwd: f.repo, env: f.env, encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /fetch.*5/i);
+  assert.equal(existsSync(marker), false);
+});

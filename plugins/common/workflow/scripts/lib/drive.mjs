@@ -465,7 +465,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
         commits: Number(gitIn(found.path, ['rev-list', '--count', `${base}..HEAD`]) || 0),
         unpushed: Boolean(gitIn(found.path, ['log', '--oneline', 'HEAD', '--not', '--remotes'])),
         diffPaths: (gitIn(found.path, ['diff', '--name-only', `${base}...HEAD`]) || '').split('\n').filter(Boolean),
-        subjects: (gitIn(found.path, ['log', '--reverse', '--format=%s', `${base}..HEAD`]) || '').split('\n').filter(Boolean),
+        subjects: (gitIn(found.path, ['log', '--no-merges', '--reverse', '--format=%s', `${base}..HEAD`]) || '').split('\n').filter(Boolean),
       };
     },
     // Drive posts as the implementer identity, so only its comments count as assessments.
@@ -496,7 +496,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     open: (issue, tree, risk, hb) => {
       const body = join(workflowScratch(tree.path), `drive-${issue.number}-pr.md`);
       writeFileSync(body, prBody(issue, risk, hb, tree.subjects, hb.body ? readFileSync(hb.body, 'utf8') : undefined));
-      const title = tree.subjects[0] || issue.title;
+      const title = /^[a-z]+(?:\([^\n()]+\))?!?:\s+\S/i.test(issue.title) ? issue.title : tree.subjects[0] || issue.title;
       run('gh', ['pr', 'create', '--repo', repo, '--draft', '--base', lanes.base, '--head', tree.branch, '--title', title, '--body-file', body]);
       const pr = gh(['pr', 'view', tree.branch, '--repo', repo, '--json', 'number']);
       run('gh', ['pr', 'edit', String(pr.number), '--repo', repo, '--add-label', `risk:${risk}`]);
