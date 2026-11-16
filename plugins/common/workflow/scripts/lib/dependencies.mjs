@@ -36,8 +36,12 @@ export function findCycle(nodes) {
 }
 
 const defaultRead = args => jsonCommand('gh', args);
+// The planner closes a consolidated issue after appending this marker with the canonical issue's number.
+export const consolidatedMarker = target => `<!-- workflow:consolidated-into ${target} -->`;
+export const consolidatedInto = (body = '') => Number(/<!-- workflow:consolidated-into (\d+) -->/.exec(body)?.[1]) || null;
 // What GitHub says about one dependency: an issue or a PR, whether it closed and whether its change merged.
-function resolveDependency(repo, number, read) {
+// A closed issue folded into another by the planner stands for its consolidation target.
+function resolveDependency(repo, number, read, seen = new Set()) {
   const item = read(['api', `repos/${repo}/issues/${number}`]);
   if (item.pull_request) {
     const state = read(['pr', 'view', String(number), '--repo', repo, '--json', 'state']).state;
@@ -45,6 +49,8 @@ function resolveDependency(repo, number, read) {
   }
   const state = item.state.toUpperCase();
   if (state === 'OPEN') return { number, kind: 'issue', state };
+  const target = consolidatedInto(item.body);
+  if (target && target !== number && !seen.has(target)) return resolveDependency(repo, target, read, new Set([...seen, number]));
   const needsNoCode = (item.labels || []).some(label => (label.name ?? label) === 'type:epic') || pathsFromIssueBody(item.body || '')?.length === 0;
   let merged = false;
   if (item.state_reason === 'completed' && !needsNoCode) {
@@ -59,5 +65,6 @@ function resolveDependency(repo, number, read) {
 export function readDependencies(repo, issue, read = defaultRead) {
   const links = read(['api', `repos/${repo}/issues/${issue.number}/dependencies/blocked_by`]).map(dep => dep.number);
   const numbers = [...new Set([...links, ...dependenciesFromIssueBody(issue.body || '')])].filter(n => n !== issue.number).sort((a, b) => a - b);
-  return numbers.map(number => resolveDependency(repo, number, read));
+  const resolved = numbers.map(number => resolveDependency(repo, number, read)).filter(dep => dep.number !== issue.number);
+  return resolved.filter((dep, index) => resolved.findIndex(other => other.number === dep.number) === index);
 }

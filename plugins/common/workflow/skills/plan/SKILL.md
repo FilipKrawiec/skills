@@ -6,7 +6,7 @@ allowed-tools: Read Bash(gh:*,git:*)
 
 # Plan
 
-Plan within a direct owner request or approved milestone brief; labels, silence and bot summaries grant no authority. This and `spec` are the only phases that wait for the developer: clarify intent here, so nothing after approval needs to ask. Do not implement.
+Plan within a direct owner request or approved milestone brief; labels, silence and bot summaries grant no authority. This and `spec` are the only phases that wait for the developer: clarify intent here, so nothing after approval needs to ask. Slices follow the epic's approved outcome; the owner is asked about epic-level outcomes only, never to agree a slice, a split or a consolidation. Do not implement.
 
 ## 1. Read
 
@@ -28,6 +28,7 @@ When slicing an approved epic, create exactly one final refinement slice with na
 - Review the merged whole epic against its Outcome, Decisions and architecture rules. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths.
 - Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.
 - Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.
+- Assess the epic's delivery flow: blocked and owner steps, rework, review rounds and cost. File at most two improvements, each with its evidence.
 
 **Exit gate:** every step has a why and a how; an epic has its final refinement slice and native blockers.
 

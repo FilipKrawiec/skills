@@ -144,8 +144,19 @@ test('delivery skills keep one plain command per Bash call, inline plan scoring,
 });
 
 test('workflow role definitions leave model selection to the host', () => {
-  for (const role of ['devops', 'implementer', 'reviewer']) {
+  for (const role of ['devops', 'implementer', 'planner', 'reviewer']) {
     const text = readFileSync(join(commonRoot, 'workflow/agents', `${role}.md`), 'utf8');
     assert.doesNotMatch(text.split('---')[1], /^model:/m, role);
   }
+});
+
+test('refine, spec and plan leave unstarted-issue consolidation to the team and the owner to epic outcomes', () => {
+  const refine = skillText('refine');
+  assert.doesNotMatch(refine, /Never close duplicates without owner authority/);
+  assert.match(refine, /Never close a started or `lane:owner` issue as a duplicate without owner authority/);
+  assert.match(refine, /Never ask the owner to consolidate, close, split, order or slice unstarted issues/);
+  assert.match(skillText('spec'), /owner decides epic outcomes only/);
+  assert.match(readFileSync(join(commonRoot, 'workflow/skills/spec/references/split.md'), 'utf8'), /workflow:consolidated-into N.*Only a started or `lane:owner` duplicate needs owner authority/s);
+  assert.match(skillText('plan'), /Slices follow the epic's approved outcome/);
+  assert.match(skillText('deliver'), /Report a result's `consolidated` merge/);
 });
