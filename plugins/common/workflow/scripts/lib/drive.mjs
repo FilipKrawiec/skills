@@ -12,7 +12,7 @@ import { boardStatus, dependenciesFromIssueBody, pathsFromIssueBody, pathsWithin
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { consolidatedInto, droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { checkState, failedStates, prFields } from './pr.mjs';
-import { verifyEpicClosure } from './epic-closure.mjs';
+import { addCriterionIds, tickCriteria, verifyEpicClosure } from './epic-closure.mjs';
 import { prState } from './state.mjs';
 import { exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
@@ -560,6 +560,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const number = result.data.createIssue.issue.number;
       return gh(['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
     },
+    editEpicBody: (epic, body) => { run('gh', ['issue', 'edit', String(epic.number), '--repo', repo, '--body', body]); },
     uncheckEpicCriteria: (epic, ids) => {
       const body = epic.body.replace(/^(\s*[-*] \[[ xX]\] .+?\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->\s*)$/gm, (line, whole, id) => ids.includes(id) ? line.replace(/\[[xX]\]/, '[ ]') : line);
       if (body !== epic.body) run('gh', ['issue', 'edit', String(epic.number), '--repo', repo, '--body', body]);
@@ -901,7 +902,17 @@ export function driveEpic(io, epic, lanes) {
         const result = io.verifyEpic(current, children, lanes.base, merged);
         return { current, children, delivery, result };
       };
-      const first = read();
+      // Drive owns the criterion markers: it adds a missing ID before the Reviewer judges, and ticks a `met` one before closing.
+      if (step.do === 'close-epic') {
+        const current = io.issue(epic.number);
+        const withIds = addCriterionIds(current.body);
+        if (withIds !== current.body) io.editEpicBody(current, withIds);
+      }
+      let first = read();
+      if (step.do === 'close-epic' && first.result.unchecked?.length) {
+        io.editEpicBody(first.current, tickCriteria(first.current.body, first.result.unchecked));
+        first = read();
+      }
       if (!first.result.complete) {
         const outstanding = first.result.outstanding || [];
         // No current outcome comment: the per-criterion evidence is the Reviewer's to post, not the owner's.

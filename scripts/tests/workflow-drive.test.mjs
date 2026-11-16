@@ -1,4 +1,4 @@
-import { verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
+import { addCriterionIds, verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
@@ -917,6 +917,38 @@ test('a fully merged epic without an outcome comment dispatches the Reviewer, th
   // An owner-lane epic still goes to the owner.
   const owned = fakeRepo({ issues: { 9: issue({ ...epic, labels: [label('type:epic'), label('lane:owner')] }), 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
   assert.ok(drive(owned.io, 9, lanes, {}).owner);
+});
+
+test('an epic created without criterion IDs gets them, is judged by the Reviewer, has met criteria ticked and closes', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '## Outcome\nx\n\n### Acceptance criteria\n- [ ] Users can sign in\n- [ ] Users can sign out\n\n## Notes\n- [ ] not a criterion\n' });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  repo.io.editEpicBody = (e, body) => { repo.s.issues[e.number].body = body; };
+  let packet = null;
+  repo.io.verifyEpic = (current, children, base, merged) => verifyEpicClosure({ epic: current, slices: children, base, repo: 'acme/app' }, {
+    merged, native: () => { if (!packet) throw Object.assign(new Error('The configured Reviewer has not posted an epic outcome comment'), { needsReview: true }); return packet; }
+  });
+  const step = drive(repo.io, 9, lanes, {});
+  assert.equal(step.agent, 'reviewer');
+  assert.match(repo.s.issues[9].body, /- \[ \] Users can sign in <!-- workflow:criterion users-can-sign-in -->/);
+  assert.match(repo.s.issues[9].body, /- \[ \] Users can sign out <!-- workflow:criterion users-can-sign-out -->/);
+  assert.match(repo.s.issues[9].body, /- \[ \] not a criterion\n/, 'other sections stay as they are');
+  const met = (id, text) => ({ criterion: { id, text }, state: 'met', explanation: 'The merged PR shows it.', evidence: ['https://example.org/proof'] });
+  packet = { version: 1, epic: 9, children: [99], outcomes: [met('users-can-sign-in', 'Users can sign in'), met('users-can-sign-out', 'Users can sign out')] };
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  assert.match(repo.s.issues[9].body, /- \[x\] Users can sign in <!-- workflow:criterion users-can-sign-in -->/);
+  assert.match(repo.s.issues[9].body, /- \[x\] Users can sign out/);
+  assert.equal(repo.s.issues[9].state, 'CLOSED');
+});
+
+test('criterion IDs are added once, stay unique and keep existing ones', () => {
+  const body = '### Acceptance criteria\n- [x] Same <!-- workflow:criterion keep -->\n- [ ] Same\n- [ ] Same\n- [ ] !!!\n';
+  const once = addCriterionIds(body);
+  assert.match(once, /Same <!-- workflow:criterion keep -->/);
+  assert.match(once, /- \[ \] Same <!-- workflow:criterion same -->/);
+  assert.match(once, /- \[ \] Same <!-- workflow:criterion same-2 -->/);
+  assert.match(once, /- \[ \] !!! <!-- workflow:criterion criterion-3 -->/);
+  assert.equal(addCriterionIds(once), once);
 });
 
 test('verified consolidated children and refinements close an epic without another PR', () => {
