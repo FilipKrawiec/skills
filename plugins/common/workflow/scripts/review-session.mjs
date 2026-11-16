@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { config, jsonCommand } from './lib/core.mjs';
+import { commandModel, parseUsage, recordUsage, usageEntry, usageHost, visibleResult } from './lib/usage.mjs';
 import { acquireReviewRef, createReviewClaim, localClaimIsDead, releaseSessionClaim, sessionClaim, withReviewTransport } from './lib/review-ref.mjs';
 
 const [, , pr, head, ...command] = process.argv;
@@ -15,7 +16,11 @@ if (available.status !== 0) throw new Error(`Reviewer head ${head} is unavailabl
 const nonce = randomUUID();
 mkdirSync(join(root, '.wf'), { recursive: true });
 const path = join(root, '.wf', `review-session-${nonce}.json`);
-const child = spawn(command[0], command.slice(1), { cwd: root, stdio: 'inherit', detached: true, env: { ...process.env, WORKFLOW_REVIEW_NONCE: nonce } });
+// A host that offers machine-readable output is asked for it: the session's usage is recorded and its visible result printed unchanged.
+const usageOf = usageHost(command);
+let output = '';
+const child = spawn(command[0], command.slice(1), { cwd: root, stdio: ['inherit', usageOf ? 'pipe' : 'inherit', 'inherit'], detached: true, env: { ...process.env, WORKFLOW_REVIEW_NONCE: nonce } });
+if (usageOf) child.stdout?.on('data', chunk => { output += chunk; });
 child.on('error', error => { console.error(error.message); process.exitCode = 1; });
 let oid; let acquired = false;
 try {
@@ -40,3 +45,11 @@ try {
   child.kill(); console.error(error.message); process.exitCode = 1;
 }
 child.on('exit', (code, signal) => { if (!process.exitCode) process.exitCode = code ?? (signal ? 1 : 0); });
+child.on('close', () => {
+  if (usageOf) process.stdout.write(output ? `${visibleResult(usageOf, output).replace(/\n?$/, '\n')}` : '');
+  // A parse failure or a missing field records "unreported"; it never changes the exit code.
+  try {
+    const host = usageOf || (/agy-review/.test(command[1] || '') ? 'agy' : null);
+    recordUsage({ repo: lanes.repo, pr, author: lanes.implementer, entry: usageEntry({ role: 'reviewer', host, model: commandModel(command) || (host === 'agy' ? command[3] : null), usage: usageOf ? parseUsage(usageOf, output) : null }) });
+  } catch { /* usage is optional */ }
+});

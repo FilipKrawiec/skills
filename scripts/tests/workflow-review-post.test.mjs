@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fixture, nativeRemote } from './support/workflow-cli-fixture.mjs';
+import { findingKey } from '../../plugins/common/workflow/scripts/lib/vcs.mjs';
 
 const sha = 'a'.repeat(40);
 const thread = (id, author, body) => ({ id, isResolved: false, isOutdated: false, path: 'a.txt', line: 1, comments: { nodes: [{ url: 'u', body, author: { login: author } }] } });
@@ -37,7 +38,7 @@ test('review-post sends one review as the reviewer, then removes the label', t =
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Posted review 7 on #5/);
   assert.equal(record().token, 'SECRET_TOKEN');
-  assert.deepEqual(record().payload, { commit_id: sha, event: 'APPROVE', body: readFileSync(join(f.repo, 'body.md'), 'utf8'), comments: [{ path: 'a.txt', line: 3, side: 'RIGHT', body: '**Nit** rename' }] });
+  assert.deepEqual(record().payload, { commit_id: sha, event: 'APPROVE', body: readFileSync(join(f.repo, 'body.md'), 'utf8'), comments: [{ path: 'a.txt', line: 3, side: 'RIGHT', body: `**Nit** rename\n\n<!-- finding-key:${findingKey({ path: 'a.txt', body: '**Nit** rename' })} -->` }] });
   assert.doesNotMatch(result.stdout + result.stderr, /SECRET_TOKEN/);
   assert.deepEqual(log(), ['post', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
 });
@@ -235,7 +236,7 @@ test('review-post reads inline comments from stdin', t => {
   const comments = JSON.stringify([{ path: 'a.txt', line: 2, body: '**Nit** stdin' }]);
   const result = f.cliRun('review-post', '--pr', '5', '--sha', sha, '--event', 'COMMENT', '--body-file', 'body.md', '--comments-file', '-', { input: comments });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(record().payload.comments[0].body, '**Nit** stdin');
+  assert.equal(record().payload.comments[0].body, `**Nit** stdin\n\n<!-- finding-key:${findingKey({ path: 'a.txt', body: '**Nit** stdin' })} -->`);
 });
 
 test('review-post rejects an unsupported approve verdict at post time', t => {
@@ -269,4 +270,33 @@ test('a reviewer without the session token cannot post or release another claim'
   assert.match(result.stderr, /session claim is required/);
   assert.deepEqual(log(), []);
   assert.equal(existsSync(f.env.REVIEW_RECORD), false);
+});
+
+test('a repeated post skips findings whose key an open thread already carries', t => {
+  const key = findingKey({ path: 'a.txt', body: '**Nit** rename' });
+  const existing = thread('K1', 'reviewer', `**Nit** rename\n\n<!-- finding-key:${key} -->`);
+  const { f, post, record, log } = setup(t, { REVIEW_THREADS: JSON.stringify([existing]) });
+  writeFileSync(join(f.repo, 'comments.json'), JSON.stringify([{ path: 'a.txt', line: 3, body: '**Nit** rename' }, { path: 'b.txt', line: 1, criterion: 'AC4', failure: 'no retry', body: '**Important** retry duplicates' }]));
+  const result = post('--event', 'COMMENT', '--comments-file', 'comments.json');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Skipped 1 finding already on #5/);
+  assert.deepEqual(record().payload.comments.map(c => c.path), ['b.txt']);
+  assert.match(record().payload.comments[0].body, new RegExp(`<!-- finding-key:${findingKey({ path: 'b.txt', criterion: 'AC4', failure: 'no retry', body: 'x' })} -->`));
+  assert.deepEqual(log(), ['post', 'pr edit 5 --repo github.com/acme/app --remove-label state:reviewing']);
+});
+
+test('a resolved thread does not hide a finding that is raised again', t => {
+  const key = findingKey({ path: 'a.txt', body: '**Nit** rename' });
+  const resolved = { ...thread('K2', 'reviewer', `**Nit** rename\n\n<!-- finding-key:${key} -->`), isResolved: true };
+  const { post, record } = setup(t, { REVIEW_THREADS: JSON.stringify([resolved]) });
+  const result = post('--event', 'COMMENT', '--comments-file', 'comments.json');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(record().payload.comments.length, 1);
+});
+
+test('findingKey is stable across retries and differs by path, criterion and failure', () => {
+  const base = { path: 'a.js', criterion: 'AC1', failure: 'drops data', body: '**Important** x' };
+  assert.equal(findingKey(base), findingKey({ ...base, body: 'reworded' }));
+  for (const change of [{ path: 'b.js' }, { criterion: 'AC2' }, { failure: 'other' }]) assert.notEqual(findingKey(base), findingKey({ ...base, ...change }));
+  assert.equal(findingKey({ ...base, key: 'my-key-1' }), 'my-key-1');
 });

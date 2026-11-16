@@ -364,7 +364,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   assert.equal(reviewer.agent, 'reviewer');
   assert.equal(reviewer.session, 'separate');
   assert.equal(reviewer.pr, 53);
-  assert.deepEqual(reviewer.command.slice(4, 11), ['claude', '--print', '--agent', 'filipkrawiec-workflow:reviewer', '--model', 'sonnet', '--permission-mode']);
+  assert.deepEqual(reviewer.command.slice(4, 12), ['claude', '--print', '--output-format', 'json', '--agent', 'filipkrawiec-workflow:reviewer', '--model', 'sonnet']);
   assert.deepEqual(drive(repo.io, 3, lanes, { risk: 'R0', reason: 'text only' }), reviewer, 'a repeated hand-back changes nothing');
   repo.s.prs[0].reviews = [review('ready', 'APPROVED')];
   const wait = drive(repo.io, 3, lanes, {});

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { fixture, nativeRemote } from './support/workflow-cli-fixture.mjs';
 import { diffLines, parseVerdict, reviewBody } from '../../plugins/common/workflow/scripts/agy-review.mjs';
+import { findingKey } from '../../plugins/common/workflow/scripts/lib/vcs.mjs';
 import { fetchReviewRef } from '../../plugins/common/workflow/scripts/lib/review-ref.mjs';
 
 const scripts = fileURLToPath(new URL('../../plugins/common/workflow/scripts/', import.meta.url));
@@ -79,7 +80,7 @@ test('AGY verdict is validated, posted as one exact-head COMMENT as the reviewer
   assert.equal(review.payload.event, 'COMMENT');
   assert.equal(review.payload.commit_id, tip);
   assert.ok(review.payload.body.startsWith(`<!-- agent-review sha=${tip} round=1 verdict=fixes host=agy -->`));
-  assert.deepEqual(review.payload.comments.map(c => [c.path, c.line, c.body]), [['a.txt', 3, '**Blocker** wrong'], ['a.txt', 1, '**Nit** rename']]);
+  assert.deepEqual(review.payload.comments.map(c => [c.path, c.line, c.body]), [['a.txt', 3, `**Blocker** wrong\n\n<!-- finding-key:${findingKey({ path: 'a.txt', body: '**Blocker** wrong' })} -->`], ['a.txt', 1, `**Nit** rename\n\n<!-- finding-key:${findingKey({ path: 'a.txt', body: '**Nit** rename' })} -->`]]);
   const call = called();
   assert.deepEqual(call.args, ['--agent', 'reviewer', '--model', 'm']);
   assert.match(call.prompt, new RegExp(`head ${tip}`));
@@ -214,4 +215,22 @@ test('a head that moved after the session started posts nothing', t => {
   assert.equal(result.status, 1);
   assert.equal(posted(), null);
   assert.equal(fetchReviewRef(f.repo, remote, 5), null);
+});
+
+// Usage capture for the hosts that print machine-readable output: the session's visible result stays unchanged.
+function claudeStyleSession(t, output) {
+  const { f, tip } = setup(t, goodReply);
+  const script = join(f.root, 'fake-claude.mjs');
+  writeFileSync(script, `process.stdout.write(${JSON.stringify(output)});\n`);
+  return spawnSync(process.execPath, [join(scripts, 'review-session.mjs'), '5', tip, process.execPath, script, '--output-format', 'json', '--model', 'opus'], { cwd: f.repo, env: f.env, encoding: 'utf8' });
+}
+test('a reviewer session started with --output-format json prints its visible result unchanged', t => {
+  const result = claudeStyleSession(t, JSON.stringify({ type: 'result', result: 'verdict: ready\nPR: #5', total_cost_usd: 0.3, usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 7 } }));
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, 'verdict: ready\nPR: #5\n');
+});
+test('unparseable output from a usage-reporting session is printed as is and never fails the session', t => {
+  const result = claudeStyleSession(t, 'verdict: ready\nnot json');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, 'verdict: ready\nnot json\n');
 });
