@@ -54,7 +54,7 @@ test('an author-mode ready verdict hands a draft off instead of reviewing it aga
 });
 
 test('the owner is asked only on a PR the Reviewer approved at its head', () => {
-  assert.deepEqual(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready', 'APPROVED')] }), { action: 'owner-review', actor: 'owner', reason: 'risk R2' });
+  assert.deepEqual(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready', 'APPROVED')] }), { action: 'merge', actor: 'cli' }, 'risk R2 alone merges on the Reviewer approval');
   assert.equal(next({ labels: [{ name: 'risk:R1' }], reviews: [review('ready', 'APPROVED')] }).action, 'merge');
   assert.equal(next({ isDraft: true, labels: [{ name: 'risk:R2' }], reviews: [review('ready')] }).action, 'ready', 'an R2 draft is readied, not handed to the owner');
   assert.equal(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready')] }).actor, 'reviewer', 'an unapproved R2 PR waits for the approval');
@@ -63,7 +63,7 @@ test('the owner is asked only on a PR the Reviewer approved at its head', () => 
   assert.equal(next({ reviews: [review('cap')] }).actor, 'reviewer', 'a retired cap verdict is not an approval');
   assert.deepEqual(next({ labels: [{ name: 'review:owner' }], reviews: [review('owner', 'APPROVED')] }), { action: 'owner-review', actor: 'owner', reason: 'review:owner' });
   const ownerApproved = { author: { login: 'owner' }, state: 'APPROVED', body: '', commit: { oid: head } };
-  assert.equal(next({ labels: [{ name: 'risk:R2' }], reviews: [review('ready', 'APPROVED'), ownerApproved] }).action, 'merge');
+  assert.equal(next({ labels: [{ name: 'review:owner' }], reviews: [review('owner', 'APPROVED'), ownerApproved] }).action, 'merge');
 });
 
 test('a ready PR behind its base brings the base in before any review, owner step or merge', () => {
@@ -199,4 +199,20 @@ test('next --owner shows items blocked by a dropped dependency or a cycle', () =
   assert.deepEqual(items.map(item => [item.number, item.actor]), [[3, 'owner'], [9, 'owner']]);
   assert.match(items[0].reason, /^#3 depends on #2, closed as not planned/);
   assert.equal(items[1].reason, 'dependency cycle #12 → #14 → #12');
+});
+
+const codeowners = '* @reviewer\n/.github/CODEOWNERS @owner\n/scripts/tests/workflow-decisions.test.mjs @owner\n';
+const owned = (files, extra = {}) => prState(pr({ files: files.map(path => ({ path })), ...extra }), { ...lanes, codeowners }).next;
+
+test('a PR touching a path whose code owner is not the Reviewer goes to the owner as soon as it is approved', () => {
+  const approved = [review('ready', 'APPROVED')];
+  const next = owned(['src/a.js', '.github/CODEOWNERS', 'scripts/tests/workflow-decisions.test.mjs'], { reviews: approved });
+  assert.deepEqual([next.action, next.actor], ['owner-review', 'owner']);
+  assert.match(next.reason, /owner can approve: \.github\/CODEOWNERS, scripts\/tests\/workflow-decisions\.test\.mjs$/);
+  assert.equal(owned(['src/a.js'], { reviews: approved }).action, 'merge', 'paths the Reviewer owns merge');
+  assert.equal(owned(['src/a.js'], { labels: [{ name: 'risk:R2' }], reviews: approved }).action, 'merge', 'plain R2 merges');
+  assert.equal(owned(['.github/CODEOWNERS'], { reviews: [review('ready')] }).actor, 'reviewer', 'unapproved: the Reviewer first');
+  const ownerApproved = { author: { login: 'owner' }, state: 'APPROVED', body: '', commit: { oid: head } };
+  assert.equal(owned(['.github/CODEOWNERS'], { reviews: [...approved, ownerApproved] }).action, 'merge');
+  assert.equal(prState(pr({ files: [{ path: '.github/CODEOWNERS' }], reviews: approved }), lanes).next.action, 'merge', 'without CODEOWNERS rules nothing is held');
 });

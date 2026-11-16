@@ -3,6 +3,7 @@ import { jsonCommand } from './core.mjs';
 import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { findUsageComment, usageSummary } from './usage.mjs';
 import { checkState, failedStates, passedStates, prFields } from './pr.mjs';
+import { ownerPaths } from './codeowners.mjs';
 
 // One check summary for the head: red wins over pending, pending over green; no checks reads `none`.
 export function ciState(checks = []) {
@@ -12,7 +13,8 @@ export function ciState(checks = []) {
 }
 const verdictOf = review => /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(review?.body || '')?.[1] || null;
 // What happens next on an open PR and who does it, first match wins. The owner is asked only on a PR the Reviewer
-// approved at its head (risk R2, a review:owner hold, a release); line count and review rounds never ask them.
+// approved at its head (a review:owner hold for a reserved effect, a path only the owner may approve, a release); risk,
+// line count and review rounds never ask them.
 // A ready PR behind its base (a ruleset that requires an up-to-date branch reports `BEHIND`) brings the base in before
 // any review, approval, owner step or merge, so neither the Reviewer nor the owner is ever asked about a stale head.
 function nextAction(pr, record, ci, verdict, owner) {
@@ -41,8 +43,10 @@ export function prState(pr, lanes) {
   const verdict = verdictOf(atHead.at(-1));
   const risk = labels.find(label => /^risk:R\d$/.test(label))?.slice(5) || null;
   // In a repo whose merge publishes to production (`github.publishOnMerge`), `release` needs the owner's approval of the head first.
-  const owner = labels.includes('review:owner') ? { needed: true, reason: 'review:owner' } : risk === 'R2' ? { needed: true, reason: 'risk R2' }
-    : lanes.publishOnMerge ? { needed: true, reason: 'merge publishes to production: invoke release' } : { needed: false };
+  const held = ownerPaths(lanes.codeowners, (pr.files || []).map(file => file.path).filter(Boolean), lanes.reviewer);
+  const owner = labels.includes('review:owner') ? { needed: true, reason: 'review:owner' }
+    : held.length ? { needed: true, reason: `code-owner paths only ${lanes.owner || 'the owner'} can approve: ${held.slice(0, 10).join(', ')}${held.length > 10 ? `, and ${held.length - 10} more` : ''}` }
+      : lanes.publishOnMerge ? { needed: true, reason: 'merge publishes to production: invoke release' } : { needed: false };
   // A round is one blocking-or-hand-off verdict; the approval posted in the same round and a split never add one.
   const rounds = reviewer.filter(review => review.state !== 'APPROVED' && verdictOf(review) !== 'split').length;
   return {
@@ -51,7 +55,7 @@ export function prState(pr, lanes) {
     issues: record.issues, next: nextAction(pr, record, ci, verdict, owner),
   };
 }
-function readPr(repo, number) { return jsonCommand('gh', ['pr', 'view', String(number), '--repo', repo, '--json', `${prFields},mergeCommit`]); }
+function readPr(repo, number) { return jsonCommand('gh', ['pr', 'view', String(number), '--repo', repo, '--json', `${prFields},files,mergeCommit`]); }
 // The check runs and commit statuses on one commit, in the shape `ciState` reads.
 function readChecksAt(repo, sha) {
   const runs = jsonCommand('gh', ['api', `repos/${repo}/commits/${sha}/check-runs?per_page=100`]).check_runs.map(run => ({ name: run.name, conclusion: run.conclusion, status: run.status }));
@@ -145,7 +149,7 @@ function dependencyProblems(lanes, read) {
 export function nextCommand(args, lanes, read = args => jsonCommand('gh', args)) {
   if (args.length > 1 || (args.length && args[0] !== '--owner')) throw new Error('Usage: next [--owner]');
   const owner = args[0] === '--owner';
-  const prs = read(['pr', 'list', '--repo', lanes.repo, '--state', 'open', '--limit', '200', '--json', prFields]).map(pr => prState(pr, lanes));
+  const prs = read(['pr', 'list', '--repo', lanes.repo, '--state', 'open', '--limit', '200', '--json', `${prFields},files`]).map(pr => prState(pr, lanes));
   const items = prs.filter(pr => !owner || pr.next.actor === 'owner').map(pr => ({ kind: 'pr', number: pr.number, url: pr.url, ...pr.next }));
   if (owner) {
     const epics = read(['issue', 'list', '--repo', lanes.repo, '--state', 'open', '--label', 'type:epic', '--label', 'lane:owner', '--json', 'number,url']);

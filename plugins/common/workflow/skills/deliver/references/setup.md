@@ -16,7 +16,7 @@ Use version 1; read it from base.
 }
 ```
 
-`steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS defines path owners and must name exactly one default Reviewer matching `identities.reviewer`; `verify` is the default check. Until the first config merges, `push --owner-bootstrap` reads a missing Owner from the branch's CODEOWNERS; afterwards, from base. The CLI caches the Project for 24 hours in common `.git`; `cache show` and `cache refresh` manage it.
+`steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS defines path owners and must name exactly one default Reviewer matching `identities.reviewer`; `verify` is the default check. Once the Reviewer approves a PR touching a path whose CODEOWNERS owner is not that Reviewer, `drive` returns an `owner` step with the PR link and those paths; every other approval merges. Until the first config merges, `push --owner-bootstrap` reads a missing Owner from the branch's CODEOWNERS; afterwards, from base. The CLI caches the Project for 24 hours in common `.git`; `cache show` and `cache refresh` manage it.
 
 Configure `delivery` as documented in the project installation guidance. Verify the host can dispatch, select the model and return an intact hand-back. The reviewer credential and exact-head approval remain mandatory.
 
@@ -45,8 +45,8 @@ Configure `delivery` as documented in the project installation guidance. Verify 
 | `lane:owner` | Owner participation is required to implement. |
 | `state:started` | `drive` started the issue in the owner's session. |
 | `state:reviewing` | The Reviewer's claim on a PR. |
-| `review:owner` | PR for the owner after the Reviewer's approval: `review` approves it with `verdict=owner`, `pr auto-merge` waits for the owner's approval of the head. |
-| `risk:R0`, `risk:R1`, `risk:R2` | One per PR, set by `drive` from the `devops` risk assessment of the diff, which reasons about the change, never its paths; picks the models and whether the owner reviews. On an issue, only the owner sets one, as a floor. |
+| `review:owner` | PR for the owner after the Reviewer's approval: `review` approves it with `verdict=owner` only for an owner-reserved effect, `pr auto-merge` waits for the owner's approval of the head. |
+| `risk:R0`, `risk:R1`, `risk:R2` | One per PR, set by `drive` from the `devops` risk assessment of the diff, which reasons about the change, never its paths; picks the implementer's model, never whether the owner reviews. On an issue, only the owner sets one, as a floor. |
 | `nits:swept` | A merged PR whose review Nits were swept. |
 | `type:story`, `type:bug`, `type:chore`, `type:task`, `type:epic` | One per issue. |
 

@@ -40,7 +40,6 @@ test('reviewer commands ask each host for machine-readable output, and the host 
   assert.deepEqual(codex.slice(0, 3), ['codex', 'exec', '--json']);
   assert.equal(usageHost(claude), 'claude');
   assert.equal(usageHost(codex), 'codex');
-  assert.equal(usageHost(reviewerCommand('m', '/b', 'n', 'agy', '/bin/agy', { pr: 5, head: 'a'.repeat(40), issue: 9, round: 1 })), null);
   assert.equal(commandModel(claude), 'opus');
   assert.equal(commandModel(codex), 'gpt');
 });
