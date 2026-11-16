@@ -945,8 +945,10 @@ export function driveEpic(io, epic, lanes) {
       // Drive owns the criterion markers: it adds a missing ID before the Reviewer judges, and ticks a `met` one before closing.
       if (step.do === 'close-epic') {
         const current = io.issue(epic.number);
-        const withIds = addCriterionIds(current.body);
-        if (withIds !== current.body) io.editEpicBody(current, withIds);
+        if (current.state === 'OPEN' && !(current.labels || []).some(label => (label.name ?? label) === 'lane:owner')) {
+          const withIds = addCriterionIds(current.body);
+          if (withIds !== current.body) io.editEpicBody(current, withIds);
+        }
       }
       let first = read();
       if (step.do === 'close-epic' && first.result.unchecked?.length) {
