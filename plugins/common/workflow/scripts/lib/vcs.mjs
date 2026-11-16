@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { ownedReviewSession, releaseSessionClaim } from './review-ref.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -268,6 +269,15 @@ export function reviewContext(args) {
   console.log(JSON.stringify(output));
 }
 
+// A finding's stable key: its path, the criterion or rule it breaks and the failure. A retry computes the same key,
+// so review-post can tell a thread it already created from a new one.
+const keyMarker = /<!-- finding-key:([\w.-]{4,64}) -->/g;
+export function findingKey(comment) {
+  if (typeof comment.key === 'string' && /^[\w.-]{4,64}$/.test(comment.key)) return comment.key;
+  const failure = comment.failure || comment.body.replace(/<!--[\s\S]*?-->/g, '').trim().split('\n')[0];
+  return createHash('sha1').update(JSON.stringify([comment.path, comment.criterion || '', String(failure).replace(/\s+/g, ' ').trim()])).digest('hex').slice(0, 12);
+}
+export const existingFindingKeys = threads => new Set(threads.filter(thread => !thread.isResolved).flatMap(thread => (thread.comments?.nodes || []).flatMap(comment => [...String(comment.body || '').matchAll(keyMarker)].map(match => match[1]))));
 const reviewEvents = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
 const verdictIn = body => /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(body)?.[1];
 function reviewPostOptions(args, root) {
@@ -295,8 +305,8 @@ function reviewPostOptions(args, root) {
   if (o['--comments-file']) {
     if (o['--comments-file'] === '-' && o['--body-file'] === '-') throw new Error('Only one of --body-file and --comments-file can read stdin');
     o.comments = JSON.parse(readWorkspaceText(root, o['--comments-file']));
-    const valid = Array.isArray(o.comments) && o.comments.every(c => c && typeof c.path === 'string' && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === 'string' && c.body);
-    if (!valid) throw new Error('Comments file must be a JSON array of {path, line, body}');
+    const valid = Array.isArray(o.comments) && o.comments.every(c => c && typeof c.path === 'string' && c.path && Number.isInteger(c.line) && c.line > 0 && typeof c.body === 'string' && c.body && ['key', 'criterion', 'failure'].every(field => c[field] === undefined || typeof c[field] === 'string'));
+    if (!valid) throw new Error('Comments file must be a JSON array of {path, line, body, key?, criterion?, failure?}');
   }
   return o;
 }
@@ -349,7 +359,16 @@ export function reviewPost(args) {
     if (threads.pageInfo.hasNextPage) throw new Error('Too many review threads to resolve');
     const flagged = new Set(o['--resolve-thread']);
     for (const thread of reviewerThreads(threads, login, approve, flagged)) resolveThread(thread, options);
-    const payload = { commit_id: o['--sha'], body: o.body, event: o['--event'], comments: o.comments.map(c => ({ path: c.path, line: c.line, side: 'RIGHT', body: c.body })) };
+    // A retry after an error posts only the findings no open thread carries yet, so no thread is ever duplicated.
+    const present = existingFindingKeys(threads.nodes);
+    const fresh = []; let skipped = 0;
+    for (const comment of o.comments) {
+      const key = findingKey(comment);
+      if (present.has(key)) { skipped += 1; continue; }
+      present.add(key); fresh.push({ ...comment, body: `${comment.body}\n\n<!-- finding-key:${key} -->` });
+    }
+    if (skipped) console.log(`Skipped ${skipped} finding${skipped === 1 ? '' : 's'} already on #${pr}`);
+    const payload = { commit_id: o['--sha'], body: o.body, event: o['--event'], comments: fresh.map(c => ({ path: c.path, line: c.line, side: 'RIGHT', body: c.body })) };
     const posted = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/pulls/${pr}/reviews`, '--input', '-'], { ...options, input: JSON.stringify(payload) });
     if (!Number.isInteger(posted?.id)) throw new Error('GitHub did not confirm the review');
     console.log(`Posted review ${posted.id} on #${pr}`);

@@ -1,5 +1,6 @@
 import { localClaimIsDead, releaseSessionClaim, sessionClaim } from './review-ref.mjs';
 import { verifyConsolidatedDelivery } from './consolidated-delivery.mjs';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -10,9 +11,12 @@ import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
 import { boardStatus, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
-import { prFields } from './pr.mjs';
+import { checkState, failedStates, prFields } from './pr.mjs';
 import { verifyEpicClosure } from './epic-closure.mjs';
 import { prState } from './state.mjs';
+import { exportedSymbols, reviewPacket } from './packet.mjs';
+import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
+import { previousReviewedHead } from './vcs.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
 
 const cli = fileURLToPath(new URL('../workflow.mjs', import.meta.url));
@@ -97,13 +101,17 @@ function assessmentStep(facts) {
 
 // A hand-back is at most 6 `key: value` lines; a bare first word is the status.
 export function parseHandBack(text) {
-  const lines = String(text || '').split('\n').map(line => line.trim()).filter(Boolean).slice(0, 6);
+  const all = String(text || '').split('\n').map(line => line.trim()).filter(Boolean);
+  // The optional `usage:` line rides along without taking one of the six lines.
+  const usage = all.find((line, index) => index > 0 && /^usage:/i.test(line));
+  const lines = all.filter(line => line !== usage).slice(0, 6);
   const result = {};
   lines.forEach((line, index) => {
     const match = /^(\w+):\s*(.*)$/.exec(line);
     if (match) result[match[1].toLowerCase()] = match[2];
     else if (index === 0) result.status = line.split(/\s+/)[0];
   });
+  if (usage) result.usage = usage.replace(/^usage:\s*/i, '');
   if (result.status) result.status = result.status.toLowerCase();
   if (result.paths) result.paths = result.paths.split(/[\s,]+/).filter(Boolean);
   return result;
@@ -277,6 +285,7 @@ paths: <changed file paths only, not directories; drive commits only explicit fi
 check: pass | fail
 note: <one line: what changed, or why replan or blocked>
 body: <optional absolute path to a Markdown evidence file>
+usage: <optional, when the host reports it: in=N out=N cache=N cost=USD model=M host=H>
 \`\`\`
 
 ## Issue
@@ -317,7 +326,7 @@ Invoke the \`improve\` skill for process lessons from the delivered epic ${f.iss
 export function reviewerBrief(f) {
   return `# Reviewer brief: PR #${f.pr.number} for #${f.issue.number}
 
-Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
+${f.packet ? `Read the review packet first: ${f.packet}. It holds the issue criteria, CI, the project gate, the diff by area, the delta since your last verdict with open threads, and call sites of changed exports. Do not re-gather them; check blast radius outside it yourself.\n\n` : ''}Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
 ${f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
 ## Commands you may run, one plain command per Bash call
@@ -354,11 +363,11 @@ ${f.issue.body || '(no body)'}
 }
 // The Reviewer runs as a separate non-interactive session, so the session that wrote the PR never approves it.
 export function reviewerCommand(model, brief, name, host = 'claude', executable = host, context = {}) {
-  if (host === 'codex') return [executable, 'exec', '-m', model, `Read ${fileURLToPath(new URL('../../skills/review/SKILL.md', import.meta.url))}, then follow your brief at ${brief}. Return at most 5 lines.`];
+  if (host === 'codex') return [executable, 'exec', '--json', '-m', model, `Read ${fileURLToPath(new URL('../../skills/review/SKILL.md', import.meta.url))}, then follow your brief at ${brief}. Return at most 5 lines.`];
   // AGY's reviewer has no shell tool: the adapter gathers the exact-head context, validates AGY's verdict and posts it itself.
   if (host === 'agy') return ['node', fileURLToPath(new URL('../agy-review.mjs', import.meta.url)), executable, model, String(context.pr), String(context.head), String(context.issue), String(context.round), context.mode || 'review'];
   if (host !== 'claude') throw new Error('Unsupported reviewer host');
-  return [executable, '--print', '--agent', 'filipkrawiec-workflow:reviewer', '--model', model, '--permission-mode', 'auto', '--name', name, `Follow your brief at ${brief}. Return at most 5 lines.`];
+  return [executable, '--print', '--output-format', 'json', '--agent', 'filipkrawiec-workflow:reviewer', '--model', model, '--permission-mode', 'auto', '--name', name, `Follow your brief at ${brief}. Return at most 5 lines.`];
 }
 export const waitCommandFor = (pr, until) => ['node', cli, 'wait', String(pr), '--until', until];
 
@@ -407,6 +416,40 @@ function gitIn(cwd, args) {
 function self(args, cwd) {
   const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: ['ignore', 2, 2], env: process.env });
   if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
+}
+// What the review packet reads, gathered from GitHub and the worktree at the PR's head; the PR description and the hand-back are never read.
+function gatherPacketFacts({ repo, lanes, gh, threads, issue, pr, tree, round }) {
+  const head = pr.headRefOid; const base = `origin/${lanes.base}`; const range = `${base}...${head}`;
+  const git = (...args) => gitIn(tree.path, args) || '';
+  const checks = (pr.statusCheckRollup || []).map(check => {
+    const state = checkState(check);
+    let excerpt = null;
+    if (failedStates.includes(state)) {
+      const run_ = /\/actions\/runs\/(\d+)/.exec(check.detailsUrl || '')?.[1];
+      if (run_) { try { excerpt = run('gh', ['run', 'view', run_, '--repo', repo, '--log-failed']).split('\n').slice(-40).join('\n'); } catch { excerpt = '(failing log unavailable)'; } }
+    }
+    return { name: check.name || check.context, state, excerpt };
+  });
+  let gate = null;
+  try { gate = JSON.parse(readFileSync(join(tree.path, '.wf', 'gate.json'), 'utf8')); } catch { /* no recorded gate */ }
+  const files = (pr.files || []).filter(file => typeof file?.path === 'string');
+  const diffs = {};
+  for (const file of files) if (!(file.changeType === 'RENAMED' && !file.additions && !file.deletions)) diffs[file.path] = git('diff', range, '--', file.path);
+  const prior = previousReviewedHead(pr.reviews, lanes.reviewer, head);
+  let previous = null;
+  if (prior) {
+    try { previous = { sha: prior, files: git('diff', '--name-only', prior, head).split('\n').filter(Boolean), diff: git('diff', prior, head) }; } catch { previous = { sha: prior, files: [], diff: '(delta unavailable: fetch the earlier head)' }; }
+  }
+  let found = [];
+  try { found = threads(pr).nodes.map(thread => ({ path: thread.path, line: thread.line, isResolved: thread.isResolved, isOutdated: thread.isOutdated, body: thread.comments?.nodes?.[0]?.body })); } catch { /* threads unavailable */ }
+  const callSites = [];
+  for (const file of files) {
+    for (const symbol of exportedSymbols(diffs[file.path] || '')) {
+      const hits = git('grep', '-n', '-w', '-F', '-e', symbol, head).split('\n').map(line => line.slice(head.length + 1)).filter(line => line && !line.startsWith(`${file.path}:`));
+      callSites.push({ symbol, file: file.path, sites: hits });
+    }
+  }
+  return { issue: { url: issue.url, body: issue.body }, pr: { number: pr.number, url: pr.url, head, base }, round, requiredChecks: lanes.requiredChecks || [], checks, gate, files, diffs, range, previous, threads: found, callSites: callSites.slice(0, 20) };
 }
 export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   const repo = lanes.repo;
@@ -518,7 +561,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     },
     reviewThreads: pr => {
       const [owner, name] = repo.split('/');
-      const query = 'query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:1){nodes{body author{login}}}}}}}}';
+      const query = 'query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{isResolved isOutdated path line comments(first:1){nodes{body author{login}}}}}}}}';
       const nodes = []; const seen = new Set(); let after = null;
       for (;;) {
         const args = ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${pr.number}`];
@@ -532,6 +575,12 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
         seen.add(cursor); after = cursor;
       }
     },
+    recordUsage: (pr, hb) => {
+      const parsed = parseUsageLine(hb.usage);
+      const key = createHash('sha1').update(`${pr.number}\0${pr.headRefOid}\0${hb.usage}`).digest('hex').slice(0, 12);
+      recordUsage({ repo, pr: pr.number, author: lanes.implementer, entry: usageEntry({ role: hb.agent || 'implementer', host: parsed?.host, model: parsed?.model, usage: parsed?.usage, key }) }, { gh });
+    },
+    packetFacts(context) { return gatherPacketFacts({ repo, lanes, gh, threads: pr => this.reviewThreads(pr), ...context }); },
     reviewSession: (pr, tree) => {
       const root = tree?.path || git('rev-parse', '--show-toplevel');
       try { const session = sessionClaim(root, repo, lanes.reviewer, pr.number); return session ? { oid: session.oid, dead: localClaimIsDead(session, session.claim?.head), startedAt: session.claim?.startedAt } : null; } catch { return { unavailable: true }; }
@@ -630,7 +679,9 @@ function instruction(io, facts, step, lanes) {
   const { model, host, session } = assignment;
   const brief = join(io.scratch(tree), `drive-${issue.number}-${step.agent}.md`);
   const round = pr ? prState(pr, lanes).round : 0;
-  const context = { issue, pr, tree, step, risk, model, round, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
+  const packet = step.agent === 'reviewer' ? join(io.scratch(tree), 'review-packet.md') : null;
+  const context = { issue, pr, tree, step, risk, model, round, packet, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
+  if (packet) writePacket(io, packet, { issue, pr, tree, round, lanes });
   io.write(brief, briefs[step.agent](context));
   const out = { agent: step.agent, host, model, brief, issue: issue.number, pr: pr?.number ?? null, session, mode: step.mode, cwd: tree?.path || null };
   const configured = lanes.delivery?.roles?.[step.agent === 'implementer' && step.fresh ? 'freshImplementer' : step.agent];
@@ -642,14 +693,25 @@ function instruction(io, facts, step, lanes) {
   if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host, { pr: pr.number, head: pr.headRefOid, issue: issue.number, round: step.round, mode: step.mode })];
   return out;
 }
+// The packet is an aid: when it cannot be built the Reviewer is told to gather the context itself.
+function writePacket(io, path, { issue, pr, tree, round, lanes }) {
+  let text;
+  try { text = reviewPacket(io.packetFacts({ issue, pr, tree, round, lanes })); } catch (error) { text = `# Review packet unavailable\n\nDrive could not build it (${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}); gather the context with \`review-context\`.\n`; }
+  io.write(path, text);
+}
 function finish(step) {
   if (step.wait) return { ...step, command: waitCommandFor(step.wait.pr, step.wait.until) };
   return step;
 }
 export function driveIssue(io, n, lanes, handBack = {}) {
-  let bodyUpdated = false;
+  let bodyUpdated = false; let usageRecorded = false;
   for (let i = 0; i < 12; i++) {
     const facts = readIssueFacts(io, n, handBack);
+    // A subagent's optional `usage:` line is recorded once its PR exists; a failure never blocks a step.
+    if (!usageRecorded && handBack.usage && facts.pr?.state === 'OPEN') {
+      usageRecorded = true;
+      try { io.recordUsage?.(facts.pr, handBack); } catch { /* usage is optional */ }
+    }
     if (!bodyUpdated && handBack.status === 'done' && (handBack.note || handBack.body) && facts.pr?.state === 'OPEN' && facts.tree && !facts.tree.dirty && !facts.tree.unpushed) {
       io.updateBody(facts.pr, facts.tree, handBack);
       bodyUpdated = true;
@@ -834,5 +896,7 @@ export function checkCommand(args, lanes, { root = git('rev-parse', '--show-topl
   const slot = chooseSlot(name => probe(directory, name));
   const result = runner(directory, [slot], test[0], test.slice(1), { timeoutSeconds: 3600, cwd: realpathSync(root) });
   if (result.status === lockTimeoutStatus) console.error('workflow: check waited an hour for a free gate slot');
+  // The Reviewer's packet reads this record; a write failure never changes the gate's exit code.
+  try { writeFileSync(join(workflowScratch(realpathSync(root)), 'gate.json'), JSON.stringify({ status: result.status ?? 1, head: gitIn(realpathSync(root), ['rev-parse', 'HEAD']), at: new Date().toISOString() })); } catch { /* optional record */ }
   return result.status ?? 1;
 }
