@@ -277,7 +277,7 @@ export function findingKey(comment) {
   const failure = comment.failure || comment.body.replace(/<!--[\s\S]*?-->/g, '').trim().split('\n')[0];
   return createHash('sha1').update(JSON.stringify([comment.path, comment.criterion || '', String(failure).replace(/\s+/g, ' ').trim()])).digest('hex').slice(0, 12);
 }
-export const existingFindingKeys = threads => new Set(threads.filter(thread => !thread.isResolved).flatMap(thread => (thread.comments?.nodes || []).flatMap(comment => [...String(comment.body || '').matchAll(keyMarker)].map(match => match[1]))));
+const existingFindingKeys = threads => new Set(threads.filter(thread => !thread.isResolved).flatMap(thread => (thread.comments?.nodes || []).flatMap(comment => [...String(comment.body || '').matchAll(keyMarker)].map(match => match[1]))));
 const reviewEvents = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
 const verdictIn = body => /<!-- agent-review\b[^>]*\bverdict=(\w+)/.exec(body)?.[1];
 function reviewPostOptions(args, root) {

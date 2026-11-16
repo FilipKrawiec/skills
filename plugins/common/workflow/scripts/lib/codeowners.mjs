@@ -16,7 +16,7 @@ function patternRegex(pattern) {
   }
   return new RegExp(`^${anchored ? '' : '(?:.*/)?'}${source}${directory ? '/.*' : '(?:/.*)?'}$`);
 }
-export function parseCodeowners(contents = '') {
+function parseCodeowners(contents = '') {
   return String(contents).split(/\r?\n/).map(line => line.replace(/(^|\s)#.*/, '').trim().split(/\s+/).filter(Boolean)).filter(parts => parts.length)
     .map(([pattern, ...owners]) => ({ regex: patternRegex(pattern), owners: owners.map(owner => owner.replace(/^@/, '').toLowerCase()) }));
 }

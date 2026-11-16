@@ -22,3 +22,5 @@ Name records as `YYYY-MM-DD-short-topic.md`.
 - [Parent portability refinement](2026-11-14-parent-portability-refinement.md): final integrated assessment and timing evidence.
 
 - [Epic closure refinement](2026-11-14-epic-closure-refinement.md): outcome assessment and timing evidence.
+
+- [Measured review epic refinement](2026-11-16-measured-review-refinement.md): epic #560 assessment, timing, usage, benchmark and packet cost evidence.

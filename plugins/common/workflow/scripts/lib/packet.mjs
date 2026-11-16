@@ -2,7 +2,7 @@ import { reviewAreas } from './vcs.mjs';
 
 // The review packet: the facts drive already knows, in the order a Reviewer reads them. It carries no PR description,
 // implementer note or hand-back, so the Reviewer judges the diff against the issue, never against the author's account of it.
-export const packetLimits = { fileLines: 200, diffLines: 1500, excerptLines: 40, sites: 8, symbols: 20 };
+const packetLimits = { fileLines: 200, diffLines: 1500, excerptLines: 40, sites: 8, symbols: 20 };
 
 const truncated = (hidden, what) => `[truncated: ${hidden} more ${what}]`;
 const clip = (text, max, what) => {

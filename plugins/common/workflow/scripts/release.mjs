@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { syncManifests, validateRepositoryReleaseVersion } from './manifests.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-export const RELEASE_BRANCH = 'release';
+const RELEASE_BRANCH = 'release';
 const TAG = /^v(\d+)\.(\d+)\.(\d+)$/;
 function fail(message) { throw new Error(message); }
 function git(root, ...args) {
