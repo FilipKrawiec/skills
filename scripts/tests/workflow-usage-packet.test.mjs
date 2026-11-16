@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { commandModel, findUsageComment, parseUsage, parseUsageComment, parseUsageLine, recordUsage, usageComment, usageEntry, usageHost, usageSummary, usageTotals, visibleResult } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
 import { exportedSymbols, issueCriteria, reviewPacket } from '../../plugins/common/workflow/scripts/lib/packet.mjs';
-import { drive, githubIo, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { drive, githubIo, handBackRole, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { statusCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 
 const claudeOutput = JSON.stringify({ type: 'result', subtype: 'success', result: 'verdict: ready', total_cost_usd: 0.31, usage: { input_tokens: 12, output_tokens: 340, cache_read_input_tokens: 9000, cache_creation_input_tokens: 800 } });
@@ -117,6 +117,24 @@ test('drive records a hand-back usage line once, and a failure to record never b
   delete io.packetFacts;
   drive(io, 3, lanes, {});
   assert.match(writes['/w/3/.wf/review-packet.md'], /^# Review packet unavailable/, 'a packet that cannot be built tells the Reviewer to gather the context');
+});
+
+test('a host that prints no figures still records an unreported row per role, on the PR or else the issue', () => {
+  const recorded = [];
+  const issue = { number: 3, url: 'https://github.com/acme/app/issues/3', state: 'OPEN', title: 'feat: a', body: '', labels: [{ name: 'state:started' }, { name: 'risk:R1' }] };
+  const pr = { number: 5, url: 'u', state: 'OPEN', isDraft: true, headRefOid: 'a'.repeat(40), headRefName: '3-a', labels: [{ name: 'risk:R1' }], mergeable: 'MERGEABLE', statusCheckRollup: [{ name: 'verify', conclusion: 'SUCCESS' }], reviews: [], body: 'Closes #3', closingIssuesReferences: [{ number: 3, repository: { owner: { login: 'acme' }, name: 'app' } }], files: [] };
+  const io = (current, writes = {}) => ({
+    issue: () => issue, dependencies: () => [], pr: () => current, tree: () => ({ path: '/w/3', branch: '3-a', dirty: false, commits: 1, unpushed: false, diffPaths: [], subjects: [] }),
+    assessment: () => ({ risk: 'R1', assessed: 'R1', head: pr.headRefOid, paths: [], reason: 'local' }), reviewingSince: () => null, syncTree: () => {}, scratch: () => '/w/3/.wf', write: (path, text) => { writes[path] = text; }, packetFacts: () => raw(),
+    recordUsage: (target, hb) => recorded.push([target.number, handBackRole(hb), hb.usage]),
+  });
+  drive(io(pr), 3, lanes, { status: 'done' });
+  assert.deepEqual(recorded.splice(0), [[5, 'implementer', undefined]], 'a hand-back without a usage line is still recorded on the open PR');
+  drive(io(null), 3, lanes, { status: 'distinct' });
+  assert.deepEqual(recorded.splice(0), [[3, 'planner', undefined]], 'with no PR the row lands on the issue');
+  assert.equal(handBackRole({ status: 'done', risk: 'R2' }), 'devops');
+  const rows = usageSummary([usageEntry({ role: 'implementer', host: null, model: null, usage: null }), usageEntry({ role: 'devops', host: 'claude', model: 'sonnet', usage: null })]);
+  assert.deepEqual(rows.map(row => [row.role, row.model, row.cost, row.sessions]), [['devops', 'sonnet', 'unreported', 1], ['implementer', 'unreported', 'unreported', 1]]);
 });
 
 const spec = `## Outcome
