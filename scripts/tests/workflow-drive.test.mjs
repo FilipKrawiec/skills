@@ -836,6 +836,17 @@ test('production epic board updates fail when the board is unavailable', () => {
   assert.throws(() => io.requiredBoard(9, 'BLOCKED'));
 });
 
+test('required board updates are skipped when the repository has no board', t => {
+  const f = fixture(t);
+  const common = f.git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+  writeFileSync(join(common, 'workflow-metadata-cache.json'), JSON.stringify({ 'acme/app': { fields: { project: { at: Date.now(), value: false } } } }));
+  const module = new URL('../../plugins/common/workflow/scripts/lib/drive.mjs', import.meta.url).href;
+  const code = `import { githubIo } from ${JSON.stringify(module)}; const io = githubIo(${JSON.stringify(lanes)}, () => ({})); io.requiredBoard(9, 'BLOCKED'); io.requiredBoard(10, 'TODO');`;
+  const result = run(process.execPath, ['--input-type=module', '-e', code], { cwd: f.repo, env: f.env });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /no GitHub Project board; status skipped/);
+});
+
 test('drive updates the PR change and supplied evidence after a fix', () => {
   const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, body: 'Closes #3\n\n## Change\n\nOld change\n\n## Verification\n\nPassed.', reviews: [review('fixes')] })] });
   const handBack = parseHandBack('status: done\ncommit: fix: change\npaths: a.js\ncheck: pass\nnote: New change\nbody: Before and after captures');
