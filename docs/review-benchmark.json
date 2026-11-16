@@ -7,17 +7,17 @@
     {
       "pr": 539, "issue": 481, "kind": "defect", "title": "fix(review): review the whole diff every round",
       "base": "18199f6b6e8d20454d13304064472625f5b7536f", "head": "d9093a6e72d83bd672457611e1ac0b2fad182c56",
-      "defect": { "name": "reverses the owner decision on delta-only later review rounds (fixed by #558)", "keywords": ["delta", "whole diff", "later round", "owner decision"] }
+      "defect": { "name": "reverses the owner decision on delta-only later review rounds (fixed by #558)", "keywords": ["delta-only", "whole diff", "later round", "owner decision"] }
     },
     {
       "pr": 555, "issue": 554, "kind": "defect", "title": "feat(workflow): support independent AGY reviewer sessions",
       "base": "f917c7a7cc3e84f22b4a68fab93e217a3767dd5a", "head": "e0c60f056d27a55f85041b17e79de99a35d740b9",
-      "defect": { "name": "AGY review session has no timeout, so a hung session holds its claim (fixed by #558)", "keywords": ["timeout", "hang", "hung", "claim", "unbounded"] }
+      "defect": { "name": "AGY review session has no timeout, so a hung session holds its claim (fixed by #558)", "keywords": ["timeout", "hang", "hung", "holds its claim", "unbounded"] }
     },
     {
       "pr": 500, "issue": 499, "kind": "defect", "title": "fix(drive): verify nested epic delivery evidence",
       "base": "1389536c6a08b8ccbf24d2a0850018cdf657be27", "head": "99a33cacedc7acbc75b89b6e36a9819208fcfae3",
-      "defect": { "name": "nested epic descendants not checked when closing (fixed by #529)", "keywords": ["nested", "descendant", "closure"] }
+      "defect": { "name": "nested epic descendants not checked when closing (fixed by #529)", "keywords": ["nested epic", "descendant", "closure"] }
     },
     {
       "pr": 568, "issue": 462, "kind": "clean", "title": "chore(release): publish versions on a release branch so main stops moving on every release",
