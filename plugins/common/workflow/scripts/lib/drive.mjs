@@ -1000,7 +1000,13 @@ export function driveEpic(io, epic, lanes) {
 export function drive(io, n, lanes, handBack = {}) {
   const issue = io.issue(n);
   // An epic advances from GitHub state alone: the planner's hand-back changes nothing drive reads.
-  if (isEpic(issue)) return driveEpic(io, issue, lanes);
+  if (isEpic(issue)) {
+    // A hand-back for an epic records one usage row on the epic (improver unless it names its agent); a failure never blocks.
+    if (handBack.status || handBack.risk || handBack.usage) {
+      try { io.recordUsage?.({ number: n, headRefOid: '' }, { ...handBack, agent: handBack.agent || 'improver' }); } catch { /* usage is optional */ }
+    }
+    return driveEpic(io, issue, lanes);
+  }
   if (handBack.status !== 'consolidated') return driveIssue(io, n, lanes, handBack);
   // The planner merged overlapping issues: drive checks the claim on GitHub, reports it and carries on with the canonical issue.
   const report = consolidationReport(handBack);
