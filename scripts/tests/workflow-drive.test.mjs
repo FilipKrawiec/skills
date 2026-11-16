@@ -941,6 +941,19 @@ test('an epic created without criterion IDs gets them, is judged by the Reviewer
   assert.equal(repo.s.issues[9].state, 'CLOSED');
 });
 
+test('an epic that turns owner-lane before closing keeps its body without criterion IDs', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '### Acceptance criteria\n- [ ] Users can sign in\n' });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  const edits = [];
+  repo.io.editEpicBody = (e, body) => edits.push(body);
+  const read = repo.io.issue;
+  let reads = 0;
+  repo.io.issue = n => { const found = read(n); return n === 9 && ++reads > 1 ? { ...found, labels: [label('type:epic'), label('lane:owner')] } : found; };
+  try { drive(repo.io, 9, lanes, {}); } catch { /* the owner lane may surface as an error or a step */ }
+  assert.deepEqual(edits, []);
+});
+
 test('criterion IDs are added once, stay unique and keep existing ones', () => {
   const body = '### Acceptance criteria\n- [x] Same <!-- workflow:criterion keep -->\n- [ ] Same\n- [ ] Same\n- [ ] !!!\n';
   const once = addCriterionIds(body);
