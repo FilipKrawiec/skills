@@ -552,6 +552,10 @@ test('configured dispatch produces an implementer brief and accepts its intact h
 });
 
 test('the reviewer runs as a separate non-interactive session', () => {
+  const agy = reviewerCommand('m', '/w/.wf/b.md', 'review-5-r1', 'agy', '/bin/agy');
+  assert.deepEqual([agy[0], agy.slice(2)], ['node', ['/bin/agy', 'reviewer', 'm', '/w/.wf/b.md']]);
+  assert.match(agy[1], /agy-session\.mjs$/);
+  assert.throws(() => reviewerCommand('m', '/b', 'n', 'other'), /Unsupported reviewer host/);
   const argv = reviewerCommand('opus', '/w/.wf/b.md', 'review-5-r1');
   assert.deepEqual(argv.slice(0, 2), ['claude', '--print']);
   assert.ok(argv.includes('--agent') && argv.includes('--permission-mode'));
@@ -1176,7 +1180,8 @@ test('ranked delivery reports choices and rejects unsupported handoffs', () => {
   const result = drive(repo.io, 3, configured, {});
   assert.deepEqual([result.host, result.model, result.alternatives], ['claude', 'sonnet', [choices[1]]]);
   assert.throws(() => deliveryAssignment({ orchestrator: 'codex', roles: { implementer: choices } }, { agent: 'implementer' }, 'R1'), /resume drive.*reorder/i);
-  assert.throws(() => deliveryAssignment({ orchestrator: 'claude', roles: { reviewer: [{host: 'agy', model: 'x'}, choices[1]] } }, { agent: 'reviewer' }, 'R1'), /unverified.*reorder/i);
+  assert.throws(() => deliveryAssignment({ orchestrator: 'claude', roles: { planner: [{host: 'agy', model: 'x'}, choices[1]] } }, { agent: 'planner' }, 'R1'), /unverified.*reorder/i);
+  assert.deepEqual(deliveryAssignment({ orchestrator: 'claude', roles: { reviewer: [{host: 'agy', model: 'x'}, choices[1]] } }, { agent: 'reviewer' }, 'R1'), { host: 'agy', model: 'x', session: 'separate' });
   assert.throws(() => deliveryAssignment({ orchestrator: 'claude', roles: { reviewer: [] } }, { agent: 'reviewer' }, 'R1'), /configure/i);
 });
 
