@@ -968,13 +968,20 @@ export function driveEpic(io, epic, lanes) {
         if (first.result.needsReview && !outstanding.length && step.do === 'close-epic') return finish(instruction(io, { issue: epic, pr: null, tree: null }, agent('reviewer', 'epic-outcome', { reason: first.result.issues.join('; ') }), lanes));
         if (outstanding.length) {
           const matches = outstanding.map(criterion => ({ criterion, found: first.children.filter(child => (child.body || '').includes(`<!-- workflow:epic-follow-up ${epic.number} ${criterion.id} -->`)) }));
-          if (matches.some(item => item.found.length > 1 || item.found.some(child => child.state !== 'OPEN'))) throw new Error('Duplicate or closed follow-up needs classification');
+          // One open follow-up is reused; a new one is created only when every closed match was delivered by a merged PR (not closed as not planned). Several open ones, or an undelivered closed one, need the owner.
+          for (const item of matches) {
+            const open = item.found.filter(child => child.state === 'OPEN');
+            if (open.length > 1) throw new Error(`Duplicate follow-ups ${open.map(child => `#${child.number}`).join(', ')} for criterion ${item.criterion.id} need classification`);
+            const undelivered = item.found.filter(child => child.state !== 'OPEN' && (/^not_?planned$/i.test(child.stateReason || '') || unresolvedDelivery(io, child, lanes.base, epic.number).length));
+            if (!open.length && undelivered.length) throw new Error(`Closed follow-up ${undelivered.map(child => `#${child.number}`).join(', ')} for criterion ${item.criterion.id} has no merged closing PR; classify it`);
+            item.open = open[0];
+          }
           io.uncheckEpicCriteria(first.current, outstanding.map(item => item.id));
           const updated = io.issue(epic.number);
           if (outstanding.some(item => !(updated.body || '').split('\n').some(line => /^\s*[-*] \[ \] /.test(line) && line.trimEnd().endsWith(`${item.text} <!-- workflow:criterion ${item.id} -->`)))) throw new Error('Criterion was not left unchecked');
           if (io.requiredBoard(epic.number, 'BLOCKED') === false) throw new Error('Epic board update unavailable');
           for (const item of matches) {
-            const followUp = item.found[0] || io.createEpicFollowUp(first.current, item.criterion);
+            const followUp = item.open || io.createEpicFollowUp(first.current, item.criterion);
             const linked = io.subIssues(epic.number).some(child => child.number === followUp.number);
             if (!linked || followUp.state !== 'OPEN' || !(followUp.body || '').includes(item.criterion.nextAction)) throw new Error('Follow-up is not linked, open and actionable');
             if (io.requiredBoard(followUp.number, 'TODO') === false) throw new Error('Follow-up board update unavailable');

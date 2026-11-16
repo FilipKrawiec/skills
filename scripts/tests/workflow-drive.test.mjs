@@ -830,6 +830,65 @@ test('a follow-up survives a board failure and is reused on retry', () => {
   assert.equal(repo.s.issues[9].state, 'OPEN');
 });
 
+function followUpFixture(children) {
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '- [ ] Works <!-- workflow:criterion a -->' });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const issues = { 9: epic, 99: refinement };
+  const subs = [99];
+  for (const [number, state] of children) { issues[number] = issue({ number, state, body: '<!-- workflow:epic-follow-up 9 a -->\nFix gap' }); subs.push(number); }
+  const repo = fakeRepo({ issues, subs: { 9: subs }, merged: [99, ...children.filter(([, , merged]) => merged).map(([number]) => number)], lessons: [9] });
+  repo.io.verifyEpic = () => ({ complete: false, issues: ['unmet'], outstanding: [{ id: 'a', text: 'Works', nextAction: 'Fix gap' }] });
+  repo.io.uncheckEpicCriteria = () => {};
+  repo.creates = 0;
+  repo.io.createEpicFollowUp = () => { repo.creates++; const child = issue({ number: 100, body: '<!-- workflow:epic-follow-up 9 a -->\nFix gap' }); repo.s.issues[100] = child; repo.s.subs[9].push(100); return child; };
+  return repo;
+}
+
+test('a closed follow-up delivered by a merged PR gets a new follow-up for the unmet criterion', () => {
+  const repo = followUpFixture([[595, 'CLOSED', true]]);
+  const result = drive(repo.io, 9, lanes, {});
+  assert.doesNotMatch(result.owner || '', /classification/);
+  assert.equal(repo.creates, 1);
+  assert.equal(repo.s.issues[9].state, 'OPEN');
+});
+
+test('a closed follow-up without a merged closing PR stops at the owner with the evidence', () => {
+  const repo = followUpFixture([[595, 'CLOSED', false]]);
+  const result = drive(repo.io, 9, lanes, {});
+  assert.match(result.owner, /#595/);
+  assert.equal(repo.creates, 0);
+});
+
+test('an undelivered closed follow-up stops closure even while another slice is open', () => {
+  const repo = followUpFixture([[595, 'CLOSED', false]]);
+  repo.s.issues[700] = issue({ number: 700 });
+  repo.s.subs[9].push(700);
+  const result = drive(repo.io, 9, lanes, {});
+  assert.equal(repo.creates, 0);
+  assert.match(result.owner || '', /#595/);
+});
+
+test('a follow-up closed as not planned stops closure instead of creating a new one', () => {
+  const repo = followUpFixture([[595, 'CLOSED', false]]);
+  repo.s.issues[595].stateReason = 'NOT_PLANNED';
+  const result = drive(repo.io, 9, lanes, {});
+  assert.equal(repo.creates, 0);
+  assert.match(result.owner || '', /#595/);
+});
+
+test('one open follow-up is reused even beside a delivered closed one', () => {
+  const repo = followUpFixture([[595, 'CLOSED', true], [596, 'OPEN', false]]);
+  drive(repo.io, 9, lanes, {});
+  assert.equal(repo.creates, 0);
+});
+
+test('several open follow-ups for one criterion stop with a classification request naming them', () => {
+  const repo = followUpFixture([[595, 'OPEN', false], [596, 'OPEN', false]]);
+  const result = drive(repo.io, 9, lanes, {});
+  assert.match(result.owner, /#595, #596.*need classification/);
+  assert.equal(repo.creates, 0);
+});
+
 test('production epic board updates fail when the board is unavailable', () => {
   const io = githubIo({ ...lanes, repo: 'acme/app' }, () => { throw Error('unavailable'); });
   assert.equal(typeof io.requiredBoard, 'function');
