@@ -811,12 +811,12 @@ function finish(step) {
   return step;
 }
 // The session that wrote a hand-back: a `risk:` answer is devops, a planner answers consolidated or distinct, else the implementer.
-export const handBackRole = hb => hb.agent || (hb.risk ? 'devops' : ['consolidated', 'distinct'].includes(hb.status) ? 'planner' : 'implementer');
+export const handBackRole = hb => hb.agent || (hb.risk ? 'devops' : ['consolidated', 'distinct', 'sliced', 'narrowed'].includes(hb.status) ? 'planner' : 'implementer');
 // Every subagent hand-back records one usage row, `unreported` when it carries no `usage:` line: on its PR once open, else on the issue.
 export function driveIssue(io, n, lanes, handBack = {}) {
   const state = { recorded: false };
   const result = driveIssueSteps(io, n, lanes, handBack, state);
-  if (!state.recorded && (handBack.status || handBack.usage)) {
+  if (!state.recorded && (handBack.status || handBack.risk || handBack.usage)) {
     state.recorded = true;
     try { io.recordUsage?.({ number: n, headRefOid: '' }, handBack); } catch { /* usage is optional */ }
   }
@@ -827,7 +827,7 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
   for (let i = 0; i < 12; i++) {
     const facts = readIssueFacts(io, n, handBack);
     // A failure never blocks a step.
-    if (!state.recorded && (handBack.status || handBack.usage) && facts.pr?.state === 'OPEN') {
+    if (!state.recorded && (handBack.status || handBack.risk || handBack.usage) && facts.pr?.state === 'OPEN') {
       state.recorded = true;
       try { io.recordUsage?.(facts.pr, handBack); } catch { /* usage is optional */ }
     }
