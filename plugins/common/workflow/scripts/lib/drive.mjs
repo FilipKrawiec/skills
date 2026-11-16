@@ -717,9 +717,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       if (current.state === 'OPEN') run('gh', ['issue', 'close', String(issue.number), '--repo', repo, '--reason', 'completed']);
     },
     board: (n, value) => board(lanes, n, value),
-    requiredBoard: (n, value) => {
-      if (boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, n, value, false) === false) throw new Error('Board update unavailable');
-    },
+    // A repository with no board skips the step (boardStatus returns false and says so); any other failure throws.
+    requiredBoard: (n, value) => { boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, n, value, false); },
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
     removeTree: tree => {
       const all = trees(); const root = all[0].path;
