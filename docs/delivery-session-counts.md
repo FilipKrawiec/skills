@@ -4,12 +4,13 @@ For a representative clean R0/R1 delivery, the previous sequence launched five s
 
 These are launch counts, not measured token or cost savings. Token usage depends on context, models, retries and host billing; no usage or price data was collected.
 
-## Measured time for one clean PR
+## Measured time and usage for one PR
 
-| | Before | After |
+| | Before | After (PR #572, its own round 1) |
 |---|---|---|
-| Sessions | 5 launches, the last approval-only | 3 launches; approval in the reviewer session |
-| Wall time, 2-minute implementation | 15-20 minutes (2026-11-16 project thread, 10:45) | not yet measured: record the first clean PR delivered with this change |
+| Reviewer sessions to an approvable verdict | 2 (review, then approval-only) | 1, approval in the same session |
+| Reviewer wall time | 15-20 minutes end to end for a 2-minute implementation (owner, project thread 2026-11-16 10:45) | 2 m 17 s, risk comment 10:44:29Z to review posted 10:46:46Z |
+| Reviewer usage | $0.21-0.46 per review (2026-11-16 dry-run baseline); the approval-only session added another | $0.92, 1 session, 32 in, 8936 out, 815729 cache read (usage comment on #572) |
 | Next issue during CI and merge | idle until the PR merged | `drive --next` starts its implementer while the earlier PR waits |
 
-The before figure is the owner's measurement of one delivery; no token or cost usage was collected for either column.
+Sources: the #572 comments at 10:44:29Z and 10:47:01Z and its CI runs (about 30 s). Round 1 of #572 returned fixes, so this is one review round and not a fully clean PR; the saving is the approval-only session that a clean PR no longer launches. The after figures were measured on this PR; no separate dry-run PR was timed.
