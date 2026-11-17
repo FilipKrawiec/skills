@@ -62,12 +62,46 @@ export function scopeOverlaps(issues, paths) {
   const overlap = (a, b) => pathsWithinScope([a], [b]) || pathsWithinScope([b], [a]);
   return issues.filter(issue => (pathsFromIssueBody(issue.body || '') || []).some(path => paths.some(other => overlap(path, other))));
 }
+const positive = value => Number.isInteger(value) && value > 0;
+// `--milestone NAME`, `--parent N` and `--blocked-by N[,M]`, validated before any write.
+function structureOptions(o) {
+  const parent = o['--parent'] === undefined ? null : Number(o['--parent']);
+  if (parent !== null && !positive(parent)) throw new Error('--parent expects an issue number');
+  const blockers = o['--blocked-by'] === undefined ? [] : o['--blocked-by'].split(',').map(value => Number(value.trim()));
+  if (blockers.some(value => !positive(value))) throw new Error('--blocked-by expects issue numbers such as 12 or 12,13');
+  return { milestone: o['--milestone'] || null, parent, blockers };
+}
+function milestoneNumber(repo, name) {
+  const found = gh(['api', '--paginate', '--slurp', `repos/${repo}/milestones?state=all&per_page=100`]).flat().find(milestone => milestone.title === name);
+  if (!found) throw new Error(`${repo} has no milestone named ${name}`);
+  return found.number;
+}
+// Adds the links the issue lacks, then reads them back from GitHub; a link already present is left alone.
+function linkIssue(repo, n, { parent, blockers }) {
+  if (parent === n || blockers.includes(n)) throw new Error(`#${n} cannot be its own parent or blocker`);
+  const numbers = path => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${path}?per_page=100`]).flat().map(issue => issue.number);
+  const id = number => gh(['api', `repos/${repo}/issues/${number}`]).id;
+  if (parent) {
+    if (!numbers(`${parent}/sub_issues`).includes(n)) gh(['api', '--method', 'POST', `repos/${repo}/issues/${parent}/sub_issues`, '-F', `sub_issue_id=${id(n)}`]);
+    if (!numbers(`${parent}/sub_issues`).includes(n)) throw new Error(`GitHub did not confirm #${n} under #${parent}`);
+    console.log(`Linked #${n} under #${parent}`);
+  }
+  if (blockers.length) {
+    const present = numbers(`${n}/dependencies/blocked_by`);
+    for (const blocker of blockers.filter(number => !present.includes(number))) gh(['api', '--method', 'POST', `repos/${repo}/issues/${n}/dependencies/blocked_by`, '-F', `issue_id=${id(blocker)}`]);
+    const after = numbers(`${n}/dependencies/blocked_by`);
+    const missing = blockers.filter(number => !after.includes(number));
+    if (missing.length) throw new Error(`GitHub did not confirm #${n} blocked by ${missing.map(number => `#${number}`).join(', ')}`);
+    console.log(`Blocked #${n} by ${blockers.map(number => `#${number}`).join(', ')}`);
+  }
+}
 export function issueCreate(args) {
   const unique = args.includes('--unique');
   const check = args.includes('--check');
-  const o = flags(args.filter(arg => arg !== '--unique' && arg !== '--check'), ['--title', '--body-file', '--labels', '--repo']);
+  const o = flags(args.filter(arg => arg !== '--unique' && arg !== '--check'), ['--title', '--body-file', '--labels', '--repo', '--milestone', '--parent', '--blocked-by']);
   const title = (o['--title'] || '').trim();
-  if (!title || !o['--body-file']) throw new Error('Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--unique] [--check]');
+  if (!title || !o['--body-file']) throw new Error('Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M] [--unique] [--check]');
+  const structure = structureOptions(o);
   const root = git('rev-parse', '--show-toplevel');
   const body = validateIssueCommentBody(readWorkspaceText(root, o['--body-file']));
   const cfg = writerConfig(); loadEnvironment(cfg);
@@ -87,7 +121,8 @@ export function issueCreate(args) {
       console.log(overlaps.length ? overlaps.map(issue => `Overlaps: #${issue.number} ${issue.title}`).join('\n') : 'Overlaps: none');
     }
     if (check) return;
-    const created = gh(['api', `repos/${repo}/issues`, '-f', `title=${title}`, '-f', `body=${body}`, ...labels.flatMap(label => ['-f', `labels[]=${label}`])]);
+    const milestone = structure.milestone ? milestoneNumber(repo, structure.milestone) : null;
+    const created = gh(['api', `repos/${repo}/issues`, '-f', `title=${title}`, '-f', `body=${body}`, ...(milestone ? ['-F', `milestone=${milestone}`] : []), ...labels.flatMap(label => ['-f', `labels[]=${label}`])]);
     if (!Number.isSafeInteger(created.number)) throw new Error(`GitHub did not confirm the issue in ${repo}`);
     // Runs on other hosts do not share this lock; the oldest exact-title issue wins and a newer duplicate closes.
     const oldest = unique ? oldestExactTitle(open(), title) : null;
@@ -95,7 +130,9 @@ export function issueCreate(args) {
       gh(['api', '-X', 'PATCH', `repos/${repo}/issues/${created.number}`, '-f', 'state=closed', '-f', 'state_reason=not_planned']);
       console.log(`Exists: #${oldest}`); return;
     }
+    if (structure.milestone && created.milestone?.title !== structure.milestone) throw new Error(`GitHub did not confirm #${created.number} in milestone ${structure.milestone}`);
     console.log(`Created: #${created.number}`);
+    linkIssue(repo, created.number, structure);
   });
 }
 export function issueComment(args) {
@@ -114,16 +151,23 @@ export function issueComment(args) {
   });
 }
 export function issueEdit(args) {
-  const o = flags(args, ['--number', '--body-file']);
+  const o = flags(args, ['--number', '--body-file', '--milestone', '--parent', '--blocked-by']);
   const n = Number(o['--number']);
-  if (!Number.isInteger(n) || n < 1 || !o['--body-file']) throw new Error('Usage: issue edit --number N --body-file PATH');
+  const structure = structureOptions(o);
+  const usage = 'Usage: issue edit --number N [--body-file PATH] [--milestone NAME] [--parent N] [--blocked-by N,M]';
+  if (!positive(n) || !(o['--body-file'] || structure.milestone || structure.parent || structure.blockers.length)) throw new Error(usage);
   const root = git('rev-parse', '--show-toplevel');
-  const body = validateIssueCommentBody(readWorkspaceText(root, o['--body-file']));
+  const body = o['--body-file'] ? validateIssueCommentBody(readWorkspaceText(root, o['--body-file'])) : null;
   const cfg = writerConfig(); loadEnvironment(cfg); requireImplementer(cfg);
   return withRepoLock(`issue-edit-${n}`, () => {
-    const result = gh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, '-f', `body=${body}`]);
-    if (result.body !== body) throw new Error(`GitHub did not confirm #${n} edited`);
+    if (body !== null || structure.milestone) {
+      const milestone = structure.milestone ? milestoneNumber(cfg.repo, structure.milestone) : null;
+      const result = gh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, ...(body !== null ? ['-f', `body=${body}`] : []), ...(milestone ? ['-F', `milestone=${milestone}`] : [])]);
+      if (body !== null && result.body !== body) throw new Error(`GitHub did not confirm #${n} edited`);
+      if (structure.milestone && result.milestone?.title !== structure.milestone) throw new Error(`GitHub did not confirm #${n} in milestone ${structure.milestone}`);
+    }
     console.log(`Edited #${n}`);
+    linkIssue(cfg.repo, n, structure);
   });
 }
 export function issueClose(args) {
