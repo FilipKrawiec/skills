@@ -1,6 +1,6 @@
 # Setting up a repository for drive
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs init` once, as the owner, in the project (`--dry-run` previews; add `--implementer LOGIN --reviewer LOGIN` when no config exists). It merges the standing-approval `autoMode` into the user-level agent settings, writes a missing config and Reviewer-only CODEOWNERS, runs `labels ensure` and `safety check`, and lists what it could not do. Configure nothing else by hand.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs init` once, as the owner, in the project (`--dry-run` previews; add `--implementer LOGIN --reviewer LOGIN` and `--test "COMMAND"` when no config exists and no justfile or npm test is found). It merges the standing-approval `autoMode` into the user-level agent settings, writes a missing config and Reviewer-only CODEOWNERS, runs `labels ensure` and `safety check`, and lists what it could not do. Nothing else is configured by hand.
 
 ## Configuration: `.agents/config.json`
 
@@ -18,7 +18,7 @@ Use version 1; read it from base.
 }
 ```
 
-`steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS names exactly one default Reviewer matching `identities.reviewer` and, by default, nothing else; `verify` is the default check. Owner: `identities.owner`, else a user repository owner, else commands fail; `init` writes it. A path CODEOWNERS still gives an owner makes `drive` return an `owner` step after approval; every other approval merges. Until the first config merges, `push --owner-bootstrap` reads `identities.owner` from the branch's config; afterwards, from base. The CLI caches the Project 24 hours; manage it with `cache show` and `cache refresh`.
+`steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS names exactly one default Reviewer matching `identities.reviewer` and, by default, nothing else; `verify` is the default check. Owner: `identities.owner`, else a user repository owner, else commands fail; `init` writes it. A path CODEOWNERS still gives an owner makes `drive` return an `owner` step after approval; every other approval merges. Until the first config merges, `push --owner-bootstrap` reads `identities.owner` from the branch's config; afterwards, from base. The CLI caches the Project 24 hours; `cache show|refresh` manages it.
 
 Verify the host can dispatch and return an intact hand-back; the reviewer credential and exact-head approval stay mandatory.
 
@@ -28,7 +28,7 @@ Verify the host can dispatch and return an intact hand-back; the reviewer creden
 
 ## Board
 
-- Statuses Backlog, Todo, In progress, Blocked, Review, Done; single-select Priority (P0, P1, P2). 
+- Statuses Backlog, Todo, In progress, Blocked, Review, Done; single-select Priority (P0, P1, P2).
 - Milestones group production outcomes or their health work; agents prioritize them.
 - Workflow: auto-add → Backlog. Do not automate PR-linked, reopened or closed status changes; `drive` and the orchestrator apply readiness-aware transitions under `spec`.
 - Default view:

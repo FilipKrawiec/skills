@@ -33,12 +33,12 @@ export function mergeAutoMode(settings, { repoOwner, reviewer }) {
     },
   };
 }
-export function defaultConfig({ implementer, reviewer, owner }) {
+export function defaultConfig({ implementer, reviewer, owner, test }) {
   const role = model => ({ host: 'claude', model });
   return {
     version: 1,
     identities: { implementer, reviewer, owner },
-    steps: { process: null, assemble: null, test: ['just', 'verify'] },
+    steps: { process: null, assemble: null, test },
     delivery: {
       orchestrator: 'claude',
       roles: {
@@ -47,6 +47,14 @@ export function defaultConfig({ implementer, reviewer, owner }) {
       },
     },
   };
+}
+// The project's own verification command: --test, else a justfile verify recipe, else an npm test script.
+export function detectTestCommand(root, given) {
+  if (given) return given.trim().split(/\s+/);
+  const justfile = ['justfile', 'Justfile', '.justfile'].map(name => join(root, name)).find(path => existsSync(path));
+  if (justfile && /^verify\b[^\n]*:/m.test(readFileSync(justfile, 'utf8'))) return ['just', 'verify'];
+  try { if (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts?.test) return ['npm', 'test']; } catch {}
+  return null;
 }
 function codeownersReviewer(contents) {
   const wildcard = String(contents).split(/\r?\n/).map(line => line.replace(/#.*/, '').trim().split(/\s+/).filter(Boolean)).reverse().find(parts => parts[0] === '*');
@@ -81,8 +89,8 @@ const defaultIo = {
 
 export function initCommand(args, io = {}) {
   const env = { ...defaultIo, ...io };
-  const unknown = args.filter((arg, at) => arg.startsWith('--') && !['--dry-run', '--settings', '--implementer', '--reviewer', '--owner'].includes(arg) && !['--settings', '--implementer', '--reviewer', '--owner'].includes(args[at - 1]));
-  if (unknown.length) throw new Error('Usage: init [--dry-run] [--settings FILE] [--implementer LOGIN] [--reviewer LOGIN] [--owner LOGIN]');
+  const unknown = args.filter((arg, at) => arg.startsWith('--') && !['--dry-run', '--settings', '--implementer', '--reviewer', '--owner', '--test'].includes(arg) && !['--settings', '--implementer', '--reviewer', '--owner', '--test'].includes(args[at - 1]));
+  if (unknown.length) throw new Error('Usage: init [--dry-run] [--settings FILE] [--implementer LOGIN] [--reviewer LOGIN] [--owner LOGIN] [--test COMMAND]');
   const dry = args.includes('--dry-run');
   const root = env.root();
   const repo = githubRepoFromRemote(env.remote());
@@ -93,6 +101,11 @@ export function initCommand(args, io = {}) {
   const existingCodeowners = existsSync(codeownersPath) ? readFileSync(codeownersPath, 'utf8') : null;
   const reviewer = option(args, '--reviewer') || existingConfig?.identities?.reviewer || (existingCodeowners && codeownersReviewer(existingCodeowners));
   if (!reviewer || !login.test(reviewer)) throw new Error('Name the Reviewer account with --reviewer LOGIN');
+  let test;
+  if (!existingConfig) {
+    test = detectTestCommand(root, option(args, '--test'));
+    if (!test) throw new Error('Cannot tell how this project verifies itself (no justfile verify recipe, no npm test script); rerun with --test "COMMAND" naming its full test command');
+  }
   const todo = [];
   const unable = [];
   const said = message => { env.log(message); };
@@ -122,7 +135,7 @@ export function initCommand(args, io = {}) {
     said(`${dry ? 'would write' : 'wrote'}: ${configPath} (all delivery roles on Claude: Sonnet implementer, Opus others)`);
     if (!dry) {
       mkdirSync(dirname(configPath), { recursive: true });
-      writeFileSync(configPath, `${JSON.stringify(defaultConfig({ implementer, reviewer, owner }), null, 2)}\n`);
+      writeFileSync(configPath, `${JSON.stringify(defaultConfig({ implementer, reviewer, owner, test }), null, 2)}\n`);
     }
     todo.push('.agents/config.json');
   }

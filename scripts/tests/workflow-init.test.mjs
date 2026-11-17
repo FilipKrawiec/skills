@@ -16,14 +16,14 @@ function fixture(t) {
   const io = { root: () => root, remote: () => 'git@github.com:acme/widgets.git', settingsPath: () => settings, runCli: (_root, args) => { calls.push(args.join(' ')); return { ok: true, text: '' }; }, log: line => lines.push(line) };
   return { dir, root, settings, calls, lines, io };
 }
-const args = ['--implementer', 'acme-builder', '--reviewer', 'acme-reviewer'];
+const args = ['--implementer', 'acme-builder', '--reviewer', 'acme-reviewer', '--test', 'make check'];
 
 test('merges autoMode keeping $defaults and every existing key, with a backup', t => {
   const f = fixture(t);
   mkdirSync(join(f.dir, 'home'));
   const original = { theme: 'dark', autoMode: { environment: ['$defaults', 'mine'], allow: ['$defaults', 'keep'], soft_deny: ['x'] } };
   writeFileSync(f.settings, JSON.stringify(original));
-  initCommand(args, f.io.settingsPath ? { ...f.io } : f.io);
+  initCommand(args, f.io);
   const result = JSON.parse(readFileSync(f.settings, 'utf8'));
   assert.equal(result.theme, 'dark');
   assert.deepEqual(result.autoMode.soft_deny, ['x']);
@@ -95,4 +95,20 @@ test('flags a CODEOWNERS that does not name the Reviewer alone', t => {
   const { unable } = initCommand(args, f.io);
   assert.equal(readFileSync(join(f.root, '.github/CODEOWNERS'), 'utf8'), '* @someone\n');
   assert.ok(unable.some(line => line.startsWith('CODEOWNERS:')));
+});
+
+test('takes the test command from the project, or stops before writing anything', t => {
+  const f = fixture(t);
+  const bare = ['--implementer', 'acme-builder', '--reviewer', 'acme-reviewer'];
+  assert.throws(() => initCommand(bare, f.io), /--test/);
+  assert.equal(existsSync(f.settings), false);
+  writeFileSync(join(f.root, 'package.json'), '{"scripts":{"test":"x"}}');
+  initCommand(bare, f.io);
+  assert.deepEqual(JSON.parse(readFileSync(join(f.root, '.agents/config.json'), 'utf8')).steps.test, ['npm', 'test']);
+});
+
+test('an explicit --test command is split into argv', t => {
+  const f = fixture(t);
+  initCommand(args, f.io);
+  assert.deepEqual(JSON.parse(readFileSync(join(f.root, '.agents/config.json'), 'utf8')).steps.test, ['make', 'check']);
 });
