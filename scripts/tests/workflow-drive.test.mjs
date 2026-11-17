@@ -1,12 +1,13 @@
 import { addCriterionIds, verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
-  assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, holdBaseUpdates, latestAssessment,
+  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, holdBaseUpdates, latestAssessment,
   driveCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -596,7 +597,8 @@ test('--next takes the lowest-numbered ready item and skips unmet or dropped dep
   const repo = fakeRepo({ issues: { 2: issue({ number: 2 }), 4: issue({ number: 4, labels: [label('type:epic')] }) }, blockers: { 2: [4] } });
   let said = '';
   const log = console.log; console.log = text => { said = text; };
-  try { driveCommand(['--next'], lanes, repo.io); } finally { console.log = log; }
+  const lockDirectory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  try { driveCommand(['--next'], lanes, repo.io, { lockDirectory, session: 'test' }); } finally { console.log = log; rmSync(lockDirectory, { recursive: true, force: true }); }
   assert.deepEqual([JSON.parse(said).agent, JSON.parse(said).issue], ['planner', 4], 'drive --next picks the epic the issue waits for, not the blocked issue');
 });
 
@@ -1154,10 +1156,10 @@ test('a completed evidence-only fix requests a fresh review of the unchanged hea
 test('a structured conflict-only verdict sends the implementer to merge the base at every round', () => {
   const conflict = { ...review('fixes'), body: `<!-- agent-review sha=${head} round=5 verdict=fixes finding=base-conflict -->` };
   const reviews = [...Array.from({ length: 4 }, () => review('fixes')), conflict];
-  const step = decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews }) });
+  const step = decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ mergeable: 'CONFLICTING', reviews }) });
   assert.equal(step.agent, 'implementer');
   assert.match(step.reason, /base conflict/);
-  for (const status of ['narrowed', 'replan']) assert.equal(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews }), handBack: { status } }).agent, 'implementer', status);
+  for (const status of ['narrowed', 'replan']) assert.equal(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ mergeable: 'CONFLICTING', reviews }), handBack: { status } }).agent, 'implementer', status);
 });
 
 
@@ -1205,7 +1207,7 @@ test('existing tagged conflict-only findings route to the base merge without hid
   const prior = Array.from({ length: 4 }, () => review('fixes'));
   const tagged = text => ({ ...review('fixes'), body: `<!-- agent-review sha=${head} round=5 verdict=fixes -->\n${text}` });
   const base = { issue: started, tree: tree({ commits: 1 }) };
-  const conflict = decide({ ...base, pr: pr({ reviews: [...prior, tagged('**Important** The PR conflicts with the base branch.')] }) });
+  const conflict = decide({ ...base, pr: pr({ mergeable: 'CONFLICTING', reviews: [...prior, tagged('**Important** The PR conflicts with the base branch.')] }) });
   assert.equal(conflict.agent, 'implementer');
   const mixed = decide({ ...base, pr: pr({ reviews: [...prior, tagged('**Important** The PR conflicts with the base branch.\n**Important** A user loses saved data.')] }) });
   assert.equal(mixed.agent, 'planner');
@@ -1220,7 +1222,9 @@ test('drive reads open inline findings before routing a conflict-only verdict', 
   const thread = (body, extra = {}) => ({ isResolved: false, comments: { nodes: [{ body, author: { login: 'reviewer' } }] }, ...extra });
   const conflict = thread('**Important** The PR conflicts with the base branch.');
   repo.io.reviewThreads = () => ({ nodes: [conflict], pageInfo: { hasNextPage: false } });
+  repo.s.prs[0].mergeable = 'CONFLICTING';
   assert.equal(drive(repo.io, 3, lanes, {}).agent, 'implementer');
+  repo.s.prs[0].mergeable = 'MERGEABLE';
   repo.io.reviewThreads = () => ({ nodes: [conflict, thread('**Important** Users lose saved data.')], pageInfo: { hasNextPage: false } });
   assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
   repo.io.reviewThreads = () => ({ nodes: [conflict], pageInfo: { hasNextPage: true } });
@@ -1232,7 +1236,9 @@ test('drive reads open inline findings before routing a conflict-only verdict', 
   repo.io.reviewThreads = () => ({ nodes: [conflict, thread('Unclassified reviewer finding')], pageInfo: { hasNextPage: false } });
   assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
   repo.io.reviewThreads = () => ({ nodes: [conflict, thread('**Important** Users lose saved data.', { isResolved: true })], pageInfo: { hasNextPage: false } });
+  repo.s.prs[0].mergeable = 'CONFLICTING';
   assert.equal(drive(repo.io, 3, lanes, {}).agent, 'implementer');
+  repo.s.prs[0].mergeable = 'MERGEABLE';
 });
 
 test('GitHub thread lookup reads reviewer findings and rejects incomplete responses', () => {
@@ -1249,7 +1255,7 @@ test('GitHub thread lookup reads reviewer findings and rejects incomplete respon
 
 test('drive classifies all review-thread pages, including later mixed findings', () => {
   const reviews = Array.from({ length: 5 }, () => review('fixes'));
-  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, reviews })] });
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, mergeable: 'CONFLICTING', reviews })] });
   const thread = (body, isResolved = false) => ({ isResolved, comments: { nodes: [{ body, author: { login: 'reviewer' } }] } });
   const resolved = Array.from({ length: 100 }, () => thread('**Important** Old finding', true));
   let mixed = false; const seen = [];
@@ -1263,7 +1269,7 @@ test('drive classifies all review-thread pages, including later mixed findings',
   repo.io.reviewThreads = githubIo(lanes, gh).reviewThreads;
   assert.equal(drive(repo.io, 3, lanes, {}).agent, 'implementer');
   assert.deepEqual(seen, [null, 'page-one']);
-  mixed = true; seen.length = 0;
+  mixed = true; seen.length = 0; repo.s.prs[0].mergeable = 'MERGEABLE';
   assert.equal(drive(repo.io, 3, lanes, {}).agent, 'planner');
   assert.deepEqual(seen, [null, 'page-one']);
 });
@@ -1787,4 +1793,129 @@ test('the documented drive session launches on Sonnet at low effort', () => {
   const read = doc => readFileSync(new URL(`../../${doc}`, import.meta.url), 'utf8');
   assert.ok(read('docs/CONCEPTS.md').includes(command));
   assert.ok(read('plugins/common/workflow/skills/deliver/references/setup.md').includes('Start it on Sonnet at low effort'));
+});
+
+// #622: no needless or unseen owner steps.
+const baseConflictReview = extra => ({ ...review('fixes'), body: `<!-- agent-review sha=${head} round=2 verdict=fixes -->\n${extra}` });
+const conflictFinding = '**Important** The PR conflicts with the base branch.';
+
+test('a stale base conflict on a MERGEABLE PR returns the Reviewer for the same head, once', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  const once = decide({ ...base, pr: pr({ reviews: [baseConflictReview(conflictFinding)] }) });
+  assert.deepEqual([once.agent, once.mode, once.sameHead], ['reviewer', 'review', true]);
+  const blocked = decide({ ...base, pr: pr({ reviews: [baseConflictReview(conflictFinding)] }), handBack: { status: 'blocked', note: 'origin/main is already merged' } });
+  assert.equal(blocked.agent, 'reviewer', 'the implementer found nothing to merge, so no owner step');
+  const twice = decide({ ...base, pr: pr({ reviews: [baseConflictReview(conflictFinding), baseConflictReview(conflictFinding)] }) });
+  assert.equal(twice.agent, 'implementer', 'a second stale verdict at the same head stops as before');
+  const twiceBlocked = decide({ ...base, pr: pr({ reviews: [baseConflictReview(conflictFinding), baseConflictReview(conflictFinding)] }), handBack: { status: 'blocked', note: 'nothing to merge' } });
+  assert.match(twiceBlocked.owner, /nothing to merge/);
+});
+
+test('a conflicting PR still gets the implementer, and another open Important finding is never called a conflict', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  const conflicting = decide({ ...base, pr: pr({ mergeable: 'CONFLICTING', reviews: [baseConflictReview(conflictFinding)] }) });
+  assert.equal(conflicting.agent, 'implementer');
+  const mixed = decide({ ...base, pr: pr({ reviews: [baseConflictReview(`${conflictFinding}\n**Important** drive.mjs:809 reads the wrong field.`)] }) });
+  assert.equal(mixed.agent, 'implementer');
+  assert.doesNotMatch(mixed.reason, /only/);
+  const codeFinding = decide({ ...base, pr: pr({ reviews: [baseConflictReview('**Important** drive.mjs:809-810 mishandles a base conflict.')] }) });
+  assert.doesNotMatch(codeFinding.reason, /only/);
+  assert.notEqual(codeFinding.agent, 'reviewer');
+});
+
+test('a thread with another open Important finding keeps a MERGEABLE conflict verdict off the Reviewer', () => {
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, reviews: [baseConflictReview(conflictFinding)] })] });
+  const thread = body => ({ isResolved: false, comments: { nodes: [{ body, author: { login: 'reviewer' } }] } });
+  repo.io.reviewThreads = () => ({ nodes: [thread(conflictFinding)], pageInfo: { hasNextPage: false } });
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'reviewer');
+  repo.io.reviewThreads = () => ({ nodes: [thread(conflictFinding), thread('**Important** Users lose saved data.')], pageInfo: { hasNextPage: false } });
+  const step = drive(repo.io, 3, lanes, {});
+  assert.notEqual(step.agent, 'reviewer');
+  assert.doesNotMatch(step.reason || '', /only/);
+});
+
+test('an owner step is recorded on the issue and an owner step beside ready slices says to drive them', () => {
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+  const recorded = [];
+  repo.io.notifyOwner = (n, step) => recorded.push([n, step.owner, step.url]);
+  const result = drive(repo.io, 3, lanes, { status: 'blocked', note: 'needs a credential' });
+  assert.deepEqual(recorded, [[3, '#3: needs a credential', undefined]]);
+  assert.match(result.owner, /credential/);
+  repo.io.notifyOwner = () => { throw new Error('gh down'); };
+  assert.match(drive(repo.io, 3, lanes, { status: 'blocked', note: 'x' }).owner, /x/, 'a failed comment never changes the step');
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const approved = { author: { login: 'reviewer' }, state: 'APPROVED', body: `<!-- agent-review sha=${head} round=1 verdict=ready -->`, commit: { oid: head } };
+  const slice = n => issue({ number: n, labels: [label('state:started'), label('risk:R1')], assessment: assessed() });
+  const slices = fakeRepo({ issues: { 9: epic, 10: slice(10), 12: slice(12) }, subs: { 9: [10, 12] }, trees: { 10: tree({ commits: 1 }), 12: tree({ commits: 1 }) }, prs: [pr({ issue: 10, number: 60, isDraft: false, reviews: [approved] })] });
+  slices.io.strictPolicy = () => false;
+  const notes = [];
+  slices.io.notifyOwner = n => notes.push(n);
+  const next = drive(slices.io, 9, lanes, {});
+  assert.match(next.owner, /up.to.date/);
+  assert.deepEqual(notes, [9]);
+  assert.deepEqual(next.alsoReady, [12]);
+  assert.match(next.continue, /drive each alsoReady slice/);
+});
+
+test('a drive session holds its claim between calls, is never raced, and is taken over once idle', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  try {
+    const key = 'acme/app-620'; const window = 30 * 60_000;
+    assert.equal(acquireRunLock({ directory, key, session: 'A', now: 1000 }).acquired, true);
+    assert.equal(acquireRunLock({ directory, key, session: 'A', now: 1000 + window - 1 }).acquired, true, 'the same session refreshes its heartbeat');
+    const raced = acquireRunLock({ directory, key, session: 'B', now: 2000 + window - 2 });
+    assert.deepEqual([raced.acquired, raced.by.session], [false, 'A'], 'a recent heartbeat is never raced, even with no process alive');
+    const idle = acquireRunLock({ directory, key, session: 'B', now: 1000 + 2 * window });
+    assert.deepEqual([idle.acquired, idle.tookOver.session], [true, 'A'], 'an idle session is taken over');
+    idle.release();
+    assert.equal(acquireRunLock({ directory, key, session: 'C', now: 1100 + 2 * window }).acquired, true, 'a released claim is free');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('driveCommand keeps the claim across calls until drive returns done, owner or blocked', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  let said = '';
+  const log = console.log; console.log = text => { said = JSON.parse(text); };
+  try {
+    const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+    const call = (session, now) => driveCommand(['3'], lanes, repo.io, { lockDirectory: directory, session, now });
+    call('A', 1000);
+    assert.equal(said.agent, 'implementer', 'an agent step leaves the session in flight');
+    call('B', 2000);
+    assert.match(said.blocked.reason, /another drive session/, 'a second session is not handed the same step');
+    call('A', 3000);
+    assert.equal(said.agent, 'implementer');
+    call('B', 3000 + 31 * 60_000);
+    assert.equal(said.agent, 'implementer', 'an idle session is taken over');
+    repo.s.trees[3].dirty = true;
+    const hb = join(directory, 'hb.txt'); writeFileSync(hb, 'status: blocked\nnote: needs a credential\n');
+    driveCommand(['3', '--hand-back', hb], lanes, repo.io, { lockDirectory: directory, session: 'B', now: 4000 + 31 * 60_000 });
+    assert.match(said.owner, /credential/);
+    call('C', 5000 + 31 * 60_000);
+    assert.equal(said.blocked, undefined, 'an owner step released the claim');
+  } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a blocked hand-back returns the owner step even with uncommitted or unpushed work', () => {
+  const base = { issue: started, pr: pr({ reviews: [review('fixes')] }), handBack: { status: 'blocked', note: 'needs a credential' } };
+  for (const extra of [{ dirty: true }, { unpushed: true }, {}]) assert.match(decide({ ...base, tree: tree({ commits: 1, ...extra }) }).owner, /credential/, JSON.stringify(extra));
+});
+
+test('the session id is stable across one agent session\'s separate Bash calls and differs between sessions', () => {
+  const drivePath = new URL('../../plugins/common/workflow/scripts/lib/drive.mjs', import.meta.url).href;
+  const env = { ...process.env }; for (const key of ['WORKFLOW_DRIVE_SESSION', 'CLAUDE_SESSION_ID', 'CODEX_SESSION_ID']) delete env[key];
+  const dir = mkdtempSync(join(tmpdir(), 'drive-session-'));
+  try {
+    writeFileSync(join(dir, 'id.mjs'), `import { driveSessionId } from ${JSON.stringify(drivePath)}; console.log(driveSessionId());`);
+    // A long-lived "agent" node process runs two Bash calls; each is a fresh shell around a fresh drive process.
+    writeFileSync(join(dir, 'agent.mjs'), `import { spawnSync } from 'node:child_process';
+const call = () => spawnSync('sh', ['-c', 'node ' + ${JSON.stringify(join(dir, 'id.mjs'))}], { encoding: 'utf8' }).stdout.trim();
+console.log(JSON.stringify([call(), call()]));`);
+    const session = () => JSON.parse(spawnSync(process.execPath, [join(dir, 'agent.mjs')], { env, encoding: 'utf8' }).stdout);
+  const [first, second] = session();
+  assert.match(first, /^proc-/);
+  assert.equal(first, second, 'two Bash calls of one session share its claim key');
+  assert.notEqual(session()[0], first, 'another session is a different claim holder');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  assert.equal(driveSessionId({ WORKFLOW_DRIVE_SESSION: 'x' }), 'x');
 });
