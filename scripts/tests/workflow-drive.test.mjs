@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, holdBaseUpdates, latestAssessment,
-  driveCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  driveCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
@@ -319,6 +319,7 @@ function fakeRepo(initial) {
     removeTree: t => { calls.push(['remove', t.path]); },
     scratch: t => `${t?.path || '/repo'}/.wf`,
     write: (path, text) => { writes[path] = text; },
+    read: path => writes[path] ?? null,
     board: (n, value) => { (s.board ||= {})[n] = value; },
     requiredBoard: (n, value) => { (s.board ||= {})[n] = value; },
   };
@@ -350,7 +351,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   const repo = fakeRepo({ issues: { 3: issue({ body: '```scope\n{"paths":["docs/a.md"]}\n```', assessment: assessed('R0') }) } });
   const first = drive(repo.io, 3, lanes, {});
   assert.deepEqual(repo.calls, [['start', 3]]);
-  assert.deepEqual({ ...first, brief: undefined }, { agent: 'implementer', host: 'claude', model: 'sonnet', brief: undefined, issue: 3, pr: null, session: 'subagent', mode: 'build', cwd: '/w/3' });
+  assert.deepEqual({ ...first, brief: undefined }, { agent: 'implementer', host: 'claude', model: 'sonnet', brief: undefined, issue: 3, pr: null, session: 'subagent', mode: 'build', cwd: '/w/3', effort: 'medium' });
   assert.equal(first.brief, '/w/3/.wf/drive-3-implementer.md');
   assert.match(repo.writes[first.brief], /status: done \| replan \| blocked/);
   const brief = repo.writes[first.brief];
@@ -601,11 +602,11 @@ test('--next takes the lowest-numbered ready item and skips unmet or dropped dep
 
 test('delivery assignments select configured hosts and models and reject unsupported hosts', () => {
   const delivery = { orchestrator: 'codex', roles: { reviewer: { host: 'codex', model: 'gpt-6.1-terra' }, implementer: { host: 'codex', model: 'gpt-6.1-terra' } } };
-  assert.deepEqual(deliveryAssignment(delivery, { agent: 'reviewer' }, 'R2'), { host: 'codex', model: 'gpt-6.1-terra', session: 'separate' });
-  assert.deepEqual(deliveryAssignment(delivery, { agent: 'implementer' }, 'R1'), { host: 'codex', model: 'gpt-6.1-terra', session: 'subagent' });
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'reviewer' }, 'R2'), { host: 'codex', model: 'gpt-6.1-terra', effort: 'high', session: 'separate' });
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'implementer' }, 'R1'), { host: 'codex', model: 'gpt-6.1-terra', effort: 'medium', session: 'subagent' });
   assert.throws(() => deliveryAssignment(delivery, { agent: 'implementer', fresh: true }, 'R2'), /freshImplementer/);
   delivery.roles.freshImplementer = { host: 'codex', model: 'strongest-model' };
-  assert.deepEqual(deliveryAssignment(delivery, { agent: 'implementer', fresh: true }, 'R2'), { host: 'codex', model: 'strongest-model', session: 'subagent' });
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'implementer', fresh: true }, 'R2'), { host: 'codex', model: 'strongest-model', effort: 'medium', session: 'subagent' });
   assert.throws(() => deliveryAssignment({ orchestrator: 'agy', roles: {} }, { agent: 'reviewer' }, 'R1'), /unsupported/i);
   assert.throws(() => deliveryAssignment({ orchestrator: 'codex', roles: {} }, { agent: 'reviewer' }, 'R1'), /configure/i);
 });
@@ -1479,7 +1480,7 @@ test('review: a later round judges the delta, round 1 the whole diff, and a revi
 test('the Reviewer runs Opus at R0, R1 and R2 without delivery configuration; implementer models by risk are unchanged', () => {
   for (const risk of ['R0', 'R1', 'R2']) {
     assert.equal(modelForStep({ agent: 'reviewer' }, risk), 'opus');
-    assert.deepEqual(deliveryAssignment(undefined, { agent: 'reviewer', mode: 'approve' }, risk), { host: 'claude', model: 'opus', session: 'separate' });
+    assert.deepEqual(deliveryAssignment(undefined, { agent: 'reviewer', mode: 'approve' }, risk), { host: 'claude', model: 'opus', effort: risk === 'R2' ? 'high' : 'medium', session: 'separate' });
   }
   assert.deepEqual(['R0', 'R1', 'R2'].map(risk => modelForStep({ agent: 'implementer' }, risk)), ['sonnet', 'sonnet', 'opus']);
 });
@@ -1491,7 +1492,7 @@ test('configuration refuses AGY as reviewer, implementer or fresh implementer an
       assert.throws(() => deliveryAssignment({ orchestrator: 'claude', roles: { [role]: configured } }, step, 'R1'), error => error.message.includes(`delivery.roles.${role}`) && /advisory only/.test(error.message) && /devops risk second opinion, the improver or a custom responsibility/.test(error.message));
     }
   }
-  assert.deepEqual(deliveryAssignment({ orchestrator: 'claude', roles: { devops: choice } }, { agent: 'devops' }, 'R1'), { host: 'agy', model: 'm', session: 'native' });
+  assert.deepEqual(deliveryAssignment({ orchestrator: 'claude', roles: { devops: choice } }, { agent: 'devops' }, 'R1'), { host: 'agy', model: 'm', effort: 'medium', session: 'native' });
   const refused = { ...lanes, delivery: { orchestrator: 'claude', roles: { reviewer: choice, implementer: other } } };
   assert.throws(() => drive(fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } }).io, 3, refused, {}), /advisory only/, 'drive stops before dispatching any role');
 });
@@ -1696,4 +1697,85 @@ test('epic with an unticked criterion no slice references dispatches the planner
   repo.s.issues[10].body += '\nbenchmark-the-parser';
   assert.equal(drive(repo.io, 9, lanes, {}).issue, 10);
   assert.deepEqual(decideEpic({ epic: issue({ number: 9, body }), slices: [{ number: 99, state: 'OPEN', blockers: [], body: '<!-- workflow:epic-refinement -->\nBenchmark the parser Measure memory use' }, { number: 10, state: 'OPEN', blockers: [], body: 'x' }] }).uncovered.map(c => c.id), ['benchmark-the-parser', null]);
+});
+
+const agents = ['implementer', 'reviewer', 'devops', 'planner', 'improver'];
+test('one role x risk x round table names model and effort; no cell ever yields xhigh or max', () => {
+  for (const agent of agents) for (const risk of ['R0', 'R1', 'R2']) for (const round of [0, 1, 2, 3, 4, 5]) for (const fresh of [false, true]) {
+    const cell = sessionFor(agent, risk, { round, fresh });
+    assert.ok(['sonnet', 'opus'].includes(cell.model), `${agent} ${risk} r${round}`);
+    assert.ok(['low', 'medium', 'high'].includes(cell.effort), `${agent} ${risk} r${round} effort ${cell.effort}`);
+  }
+  assert.deepEqual(['R0', 'R1', 'R2'].map(risk => sessionFor('implementer', risk).effort), ['low', 'medium', 'high']);
+  assert.deepEqual(['R0', 'R1', 'R2'].map(risk => sessionFor('reviewer', risk)), [{ model: 'opus', effort: 'medium' }, { model: 'opus', effort: 'medium' }, { model: 'opus', effort: 'high' }]);
+  for (const risk of ['R0', 'R1', 'R2']) for (const agent of ['devops', 'planner', 'improver']) assert.equal(sessionFor(agent, risk).effort, 'medium');
+  assert.deepEqual(['R0', 'R1', 'R2'].map(risk => sessionFor('implementer', risk).model), ['sonnet', 'sonnet', 'opus']);
+  assert.equal(sessionFor('devops', 'R2').model, 'sonnet');
+  assert.equal(sessionFor('planner', 'R0').model, 'opus');
+});
+
+test('a failing fix round raises the implementer one effort step before the fresh round moves up one model at medium', () => {
+  const walk = risk => [1, 2, 3].map(round => sessionFor('implementer', risk, { round, fresh: round === 3 }));
+  assert.deepEqual(walk('R0'), [{ model: 'sonnet', effort: 'low' }, { model: 'sonnet', effort: 'medium' }, { model: 'opus', effort: 'medium' }]);
+  assert.deepEqual(walk('R1'), [{ model: 'sonnet', effort: 'medium' }, { model: 'sonnet', effort: 'high' }, { model: 'opus', effort: 'medium' }]);
+  assert.deepEqual(walk('R2'), [{ model: 'opus', effort: 'high' }, { model: 'opus', effort: 'high' }, { model: 'opus', effort: 'medium' }]);
+});
+
+test('drive names effort in the instruction and the brief, and the Reviewer command carries it', () => {
+  const repo = fakeRepo({ issues: { 3: issue({ labels: [label('risk:R2')], assessment: assessed('R2') }) } });
+  const build = drive(repo.io, 3, lanes, {});
+  assert.deepEqual([build.model, build.effort], ['opus', 'high']);
+  assert.match(repo.writes[build.brief], /Model opus\. Effort high\./);
+  repo.s.trees[3].dirty = true;
+  drive(repo.io, 3, lanes, { status: 'done', commit: 'feat(a): b', paths: ['a'] });
+  const reviewer = drive(repo.io, 3, lanes, { risk: 'R2', reason: 'a gate' });
+  assert.equal(reviewer.effort, 'high');
+  assert.deepEqual(reviewer.command.slice(reviewer.command.indexOf('--model'), reviewer.command.indexOf('--model') + 4), ['--model', 'opus', '--effort', 'high']);
+  assert.equal(reviewerCommand('opus', '/b.md', 'n', 'codex', 'codex', 'high').includes('model_reasoning_effort="high"'), true);
+});
+
+test('fix rounds escalate effort in the instruction: R1 round 2 runs high', () => {
+  const two = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, reviews: [review('fixes'), review('fixes')] })] });
+  const step = drive(two.io, 3, lanes, {});
+  assert.deepEqual([step.mode, step.model, step.effort, step.resume], ['fix', 'sonnet', 'high', true]);
+});
+
+test('a resumed implementer keeps its model; a risk raise that names another model starts a fresh session from a handoff brief', () => {
+  const brief = '/repo/.worktrees/3-add-a-thing/.wf/drive-3-implementer.md';
+  const open = (risk, reviews) => fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, labels: [label(`risk:${risk}`)], assessment: assessed(risk), reviews })] });
+  const same = open('R1', [review('fixes')]);
+  same.writes[brief] = '# Implementer brief\n\nMode: build. Risk R1. Model sonnet. Effort medium.\n';
+  const kept = drive(same.io, 3, lanes, {});
+  assert.deepEqual([kept.resume, kept.model, kept.handoff], [true, 'sonnet', undefined]);
+  const raised = open('R2', [review('fixes')]);
+  raised.writes[brief] = '# Implementer brief\n\nMode: build. Risk R1. Model sonnet. Effort medium.\n';
+  const fresh = drive(raised.io, 3, lanes, {});
+  assert.deepEqual([fresh.resume, fresh.model, fresh.effort, fresh.handoff], [undefined, 'opus', 'high', true]);
+  assert.match(raised.writes[brief], /Handoff: .*open findings.*branch.*last hand-back/s);
+  assert.match(raised.writes[brief], /Model opus\. Effort high\./);
+});
+
+test('agent definitions do not pin an effort: drive names it per session from the table', () => {
+  for (const agent of agents) {
+    const text = readFileSync(new URL(`../../plugins/common/workflow/agents/${agent}.md`, import.meta.url), 'utf8');
+    assert.doesNotMatch(text.split('---')[1], /^effort:/m, agent);
+  }
+});
+
+test('the production io reads the brief a role was last started with, so the handoff check runs outside the fake', t => {
+  const f = fixture(t);
+  const path = join(f.repo, 'brief.md');
+  const io = githubIo(lanes, () => ({}));
+  assert.equal(io.read(path), null, 'no brief yet');
+  writeFileSync(path, 'Mode: build. Risk R1. Model sonnet. Effort medium.\n');
+  assert.match(io.read(path), /Model sonnet\. Effort medium\./);
+});
+
+test('a resumed session that started fresh on a stronger model keeps it when the risk did not change', () => {
+  const brief = '/repo/.worktrees/3-add-a-thing/.wf/drive-3-implementer.md';
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, labels: [label('risk:R1')], assessment: assessed('R1'), reviews: [review('fixes')] })] });
+  repo.writes[brief] = '# Implementer brief\n\nMode: fix (round 3: the whole open set, fresh). Risk R1. Model opus. Effort medium.\n';
+  const step = drive(repo.io, 3, lanes, {});
+  assert.deepEqual([step.resume, step.handoff, step.model], [true, undefined, 'opus'], 'same risk: no handoff, the session keeps opus');
+  assert.match(repo.writes[brief], /Model opus\. Effort /);
 });
