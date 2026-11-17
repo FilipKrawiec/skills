@@ -88,7 +88,18 @@ test('the outcome comment is read as raw JSON or fenced JSON, with or without a 
   const read = body => resolveNativeEpicEvidence({ repo: 'a/b', issue: 9 }, { trustedConfig: () => cfg, comments: () => [{ user: { login: 'reviewer' }, created_at: '2026-01-01T00:00:00Z', body }] });
   for (const body of [json, `${marker}\n${json}`, `\`\`\`json\n${json}\n\`\`\``, `${marker}\n\n\`\`\`json\n${json}\n\`\`\`\n`]) assert.equal(read(body).n, 7, body);
   assert.throws(() => read('Looks good, epic done.'), /not posted an epic outcome/);
-  assert.throws(() => read(`${marker}\n\`\`\`json\n{not json}\n\`\`\``), /not posted an epic outcome/);
+  assert.throws(() => read(`${marker}\n\`\`\`json\n{not json}\n\`\`\``), /marker line .*one fenced/);
+});
+
+test('prose before or after the fence is accepted; an unparseable newer comment explains the format instead of using an older one', () => {
+  const json = JSON.stringify({ kind: 'workflow:epic-outcomes', version: 1, n: 7 });
+  const marker = '<!-- workflow:epic-outcomes -->';
+  const at = (body, created_at) => ({ user: { login: 'reviewer' }, created_at, body });
+  const read = comments => resolveNativeEpicEvidence({ repo: 'a/b', issue: 9 }, { trustedConfig: () => cfg, comments: () => comments });
+  assert.equal(read([at(`${marker}\nIntro.\n\`\`\`json\n${json}\n\`\`\`\nTrailing note.`, '2026-01-01T00:00:00Z')]).n, 7);
+  const old = at(json, '2026-01-01T00:00:00Z');
+  assert.throws(() => read([old, at(`${marker}\noops`, '2026-01-02T00:00:00Z')]), /marker line .*one fenced/);
+  assert.equal(read([at(`${marker}\noops`, '2026-01-01T00:00:00Z'), at(json, '2026-01-02T00:00:00Z')]).n, 7);
 });
 
 test('consolidated delivery needs the Reviewer to name a merged PR; the issue body may change', () => {
