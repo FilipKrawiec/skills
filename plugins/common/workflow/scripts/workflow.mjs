@@ -39,6 +39,7 @@ import { checkCommand, driveCommand } from './lib/drive.mjs';
 import { benchCommand, reviewerIo } from './lib/bench.mjs';
 import { runResponsibility } from './lib/responsibility.mjs';
 import { worktreeCommand } from './lib/worktrees.mjs';
+import { initCommand } from './lib/init.mjs';
 
 const help = `Usage:
   node workflow.mjs commit --message MESSAGE [-- PATH...]
@@ -63,7 +64,9 @@ const help = `Usage:
   node workflow.mjs project [--root DIR] [--strict-git] [TASK]
   node workflow.mjs release [auto|patch|minor|major] [--message TEXT] [--dry-run] [--root DIR]
   node workflow.mjs safety check|apply
+  node workflow.mjs init [--dry-run] [--settings FILE] [--implementer LOGIN] [--reviewer LOGIN] [--owner LOGIN] [--test COMMAND]
 
+init is run once by the owner in a project: it merges the autoMode standing owner approval into ~/.claude/settings.json (backup .bak, idempotent), writes a missing .agents/config.json and .github/CODEOWNERS, runs labels ensure and safety check, and lists what it could not do.
 push reads implementer and Reviewer from the fetched default branch's .agents/config.json and derives Owner from identities.owner, else a user repository owner, else fails. For first-config bootstrap only (--owner-bootstrap), it reads identities.owner from the committed branch config.
 Owner is identities.owner from .agents/config.json, else the personal repository owner (organization repositories must set identities.owner); CODEOWNERS never names it.
 Auto-merge checks are not atomic with push; do not change auto-merge concurrently. Push isolates Git configuration and runs the installed pre-push hook; hooks can invoke the same user's credential tools.
@@ -171,6 +174,7 @@ async function execute(command, args) {
   else if (command === 'manifests') manifestsCommand(args);
   else if (command === 'project') projectVerify(args);
   else if (command === 'release') process.exitCode = releaseCommand(args);
+  else if (command === 'init') initCommand(args);
   else if (command === 'safety') { const { lanes } = config(); process.exitCode = safetyCommand(args, lanes); }
   else throw new Error('Invalid command; use --help');
 }
@@ -197,7 +201,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, ...args] = process.argv.slice(2);
-    const valueOptions = new Set(['-m', '--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--timeout', '--interval', '--hand-back', '--days', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root', '--snapshot', '--model', '--host', '--compare', '--from', '--out']);
+    const valueOptions = new Set(['-m', '--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--timeout', '--interval', '--hand-back', '--days', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root', '--snapshot', '--model', '--host', '--compare', '--from', '--out', '--settings', '--implementer', '--reviewer', '--owner', '--test']);
     let wantsHelp = command === '-h';
     for (let i = 0; i < args.length && args[i] !== '--'; i++) {
       if (valueOptions.has(args[i])) { i++; continue; }
