@@ -292,6 +292,7 @@ function fakeRepo(initial) {
     allBlockers: n => s.blockers?.[n] || [],
     addBlocker: (n, blocker) => { calls.push(['blocker', n, blocker]); ((s.blockers ||= {})[n] ||= []).push(blocker); },
     mergedClosingPr: n => (s.merged || []).includes(n),
+    mergedPr: n => (s.mergedPrs || []).includes(n),
     hasLessons: n => (s.lessons || []).includes(n),
     verifyEpic: () => ({ complete: true, issues: [] }),
     createRefinement: epic => { const n = 99; calls.push(['create-refinement', n]); const item = issue({ number: n, title: 'refinement', body: '<!-- workflow:epic-refinement -->' }); s.issues[n] = item; s.subs[epic.number].push(n); return item; },
@@ -1731,6 +1732,29 @@ test('an epic counts a slice the planner folded into another by the target\'s de
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
   repo.s.merged = [99]; repo.s.issues[9].state = 'OPEN';
   assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #11/, 'the folded slice stands for its target, which has no merged PR');
+});
+
+test('an epic counts a slice folded into a merged PR, and a completed slice that made no repository changes, as delivered', () => {
+  const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
+  const folded = issue({ number: 10, state: 'CLOSED', body: '<!-- workflow:consolidated-into 25 -->' });
+  const noCode = issue({ number: 11, state: 'CLOSED', stateReason: 'COMPLETED', body: 'Verify only. Make no repository changes.' });
+  const repo = fakeRepo({ issues: { 9: epic, 10: folded, 11: noCode }, subs: { 9: [10, 11] }, mergedPrs: [25], lessons: [9] });
+  // The final close check asks the same delivery question for every child.
+  repo.io.verifyEpic = (current, children, base, merged) => (children.every(child => merged(child.number, base)) ? { complete: true, issues: [] } : { complete: false, issues: ['undelivered child'] });
+  drive(repo.io, 9, lanes, {});
+  repo.s.issues[99].state = 'CLOSED';
+  repo.s.merged = [99];
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  repo.s.mergedPrs = []; repo.s.issues[9].state = 'OPEN';
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #25$/, 'a folded slice whose target PR is not merged still holds the epic');
+  // A target PR closed without merging reads as a closed item whose closing-PR lookup fails: the epic is held, naming it.
+  repo.s.issues[25] = issue({ number: 25, state: 'CLOSED' });
+  const lookup = repo.io.mergedClosingPr;
+  repo.io.mergedClosingPr = (n, base) => { if (n === 25) throw new Error('Could not resolve to an Issue'); return lookup(n, base); };
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #25$/, 'a fold into a PR closed without merging holds the epic instead of crashing');
+  repo.io.mergedClosingPr = lookup; delete repo.s.issues[25];
+  repo.s.mergedPrs = [25]; repo.s.issues[11].body = '```scope\n{"paths": ["src/"]}\n```';
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #11$/, 'a slice that declared paths needs its merged PR');
 });
 
 test('the planner agent is defined, planner brief follows the epic outcome and the final refinement assesses delivery flow', () => {
