@@ -18,4 +18,4 @@ A refinement slice (`workflow:epic-refinement`) whose review finds nothing to ch
 
 ## Board sweep
 
-Every `drive` run first moves each closed issue's board card not yet in Done to Done, so a merged issue never waits for a rerun. `<cli> issue sweep-board` does the same alone and prints the count; open issues stay.
+Every `drive` run first moves each closed issue's board card not yet in Done to Done, and `wait <pr> --until merged` does so when the PR merges, so a merged issue never waits for a rerun. `<cli> issue sweep-board` does the same alone and prints the count; open issues stay.
