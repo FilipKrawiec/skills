@@ -751,6 +751,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     },
     scratch: tree => workflowScratch(tree?.path),
     write: (path, text) => writeFileSync(path, text),
+    // The brief drive wrote when it last started this role; null when none, so a first dispatch never hands off.
+    read: path => { try { return readFileSync(path, 'utf8'); } catch { return null; } },
     openIssues,
     // The unstarted issues `issue` overlaps; GitHub is read only for those whose scope paths overlap.
     overlaps: issue => findOverlaps(issue, openIssues(), {

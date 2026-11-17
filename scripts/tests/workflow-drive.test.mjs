@@ -1761,3 +1761,12 @@ test('agent definitions do not pin an effort: drive names it per session from th
     assert.doesNotMatch(text.split('---')[1], /^effort:/m, agent);
   }
 });
+
+test('the production io reads the brief a role was last started with, so the handoff check runs outside the fake', t => {
+  const f = fixture(t);
+  const path = join(f.repo, 'brief.md');
+  const io = githubIo(lanes, () => ({}));
+  assert.equal(io.read(path), null, 'no brief yet');
+  writeFileSync(path, 'Mode: build. Risk R1. Model sonnet. Effort medium.\n');
+  assert.match(io.read(path), /Model sonnet\. Effort medium\./);
+});
