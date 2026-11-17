@@ -2,7 +2,7 @@ import { localClaimIsDead, releaseSessionClaim, sessionClaim } from './review-re
 import { verifyConsolidatedDelivery } from './consolidated-delivery.mjs';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +37,8 @@ export const freshFixRound = 3;
 // step before the model changes; the fresh round moves up one model at medium effort.
 export function sessionFor(agent, risk, { round = 0, fresh = false } = {}) {
   if (agent === 'devops') return { model: 'sonnet', effort: 'medium' };
+  // A mechanical base conflict needs no deeper model; a failed gate hands the merge to the implementer.
+  if (agent === 'conflict-resolver') return { model: 'haiku', effort: 'low' };
   if (agent === 'reviewer') return { model: 'opus', effort: 'medium' };
   if (agent === 'implementer') {
     if (fresh) return { model: 'opus', effort: 'medium' };
@@ -68,6 +70,7 @@ export function deliveryAssignment(delivery, step, risk, round = 0) {
   if (!delivery || typeof delivery !== 'object' || !['codex', 'claude'].includes(delivery.orchestrator)) throw new Error('Unsupported delivery orchestrator; configure codex or claude after verifying host capabilities');
   if (delivery.executables != null && (typeof delivery.executables !== 'object' || Array.isArray(delivery.executables) || Object.entries(delivery.executables).some(([host, path]) => !['codex', 'claude', 'agy'].includes(host) || typeof path !== 'string' || !path.trim()))) throw new Error('Configure delivery.executables as host-to-executable paths');
   validateDelivery(delivery);
+  if (step.agent === 'conflict-resolver' && !delivery.roles?.['conflict-resolver']) return { host: delivery.orchestrator, model: 'haiku', effort, session: 'subagent' };
   const roleName = step.agent === 'implementer' && step.fresh ? 'freshImplementer' : step.agent;
   const configured = delivery.roles?.[roleName];
   const choices = Array.isArray(configured) ? configured : [configured];
@@ -400,6 +403,42 @@ usage: <optional, when the host reports it: in=N out=N cache=N cost=USD model=M 
 ${f.issue.body || '(no body)'}
 `;
 }
+export function conflictResolverBrief(f) {
+  return `# Conflict-resolver brief: #${f.issue.number} ${f.issue.title}
+
+Mode: resolve (${f.step.reason}). Risk ${f.risk}. Model ${f.model}. Effort ${f.effort}.
+Issue: ${f.issue.url}
+Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
+Worktree: ${f.tree.path} (branch ${f.tree.branch}, base origin/${f.base})
+PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}` : 'none'}
+
+## Task
+
+Drive merged origin/${f.base} into this branch with \`git merge --no-ff --no-commit\`; the merge is in progress with conflicts${f.step.conflicts?.length ? ` in ${f.step.conflicts.join(', ')}` : ''}. Resolve every conflict mechanically, keeping both sides' intent, then stage the files. Never rebase, abort, reset or force-push. If a conflict needs a judgment about behavior, hand back \`blocked\`: the implementer takes over the merge. Set cwd to ${f.tree.path} for every command. Work only in that worktree. Run one plain command per Bash call.
+
+## Commands you may run
+
+- \`node ${cli} check --worktree ${shellQuote(f.tree.path)}\`: the project gate, under the machine-wide lock. It must pass before you hand back \`done\`.
+- \`node ${cli} commit --message "Merge origin/${f.base} into ${f.tree.branch}" -- <resolved paths>\`
+
+Never push, open, label, ready or merge a PR, and never start an agent: drive does that.
+
+## Hand-back, at most 6 lines
+
+\`\`\`text
+agent: conflict-resolver
+status: done | blocked
+commit: Merge origin/${f.base} into ${f.tree.branch}
+paths: <resolved file paths only, not directories>
+check: pass | fail
+note: <one line: how each conflict was resolved, or why blocked>
+\`\`\`
+
+## Issue
+
+${f.issue.body || '(no body)'}
+`;
+}
 export function devopsBrief(f) {
   const last = f.pr ? f.prAssessment : null;
   return `# Risk brief: #${f.issue.number} ${f.issue.title}
@@ -542,6 +581,20 @@ function gitIn(cwd, args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: cleanEnvironment() });
   return result.status === 0 ? result.stdout.trim() : null;
 }
+// Version and manifest files are generated from the base's version: a conflict in only these takes the base's side and
+// re-syncs the manifests, with no model. Merging the base into the head is never a rebase, so review threads stay attached.
+export const isManifestPath = path => /(^|\/)(package-metadata|plugin|marketplace|plugins)\.json$/.test(path);
+export function mergeBaseIntoHead({ path, base, git = args => spawnSync('git', args, { cwd: path, encoding: 'utf8', env: cleanEnvironment() }), syncManifests, commit }) {
+  const merged = git(['merge', '--no-ff', '--no-commit', `origin/${base}`]);
+  const inProgress = git(['rev-parse', '-q', '--verify', 'MERGE_HEAD']).status === 0;
+  if (merged.status === 0) { if (inProgress) commit(); return { conflicts: [], committed: inProgress }; }
+  const conflicts = git(['diff', '--name-only', '--diff-filter=U']).stdout.split('\n').filter(Boolean);
+  if (!conflicts.length) { git(['merge', '--abort']); throw new Error(`git merge origin/${base} failed: ${String(merged.stderr).trim()}`); }
+  if (!conflicts.every(isManifestPath)) return { conflicts, committed: false };
+  for (const file of conflicts) { git(['checkout', '--theirs', '--', file]); git(['add', '--', file]); }
+  syncManifests(); git(['add', '-u']); commit();
+  return { conflicts, committed: true, manifest: true };
+}
 function self(args, cwd) {
   const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: ['ignore', 2, 2], env: process.env });
   if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
@@ -652,6 +705,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
         dirty: Boolean(gitIn(found.path, ['status', '--porcelain', '--untracked-files=all'])),
         commits: Number(gitIn(found.path, ['rev-list', '--count', `${base}..HEAD`]) || 0),
         unpushed: Boolean(gitIn(found.path, ['log', '--oneline', 'HEAD', '--not', '--remotes'])),
+        merging: gitIn(found.path, ['rev-parse', '-q', '--verify', 'MERGE_HEAD']) !== null,
         diffPaths: (gitIn(found.path, ['diff', '--name-only', `${base}...HEAD`]) || '').split('\n').filter(Boolean),
         subjects: (gitIn(found.path, ['log', '--no-merges', '--reverse', '--format=%s', `${base}..HEAD`]) || '').split('\n').filter(Boolean),
       };
@@ -686,6 +740,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       }
     },
     commit: (tree, message, paths) => self(['commit', '--message', message, '--', ...paths], tree.path),
+    mergeBase: tree => mergeBaseIntoHead({ path: tree.path, base: lanes.base, syncManifests: () => self(['manifests', 'sync', tree.path], tree.path), commit: () => self(['commit', '--message', `Merge origin/${lanes.base} into ${tree.branch}`], tree.path) }),
     push: tree => self(['push'], tree.path),
     open: (issue, tree, risk, hb) => {
       const body = join(workflowScratch(tree.path), `drive-${issue.number}-pr.md`);
@@ -830,7 +885,7 @@ function currentRisk(facts, step) {
   const floor = riskLabel(issue.labels || []);
   return pr ? maxRisk(riskLabel(pr.labels || []), floor) : maxRisk('R1', floor, facts.issueAssessment?.risk);
 }
-const briefs = { implementer: implementerBrief, reviewer: reviewerBrief, improver: improverBrief, devops: devopsBrief, planner: plannerBrief };
+const briefs = { 'conflict-resolver': conflictResolverBrief, implementer: implementerBrief, reviewer: reviewerBrief, improver: improverBrief, devops: devopsBrief, planner: plannerBrief };
 function instruction(io, facts, step, lanes) {
   const { issue, pr, tree } = facts;
   if (!step.agent) return step;
@@ -887,8 +942,10 @@ export function driveIssue(io, n, lanes, handBack = {}) {
 }
 function driveIssueSteps(io, n, lanes, handBack, state) {
   let bodyUpdated = false;
+  // A conflict-resolver that failed the gate (or blocked) hands the merge in progress to the implementer.
+  const resolverFailed = handBack.agent === 'conflict-resolver' && (handBack.status !== 'done' || handBack.check === 'fail');
   for (let i = 0; i < 12; i++) {
-    const facts = readIssueFacts(io, n, handBack);
+    const facts = readIssueFacts(io, n, resolverFailed ? {} : handBack);
     // A failure never blocks a step.
     if (!state.recorded && (handBack.status || handBack.risk || handBack.usage) && facts.pr?.state === 'OPEN') {
       state.recorded = true;
@@ -898,7 +955,21 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
       io.updateBody(facts.pr, facts.tree, handBack);
       bodyUpdated = true;
     }
-    const step = decideIssue(facts, lanes);
+    let step = decideIssue(facts, lanes);
+    // A base conflict is merged by drive, never rebased: manifest conflicts take the base's side with no model, other mechanical
+    // ones go to a Haiku conflict-resolver, and a resolver that fails the gate leaves the merge to the implementer.
+    if (facts.pr?.state === 'OPEN' && facts.tree && io.mergeBase) {
+      const marker = join(io.scratch(facts.tree), `drive-${n}-conflict`);
+      const resolving = agent('conflict-resolver', 'resolve', { reason: 'mechanical conflicts merging the base into the head' });
+      if (facts.tree.merging && resolverFailed) { io.write(marker, 'implementer'); step = { ...agent('implementer', 'fix', { resume: true }), reason: 'the conflict-resolver failed the gate; finish the merge already in progress' }; }
+      else if (facts.tree.merging && !handBack.status && io.read(marker) !== 'implementer') return finish(instruction(io, facts, resolving, lanes));
+      else if (step.agent === 'implementer' && step.mode === 'fix' && step.resume && /base conflict|conflicts with its base/.test(step.reason || '')) {
+        io.write(marker, '');
+        const merged = io.mergeBase(facts.tree);
+        if (merged.committed) { if (facts.pr.autoMergeRequest) io.disableAutoMerge(facts.pr); io.push(facts.tree); return finish({ wait: { pr: facts.pr.number, until: 'ci' }, reason: 'merged the base into the head' }); }
+        if (merged.conflicts.length) return finish(instruction(io, { ...facts, tree: { ...facts.tree, merging: true } }, { ...resolving, conflicts: merged.conflicts }, lanes));
+      }
+    }
     // A head moved on GitHub (a base merged by `update-branch`) reaches a clean worktree before an agent works in it.
     if (step.agent && facts.tree && facts.pr?.state === 'OPEN' && !facts.tree.dirty && !facts.tree.unpushed) io.syncTree(facts.tree);
     if (!step.do) return finish(instruction(io, facts, step, lanes));
@@ -1175,6 +1246,27 @@ export function acquireRunLock({ directory, key, session, now = Date.now(), stal
     release: () => { try { if (JSON.parse(readFileSync(path, 'utf8')).session === session) rmSync(path); } catch { /* already gone */ } },
   };
 }
+// Up to six runs per repository: one claim file per issue, so a seventh waits until a claim is released or goes stale.
+export const maxRuns = 6;
+const claimKey = key => `${key.replace(/[^A-Za-z0-9._-]/g, '_')}.json`;
+export function liveRuns({ directory, repo, now = Date.now(), except = null, staleMs = 30 * 60_000 }) {
+  const prefix = claimKey(repo).slice(0, -5) + '-';
+  let files = [];
+  try { files = readdirSync(directory); } catch { /* no claims yet */ }
+  return files.filter(file => file.startsWith(prefix) && /^\d+\.json$/.test(file.slice(prefix.length)) && file !== except).filter(file => {
+    try { return now - JSON.parse(readFileSync(join(directory, file), 'utf8')).at < staleMs; } catch { return false; }
+  }).length;
+}
+const runDirectory = () => join(homedir(), '.cache', 'workflow-cli', 'drive-runs');
+export function waitSlotCommand(args, lanes, { directory = runDirectory(), pause = seconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000), now = Date.now } = {}) {
+  const deadline = now() + 120 * 60_000;
+  for (;;) {
+    if (liveRuns({ directory, repo: lanes.repo, now: now() }) < maxRuns) return 0;
+    if (now() >= deadline) { console.error(`workflow: timed out waiting for a free drive slot in ${lanes.repo}`); return 1; }
+    pause(30);
+  }
+}
+const slotsFull = (issue, lanes) => ({ wait: { until: 'slot', repo: lanes.repo }, reason: `${lanes.repo} already runs ${maxRuns} drive sessions${issue ? `; #${issue} starts when one finishes` : ''}`, command: ['node', cli, 'wait', 'slot'] });
 const blockedClaim = (issue, lock, now) => {
   const when = lock.takeOverAt > now ? `it may be taken over after ${new Date(lock.takeOverAt).toISOString()} if it makes no progress` : 'it may be taken over on the next call';
   return { blocked: { ...(issue ? { issue } : {}), reason: `another drive session (${lock.by.session}) is live on ${issue ? `#${issue}` : '--next'} and is making progress; it never races, so run drive again later: ${when}` } };
@@ -1194,6 +1286,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   let n;
   if (args[0] === '--next') {
     const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)));
+    if (liveRuns({ directory: lockDirectory, repo: lanes.repo, now }) >= maxRuns) { console.log(JSON.stringify(slotsFull(null, lanes))); return; }
     const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
     if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(null, lock, now))); return; }
     if (lock.tookOver) io.noteTakeover?.(null, lock.tookOver, now);
@@ -1205,6 +1298,10 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     return;
   } else if (/^[1-9]\d*$/.test(args[0])) n = Number(args[0]);
   else throw new Error(usage);
+  const own = claimKey(`${lanes.repo}-${n}`);
+  let mine = false;
+  try { mine = JSON.parse(readFileSync(join(lockDirectory, own), 'utf8')).session === session; } catch { /* no claim */ }
+  if (!mine && liveRuns({ directory: lockDirectory, repo: lanes.repo, now, except: own }) >= maxRuns && !existsSync(join(lockDirectory, own))) { console.log(JSON.stringify(slotsFull(n, lanes))); return; }
   const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${n}`, session, now });
   if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(n, lock, now))); return; }
   if (lock.tookOver) io.noteTakeover?.(n, lock.tookOver, now);
