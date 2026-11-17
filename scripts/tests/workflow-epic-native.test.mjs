@@ -82,6 +82,15 @@ test('the newest outcome comment by the configured Reviewer is current; an edit 
   assert.throws(() => resolve({ comments: () => { throw Error('unavailable'); } }));
 });
 
+test('the outcome comment is read as raw JSON or fenced JSON, with or without a marker; other bodies are ignored', () => {
+  const json = JSON.stringify({ kind: 'workflow:epic-outcomes', version: 1, n: 7 });
+  const marker = '<!-- workflow:epic-outcomes -->';
+  const read = body => resolveNativeEpicEvidence({ repo: 'a/b', issue: 9 }, { trustedConfig: () => cfg, comments: () => [{ user: { login: 'reviewer' }, created_at: '2026-01-01T00:00:00Z', body }] });
+  for (const body of [json, `${marker}\n${json}`, `\`\`\`json\n${json}\n\`\`\``, `${marker}\n\n\`\`\`json\n${json}\n\`\`\`\n`]) assert.equal(read(body).n, 7, body);
+  assert.throws(() => read('Looks good, epic done.'), /not posted an epic outcome/);
+  assert.throws(() => read(`${marker}\n\`\`\`json\n{not json}\n\`\`\``), /not posted an epic outcome/);
+});
+
 test('consolidated delivery needs the Reviewer to name a merged PR; the issue body may change', () => {
   const child = { number: 10, state: 'CLOSED', body: 'anything' };
   const packet = { version: 1, epic: 9, consolidated: [{ issue: 10, pr: 25, state: 'met' }] };
