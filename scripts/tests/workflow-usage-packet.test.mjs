@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { commandModel, findUsageComment, parseUsage, parseUsageComment, parseUsageLine, recordUsage, usageComment, usageEntry, usageHost, usageSummary, usageTotals, visibleResult } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
+import { commandEffort, commandModel, findUsageComment, parseUsage, parseUsageComment, parseUsageLine, recordUsage, usageComment, usageEntry, usageHost, usageSummary, usageTotals, visibleResult } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
 import { exportedSymbols, issueCriteria, reviewPacket } from '../../plugins/common/workflow/scripts/lib/packet.mjs';
 import { drive, githubIo, handBackRole, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { statusCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
@@ -44,7 +44,7 @@ test('reviewer commands ask each host for machine-readable output, and the host 
   assert.equal(commandModel(codex), 'gpt');
 });
 test('a hand-back usage line parses and does not take one of the six lines', () => {
-  assert.deepEqual(parseUsageLine('in=1200 out=300 cache=5000 cost=0.12 model=sonnet host=claude'), { usage: { input: 1200, output: 300, cacheRead: 5000, cacheWrite: null, cost: 0.12 }, model: 'sonnet', host: 'claude' });
+  assert.deepEqual(parseUsageLine('in=1200 out=300 cache=5000 cost=0.12 model=sonnet host=claude'), { usage: { input: 1200, output: 300, cacheRead: 5000, cacheWrite: null, cost: 0.12 }, model: 'sonnet', effort: null, host: 'claude' });
   assert.equal(parseUsageLine('nothing useful').usage, null);
   const hb = parseHandBack('status: done\ncommit: fix: a\npaths: a.js\ncheck: pass\nnote: ok\nbody: /e.md\nusage: in=1 out=2');
   assert.equal(hb.usage, 'in=1 out=2');
@@ -66,7 +66,7 @@ test('usage totals sum per role and model, and a host without data stays unrepor
   assert.equal(summary.find(row => row.role === 'implementer').cost, 'unreported');
   assert.equal(usageSummary([]), 'unreported');
   const comment = usageComment(entries);
-  assert.match(comment, /\| reviewer \| gpt \| codex \| 1 \| unreported \|/);
+  assert.match(comment, /\| reviewer \| gpt \| unreported \| codex \| 1 \| unreported \|/);
   assert.match(comment, /\$0\.62/);
   assert.match(comment, /Baseline: 2026-11-16 dry-run baseline \(Opus reviews without a packet\): \$0\.21-0\.46/);
   assert.equal(parseUsageComment(comment).length, 4);
@@ -244,4 +244,22 @@ test('drive gathers packet facts from the worktree at head and never reads the P
   assert.match(text, /`widget` \(a\.mjs\)[^]*b\.mjs:1:import \{ widget \}/);
   assert.match(text, /pass \(at this head, now\)/);
   assert.doesNotMatch(JSON.stringify(facts), /SECRET-PR-DESCRIPTION/);
+});
+
+test('usage carries effort: parsed from the command or the hand-back, summed per role, model and effort, unreported when a host gives none', () => {
+  assert.equal(commandEffort(['claude', '--model', 'opus', '--effort', 'high']), 'high');
+  assert.equal(commandEffort(['codex', 'exec', '-m', 'gpt', '-c', 'model_reasoning_effort="medium"']), 'medium');
+  assert.equal(commandEffort(['claude', '--model', 'opus']), null);
+  assert.equal(parseUsageLine('in=1 out=2 model=sonnet effort=high host=claude').effort, 'high');
+  const rows = [
+    usageEntry({ role: 'implementer', host: 'claude', model: 'sonnet', effort: 'medium', usage: null }),
+    usageEntry({ role: 'implementer', host: 'claude', model: 'sonnet', effort: 'high', usage: null }),
+    usageEntry({ role: 'devops', host: 'codex', model: 'gpt', usage: null }),
+  ];
+  assert.deepEqual(usageTotals(rows).map(row => [row.role, row.model, row.effort, row.sessions]), [['devops', 'gpt', 'unreported', 1], ['implementer', 'sonnet', 'high', 1], ['implementer', 'sonnet', 'medium', 1]]);
+  const comment = usageComment(rows);
+  assert.match(comment, /\| Role \| Model \| Effort \| Host \|/);
+  assert.match(comment, /\| implementer \| sonnet \| high \| claude \| 1 \|/);
+  assert.match(comment, /\| devops \| gpt \| unreported \| codex \| 1 \|/);
+  assert.equal(parseUsageComment(comment)[0].effort, 'medium');
 });

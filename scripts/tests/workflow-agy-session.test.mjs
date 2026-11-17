@@ -9,7 +9,7 @@ import { deliveryAssignment } from '../../plugins/common/workflow/scripts/lib/dr
 const adapter = new URL('../../plugins/common/workflow/scripts/agy-session.mjs', import.meta.url).pathname;
 test('AGY risk assignment is native and other delivery responsibilities stop', () => {
   const delivery = { orchestrator: 'codex', roles: { devops: { host: 'agy', model: 'model' }, planner: { host: 'agy', model: 'model' } } };
-  assert.deepEqual(deliveryAssignment(delivery, { agent: 'devops' }, 'R1'), { host: 'agy', model: 'model', session: 'native' });
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'devops' }, 'R1'), { host: 'agy', model: 'model', effort: 'medium', session: 'native' });
   assert.throws(() => deliveryAssignment(delivery, { agent: 'planner' }, 'R1'), /unverified/);
 });
 test('the native devops session refuses the reviewer role: AGY is advisory only', () => {

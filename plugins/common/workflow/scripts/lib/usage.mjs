@@ -21,6 +21,13 @@ export function commandModel(command = []) {
   const at = command.findIndex(arg => arg === '--model' || arg === '-m');
   return at >= 0 && typeof command[at + 1] === 'string' ? command[at + 1] : null;
 }
+// The effort drive put on a separate-session command: claude's `--effort`, or codex's `model_reasoning_effort` override.
+export function commandEffort(command = []) {
+  const at = command.indexOf('--effort');
+  if (at >= 0 && typeof command[at + 1] === 'string') return command[at + 1];
+  const override = command.map(arg => /^model_reasoning_effort="?([a-z]+)"?$/.exec(String(arg))).find(Boolean);
+  return override ? override[1] : null;
+}
 const parseJson = text => { try { return JSON.parse(text); } catch { return undefined; } };
 // `claude --print --output-format json` prints one result object (or, in some builds, an array of events ending with it).
 function claudeResult(text) {
@@ -58,16 +65,16 @@ export function visibleResult(host, text) {
   } catch { /* print the raw text */ }
   return String(text);
 }
-// A subagent hand-back may carry `usage: in=1200 out=300 cache=5000 cache_write=40 cost=0.12 model=sonnet host=claude`.
+// A subagent hand-back may carry `usage: in=1200 out=300 cache=5000 cache_write=40 cost=0.12 model=sonnet effort=medium host=claude`.
 export function parseUsageLine(line) {
   if (typeof line !== 'string' || !line.trim()) return null;
   const fields = Object.fromEntries([...line.matchAll(/(\w+)=(\S+)/g)].map(match => [match[1].toLowerCase(), match[2]]));
   const number = key => (/^\d+(\.\d+)?$/.test(fields[key] || '') ? Number(fields[key]) : null);
   const usage = { input: number('in'), output: number('out'), cacheRead: number('cache'), cacheWrite: number('cache_write'), cost: number('cost') };
-  return { usage: Object.values(usage).some(value => value !== null) ? usage : null, model: fields.model || null, host: fields.host || null };
+  return { usage: Object.values(usage).some(value => value !== null) ? usage : null, model: fields.model || null, effort: fields.effort || null, host: fields.host || null };
 }
-export function usageEntry({ role, host, model, usage, key }) {
-  const entry = { role: String(role), host: host || unreported, model: model || unreported, ...(usage || empty) };
+export function usageEntry({ role, host, model, effort, usage, key }) {
+  const entry = { role: String(role), host: host || unreported, model: model || unreported, effort: effort || unreported, ...(usage || empty) };
   entry.key = key || createHash('sha1').update(JSON.stringify([entry, Date.now(), Math.random()])).digest('hex').slice(0, 12);
   return entry;
 }
@@ -76,14 +83,15 @@ const reported = entry => ['input', 'output', 'cacheRead', 'cacheWrite', 'cost']
 export function usageTotals(entries = []) {
   const rows = new Map();
   for (const entry of entries) {
-    const id = [entry.role, entry.model, entry.host].join('\0');
-    const row = rows.get(id) || { role: entry.role, model: entry.model, host: entry.host, sessions: 0, reported: 0, input: null, output: null, cacheRead: null, cacheWrite: null, cost: null };
+    const effort = entry.effort || unreported;
+    const id = [entry.role, entry.model, effort, entry.host].join('\0');
+    const row = rows.get(id) || { role: entry.role, model: entry.model, effort, host: entry.host, sessions: 0, reported: 0, input: null, output: null, cacheRead: null, cacheWrite: null, cost: null };
     row.sessions += 1;
     if (reported(entry)) row.reported += 1;
     for (const field of ['input', 'output', 'cacheRead', 'cacheWrite', 'cost']) if (count(entry[field]) !== null) row[field] = (row[field] || 0) + entry[field];
     rows.set(id, row);
   }
-  return [...rows.values()].sort((a, b) => a.role.localeCompare(b.role) || a.model.localeCompare(b.model));
+  return [...rows.values()].sort((a, b) => a.role.localeCompare(b.role) || a.model.localeCompare(b.model) || a.effort.localeCompare(b.effort));
 }
 // The shape `status` prints: the table rows, with "unreported" where a host gave no data.
 export function usageSummary(entries = []) {
@@ -93,12 +101,12 @@ export function usageSummary(entries = []) {
 const cell = (value, cost) => (value === null ? unreported : cost ? `$${value.toFixed(2)}` : String(value));
 export function usageComment(entries) {
   const kept = entries.slice(-maxEntries);
-  const rows = usageTotals(kept).map(row => `| ${row.role} | ${row.model} | ${row.host} | ${row.sessions} | ${cell(row.input)} | ${cell(row.output)} | ${cell(row.cacheRead)} | ${cell(row.cost, true)} |`);
+  const rows = usageTotals(kept).map(row => `| ${row.role} | ${row.model} | ${row.effort} | ${row.host} | ${row.sessions} | ${cell(row.input)} | ${cell(row.output)} | ${cell(row.cacheRead)} | ${cell(row.cost, true)} |`);
   return `<!-- workflow:usage ${JSON.stringify({ entries: kept }).replace(/-->/g, '--\\u003e')} -->
 **Workflow usage**
 
-| Role | Model | Host | Sessions | Input | Output | Cache read | Cost |
-| --- | --- | --- | --- | --- | --- | --- | --- |
+| Role | Model | Effort | Host | Sessions | Input | Output | Cache read | Cost |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 ${rows.join('\n')}
 
 Baseline: ${usageBaseline}.

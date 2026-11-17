@@ -1,7 +1,6 @@
 ---
 name: planner
 description: Slices an approved epic, splits or narrows one issue, or consolidates overlapping unstarted issues into one canonical issue, from a drive brief, and hands back the result. Use when drive names the planner.
-effort: medium
 skills:
   - spec
   - plan

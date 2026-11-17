@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { config, jsonCommand } from './lib/core.mjs';
-import { commandModel, parseUsage, recordUsage, usageEntry, usageHost, visibleResult } from './lib/usage.mjs';
+import { commandEffort, commandModel, parseUsage, recordUsage, usageEntry, usageHost, visibleResult } from './lib/usage.mjs';
 import { acquireReviewRef, createReviewClaim, localClaimIsDead, releaseSessionClaim, sessionClaim, withReviewTransport } from './lib/review-ref.mjs';
 
 // `--epic N COMMAND...` runs the epic-outcome Reviewer: it has no PR head to claim, only its usage to record on the epic.
@@ -54,6 +54,6 @@ child.on('close', () => {
   if (usageOf) process.stdout.write(output ? `${visibleResult(usageOf, output).replace(/\n?$/, '\n')}` : '');
   // A parse failure or a missing field records "unreported"; it never changes the exit code.
   try {
-    recordUsage({ repo: lanes.repo, pr, author: lanes.implementer, entry: usageEntry({ role: 'reviewer', host: usageOf, model: commandModel(command), usage: usageOf ? parseUsage(usageOf, output) : null }) });
+    recordUsage({ repo: lanes.repo, pr, author: lanes.implementer, entry: usageEntry({ role: 'reviewer', host: usageOf, model: commandModel(command), effort: commandEffort(command), usage: usageOf ? parseUsage(usageOf, output) : null }) });
   } catch { /* usage is optional */ }
 });

@@ -83,11 +83,11 @@ test('one review skill, one mode: one reviewer, no subagents, no round asks the 
   assert.match(agent, /^disallowedTools: Agent$/m);
   // The frontmatter model is the default; drive passes the model risk calls for (Opus for R2), which takes precedence.
   assert.doesNotMatch(agent, /^model:/m);
-  assert.match(agent, /^effort: \w+$/m);
+  assert.doesNotMatch(agent, /^effort:/m);
   const implementer = read('agents/implementer.md');
   assert.match(implementer, /^name: implementer$/m);
   assert.doesNotMatch(implementer, /^model:/m);
-  assert.match(implementer, /^effort: \w+$/m);
+  assert.doesNotMatch(implementer, /^effort:/m);
   assert.match(implementer, /^skills:\n  - deliver\n  - tdd$/m);
   assert.match(implementer, /^disallowedTools: Agent$/m);
   assert.match(implementer, /at most 5 lines/);
