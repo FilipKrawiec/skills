@@ -15,3 +15,7 @@ Evidence is a list of links. Drive checks that each cited PR or issue of this re
 ## Refinement with nothing to change
 
 A refinement slice (`workflow:epic-refinement`) whose review finds nothing to change makes no commit. The implementer writes the evidence to a file and hands back `status: done`, empty `paths` and `body: <file>`. Drive posts the file as a comment on the issue, closes it as completed with no PR, and counts it delivered for the epic. Other issues still need a commit.
+
+## Board sweep
+
+Every `drive` run first moves each closed issue's board card not yet in Done to Done, so a merged issue never waits for a rerun. `<cli> issue sweep-board` does the same alone and prints the count; open issues stay.

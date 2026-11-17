@@ -25,6 +25,7 @@ import {
   issueEdit,
   issueReopen,
   issueStatus,
+  issueSweepBoard,
   labelsCommand,
 } from './lib/issues.mjs';
 import {
@@ -59,6 +60,7 @@ const help = `Usage:
   node workflow.mjs check --worktree PATH
   node workflow.mjs pr ready|auto-merge --pr NUMBER
   node workflow.mjs nits [--days N] [--done PR...]
+  node workflow.mjs issue sweep-board
   node workflow.mjs issue status|create|comment|edit|close|reopen ...
   node workflow.mjs labels ensure
   node workflow.mjs worktree tidy [--dry-run] [--idle-days N]
@@ -89,7 +91,7 @@ export function hasLockfAncestor(commands) {
 function requiredLocks(command, args) {
   if (command === 'issue') {
     if (args[0] === 'create') return ['issue-create'];
-    if (args[0] === 'status') return ['board-status'];
+    if (args[0] === 'status' || args[0] === 'sweep-board') return ['board-status'];
     if (['comment', 'edit', 'close', 'reopen'].includes(args[0])) {
       const index = args.indexOf('--number');
       return index >= 0 && /^[1-9]\d*$/.test(args[index + 1] || '') ? [`issue-${args[0]}-${args[index + 1]}`] : [];
@@ -166,6 +168,7 @@ async function execute(command, args) {
   else if (command === 'review-post') reviewPost(args);
   else if (command === 'pr') { const { lanes } = config(); prCommand(args, lanes); }
   else if (command === 'nits') { const { lanes } = config(); nitsCommand(args, lanes); }
+  else if (command === 'issue' && args[0] === 'sweep-board') { const { lanes } = config(); issueSweepBoard(lanes); }
   else if (command === 'issue' && args[0] === 'status') { const { lanes } = config(); issueStatus(args.slice(1), lanes); }
   else if (command === 'issue' && args[0] === 'create') { config(); issueCreate(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'comment') { config(); issueComment(args.slice(1)); }
