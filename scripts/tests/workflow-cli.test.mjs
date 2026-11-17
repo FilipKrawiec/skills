@@ -9,12 +9,30 @@ import {
 } from '../../plugins/common/workflow/scripts/lib/core.mjs';
 import { cli, configPath, json, config, run, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, assertNoPush } from './support/workflow-cli-fixture.mjs';
 
-test('CODEOWNERS roles reject an organization slug when several path owners exist', () => {
-  assert.throws(() => codeownersRolesFrom('* @reviewer\n/*.rules @alice\n/*.json @bob\n', 'acme/app'), /identify one Owner account/);
-  assert.deepEqual(codeownersRolesFrom('* @reviewer\n/*.rules @alice\n', 'acme/app'), { owner: 'alice', defaultReviewer: 'reviewer' });
-  assert.deepEqual(codeownersRolesFrom('* @reviewer\n', 'acme/app'), { owner: 'acme', defaultReviewer: 'reviewer', ownerInferred: true });
-  assert.deepEqual(codeownersRolesFrom('* @reviewer\n', 'acme/app', true, 'boss'), { owner: 'boss', defaultReviewer: 'reviewer' });
-  assert.throws(() => codeownersRolesFrom('* @reviewer @other\n/*.rules @alice\n', 'acme/app'), /exactly one user/);
+test('the Owner comes from identities.owner, else the repository owner; CODEOWNERS never names it', () => {
+  assert.deepEqual(codeownersRolesFrom('* @reviewer\n', 'acme/app', 'boss'), { owner: 'boss', defaultReviewer: 'reviewer', contents: '* @reviewer\n' });
+  assert.deepEqual(codeownersRolesFrom('* @reviewer\n', 'acme/app'), { owner: 'acme', defaultReviewer: 'reviewer', ownerInferred: true, contents: '* @reviewer\n' });
+  assert.equal(codeownersRolesFrom('* @reviewer\n/*.rules @alice\n/*.json @bob\n', 'acme/app', 'boss').owner, 'boss');
+  assert.throws(() => codeownersRolesFrom('* @reviewer @other\n', 'acme/app', 'boss'), /exactly one user/);
+  assert.throws(() => codeownersRolesFrom('* @reviewer\n', 'acme/app', 'not a login'), /identities\.owner must be a GitHub login/);
+});
+
+test('a Reviewer-only CODEOWNERS passes the CLI with a configured Owner, a user repository owner, and fails naming identities.owner otherwise', t => {
+  const f = fixture(t);
+  const only = (c, kind) => {
+    writeFileSync(join(f.main, '.github', 'CODEOWNERS'), '* @reviewer\n');
+    const cfg = config({ repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer', owner: c });
+    writeFileSync(join(f.main, configPath), json(cfg));
+    assert.equal(f.git('add', configPath, '.github/CODEOWNERS').status, 0);
+    run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'roles', '--allow-empty'], { cwd: f.main });
+    f.env.REMOTE_BASE_SHA = f.git('rev-parse', 'HEAD').stdout.trim();
+    f.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    f.env.FAKE_OWNER_KIND = kind; f.env.GH_TOKEN = 'SECRET_TOKEN';
+    return f.cliRun('status');
+  };
+  assert.doesNotMatch(only('boss', 'Organization').stderr, /Owner|identities\.owner/);
+  assert.doesNotMatch(only(null, 'User').stderr, /Owner|identities\.owner/);
+  assert.match(only(null, 'Organization').stderr, /identities\.owner/);
 });
 
 test('push ignores repository URL rewrites added after validation', t => {
@@ -174,15 +192,12 @@ test('wrong actor never pushes', t => {
   assert.notEqual(result.status, 0); assertNoPush(f); assert.ok(!`${result.stdout}${result.stderr}`.includes('SECRET_TOKEN'));
 });
 
-test('owner bootstrap uses configured Reviewer while Owner comes from branch CODEOWNERS', t => {
+test('owner bootstrap uses configured Reviewer while Owner comes from the branch config', t => {
   const f = fixture(t);
   assert.equal(run(f.env.REAL_GIT, ['rm', '-q', configPath], { cwd: f.main }).status, 0);
   writeFileSync(join(f.main, '.github', 'CODEOWNERS'), '* @reviewer\n');
   commitFixture(f, f.main);
   f.env.REMOTE_BASE_SHA = run(f.env.REAL_GIT, ['rev-parse', 'HEAD'], { cwd: f.main }).stdout.trim();
-  writeFileSync(join(f.repo, '.github', 'CODEOWNERS'), '* @owner\n/*.rules @owner\n');
-  assert.equal(f.linkedGit('add', '.github/CODEOWNERS').status, 0);
-  assert.equal(f.linkedGit('-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-qm', 'branch owner rules').status, 0);
   f.env.FAKE_ACTOR = 'owner'; f.env.AUTH_USERS_FILE = join(f.root, 'auth-users.txt');
   const result = f.cliRun('push', '--owner-bootstrap');
   assert.equal(result.status, 0, result.stderr);

@@ -175,7 +175,7 @@ function check(cfg, base) {
 export function safetyCommand(args, lanes) {
   const [mode, ...rest] = args;
   if (!['check', 'apply'].includes(mode) || rest.length) throw new Error('Usage: workflow safety <check|apply>');
-  if (!lanes.repo || !lanes.owner || !lanes.implementer || !lanes.reviewer) throw new Error('Set origin, identities.implementer, identities.reviewer and Owner paths in .github/CODEOWNERS');
+  if (!lanes.repo || !lanes.owner || !lanes.implementer || !lanes.reviewer) throw new Error('Set origin, identities.implementer, identities.reviewer and identities.owner');
   if (lanes.releaseAppId != null && (!Number.isSafeInteger(lanes.releaseAppId) || lanes.releaseAppId < 1 || lanes.releaseAppId === 15368)) throw new Error('github.releaseAppId must be a valid non-GitHub-Actions integration id');
   identities(lanes);
   const base = lanes.base || api(lanes.repo, '').default_branch;

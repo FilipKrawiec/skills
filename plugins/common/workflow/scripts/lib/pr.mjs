@@ -67,7 +67,7 @@ function readPolicy(repo, base) {
 export function prCommand(args, lanes) {
   const [action, flag, number, ...rest] = args;
   if (!['ready', 'auto-merge'].includes(action) || flag !== '--pr' || !/^[1-9]\d*$/.test(number || '') || rest.length) throw new Error('Usage: pr ready|auto-merge --pr NUMBER');
-  if (!lanes.reviewer || !lanes.owner) throw new Error('Configure identities.reviewer and name the owner in .github/CODEOWNERS');
+  if (!lanes.reviewer || !lanes.owner) throw new Error('Configure identities.reviewer and set identities.owner in .agents/config.json');
   const repo = lanes.repo;
   const pr = readPr(repo, number);
   if (action === 'ready') {

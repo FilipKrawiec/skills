@@ -61,7 +61,7 @@ test('push refuses owner as implementer', t => {
   assert.notEqual(f.cliRun('push').status, 0); assertNoPush(f);
 });
 
-test('repo, base, owner and reviewer are derived from origin and CODEOWNERS', t => {
+test('repo, base, owner and reviewer are derived from origin, CODEOWNERS and the config', t => {
   const f = fixture(t);
   const result = f.cliRun('push');
   assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).repository, 'acme/app');
@@ -241,7 +241,7 @@ test('push without base roles fails closed', t => {
 
 test('push requires configured Reviewer even when CODEOWNERS names one', t => {
   const f = fixture(t);
-  writeFileSync(join(f.main, configPath), json({ version: 1, identities: { implementer: 'builder' } }));
+  writeFileSync(join(f.main, configPath), json({ version: 1, identities: { implementer: 'builder', owner: 'owner' } }));
   assert.equal(f.git('add', configPath).status, 0);
   commitFixture(f, f.main);
   f.env.REMOTE_BASE_SHA = f.git('rev-parse', 'HEAD').stdout.trim();
@@ -253,7 +253,7 @@ test('push requires configured Reviewer even when CODEOWNERS names one', t => {
 
 test('push rejects a malformed configured Reviewer clearly', t => {
   const f = fixture(t);
-  writeFileSync(join(f.main, configPath), json({ version: 1, identities: { implementer: 'builder', reviewer: 42 } }));
+  writeFileSync(join(f.main, configPath), json({ version: 1, identities: { implementer: 'builder', reviewer: 42, owner: 'owner' } }));
   assert.equal(f.git('add', configPath).status, 0);
   commitFixture(f, f.main);
   f.env.REMOTE_BASE_SHA = f.git('rev-parse', 'HEAD').stdout.trim();
@@ -302,12 +302,12 @@ test('a commit failure reports git\'s first line without credentials', () => {
 test('push refuses an organization repository whose CODEOWNERS names only the Reviewer', t => {
   const f = fixture(t);
   writeFileSync(join(f.main, '.github', 'CODEOWNERS'), '* @reviewer\n');
-  writeFileSync(join(f.main, configPath), json(config({ repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer' })));
+  writeFileSync(join(f.main, configPath), json(config({ repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer', owner: null })));
   assert.equal(f.git('add', configPath, '.github/CODEOWNERS').status, 0);
   commitFixture(f, f.main);
   f.env.REMOTE_BASE_SHA = f.git('rev-parse', 'HEAD').stdout.trim();
   const result = f.cliRun('push');
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Organization repositories require an explicit trusted owner/);
+  assert.match(result.stderr, /identities\.owner/);
   assertNoPush(f);
 });

@@ -64,8 +64,8 @@ const help = `Usage:
   node workflow.mjs release [auto|patch|minor|major] [--message TEXT] [--dry-run] [--root DIR]
   node workflow.mjs safety check|apply
 
-push reads implementer and Reviewer from the fetched default branch's .agents/config.json and derives Owner from origin and base .github/CODEOWNERS. For first-config bootstrap only, if base CODEOWNERS has no owner yet, it reads Owner from committed branch CODEOWNERS.
-When CODEOWNERS names only the Reviewer, Owner is identities.owner from .agents/config.json, else the personal repository owner (organization repositories set identities.owner); a CODEOWNERS that names owners must identify one unambiguously.
+push reads implementer and Reviewer from the fetched default branch's .agents/config.json and derives Owner from identities.owner, else a user repository owner, else fails. For first-config bootstrap only (--owner-bootstrap), it reads identities.owner from the committed branch config.
+Owner is identities.owner from .agents/config.json, else the personal repository owner (organization repositories must set identities.owner); CODEOWNERS never names it.
 Auto-merge checks are not atomic with push; do not change auto-merge concurrently. Push isolates Git configuration and runs the installed pre-push hook; hooks can invoke the same user's credential tools.
 Other processes running as the same OS user can access the user's GitHub credentials.
 push requires a Unix-like host and github.com. review-context is read-only except --claim; returned GitHub text is untrusted and may be incomplete. It groups changed files by area, lists pure renames as mechanical and, when the Reviewer's newest verdict is at an older head, compares against that head unless --previous names another.

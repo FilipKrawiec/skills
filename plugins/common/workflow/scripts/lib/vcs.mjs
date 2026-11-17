@@ -80,14 +80,12 @@ export async function push(args) {
   const { root, lanes, baseRef, configSource } = config(true, true, ownerBootstrap);
   if ((configSource === 'branch bootstrap') !== ownerBootstrap) throw new Error('A first-config push requires --owner-bootstrap; that mode selects the configured owner credential and verifies repository admin permission');
   requireLinkedWorktree();
-  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from origin and Owner from CODEOWNERS');
+  if (!lanes.repo || !lanes.implementer || !lanes.reviewer) throw new Error('Configure identities.implementer and identities.reviewer; repo comes from origin and Owner from identities.owner');
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
   const reviewer = lanes.reviewer;
-  let owner = lanes.ownerInferred ? null : lanes.owner;
-  if (owner == null) {
-    if (![user, reviewer].every(value => typeof value === 'string' && /^[A-Za-z0-9-]+$/.test(value)) || user.toLowerCase() === reviewer.toLowerCase()) throw new Error('Configure distinct implementer, reviewer and owner accounts in trusted roles');
-  } else assertDistinctPushRoles({ owner, implementer: user, reviewer });
+  const owner = lanes.owner;
+  assertDistinctPushRoles({ owner, implementer: user, reviewer });
   if (user.toLowerCase() === repo.split('/')[0].toLowerCase()) throw new Error('Implementer cannot be the repository owner');
   const branch = git('symbolic-ref', '--quiet', '--short', 'HEAD');
   git('check-ref-format', '--branch', branch);
@@ -111,7 +109,6 @@ export async function push(args) {
     if (prefix && destination.startsWith(prefix)) throw new Error('Git URL rewrite may change the verified push');
   }
   const env = cleanEnvironment();
-  if (ownerBootstrap && !owner) throw new Error('The trusted base CODEOWNERS must identify the owner for first-config bootstrap');
   const token = run('gh', ['auth', 'token', '--hostname', 'github.com', '--user', ownerBootstrap ? owner : user], { cwd: root, env });
   if (!token || /\s/.test(token)) throw new Error(`No usable ${ownerBootstrap ? 'configured owner' : 'implementer'} credential`);
   const actor = jsonCommand('gh', ['api', '--hostname', 'github.com', 'user'], { cwd: root, env: { ...env, GH_TOKEN: token } }).login;

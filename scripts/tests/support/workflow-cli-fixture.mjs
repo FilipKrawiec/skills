@@ -11,7 +11,7 @@ const configPath = '.agents/config.json';
 const json = value => JSON.stringify(value);
 const config = values => ({
   version: 1,
-  identities: Object.fromEntries(['implementer', 'reviewer'].filter(key => values[key] !== undefined).map(key => [key, values[key]])),
+  identities: Object.fromEntries(['implementer', 'reviewer', 'owner'].filter(key => ({ owner: 'owner', ...values })[key] != null).map(key => [key, ({ owner: 'owner', ...values })[key]])),
 });
 const fakeGh = `#!/usr/bin/env node
 const fs = require('node:fs');
