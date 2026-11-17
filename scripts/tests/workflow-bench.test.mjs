@@ -161,6 +161,18 @@ test('--run replays the snapshot once per setting through the stubbed Reviewer, 
     assert.match(replayed.out, /vs saved: caught \+0/);
   });
 });
+test('--from wraps a legacy result with top-level rows and summary as one run', async () => {
+  await withSnapshot(async (dir, file) => {
+    const out = join(dir, 'now.json');
+    await capture({ args: ['--snapshot', file, '--run', '--json', '--out', out], io: { model: 'opus', effort: 'medium', review: () => review('ready') } });
+    const [run] = JSON.parse(readFileSync(out, 'utf8')).runs;
+    const legacy = join(dir, 'legacy.json');
+    writeFileSync(legacy, JSON.stringify({ rows: run.rows, summary: run.summary }));
+    const { out: text } = await capture({ args: ['--snapshot', file, '--from', legacy, '--json'], io: { review: () => { throw new Error('must not run'); } } });
+    assert.equal(JSON.parse(text).runs.length, 1);
+    assert.equal(JSON.parse(text).runs[0].summary.clean, run.summary.clean);
+  });
+});
 test('--run without --settings uses the single configured setting', async () => {
   await withSnapshot(async (dir, file) => {
     const seen = [];
