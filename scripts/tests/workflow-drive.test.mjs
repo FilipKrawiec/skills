@@ -1901,6 +1901,16 @@ test('a claim whose holder only heartbeats is orphaned; a progressing holder is 
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('a holder silent since one call is refused until staleMs, not progressMs', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  try {
+    const key = 'acme/app-639s'; const win = 10 * 60_000;
+    acquireRunLock({ directory, key, session: 'A', now: 0 }).record('step-1', 0);
+    assert.equal(acquireRunLock({ directory, key, session: 'B', now: 2 * win }).acquired, false, 'its agent may still be working');
+    assert.equal(acquireRunLock({ directory, key, session: 'B', now: 31 * 60_000 }).acquired, true, 'staleMs still frees it');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('driveCommand records a takeover on the issue and the old holder stops without acting', () => {
   const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
   let said = '';

@@ -1155,7 +1155,9 @@ export function acquireRunLock({ directory, key, session, now = Date.now(), stal
   const other = held && held.session !== session;
   // A heartbeat alone keeps nothing: the holder must also have made drive progress (its answer changed) within `progressMs`.
   const progressAt = held?.progressAt ?? held?.at ?? now;
-  if (other && now - held.at < staleMs && now - progressAt < progressMs) return { acquired: false, by: held, takeOverAt: progressAt + progressMs };
+  // Only a holder that called drive again and got the same answer (held.at > progressAt) is orphaned early; a silent one may have an agent working, so it keeps `staleMs`.
+  const orphaned = held?.at > progressAt && now - progressAt >= progressMs;
+  if (other && now - held.at < staleMs && !orphaned) return { acquired: false, by: held, takeOverAt: progressAt + progressMs };
   const mine = !other && held;
   const state = { session, at: now, progressAt: mine ? progressAt : now, fingerprint: mine ? held.fingerprint : undefined };
   writeFileSync(path, JSON.stringify(state));
