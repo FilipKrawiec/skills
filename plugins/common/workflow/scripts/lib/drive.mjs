@@ -294,7 +294,7 @@ function uncoveredCriteria(epic, slices) {
   if (!slices.some(slice => slice.state === 'OPEN')) return [];
   const bodies = slices.filter(slice => !(slice.body || '').includes(refinementMarker)).map(slice => squash(slice.body));
   return section.split('\n').flatMap(line => {
-    const m = line.match(/^\s*[-*] \[ \] (.+?)\s*(?:<!-- workflow:criterion ([A-Za-z0-9._-]+) -->)?\s*$/);
+    const m = line.match(/^\s*[-*] \[ \] (.+?)\s*(?:<!-- workflow:criterion ([A-Za-z0-9._-]+) -->.*)?$/);
     if (!m) return [];
     const text = squash(m[1]);
     return bodies.some(body => body.includes(text) || (m[2] && body.includes(m[2].toLowerCase()))) ? [] : [{ id: m[2] || null, text: m[1] }];
@@ -588,7 +588,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     },
     editEpicBody: (epic, body) => { run('gh', ['issue', 'edit', String(epic.number), '--repo', repo, '--body', body]); },
     uncheckEpicCriteria: (epic, ids) => {
-      const body = epic.body.replace(/^(\s*[-*] \[[ xX]\] .+?\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->\s*)$/gm, (line, whole, id) => ids.includes(id) ? line.replace(/\[[xX]\]/, '[ ]') : line);
+      const body = epic.body.replace(/^(\s*[-*] \[[ xX]\] .+?\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->.*)$/gm, (line, whole, id) => ids.includes(id) ? line.replace(/\[[xX]\]/, '[ ]') : line);
       if (body !== epic.body) run('gh', ['issue', 'edit', String(epic.number), '--repo', repo, '--body', body]);
     },
     createEpicFollowUp: (epic, criterion) => {

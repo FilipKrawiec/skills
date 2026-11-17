@@ -938,6 +938,22 @@ test('epic closure names an outcome for every follow-up state, with the board pr
   }
 });
 
+test('criterion lines with text after the marker are still covered and unchecked', t => {
+  const body = '### Acceptance criteria\n- [ ] Benchmark the parser <!-- workflow:criterion bench --> (owner: dev)\n- [x] Works <!-- workflow:criterion works --> note\n';
+  const uncovered = decideEpic({ epic: issue({ number: 9, body }), slices: [{ number: 10, state: 'OPEN', blockers: [], body: 'x' }] }).uncovered;
+  assert.deepEqual(uncovered.map(c => [c.id, c.text]), [['bench', 'Benchmark the parser']]);
+  const covered = decideEpic({ epic: issue({ number: 9, body }), slices: [{ number: 10, state: 'OPEN', blockers: [], body: 'cites bench' }] }).uncovered || [];
+  assert.deepEqual(covered, []);
+  const dir = mkdtempSync(join(tmpdir(), 'gh-stub-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const out = join(dir, 'body.txt');
+  writeFileSync(join(dir, 'gh'), `#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = "--body" ] && printf '%s' "$2" > ${JSON.stringify(out)}; shift; done\n`, { mode: 0o755 });
+  const module = new URL('../../plugins/common/workflow/scripts/lib/drive.mjs', import.meta.url).href;
+  const code = `import { githubIo } from ${JSON.stringify(module)}; githubIo(${JSON.stringify(lanes)}, () => ({})).uncheckEpicCriteria({ number: 9, body: ${JSON.stringify(body)} }, ['works']);`;
+  const result = run(process.execPath, ['--input-type=module', '-e', code], { env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(readFileSync(out, 'utf8'), /- \[ \] Works <!-- workflow:criterion works --> note/);
+});
+
 test('production epic board updates fail when the board is unavailable', () => {
   const io = githubIo({ ...lanes, repo: 'acme/app' }, () => { throw Error('unavailable'); });
   assert.equal(typeof io.requiredBoard, 'function');
