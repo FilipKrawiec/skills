@@ -570,17 +570,12 @@ test('a dependency cycle in an epic returns an owner step naming it', () => {
   assert.deepEqual(findCycle([{ number: 12, blockers: [14] }, { number: 14, blockers: [12] }, { number: 15, blockers: [] }]), [12, 14, 12]);
   assert.equal(findCycle([{ number: 1, blockers: [2] }, { number: 2, blockers: [] }]), null);
   const epic = issue({ number: 9, labels: [label('type:epic')] });
-  const approved = { author: { login: 'reviewer' }, state: 'APPROVED', body: `<!-- agent-review sha=${head} round=1 verdict=ready -->`, commit: { oid: head } };
-  const slice = n => issue({ number: n, labels: [label('state:started'), label('risk:R1')], assessment: assessed() });
-  const slices = fakeRepo({ issues: { 9: epic, 10: slice(10), 12: slice(12) }, subs: { 9: [10, 12] }, trees: { 10: tree({ commits: 1 }), 12: tree({ commits: 1 }) }, prs: [pr({ issue: 10, number: 60, isDraft: false, reviews: [approved] })] });
-  slices.io.strictPolicy = () => false;
-  const notes = [];
-  slices.io.notifyOwner = n => notes.push(n);
-  const next = drive(slices.io, 9, lanes, {});
-  assert.match(next.owner, /up.to.date/);
-  assert.deepEqual(notes, [9]);
-  assert.deepEqual(next.alsoReady, [12]);
-  assert.match(next.continue, /drive each alsoReady slice/);
+  const slices = [{ number: 12, state: 'OPEN', blockers: [14] }, { number: 14, state: 'OPEN', blockers: [12] }];
+  assert.equal(decideEpic({ epic, slices }).owner, 'epic #9: dependency cycle #12 → #14 → #12');
+  const repo = fakeRepo({ issues: { 9: epic, 12: issue({ number: 12 }), 14: issue({ number: 14 }) }, subs: { 9: [12, 14] }, blockers: { 12: [14], 14: [12] } });
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /#12 → #14 → #12/);
+  // Only the epic's refinement slice is set up; no slice in the cycle starts.
+  assert.deepEqual(repo.calls, [['create-refinement', 99], ['blocker', 99, 12], ['blocker', 99, 14]]);
 });
 
 test('a slice with a dropped dependency or an epic blocked by an epic is not driven', () => {
@@ -601,7 +596,8 @@ test('--next takes the lowest-numbered ready item and skips unmet or dropped dep
   const repo = fakeRepo({ issues: { 2: issue({ number: 2 }), 4: issue({ number: 4, labels: [label('type:epic')] }) }, blockers: { 2: [4] } });
   let said = '';
   const log = console.log; console.log = text => { said = text; };
-  try { driveCommand(['--next'], lanes, repo.io); } finally { console.log = log; }
+  const lockDirectory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  try { driveCommand(['--next'], lanes, repo.io, { lockDirectory, session: 'test' }); } finally { console.log = log; rmSync(lockDirectory, { recursive: true, force: true }); }
   assert.deepEqual([JSON.parse(said).agent, JSON.parse(said).issue], ['planner', 4], 'drive --next picks the epic the issue waits for, not the blocked issue');
 });
 
@@ -1847,38 +1843,59 @@ test('an owner step is recorded on the issue and an owner step beside ready slic
   repo.io.notifyOwner = () => { throw new Error('gh down'); };
   assert.match(drive(repo.io, 3, lanes, { status: 'blocked', note: 'x' }).owner, /x/, 'a failed comment never changes the step');
   const epic = issue({ number: 9, labels: [label('type:epic')] });
-  const slices = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, labels: [label('lane:owner')] }), 11: issue({ number: 11 }), 12: issue({ number: 12 }) }, subs: { 9: [10, 11, 12] } });
+  const approved = { author: { login: 'reviewer' }, state: 'APPROVED', body: `<!-- agent-review sha=${head} round=1 verdict=ready -->`, commit: { oid: head } };
+  const slice = n => issue({ number: n, labels: [label('state:started'), label('risk:R1')], assessment: assessed() });
+  const slices = fakeRepo({ issues: { 9: epic, 10: slice(10), 12: slice(12) }, subs: { 9: [10, 12] }, trees: { 10: tree({ commits: 1 }), 12: tree({ commits: 1 }) }, prs: [pr({ issue: 10, number: 60, isDraft: false, reviews: [approved] })] });
+  slices.io.strictPolicy = () => false;
   const notes = [];
-  slices.io.notifyOwner = (n, step) => notes.push(n);
+  slices.io.notifyOwner = n => notes.push(n);
   const next = drive(slices.io, 9, lanes, {});
-  if (next.owner) { assert.deepEqual(notes, [9]); assert.match(next.continue, /alsoReady/); }
+  assert.match(next.owner, /up.to.date/);
+  assert.deepEqual(notes, [9]);
+  assert.deepEqual(next.alsoReady, [12]);
+  assert.match(next.continue, /drive each alsoReady slice/);
 });
 
-test('drive takes over a dead or idle run and never races a live one', () => {
+test('a drive session holds its claim between calls, is never raced, and is taken over once idle', () => {
   const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
   try {
-    const live = () => true; const dead = () => false;
-    const first = acquireRunLock({ directory, key: 'acme/app-620', pid: 100, now: 1000, alive: live });
-    assert.equal(first.acquired, true);
-    const raced = acquireRunLock({ directory, key: 'acme/app-620', pid: 200, now: 2000, alive: live });
-    assert.deepEqual([raced.acquired, raced.by.pid], [false, 100], 'a live, recent run is never raced');
-    const killed = acquireRunLock({ directory, key: 'acme/app-620', pid: 300, now: 3000, alive: dead });
-    assert.deepEqual([killed.acquired, killed.tookOver.pid], [true, 100], 'a dead pid is taken over');
-    const idle = acquireRunLock({ directory, key: 'acme/app-620', pid: 400, now: 3000 + 11 * 60_000, alive: live });
-    assert.deepEqual([idle.acquired, idle.tookOver.pid], [true, 300], 'a pid alive but silent past the heartbeat window is an idle run');
+    const key = 'acme/app-620'; const window = 30 * 60_000;
+    assert.equal(acquireRunLock({ directory, key, session: 'A', now: 1000 }).acquired, true);
+    assert.equal(acquireRunLock({ directory, key, session: 'A', now: 1000 + window - 1 }).acquired, true, 'the same session refreshes its heartbeat');
+    const raced = acquireRunLock({ directory, key, session: 'B', now: 2000 + window - 2 });
+    assert.deepEqual([raced.acquired, raced.by.session], [false, 'A'], 'a recent heartbeat is never raced, even with no process alive');
+    const idle = acquireRunLock({ directory, key, session: 'B', now: 1000 + 2 * window });
+    assert.deepEqual([idle.acquired, idle.tookOver.session], [true, 'A'], 'an idle session is taken over');
     idle.release();
-    assert.equal(acquireRunLock({ directory, key: 'acme/app-620', pid: 500, now: 4000, alive: live }).acquired, true, 'a released lock is free');
+    assert.equal(acquireRunLock({ directory, key, session: 'C', now: 1100 + 2 * window }).acquired, true, 'a released claim is free');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('driveCommand reports a live run instead of driving the same target', () => {
+test('driveCommand keeps the claim across calls until drive returns done, owner or blocked', () => {
   const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
-  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
   let said = '';
-  const log = console.log; console.log = text => { said = text; };
+  const log = console.log; console.log = text => { said = JSON.parse(text); };
   try {
-    assert.equal(acquireRunLock({ directory, key: 'acme/app-3', pid: process.ppid, alive: () => true, now: Date.now() }).acquired, true);
-    driveCommand(['3'], lanes, repo.io, { lockDirectory: directory });
-    assert.match(JSON.parse(said).blocked.reason, /another drive run/);
+    const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+    const call = (session, now) => driveCommand(['3'], lanes, repo.io, { lockDirectory: directory, session, now });
+    call('A', 1000);
+    assert.equal(said.agent, 'implementer', 'an agent step leaves the session in flight');
+    call('B', 2000);
+    assert.match(said.blocked.reason, /another drive session/, 'a second session is not handed the same step');
+    call('A', 3000);
+    assert.equal(said.agent, 'implementer');
+    call('B', 3000 + 31 * 60_000);
+    assert.equal(said.agent, 'implementer', 'an idle session is taken over');
+    repo.s.trees[3].dirty = true;
+    const hb = join(directory, 'hb.txt'); writeFileSync(hb, 'status: blocked\nnote: needs a credential\n');
+    driveCommand(['3', '--hand-back', hb], lanes, repo.io, { lockDirectory: directory, session: 'B', now: 4000 + 31 * 60_000 });
+    assert.match(said.owner, /credential/);
+    call('C', 5000 + 31 * 60_000);
+    assert.equal(said.blocked, undefined, 'an owner step released the claim');
   } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a blocked hand-back returns the owner step even with uncommitted or unpushed work', () => {
+  const base = { issue: started, pr: pr({ reviews: [review('fixes')] }), handBack: { status: 'blocked', note: 'needs a credential' } };
+  for (const extra of [{ dirty: true }, { unpushed: true }, {}]) assert.match(decide({ ...base, tree: tree({ commits: 1, ...extra }) }).owner, /credential/, JSON.stringify(extra));
 });

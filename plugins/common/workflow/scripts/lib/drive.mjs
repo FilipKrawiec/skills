@@ -245,6 +245,11 @@ export function decideIssue(facts, lanes) {
   const isConflictFinding = finding => { const first = finding.trim().split('\n')[0]; return /\bconflict/i.test(first) && /\bbase\b/i.test(first) && !/\S+\.\w+:\d+/.test(first); };
   const taggedConflicts = blocking.every(isConflictFinding);
   const conflictOnly = completeThreads && taggedConflicts && (blocking.length > 0 || /<!-- agent-review\b[^>]*\bfinding=base-conflict\b/.test(verdictBody));
+  // GitHub reports no conflict, so the verdict is stale (the base moved, or the Reviewer misjudged): the Reviewer judges the head again, once per head.
+  const staleConflictVerdicts = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && review.commit?.oid === pr.headRefOid && review.state !== 'DISMISSED' && /<!-- agent-review\b[^>]*\bverdict=fixes\b/.test(review.body || '') && (/<!-- agent-review\b[^>]*\bfinding=base-conflict\b/.test(review.body) || [...review.body.matchAll(/\*\*(?:Blocker|Important)\*\*([\s\S]*?)(?=\*\*(?:Blocker|Important|Nit|Pre-existing|Follow-up)\*\*|$)/g)].some(match => isConflictFinding(match[1])))).length;
+  const staleReview = agent('reviewer', 'review', { reason: 'the base conflict is stale: GitHub reports the PR mergeable', sameHead: true, round: state.round + 1 });
+  const staleConflict = conflictOnly && pr.mergeable === 'MERGEABLE' && staleConflictVerdicts < 2;
+  if (hb.status === 'blocked') return staleConflict ? staleReview : blockedOwner;
   if (hb.status === 'replan' && !conflictOnly && pr.mergeable !== 'CONFLICTING' && pr.mergeStateStatus !== 'DIRTY') return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
   if (tree && (tree.dirty || tree.unpushed)) {
     if (hb.status !== 'done') return agent('implementer', 'fix', { reason: 'fix in progress' });
@@ -263,10 +268,7 @@ export function decideIssue(facts, lanes) {
   const risk = maxRisk(state.risk, riskLabel(issue.labels || []), facts.prAssessment?.risk);
   if (risks.indexOf(risk) > risks.indexOf(state.risk)) return { do: 'risk', risk };
   const next = state.next;
-  // GitHub reports no conflict, so the verdict is stale (the base moved, or the Reviewer misjudged): the Reviewer judges the head again, once per head.
-  const staleConflictVerdicts = (pr.reviews || []).filter(review => review.author?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && review.commit?.oid === pr.headRefOid && review.state !== 'DISMISSED' && /<!-- agent-review\b[^>]*\bverdict=fixes\b/.test(review.body || '') && (/<!-- agent-review\b[^>]*\bfinding=base-conflict\b/.test(review.body) || [...review.body.matchAll(/\*\*(?:Blocker|Important)\*\*([\s\S]*?)(?=\*\*(?:Blocker|Important|Nit|Pre-existing|Follow-up)\*\*|$)/g)].some(match => isConflictFinding(match[1])))).length;
-  if (next.action === 'fix' && conflictOnly && pr.mergeable === 'MERGEABLE' && staleConflictVerdicts < 2) return agent('reviewer', 'review', { reason: 'the base conflict is stale: GitHub reports the PR mergeable', sameHead: true, round: state.round + 1 });
-  if (hb.status === 'blocked') return blockedOwner;
+  if (next.action === 'fix' && staleConflict) return staleReview;
   // A narrowed issue changes what the head is judged against: the Reviewer judges the same head again, no new build.
   if (hb.status === 'narrowed' && state.verdict === 'fixes' && !conflictOnly && next.reason !== 'conflicts with its base') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
   if (next.action === 'fix' && conflictOnly && hb.status !== 'done') return agent('implementer', 'fix', { reason: 'base conflict is the only open Blocker or Important finding', resume: true });
@@ -1108,26 +1110,20 @@ export function driveNext(io, numbers, lanes, handBack = {}) {
   return also.length ? { ...result, alsoWaiting: also } : result;
 }
 
-// One live drive run per target. A run holds a lock file with its pid and start time; a dead pid or a lock older than
-// `staleMs` is an idle or killed run, and the next run takes it over, so no person has to end the earlier process.
-const pidAlive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
-export function acquireRunLock({ directory, key, pid = process.pid, now = Date.now(), alive = pidAlive, staleMs = 10 * 60_000 }) {
+// One drive session per target. The claim belongs to the session, not to one CLI call: every `drive` call refreshes its
+// heartbeat, and the session releases it when drive returns `done`, `owner` or `blocked`. A claim another session holds
+// blocks it until the heartbeat is older than `staleMs`; then that session is idle or gone and the next one takes over.
+export const driveSessionId = (env = process.env) => env.WORKFLOW_DRIVE_SESSION || env.CLAUDE_SESSION_ID || env.CODEX_SESSION_ID || `ppid-${process.ppid}`;
+export function acquireRunLock({ directory, key, session, now = Date.now(), staleMs = 30 * 60_000 }) {
   mkdirSync(directory, { recursive: true });
   const path = join(directory, `${key.replace(/[^A-Za-z0-9._-]/g, '_')}.json`);
-  const record = JSON.stringify({ pid, at: now });
-  let tookOver = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { writeFileSync(path, record, { flag: 'wx' }); return { acquired: true, tookOver, release: () => { try { if (JSON.parse(readFileSync(path, 'utf8')).pid === pid) rmSync(path); } catch { /* already gone */ } } }; }
-    catch (error) { if (error.code !== 'EEXIST') throw error; }
-    let held = null;
-    try { held = JSON.parse(readFileSync(path, 'utf8')); } catch { /* unreadable: stale */ }
-    if (held && held.pid !== pid && alive(held.pid) && now - held.at < staleMs) return { acquired: false, by: held };
-    tookOver = held;
-    try { rmSync(path); } catch { /* another run took it first */ }
-  }
-  return { acquired: false, by: tookOver };
+  let held = null;
+  try { held = JSON.parse(readFileSync(path, 'utf8')); } catch { /* none or unreadable: free */ }
+  if (held && held.session !== session && now - held.at < staleMs) return { acquired: false, by: held };
+  writeFileSync(path, JSON.stringify({ session, at: now }));
+  return { acquired: true, tookOver: held && held.session !== session ? held : null, release: () => { try { if (JSON.parse(readFileSync(path, 'utf8')).session === session) rmSync(path); } catch { /* already gone */ } } };
 }
-export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory = join(homedir(), '.cache', 'workflow-cli', 'drive-runs') } = {}) {
+export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory = join(homedir(), '.cache', 'workflow-cli', 'drive-runs'), session = driveSessionId(), now = Date.now() } = {}) {
   const usage = 'Usage: drive NUMBER [--hand-back FILE|-] | drive --next';
   let handBack = {};
   const at = args.indexOf('--hand-back');
@@ -1140,15 +1136,19 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   let n;
   if (args[0] === '--next') {
     const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)));
-    const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next` });
-    if (!lock.acquired) { console.log(JSON.stringify({ blocked: { reason: `another drive --next run (pid ${lock.by?.pid}) is live; it never races, so run drive again when it ends` } })); return; }
-    try { console.log(JSON.stringify(driveNext(io, numbers, lanes, handBack))); } finally { lock.release(); }
+    const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
+    if (!lock.acquired) { console.log(JSON.stringify({ blocked: { reason: 'another drive session is live on --next; it never races, so run drive again when it ends or its heartbeat goes stale' } })); return; }
+    const result = driveNext(io, numbers, lanes, handBack);
+    if (result.done || result.owner || result.blocked) lock.release();
+    console.log(JSON.stringify(result));
     return;
   } else if (/^[1-9]\d*$/.test(args[0])) n = Number(args[0]);
   else throw new Error(usage);
-  const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${n}` });
-  if (!lock.acquired) { console.log(JSON.stringify({ blocked: { issue: n, reason: `another drive run (pid ${lock.by?.pid}) is live on #${n}; it never races, so run drive again when it ends` } })); return; }
-  try { console.log(JSON.stringify(drive(io, n, lanes, handBack))); } finally { lock.release(); }
+  const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${n}`, session, now });
+  if (!lock.acquired) { console.log(JSON.stringify({ blocked: { issue: n, reason: `another drive session is live on #${n}; it never races, so run drive again when it ends or its heartbeat goes stale` } })); return; }
+  const result = drive(io, n, lanes, handBack);
+  if (result.done || result.owner || result.blocked) lock.release();
+  console.log(JSON.stringify(result));
 }
 
 // ---- check: the project gate under a machine-wide lock with two slots, so at most 2 run at once.

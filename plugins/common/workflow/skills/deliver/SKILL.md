@@ -19,15 +19,15 @@ Branch on your role, first match wins:
 
 Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next ready issue or epic. Act on its JSON instruction, first match wins:
 
-- `agent` with `session: "subagent"`: verify the host matches `host`. Dispatch the named agent, model, effort and responsibility using the host's native subagent facility. If the host forbids or cannot confirm model or effort, stop; inspect work before resuming an alternative. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. If its hand-back is missing or malformed, stop. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
+- `agent` with `session: "subagent"`: verify the host matches `host`. Dispatch the named agent, model, effort and responsibility using the host's native subagent facility; set a unique task name if required. If the host forbids or cannot confirm model or effort, stop; inspect work before resuming an alternative. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. If its hand-back is missing or malformed, stop. Write its unchanged hand-back under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
 - `agent` with `session: "native"`: follow [native session](references/native-session.md).
 - `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session, which wrote the PR. When it exits, run `<cli> drive <issue>`. If host, model, effort or hand-back is unverifiable, stop and report; never substitute models or bypass review.
-- `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit.
-- `owner`: tell the owner its reason and `url`, drive each `alsoReady` slice, then end the turn.
+- `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit. Never sleep or poll inside a turn.
+- `owner`: tell the owner its reason and `url`, then end the turn.
 - `blocked`: report the cause; end the turn.
 - `done`: report it. For an epic, rerun `drive <epic>` until the epic is done.
 
-Drive each `alsoReady` slice alone. Report a result's `consolidated` merge. Background each `alsoWaiting` command. Start only drive's agents; edit no files; run no `gh`. After interruption, run `drive` again; it takes over an idle run.
+Drive each `alsoReady` slice alone. Report a result's `consolidated` merge. Background each `alsoWaiting` command. Start only drive's agents; edit no files; run no `gh`. After interruption, run `drive` again.
 
 **Exit gate:** `done` for the issue or epic, or an `owner` or `blocked` step reported.
 
