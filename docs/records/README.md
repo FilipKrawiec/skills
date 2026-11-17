@@ -26,3 +26,4 @@ Name records as `YYYY-MM-DD-short-topic.md`.
 - [Measured review epic refinement](2026-11-16-measured-review-refinement.md): epic #560 assessment, timing, usage, benchmark and packet cost evidence.
 
 - [Reviewer model and effort bench](2026-11-17-reviewer-model-effort-bench.md): Sonnet, Opus and Fable settings compared per risk, with a recommendation ([results](2026-11-17-reviewer-bench-results.json)).
+- [Drive transcript check](2026-11-17-drive-transcript-check.md): agent-run `gh` edits in stagely-pro#1611; not met as worded.
