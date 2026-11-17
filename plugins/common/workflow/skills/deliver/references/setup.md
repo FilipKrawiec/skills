@@ -16,7 +16,7 @@ Use version 1; read it from base.
 }
 ```
 
-`steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS defines path owners and must name exactly one default Reviewer matching `identities.reviewer`; `verify` is the default check. Once the Reviewer approves a PR touching a path whose CODEOWNERS owner is not that Reviewer, `drive` returns an `owner` step with the PR link and those paths; every other approval merges. Until the first config merges, `push --owner-bootstrap` reads a missing Owner from the branch's CODEOWNERS; afterwards, from base. The CLI caches the Project for 24 hours in common `.git`; `cache show` and `cache refresh` manage it.
+`steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS defines path owners and must name exactly one default Reviewer matching `identities.reviewer`; `verify` is the default check. Once the Reviewer approves a PR touching a path whose CODEOWNERS owner is not that Reviewer, `drive` returns an `owner` step with the PR link and those paths; every other approval merges. Until the first config merges, `push --owner-bootstrap` reads a missing Owner from the branch's CODEOWNERS; afterwards, from base. The CLI caches the Project 24 hours in common `.git`; manage it with `cache show` and `cache refresh`.
 
 Configure `delivery` as documented in the project installation guidance. Verify the host can dispatch, select the model and return an intact hand-back. The reviewer credential and exact-head approval remain mandatory.
 
@@ -54,4 +54,8 @@ Production needs exact owner approval for candidate and destination.
 
 Require configured status checks on branches up to date with the base in branch protection or the active ruleset. Drive cannot safely enable auto-merge without that setting.
 
-The project owns shared hardware verification: its test command must hold one machine-wide advisory lock per device for the entire run, including setup and cleanup. Use the same lock path for each device across checkouts and acquire multiple device locks in a consistent order. The workflow check slots only limit concurrent gates; they do not protect a device.
+The project owns shared hardware verification: its test command must hold one machine-wide advisory lock per device for the entire run, including setup and cleanup. Use one lock path per device across checkouts; acquire several in a consistent order. Check slots limit gates, not devices.
+
+## Start the drive session
+
+Start it on Sonnet at low effort (launch command in `docs/CONCEPTS.md`); never raise either.
