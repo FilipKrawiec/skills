@@ -6,7 +6,7 @@ allowed-tools: Skill Read Write Edit Bash Agent
 
 # Deliver
 
-`drive` handles mechanical changes; agents judge and `devops` judges risk (`review`'s `references/risk.md`). `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
+`drive` handles mechanical changes; agents judge, `devops` judges risk (`review`'s `references/risk.md`). `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
 
 Run one plain command per Bash call. Use `drive` and `wait`, never `gh` or polling, for labels, claims, cards, auto-merge, CI.
 
@@ -19,10 +19,10 @@ Branch on your role, first match wins:
 
 Run `<cli> drive <issue|epic>`, or `<cli> drive --next` to take the next ready issue or epic. Act on its JSON instruction, first match wins:
 
-- `agent` with `session: "subagent"`: verify the host matches `host`. Dispatch the named agent, model, effort and responsibility with the host's native subagent facility, a unique task name if required. If the host cannot confirm model or effort, stop. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. If its hand-back is missing or malformed, stop. Write its hand-back, adding the host's reported usage as a `usage:` line when it has none, under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
+- `agent` with `session: "subagent"`: verify the host matches `host`. Dispatch the named agent, model, effort and responsibility with the host's native subagent facility. If the host cannot confirm model or effort, stop. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. If its hand-back is missing or malformed, stop. Write its hand-back, adding the host's reported usage as a `usage:` line when it has none (else `<cli> usage-line <transcript> --rates <USD/M in,out,cache-read,cache-write>`), under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
 - `agent` with `session: "native"`: follow [native session](references/native-session.md).
 - `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session, which wrote the PR. When it exits, run `<cli> drive <issue>`. If host, model, effort or hand-back is unverifiable, stop and report; never substitute models or bypass review.
-- `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit. Never sleep or poll.
+- `wait`: run its `command` as one background Bash call; when it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit.
 - `owner`: tell the owner its reason and `url`, then end the turn.
 - `blocked`: report the cause; end the turn.
 - `done`: report it. For an epic, rerun `drive <epic>` until the epic is done.

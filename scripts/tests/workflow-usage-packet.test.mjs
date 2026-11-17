@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { commandEffort, commandModel, findUsageComment, parseUsage, parseUsageComment, parseUsageLine, recordUsage, usageComment, usageCost, usageEntry, usageHost, usageSummary, usageTotals, visibleResult } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
+import { commandEffort, commandModel, findUsageComment, parseUsage, transcriptUsage, transcriptUsageLine, parseUsageComment, parseUsageLine, recordUsage, usageComment, usageCost, usageEntry, usageHost, usageSummary, usageTotals, visibleResult } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
 import { exportedSymbols, issueCriteria, reviewPacket } from '../../plugins/common/workflow/scripts/lib/packet.mjs';
 import { drive, githubIo, handBackRole, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { statusCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
@@ -269,4 +269,25 @@ test('usage carries effort: parsed from the command or the hand-back, summed per
   assert.match(comment, /\| implementer \| sonnet \| high \| claude \| 1 \|/);
   assert.match(comment, /\| devops \| gpt \| unreported \| codex \| 1 \|/);
   assert.equal(parseUsageComment(comment)[0].effort, 'medium');
+});
+
+const turn = (id, usage, model = 'claude-sonnet-5-5') => JSON.stringify({ type: 'assistant', message: { id, model, usage } });
+test('a subagent transcript is summed once per message id into a usage line', () => {
+  const transcript = [
+    turn('m1', { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 20 }),
+    turn('m1', { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 20 }),
+    turn('m2', { input_tokens: 1, output_tokens: 7, cache_read_input_tokens: 200, cache_creation_input_tokens: 0 }),
+    JSON.stringify({ type: 'user', message: { content: 'hi' } }),
+    'not json',
+  ].join('\n');
+  assert.deepEqual(transcriptUsage(transcript), { usage: { input: 11, output: 12, cacheRead: 300, cacheWrite: 20, cost: null }, model: 'claude-sonnet-5-5' });
+  const rates = [3, 15, 0.3, 3.75];
+  const priced = transcriptUsage(transcript, rates);
+  assert.equal(priced.usage.cost, (11 * 3 + 12 * 15 + 300 * 0.3 + 20 * 3.75) / 1e6);
+  assert.deepEqual(parseUsageLine(transcriptUsageLine(transcript)).usage, { input: 11, output: 12, cacheRead: 300, cacheWrite: 20, cost: null });
+  assert.equal(parseUsageLine(transcriptUsageLine(transcript, rates)).model, 'claude-sonnet-5-5');
+});
+test('a transcript with no usage is unreported, never an error', () => {
+  assert.equal(transcriptUsage('not json\n'), null);
+  assert.equal(transcriptUsageLine(''), '');
 });

@@ -73,6 +73,30 @@ export function parseUsageLine(line) {
   const usage = { input: number('in'), output: number('out'), cacheRead: number('cache'), cacheWrite: number('cache_write'), cost: number('cost') };
   return { usage: Object.values(usage).some(value => value !== null) ? usage : null, model: fields.model || null, effort: fields.effort || null, host: fields.host || null, plugin: fields.plugin || null };
 }
+// The host hands a subagent's answer back without its usage, but writes every turn to the subagent's transcript
+// (`.../subagents/agent-<id>.jsonl`). Sum the transcript once per message id (streamed turns repeat); `rates` are USD per million
+// tokens as [input, output, cache read, cache write], and without them cost stays unreported rather than guessed.
+export function transcriptUsage(text, rates) {
+  const turns = new Map();
+  for (const line of String(text).split('\n')) {
+    const message = parseJson(line.trim())?.message;
+    if (message?.usage && typeof message.usage === 'object' && message.model !== '<synthetic>') turns.set(message.id ?? `turn${turns.size}`, message);
+  }
+  if (!turns.size) return null;
+  const sum = key => [...turns.values()].reduce((total, message) => total + (count(message.usage[key]) || 0), 0);
+  const usage = { input: sum('input_tokens'), output: sum('output_tokens'), cacheRead: sum('cache_read_input_tokens'), cacheWrite: sum('cache_creation_input_tokens'), cost: null };
+  if (Array.isArray(rates) && rates.length === 4 && rates.every(rate => Number.isFinite(rate) && rate >= 0)) {
+    usage.cost = (usage.input * rates[0] + usage.output * rates[1] + usage.cacheRead * rates[2] + usage.cacheWrite * rates[3]) / 1e6;
+  }
+  return { usage, model: [...turns.values()].at(-1).model || null };
+}
+// The `usage:` line `drive` reads from a hand-back; empty when the transcript has no usage.
+export function transcriptUsageLine(text, rates) {
+  const found = transcriptUsage(text, rates);
+  if (!found) return '';
+  const { usage, model } = found;
+  return `usage: in=${usage.input} out=${usage.output} cache=${usage.cacheRead} cache_write=${usage.cacheWrite}${usage.cost === null ? '' : ` cost=${Number(usage.cost.toFixed(6))}`}${model ? ` model=${model}` : ''} host=claude`;
+}
 export function usageEntry({ role, host, model, effort, usage, key, plugin }) {
   const entry = { role: String(role), host: host || unreported, model: model || unreported, effort: effort || unreported, ...(plugin ? { plugin } : {}), ...(usage || empty) };
   entry.key = key || createHash('sha1').update(JSON.stringify([entry, Date.now(), Math.random()])).digest('hex').slice(0, 12);
