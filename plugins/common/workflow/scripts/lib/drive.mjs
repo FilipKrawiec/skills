@@ -804,10 +804,13 @@ function instruction(io, facts, step, lanes) {
   const round = pr ? prState(pr, lanes).round : 0;
   const brief = join(io.scratch(tree), `drive-${issue.number}-${step.agent}.md`);
   let assignment = deliveryAssignment(lanes.delivery, step, risk, round);
-  // A resumed session keeps the model it started with. When the table now names another model (the PR's risk changed since),
-  // a fresh session starts from a handoff brief instead of resuming; the prior brief records the model the session started with.
-  const startedModel = step.resume && step.agent === 'implementer' ? /\bModel (\S+?)\. Effort /.exec(io.read?.(brief) || '')?.[1] : null;
-  if (startedModel && startedModel !== assignment.model) step = { ...step, resume: undefined, handoff: true, reason: `${step.reason || 'fix'}; the risk changed the model from ${startedModel} to ${assignment.model}, so a fresh session continues from a handoff` };
+  // A resumed session keeps the model it started with, even one the fresh round raised. Only when the risk changed since and the
+  // table now names another model does a fresh session start from a handoff brief; the prior brief records the risk and model.
+  const started = step.resume && step.agent === 'implementer' ? /\bRisk (R\d)\. Model (\S+?)\. Effort /.exec(io.read?.(brief) || '') : null;
+  if (started && started[2] !== assignment.model) {
+    if (started[1] === risk) assignment = { ...assignment, model: started[2] };
+    else step = { ...step, resume: undefined, handoff: true, reason: `${step.reason || 'fix'}; the risk changed the model from ${started[2]} to ${assignment.model}, so a fresh session continues from a handoff` };
+  }
   const { model, effort, host, session } = assignment;
   const packet = step.agent === 'reviewer' && pr ? join(io.scratch(tree), 'review-packet.md') : null;
   const context = { issue, pr, tree, step, risk, model, effort, round, handBack: facts.handBack, packet, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };

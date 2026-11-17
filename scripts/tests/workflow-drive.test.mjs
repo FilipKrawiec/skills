@@ -1770,3 +1770,12 @@ test('the production io reads the brief a role was last started with, so the han
   writeFileSync(path, 'Mode: build. Risk R1. Model sonnet. Effort medium.\n');
   assert.match(io.read(path), /Model sonnet\. Effort medium\./);
 });
+
+test('a resumed session that started fresh on a stronger model keeps it when the risk did not change', () => {
+  const brief = '/repo/.worktrees/3-add-a-thing/.wf/drive-3-implementer.md';
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, labels: [label('risk:R1')], assessment: assessed('R1'), reviews: [review('fixes')] })] });
+  repo.writes[brief] = '# Implementer brief\n\nMode: fix (round 3: the whole open set, fresh). Risk R1. Model opus. Effort medium.\n';
+  const step = drive(repo.io, 3, lanes, {});
+  assert.deepEqual([step.resume, step.handoff, step.model], [true, undefined, 'opus'], 'same risk: no handoff, the session keeps opus');
+  assert.match(repo.writes[brief], /Model opus\. Effort /);
+});
