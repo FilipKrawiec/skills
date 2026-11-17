@@ -1747,6 +1747,12 @@ test('an epic counts a slice folded into a merged PR, and a completed slice that
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
   repo.s.mergedPrs = []; repo.s.issues[9].state = 'OPEN';
   assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #25$/, 'a folded slice whose target PR is not merged still holds the epic');
+  // A target PR closed without merging reads as a closed item whose closing-PR lookup fails: the epic is held, naming it.
+  repo.s.issues[25] = issue({ number: 25, state: 'CLOSED' });
+  const lookup = repo.io.mergedClosingPr;
+  repo.io.mergedClosingPr = (n, base) => { if (n === 25) throw new Error('Could not resolve to an Issue'); return lookup(n, base); };
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #25$/, 'a fold into a PR closed without merging holds the epic instead of crashing');
+  repo.io.mergedClosingPr = lookup; delete repo.s.issues[25];
   repo.s.mergedPrs = [25]; repo.s.issues[11].body = '```scope\n{"paths": ["src/"]}\n```';
   assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #11$/, 'a slice that declared paths needs its merged PR');
 });

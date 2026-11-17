@@ -1043,8 +1043,11 @@ function unresolvedDelivery(io, slice, base, epic, ancestors = new Set()) {
   const target = consolidatedInto(slice.body);
   if (target && target !== slice.number && !ancestors.has(target)) {
     if (io.mergedPr?.(target, base)) return [];
-    const folded = io.issue(target);
-    return folded ? unresolvedDelivery(io, folded, base, epic, new Set([...ancestors, slice.number])) : [target];
+    // A target that cannot be read or checked, such as a PR closed without merging, holds the epic under its own number.
+    try {
+      const folded = io.issue(target);
+      return folded ? unresolvedDelivery(io, folded, base, epic, new Set([...ancestors, slice.number])) : [target];
+    } catch { return [target]; }
   }
   // A completed slice that says it makes no repository changes needed no code, as dependencies already count it.
   const needsNoCode = /^completed$/i.test(slice.stateReason || '') && pathsFromIssueBody(slice.body || '')?.length === 0;
