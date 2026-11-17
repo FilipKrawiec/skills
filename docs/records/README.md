@@ -28,4 +28,5 @@ Name records as `YYYY-MM-DD-short-topic.md`.
 - [Reviewer model and effort bench](2026-11-17-reviewer-model-effort-bench.md): Sonnet, Opus and Fable settings compared per risk, with a recommendation ([results](2026-11-17-reviewer-bench-results.json)).
 - [Drive transcript check](2026-11-17-drive-transcript-check.md): agent-run `gh` edits in stagely-pro#1611; not met as worded.
 - [Targets measured, stagely-pro#1611](2026-11-17-stagely-pro-1611-targets-measured.md): cost, agents, rounds and refusals per merged PR against #409; cost and rounds met, agents and refusals missed.
+- [Sonnet-low epic measured against #606](2026-11-17-sonnet-low-epic-measured.md): #615's verdict for epic #635: session and owner steps met, cost not shown below baseline, recall waiver cited.
 - [Approval-free setup delivery, epic #635](2026-11-17-approval-free-setup-delivery.md): the Sonnet-low drive session, owner steps, dispatch failures and reviewer cost per merged PR, measured for #615.
