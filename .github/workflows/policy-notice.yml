@@ -1,0 +1,28 @@
+name: Policy path notice
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  notice:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment to the owner when a policy path merged
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          paths="$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename' \
+            | grep -E '^(\.github/CODEOWNERS|\.github/workflows/|\.agents/config\.json|scripts/tests/workflow-decisions\.test\.mjs)' || true)"
+          if [ -z "$paths" ]; then exit 0; fi
+          body="$(printf '@%s this merged PR changed policy paths; review it after the fact (admin override stays yours):\n\n%s\n' "$OWNER" "$(printf '%s\n' "$paths" | sed 's/^/- `/; s/$/`/')")"
+          gh pr comment "$PR" --repo "$REPO" --body "$body"

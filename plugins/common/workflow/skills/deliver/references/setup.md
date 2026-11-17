@@ -16,7 +16,7 @@ Use version 1; read it from base.
 }
 ```
 
-`steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS defines path owners and must name exactly one default Reviewer matching `identities.reviewer`; `verify` is the default check. Once the Reviewer approves a PR touching a path whose CODEOWNERS owner is not that Reviewer, `drive` returns an `owner` step with the PR link and those paths; every other approval merges. Until the first config merges, `push --owner-bootstrap` reads a missing Owner from the branch's CODEOWNERS; afterwards, from base. The CLI caches the Project 24 hours in common `.git`; manage it with `cache show` and `cache refresh`.
+`steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS names exactly one default Reviewer matching `identities.reviewer` and, by default, nothing else; `verify` is the default check. Owner: the other CODEOWNERS account, else `identities.owner`, else the repository owner. A path CODEOWNERS still gives an owner makes `drive` return an `owner` step after approval; every other approval merges. Until the first config merges, `push --owner-bootstrap` reads a missing Owner from the branch's CODEOWNERS; afterwards, from base. The CLI caches the Project 24 hours in common `.git`; manage it with `cache show` and `cache refresh`.
 
 Configure `delivery` as documented in the project installation guidance. Verify the host can dispatch, select the model and return an intact hand-back. The reviewer credential and exact-head approval remain mandatory.
 
