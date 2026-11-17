@@ -34,13 +34,14 @@ Failed agent dispatches: 0. Implementer, devops and planner dispatches succeeded
 
 From the `status` reviewer rows. Implementer, devops and planner usage is `unreported` by the host, and the Sonnet drive session's own cost is in no `workflow:usage` row, so total cost per PR is unknown.
 
-| PR | Issue | Reviewer sessions | Reviewer cost | Review rounds |
+| PR | Issue | Reviewer sessions | Reviewer cost | Review round (`status`) |
 | --- | --- | --- | --- | --- |
-| #638 | #628 | 3 | $1.72 | 2 |
+| #638 | #628 | 3 | $1.72 | 1 |
 | #640 | #639 | 2 | $1.03 | 2 |
-| #642 | #641 | 2 | $0.91 | 2 |
-| #643 | #609 | 2 | $1.29 | 2 |
+| #642 | #641 | 2 | $0.91 | 1 |
+| #643 | #609 | 2 | $1.29 | 1 |
+| stagely-pro#1640 | stagely-pro#1639 | 2 | $1.02 | 1 |
 
-Median reviewer cost per merged PR: $1.16 (mean of $1.03 and $1.29).
+Median reviewer cost per merged PR over the five PRs: $1.03 (sorted $0.91, $1.02, $1.03, $1.29, $1.72).
 
 The drive session's own comment on #615 is posted by the drive session, not by this record's author.
