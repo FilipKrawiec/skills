@@ -978,13 +978,13 @@ export function driveEpic(io, epic, lanes) {
           }
           io.uncheckEpicCriteria(first.current, outstanding.map(item => item.id));
           const updated = io.issue(epic.number);
-          if (outstanding.some(item => !(updated.body || '').split('\n').some(line => /^\s*[-*] \[ \] /.test(line) && line.trimEnd().endsWith(`${item.text} <!-- workflow:criterion ${item.id} -->`)))) throw new Error('Criterion was not left unchecked');
-          if (io.requiredBoard(epic.number, 'BLOCKED') === false) throw new Error('Epic board update unavailable');
+          if (outstanding.some(item => !(updated.body || '').split('\n').some(line => /^\s*[-*] \[ \] /.test(line) && line.includes(`${item.text} <!-- workflow:criterion ${item.id} -->`)))) throw new Error('Criterion was not left unchecked');
+          io.requiredBoard(epic.number, 'BLOCKED');
           for (const item of matches) {
             const followUp = item.open || io.createEpicFollowUp(first.current, item.criterion);
             const linked = io.subIssues(epic.number).some(child => child.number === followUp.number);
             if (!linked || followUp.state !== 'OPEN' || !(followUp.body || '').includes(item.criterion.nextAction)) throw new Error('Follow-up is not linked, open and actionable');
-            if (io.requiredBoard(followUp.number, 'TODO') === false) throw new Error('Follow-up board update unavailable');
+            io.requiredBoard(followUp.number, 'TODO');
           }
         }
         if (step.do === 'close-epic' || !outstanding.length) return { owner: `epic #${epic.number}: ${first.result.issues.join('; ')}; update the epic outcome review and evidence for outstanding work`, url: epic.url };

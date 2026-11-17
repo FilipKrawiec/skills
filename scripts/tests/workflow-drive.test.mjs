@@ -468,6 +468,15 @@ test('an approval-only session runs only when a ready verdict at the head lacks 
   assert.deepEqual([decide({ ...base, pr: moved }).agent, decide({ ...base, pr: moved }).mode], ['reviewer', 'review']);
 });
 
+test('an earlier Reviewer fixes review that holds an Owner decision keeps an approved PR with the Reviewer', () => {
+  const base = { issue: started, tree: tree({ commits: 1 }) };
+  const held = { ...review('fixes'), body: `<!-- agent-review sha=${'a'.repeat(40)} round=1 verdict=fixes -->\nOwner decision: pick one` };
+  const ready = pr({ isDraft: false, reviews: [held, review('ready')] });
+  assert.equal(decide({ ...base, pr: ready }).mode, 'approve', 'the Owner decision stays with the Reviewer');
+  const plain = pr({ isDraft: false, reviews: [review('fixes'), review('ready')] });
+  assert.notEqual(decide({ ...base, pr: plain }).mode, 'approve', 'without it drive reaches its own step');
+});
+
 test('a draft behind its base brings the base in before its review; one already reviewed is not updated', () => {
   const base = { issue: started, tree: tree({ commits: 1 }) };
   assert.deepEqual(decide({ ...base, pr: pr({ mergeStateStatus: 'BEHIND' }) }), { do: 'update-branch' });
@@ -887,6 +896,46 @@ test('several open follow-ups for one criterion stop with a classification reque
   const result = drive(repo.io, 9, lanes, {});
   assert.match(result.owner, /#595, #596.*need classification/);
   assert.equal(repo.creates, 0);
+});
+
+// Every follow-up state closure can meet for one unmet criterion, with the outcome drive must name for it.
+// Removing a row, or a state without an outcome, fails the test.
+const closureStates = ['none', 'open', 'closed delivered', 'closed not planned', 'closed duplicate of a delivered issue', 'closed duplicate of an undelivered issue', 'closed undelivered', 'two open'];
+const closureRows = [
+  { state: 'none', children: [], outcome: 'create' },
+  { state: 'open', children: [[595, 'OPEN', false]], outcome: 'reuse' },
+  { state: 'closed delivered', children: [[595, 'CLOSED', true]], outcome: 'create' },
+  { state: 'closed not planned', children: [[595, 'CLOSED', false]], notPlanned: 595, outcome: 'owner', owner: /#595/ },
+  { state: 'closed duplicate of a delivered issue', children: [[595, 'CLOSED', false]], duplicateOf: [595, 700, true], outcome: 'create' },
+  { state: 'closed duplicate of an undelivered issue', children: [[595, 'CLOSED', false]], duplicateOf: [595, 700, false], outcome: 'owner', owner: /#700/ },
+  { state: 'closed undelivered', children: [[595, 'CLOSED', false]], outcome: 'owner', owner: /#595/ },
+  { state: 'two open', children: [[595, 'OPEN', false], [596, 'OPEN', false]], outcome: 'owner', owner: /#595, #596.*need classification/ },
+];
+test('epic closure names an outcome for every follow-up state, with the board present or absent', () => {
+  assert.deepEqual(closureRows.map(row => row.state), closureStates, 'every closure state has exactly one row');
+  for (const row of closureRows) for (const board of ['present', 'absent']) {
+    const label = `${row.state}, board ${board}`;
+    const repo = followUpFixture(row.children);
+    if (row.notPlanned) repo.s.issues[row.notPlanned].stateReason = 'NOT_PLANNED';
+    if (row.duplicateOf) {
+      const [duplicate, target, delivered] = row.duplicateOf;
+      repo.s.issues[duplicate].body += `\n<!-- workflow:consolidated-into ${target} -->`;
+      repo.s.issues[target] = issue({ number: target, state: 'CLOSED' });
+      if (delivered) repo.s.merged.push(target);
+    }
+    const boardCalls = [];
+    repo.io.requiredBoard = (n, value) => { if (board === 'absent') return false; boardCalls.push([n, value]); return undefined; };
+    const result = drive(repo.io, 9, lanes, {});
+    // A reused open follow-up becomes the next instruction, a new one waits on the outcome review; a verification failure is the owner step a row names.
+    const waiting = /update the epic outcome review/.test(result.owner || '');
+    const outcome = result.owner && !waiting ? 'owner' : repo.creates === 1 ? 'create' : (waiting || result.agent) && repo.creates === 0 ? 'reuse' : 'unnamed';
+    assert.equal(outcome, row.outcome, `${label}: ${JSON.stringify(result)}`);
+    if (row.owner) assert.match(result.owner, row.owner, label);
+    assert.equal(repo.s.issues[9].state, 'OPEN', `${label}: the epic stays open`);
+    // A retired slice (not planned or a consolidated duplicate) never becomes a blocker of the refinement.
+    assert.equal((repo.s.blockers?.[99] || []).includes(595) && Boolean(row.notPlanned || row.duplicateOf), false, `${label}: retired slice linked as a blocker`);
+    if (board === 'present' && row.outcome !== 'owner') assert.deepEqual(boardCalls.map(call => call[1]), ['BLOCKED', 'TODO'], label);
+  }
 });
 
 test('production epic board updates fail when the board is unavailable', () => {
