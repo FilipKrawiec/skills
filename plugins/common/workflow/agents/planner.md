@@ -15,6 +15,7 @@ Modes:
 - `replan`: narrow the issue to what its PR delivers, or split it at its seam into an epic with one-PR sub-issues.
 - `split`: split the change the Reviewer asked to split.
 - `consolidate`: merge the overlapping unstarted issues the brief lists into one canonical issue that carries every outcome, criterion, dependency, decision and milestone. Comment on each other issue what moved where, append `<!-- workflow:consolidated-into N -->` to its body (N is the canonical issue, so a dependency on it follows N), then close it as not planned. When the issues are distinct outcomes, append `<!-- workflow:distinct M -->` to the issue the brief names for each other issue M and hand back `distinct`.
+- `refinement`: an epic has several live refinement candidates (marked or legacy). Fold them into one canonical refinement slice carrying the `<!-- workflow:epic-refinement -->` marker, every outcome and criterion; append `<!-- workflow:consolidated-into N -->` to each other candidate's body, comment where its content went, close it as not planned and hand back `consolidated` with `into` and `closed`. Never ask the owner to classify.
 
 Structure goes through the workflow CLI, never raw `gh`: `issue create` and `issue edit` take `--milestone NAME`, `--parent N` (sub-issue link) and `--blocked-by N,M`; `issue comment` posts comments.
 
