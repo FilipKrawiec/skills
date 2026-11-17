@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, holdBaseUpdates, latestAssessment,
-  driveCommand, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
@@ -2084,6 +2084,21 @@ test('drive allows six concurrent runs per repository and a seventh waits until 
     call(9, 2000 + 31 * 60_000);
     assert.equal(said.agent, 'implementer');
   } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('one session holding several fresh claims counts as one run, and six other sessions still fill the slots', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  try {
+    for (const n of [1, 2, 3, 4, 5]) acquireRunLock({ directory, key: `${lanes.repo}-${n}`, session: 'busy', now: 1000 });
+    assert.equal(liveRuns({ directory, repo: lanes.repo, now: 1000 }), 1, 'five claims of one session are one run');
+    assert.equal(liveRuns({ directory, repo: lanes.repo, now: 1000, session: 'busy' }), 0, 'a session never counts its own claims');
+    for (const n of [11, 12, 13, 14, 15]) acquireRunLock({ directory, key: `${lanes.repo}-${n}`, session: `S${n}`, now: 1000 });
+    assert.equal(liveRuns({ directory, repo: lanes.repo, now: 1000 }), 6);
+    assert.equal(liveRuns({ directory, repo: lanes.repo, now: 1000, session: 'busy' }), 5);
+    acquireRunLock({ directory, key: `${lanes.repo}-16`, session: 'S16', now: 1000 });
+    assert.equal(liveRuns({ directory, repo: lanes.repo, now: 1000 + 31 * 60_000 }), 0, 'stale claims never count');
+    assert.equal(liveRuns({ directory, repo: lanes.repo, now: 1000, session: 'busy' }), 6, 'six other sessions fill the slots');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('a released claim frees a slot for the seventh run, and wait slot exits when one is free', () => {

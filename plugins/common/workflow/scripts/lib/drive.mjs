@@ -1274,22 +1274,28 @@ export function acquireRunLock({ directory, key, session, now = Date.now(), stal
     release: () => { try { if (JSON.parse(readFileSync(path, 'utf8')).session === session) rmSync(path); } catch { /* already gone */ } },
   };
 }
-// Up to six runs per repository: one claim file per issue, so a seventh waits until a claim is released or goes stale.
+// Up to six runs per repository: a run is one session, however many issue claims it holds, so a seventh session waits until a session's claims are all released or go stale.
 export const maxRuns = 6;
 const claimKey = key => `${key.replace(/[^A-Za-z0-9._-]/g, '_')}.json`;
-export function liveRuns({ directory, repo, now = Date.now(), except = null, staleMs = 30 * 60_000 }) {
+export function liveRuns({ directory, repo, now = Date.now(), except = null, session = null, staleMs = 30 * 60_000 }) {
   const prefix = claimKey(repo).slice(0, -5) + '-';
   let files = [];
   try { files = readdirSync(directory); } catch { /* no claims yet */ }
-  return files.filter(file => file.startsWith(prefix) && /^\d+\.json$/.test(file.slice(prefix.length)) && file !== except).filter(file => {
-    try { return now - JSON.parse(readFileSync(join(directory, file), 'utf8')).at < staleMs; } catch { return false; }
-  }).length;
+  const sessions = new Set();
+  for (const file of files) {
+    if (!file.startsWith(prefix) || !/^\d+\.json$/.test(file.slice(prefix.length)) || file === except) continue;
+    try {
+      const claim = JSON.parse(readFileSync(join(directory, file), 'utf8'));
+      if (now - claim.at < staleMs && claim.session !== session) sessions.add(claim.session ?? file);
+    } catch { /* unreadable: not a run */ }
+  }
+  return sessions.size;
 }
 const runDirectory = () => join(homedir(), '.cache', 'workflow-cli', 'drive-runs');
-export function waitSlotCommand(args, lanes, { directory = runDirectory(), pause = seconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000), now = Date.now } = {}) {
+export function waitSlotCommand(args, lanes, { directory = runDirectory(), pause = seconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000), now = Date.now, session = driveSessionId() } = {}) {
   const deadline = now() + 120 * 60_000;
   for (;;) {
-    if (liveRuns({ directory, repo: lanes.repo, now: now() }) < maxRuns) return 0;
+    if (liveRuns({ directory, repo: lanes.repo, now: now(), session }) < maxRuns) return 0;
     if (now() >= deadline) { console.error(`workflow: timed out waiting for a free drive slot in ${lanes.repo}`); return 1; }
     pause(30);
   }
@@ -1314,7 +1320,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   let n;
   if (args[0] === '--next') {
     const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)));
-    if (liveRuns({ directory: lockDirectory, repo: lanes.repo, now }) >= maxRuns) { console.log(JSON.stringify(slotsFull(null, lanes))); return; }
+    if (liveRuns({ directory: lockDirectory, repo: lanes.repo, now, session }) >= maxRuns) { console.log(JSON.stringify(slotsFull(null, lanes))); return; }
     const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
     if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(null, lock, now))); return; }
     if (lock.tookOver) io.noteTakeover?.(null, lock.tookOver, now);
@@ -1329,7 +1335,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   const own = claimKey(`${lanes.repo}-${n}`);
   let mine = false;
   try { mine = JSON.parse(readFileSync(join(lockDirectory, own), 'utf8')).session === session; } catch { /* no claim */ }
-  if (!mine && liveRuns({ directory: lockDirectory, repo: lanes.repo, now, except: own }) >= maxRuns && !existsSync(join(lockDirectory, own))) { console.log(JSON.stringify(slotsFull(n, lanes))); return; }
+  if (!mine && liveRuns({ directory: lockDirectory, repo: lanes.repo, now, except: own, session }) >= maxRuns && !existsSync(join(lockDirectory, own))) { console.log(JSON.stringify(slotsFull(n, lanes))); return; }
   const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${n}`, session, now });
   if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(n, lock, now))); return; }
   if (lock.tookOver) io.noteTakeover?.(n, lock.tookOver, now);
