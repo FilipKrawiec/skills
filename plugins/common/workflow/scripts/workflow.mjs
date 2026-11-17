@@ -40,6 +40,7 @@ import { benchCommand, reviewerIo } from './lib/bench.mjs';
 import { runResponsibility } from './lib/responsibility.mjs';
 import { worktreeCommand } from './lib/worktrees.mjs';
 import { initCommand } from './lib/init.mjs';
+import { transcriptUsageLine } from './lib/usage.mjs';
 
 const help = `Usage:
   node workflow.mjs commit --message MESSAGE [-- PATH...]
@@ -47,6 +48,7 @@ const help = `Usage:
   node workflow.mjs review-context --pr NUMBER [--claim] [--previous SHA --previous-base SHA] [--issue NUMBER]
   node workflow.mjs review-post --pr NUMBER --sha HEX --event APPROVE|REQUEST_CHANGES|COMMENT --body-file PATH|- [--comments-file PATH|-] [--resolve-thread ID]...
   node workflow.mjs scratch
+  node workflow.mjs usage-line TRANSCRIPT [--rates IN,OUT,CACHE_READ,CACHE_WRITE]
   node workflow.mjs status NUMBER
   node workflow.mjs wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]
   node workflow.mjs wait slot
@@ -147,6 +149,15 @@ function cacheCommand(args) {
   const metadata = cachedGithubMetadata(lanes.repo, args[0] === 'refresh');
   console.log(JSON.stringify({ repository: lanes.repo, base: lanes.base, owner: lanes.owner, reviewer: lanes.reviewer, project: metadata.project, requiredChecks: lanes.requiredChecks, steps: lanes.steps, explore: workflowDefaults.explore, cache: githubMetadataPath() }));
 }
+// Prints the `usage:` line for a subagent transcript the host wrote, USD per million tokens in --rates; nothing when it has none.
+function usageLineCommand(args) {
+  const at = args.indexOf('--rates');
+  const rates = at >= 0 ? String(args[at + 1]).split(',').map(Number) : undefined;
+  const rest = args.filter((_, index) => index !== at && index !== at + 1 || at < 0);
+  if (rest.length !== 1) throw new Error('Usage: usage-line TRANSCRIPT [--rates IN,OUT,CACHE_READ,CACHE_WRITE]');
+  const line = transcriptUsageLine(readFileSync(resolve(rest[0]), 'utf8'), rates);
+  if (line) console.log(line);
+}
 async function execute(command, args) {
   if (!command || command === '--help' || command === 'help') console.log(help);
   else if (command === 'commit') commit(args);
@@ -169,6 +180,7 @@ async function execute(command, args) {
   else if (command === 'bench') { const { lanes, root } = config(); const options = {}; for (const key of ['model', 'effort', 'host']) { const at = args.indexOf(`--${key}`); if (at >= 0) options[key] = args[at + 1]; } process.exitCode = await benchCommand(args, reviewerIo(lanes, root, options)); }
   else if (command === 'check') { const { lanes } = config(); process.exitCode = checkCommand(args, lanes); }
   else if (command === 'scratch' && !args.length) console.log(JSON.stringify({ path: workflowScratch() }));
+  else if (command === 'usage-line') usageLineCommand(args);
   else if (command === 'labels') labelsCommand(args);
   else if (command === 'worktree') worktreeCommand(args);
   else if (command === 'cache') cacheCommand(args);
