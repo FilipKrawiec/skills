@@ -16,7 +16,7 @@ export function installedPlugins(home = homedir()) {
   const plugins = readJson(join(home, '.claude', 'plugins', 'installed_plugins.json'))?.plugins;
   if (!plugins || typeof plugins !== 'object') return [];
   return Object.entries(plugins).filter(([key]) => key.startsWith(`${name}@`))
-    .flatMap(([key, installs]) => (Array.isArray(installs) ? installs : []).filter(install => typeof install?.version === 'string').map(install => ({ key, version: install.version })));
+    .flatMap(([key, installs]) => (Array.isArray(installs) ? installs : []).filter(install => typeof install?.version === 'string').map(install => ({ key, version: install.version, scope: install.scope || 'user' })));
 }
 // One line for the owner when an installed copy differs from the CLI's version; null when they match or nothing is known.
 export function versionNotice(cliVersion, installed = installedPlugins()) {
@@ -24,5 +24,5 @@ export function versionNotice(cliVersion, installed = installedPlugins()) {
   const stale = installed.filter(install => install.version !== cliVersion);
   if (!stale.length) return null;
   const versions = [...new Set(stale.map(install => install.version))].join(', ');
-  return `workflow: installed plugin ${versions} differs from this CLI's ${cliVersion}; drive's sessions load ${cliVersion} through --plugin-dir. To update the installation, run: claude plugin update ${stale[0].key}`;
+  return `workflow: installed plugin ${versions} differs from this CLI's ${cliVersion}; drive's sessions load ${cliVersion} through --plugin-dir. To update the installation, run: claude plugin update ${stale[0].key} --scope ${stale[0].scope}`;
 }

@@ -425,14 +425,17 @@ reason: <one line: concrete failure, recovery steps and financial impact, with e
 ${f.issue.body || '(no body)'}
 `;
 }
-function improverBrief(f) {
+export function improverBrief(f) {
   return `# Improvement brief: epic #${f.issue.number} ${f.issue.title}
 
 Invoke the \`improve\` skill for process lessons from the delivered epic ${f.issue.url}. Follow its idempotency and recording steps; the refinement PR has merged. Return its output in at most 5 lines.
+Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 `;
 }
 function epicOutcomeBrief(f) {
   return `# Reviewer brief: epic #${f.issue.number} outcome review
+
+Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 
 Task: post the epic outcome comment for ${f.issue.url} (review skill, references/epic-outcome.md). ${f.step.reason}.
 Read the epic, its linked children (\`gh api repos/${f.repo}/issues/${f.issue.number}/sub_issues\`) and the PRs merged into ${f.base} that closed them. Judge each criterion against the merged code and cite those PRs; mark one \`unmet\` or \`unverifiable\` when the evidence does not show it, with a concrete \`nextAction\`. Post the comment with \`GH_TOKEN=$(gh auth token --user <identities.reviewer>) gh api repos/${f.repo}/issues/${f.issue.number}/comments -F body=@<file>\` (the CLI's \`issue comment\` posts as the implementer), never printing the token. Never edit, commit or push, never start an agent and never print a token.
@@ -452,6 +455,7 @@ export function reviewerBrief(f) {
 
 ${f.packet ? `Read the review packet first: ${f.packet}. It holds the issue criteria, CI, the project gate, the diff by area, the delta since your last verdict with open threads, and call sites of changed exports. Do not re-gather them; check blast radius outside it yourself.\n\n` : ''}Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
+Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 ${f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 

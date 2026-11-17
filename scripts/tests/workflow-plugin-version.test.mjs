@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { reviewerCommand, implementerBrief } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { reviewerCommand, implementerBrief, reviewerBrief, devopsBrief, plannerBrief, improverBrief } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { installedPlugins, pluginRoot, pluginVersion, versionNotice } from '../../plugins/common/workflow/scripts/lib/plugin.mjs';
 import { parseUsageLine, usageEntry, usageSummary } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
 
@@ -41,7 +41,7 @@ test('installed copies that differ from the CLI give a one-line update notice; m
     const notice = versionNotice('11.81.0', installed);
     assert.equal(notice.includes('\n'), false);
     assert.match(notice, /11\.76\.2, 11\.65\.0 differs from this CLI's 11\.81\.0/);
-    assert.match(notice, /claude plugin update filipkrawiec-workflow@skills$/);
+    assert.match(notice, /claude plugin update filipkrawiec-workflow@skills --scope user$/);
     assert.equal(versionNotice('11.76.2', [{ key: 'filipkrawiec-workflow@skills', version: '11.76.2' }]), null);
     assert.equal(versionNotice(null, installed), null);
     assert.deepEqual(installedPlugins(join(home, 'missing')), []);
@@ -52,4 +52,10 @@ test('status separates sessions by the plugin version they reported', () => {
   assert.equal(parseUsageLine('model=opus plugin=11.81.0').plugin, '11.81.0');
   const rows = usageSummary([usageEntry({ role: 'reviewer', host: 'claude', model: 'opus', plugin: '11.81.0' }), usageEntry({ role: 'reviewer', host: 'claude', model: 'opus' })]);
   assert.deepEqual(rows.map(row => row.plugin), ['11.81.0', undefined]);
+});
+
+test('every role brief names the plugin version', () => {
+  const facts = { issue: { number: 1, title: 't', url: 'u', body: '', labels: [] }, pr: { number: 2, url: 'p', headRefOid: 'a'.repeat(40), body: '' }, step: { mode: 'review', round: 1 }, risk: 'R1', model: 'opus', effort: 'medium', round: 1, tree: { path: '/w', branch: 'b' }, base: 'main', repo: 'o/r', lanes: {}, diffPaths: [] };
+  const briefs = { reviewer: reviewerBrief(facts), epicOutcome: reviewerBrief({ ...facts, pr: null, step: { mode: 'epic-outcome', round: 1 } }), improver: improverBrief(facts), devops: devopsBrief(facts), planner: plannerBrief(facts) };
+  for (const [role, brief] of Object.entries(briefs)) assert.ok(brief.includes(`Plugin: workflow ${manifest.version}`), role);
 });
