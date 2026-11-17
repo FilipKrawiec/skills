@@ -104,7 +104,7 @@ export function initCommand(args, io = {}) {
   let test;
   if (!existingConfig) {
     test = detectTestCommand(root, option(args, '--test'));
-    if (!test) throw new Error('Cannot tell how this project verifies itself (no justfile verify recipe, no npm test script); rerun with --test "COMMAND" naming its full test command');
+    if (!test) throw new Error('Cannot tell how this project verifies itself (no justfile verify recipe, no npm test script); rerun with --test "COMMAND" naming its full test command (plain words only: no quotes or shell syntax)');
   }
   const todo = [];
   const unable = [];

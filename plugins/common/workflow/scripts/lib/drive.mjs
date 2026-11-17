@@ -26,7 +26,7 @@ const risks = ['R0', 'R1', 'R2'];
 export const maxRisk = (...values) => risks[Math.max(...values.filter(Boolean).map(value => risks.indexOf(value)), 0)];
 // One role x risk x round table names the model and effort of every session drive starts. The Reviewer runs Opus at every
 // risk at medium effort (2026-11-16 dry run: Flash approved two defective PRs; 2026-11-17 bench, owner kept Opus medium); the implementer runs Opus only at R2; the risk assessor runs
-// Sonnet; the planner and improver run Opus and Sonnet-or-better as before. Effort follows risk (R0 implementer low; R2
+// Sonnet; the planner and improver run Opus. Effort follows risk (R0 implementer low; R2
 // implementer high; every other cell medium) and never exceeds high: no cell and no escalation yields xhigh or max.
 const efforts = ['low', 'medium', 'high'];
 // From the third blocking verdict on, narrow fixes have stopped converging: one fresh implementer on the strongest model

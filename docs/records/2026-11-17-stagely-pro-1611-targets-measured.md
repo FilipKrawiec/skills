@@ -45,7 +45,7 @@ Cause of the misses. #1634: the owner filed #1633 mid-run (a planner agent), the
 
 ## Refusals
 
-Denominator: 25 agent sessions (13 subagent transcripts, 12 Reviewer sessions). Strict refusals (auto-mode denial, hook block, tool block, CLI refusal):
+Denominator: 25 agent sessions (13 subagent transcripts and 12 Reviewer and worktree sessions; the owner session is counted separately, not in the 25). Strict refusals (auto-mode denial, hook block, tool block, CLI refusal):
 
 | Agent | Refused | Command and cause |
 |---|---|---|
