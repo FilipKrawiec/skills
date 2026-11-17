@@ -1,5 +1,5 @@
-import { prRecord } from './board.mjs';
-import { jsonCommand } from './core.mjs';
+import { prRecord, sweepBoard } from './board.mjs';
+import { cachedGithubMetadata, jsonCommand } from './core.mjs';
 import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { findUsageComment, usageCost, usageSummary } from './usage.mjs';
 import { checkState, failedStates, passedStates, prFields } from './pr.mjs';
@@ -109,7 +109,8 @@ function settled(until, state, lanes) {
   return state.verdict ? true : null;
 }
 // Blocks in the CLI, not in an agent: a session runs it in the background and is woken once, when it exits.
-export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = readPr, checksAt = readChecksAt } = {}) {
+const sweepClosedBoard = lanes => sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project });
+export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = readPr, checksAt = readChecksAt, sweep = sweepClosedBoard } = {}) {
   const usage = 'Usage: wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]';
   const [value, ...rest] = args;
   const o = {};
@@ -129,7 +130,13 @@ export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read =
     if (line !== last) { console.log(line); last = line; }
     const done = settled(o['--until'], state, lanes);
     if (done === false && o['--until'] === 'merged' && state.state === 'OPEN') console.error(`workflow: #${n} is ${state.mergeState} against its base; run drive to bring the base in`);
-    if (done !== null) return done ? 0 : 1;
+    if (done !== null) {
+      // The merge closes the issue; its card moves now, not on some later drive run (best effort).
+      if (done && o['--until'] === 'merged' && state.state === 'MERGED') {
+        try { const moved = sweep(lanes); if (moved.length) console.error(`workflow: moved ${moved.map(m => `#${m}`).join(', ')} to Done`); } catch (error) { console.error(`workflow: board sweep skipped: ${error.message}`); }
+      }
+      return done ? 0 : 1;
+    }
     if (now() >= deadline) { console.error(`workflow: timed out after ${timeout} minutes waiting for ${o['--until']} on #${n}`); return 1; }
     pause(interval);
   }

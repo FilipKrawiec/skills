@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { effectiveBranchPolicy } from '../safety.mjs';
 import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
-import { boardStatus, dependenciesFromIssueBody, pathsFromIssueBody, pathsWithinScope, prRecord } from './board.mjs';
+import { boardStatus, sweepBoard, dependenciesFromIssueBody, pathsFromIssueBody, pathsWithinScope, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { consolidatedInto, droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { checkState, failedStates, prFields } from './pr.mjs';
@@ -838,6 +838,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       if (current.state === 'OPEN') run('gh', ['issue', 'close', String(issue.number), '--repo', repo, '--reason', 'completed']);
     },
     board: (n, value) => board(lanes, n, value),
+    // Best effort: a closed issue's card never waits for a rerun of drive for that issue.
+    sweepBoard: () => { try { return sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }); } catch (error) { console.error(`drive: board sweep skipped: ${error.message}`); return []; } },
     // A repository with no board skips the step (boardStatus returns false and says so); any other failure throws.
     requiredBoard: (n, value) => { boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, n, value, false); },
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
@@ -1317,6 +1319,8 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     args = args.filter((_, index) => index !== at && index !== at + 1);
   }
   if (args.length !== 1) throw new Error(usage);
+  const swept = io.sweepBoard?.() ?? [];
+  if (swept.length) console.error(`drive: moved ${swept.length} closed issue card${swept.length === 1 ? '' : 's'} to Done: ${swept.map(n => `#${n}`).join(', ')}`);
   let n;
   if (args[0] === '--next') {
     const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)));

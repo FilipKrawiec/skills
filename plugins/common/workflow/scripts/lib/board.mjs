@@ -127,3 +127,29 @@ export function boardStatus(cfg, issue, value, silent = false) {
     return false;
   }
 }
+// Moves every card whose issue is closed but not in Done to Done; open issues stay. `io` reads the board's cards
+// ({ number, status }) and the closed issue numbers, and moves one card; it returns the moved issue numbers.
+export function sweepClosedCards(io) {
+  const closed = new Set(io.closedIssues());
+  const moved = [];
+  for (const card of io.cards()) {
+    if (!closed.has(card.number) || String(card.status || '').toLowerCase() === 'done') continue;
+    if (io.moveToDone(card.number) !== false) moved.push(card.number);
+  }
+  return moved;
+}
+export function githubBoardSweepIo(cfg) {
+  const { project } = cfg;
+  return {
+    closedIssues: () => gh(['issue', 'list', '--repo', cfg.repo, '--state', 'closed', '--limit', '1000', '--json', 'number']).map(issue => issue.number),
+    cards: () => gh(['project', 'item-list', String(project.number), '--owner', project.owner, '--limit', '1000', '--format', 'json']).items
+      .filter(item => item.content?.type === 'Issue' && (!item.content.repository || item.content.repository === cfg.repo))
+      .map(item => ({ number: item.content.number, status: item.status })),
+    moveToDone: number => boardStatus(cfg, number, 'DONE', true),
+  };
+}
+// The count of cards moved; a repository with no usable board sweeps nothing.
+export function sweepBoard(cfg) {
+  if (!cfg.project?.number || !cfg.project.owner) return [];
+  return sweepClosedCards(githubBoardSweepIo(cfg));
+}

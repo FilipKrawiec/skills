@@ -139,6 +139,19 @@ test('wait ends on a verdict, on merge, on a closed PR and on timeout', () => {
   assert.equal(stuck.pauses, 3);
 });
 
+test('wait --until merged sweeps closed cards to Done once the PR merges, and only then', () => {
+  const run = (state, until = 'merged') => {
+    let sweeps = 0; const log = console.log; console.log = () => {};
+    try {
+      const code = waitCommand(['5', '--until', until], lanes, { read: () => pr({ state }), sweep: () => { sweeps++; return [3]; }, pause: () => {}, now: () => 0 });
+      return { code, sweeps };
+    } finally { console.log = log; }
+  };
+  assert.deepEqual(run('MERGED'), { code: 0, sweeps: 1 });
+  assert.deepEqual(run('CLOSED'), { code: 1, sweeps: 0 });
+  assert.deepEqual(run('MERGED', 'ci'), { code: 0, sweeps: 0 });
+});
+
 test('wait --until merged exits 1 on a PR behind or in conflict with its base, printing the state', () => {
   const error = console.error; const errors = []; console.error = line => errors.push(line);
   try {

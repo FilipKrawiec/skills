@@ -10,6 +10,7 @@ import {
   prLinkedIssues,
   prRecord,
   reviewerApproved,
+  sweepClosedCards,
 } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import {
   assertDistinctPushRoles,
@@ -221,4 +222,25 @@ test('issue writes never carry private repository evidence into a public one', (
   assert.throws(() => assertIssueVisibility({ name: 'acme/app', private: true }, { name: 'acme/skills', private: false }), /acme\/skills is public and acme\/app is private; file in acme\/app/);
   assert.doesNotThrow(() => assertIssueVisibility({ name: 'acme/app', private: false }, { name: 'acme/skills', private: false }));
   assert.doesNotThrow(() => assertIssueVisibility({ name: 'acme/app', private: true }, { name: 'acme/skills', private: true }));
+});
+
+test('a sweep moves closed issues\' cards that are not Done to Done and leaves open issues alone', () => {
+  const moved = [];
+  const io = {
+    closedIssues: () => [1, 2, 3],
+    cards: () => [
+      { number: 1, status: 'Review' },
+      { number: 2, status: 'Done' },
+      { number: 3, status: 'In progress' },
+      { number: 4, status: 'Review' },
+    ],
+    moveToDone: number => { moved.push(number); },
+  };
+  assert.deepEqual(sweepClosedCards(io), [1, 3]);
+  assert.deepEqual(moved, [1, 3], 'the open issue #4 and the Done card #2 are untouched');
+});
+
+test('a sweep does not count a card the board could not move', () => {
+  const io = { closedIssues: () => [1], cards: () => [{ number: 1, status: 'Review' }], moveToDone: () => false };
+  assert.deepEqual(sweepClosedCards(io), []);
 });
