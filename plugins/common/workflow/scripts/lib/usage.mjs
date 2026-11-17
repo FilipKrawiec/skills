@@ -98,6 +98,12 @@ export function usageSummary(entries = []) {
   if (!entries.length) return unreported;
   return usageTotals(entries).map(row => Object.fromEntries(Object.entries(row).map(([field, value]) => [field, value === null ? unreported : value])));
 }
+// The PR's total cost: the sum of every reported cost, with each role that has a session without one named, never dropped.
+export function usageCost(entries = []) {
+  const costs = entries.map(entry => count(entry.cost)).filter(cost => cost !== null);
+  const roles = [...new Set(entries.filter(entry => count(entry.cost) === null).map(entry => entry.role))].sort();
+  return { total: costs.length ? Math.round(costs.reduce((sum, cost) => sum + cost, 0) * 1e6) / 1e6 : unreported, unreported: roles };
+}
 const cell = (value, cost) => (value === null ? unreported : cost ? `$${value.toFixed(2)}` : String(value));
 export function usageComment(entries) {
   const kept = entries.slice(-maxEntries);
