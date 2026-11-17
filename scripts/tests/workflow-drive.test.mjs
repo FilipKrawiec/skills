@@ -1663,6 +1663,10 @@ test('the planner agent is defined, planner brief follows the epic outcome and t
   assert.match(agentText, /Never write code.*never start another agent/s);
   assert.match(agentText, /Split only for an independent outcome.*never by size/);
   assert.match(plannerBrief({ issue: issue(), step: { mode: 'slice' } }), /Slices follow the epic's approved outcome/);
+  const sliceBrief = plannerBrief({ issue: issue(), step: { mode: 'slice' } });
+  assert.match(sliceBrief, /issue create --title T --body-file PATH \[--milestone NAME\] \[--parent N\] \[--blocked-by N,M\]/);
+  assert.match(sliceBrief, /issue comment --number N/);
+  assert.doesNotMatch(sliceBrief, /`gh api`/);
 });
 
 test('epic repair skips a sub-issue closed as duplicate or not planned and ignores a link to it', () => {

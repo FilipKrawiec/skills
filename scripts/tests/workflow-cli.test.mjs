@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { cpSync, readFileSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
+import { cpSync, readFileSync, writeFileSync, chmodSync, existsSync, rmSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import {
   codeownersRolesFrom,
@@ -309,6 +309,98 @@ function lockedIssueFixture(t) {
   f.env.TEST_CALLS = join(f.root, 'calls.log');
   return f;
 }
+// A stateful fake gh: milestones v1 (3), issues whose id is 100 x number, and sub-issue and blocked-by links kept in links.json.
+function structureFixture(t) {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node
+const fs=require('fs'), a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));
+const file=process.env.TEST_LINKS, links=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):{};
+const path=a.find(x=>x.startsWith('repos/'))||'', field=k=>{const x=a.find(v=>v.startsWith(k+'='));return x&&x.slice(k.length+1);};
+fs.appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');
+if(a[0]==='auth'){console.log('SECRET_TOKEN');process.exit(0);}
+if(a.includes('user')){out({login:'builder'});process.exit(0);}
+if(path.includes('/milestones')){out([[{number:2,title:'v0'},{number:3,title:'v1'}]]);process.exit(0);}
+const link=path.match(/issues\\/(\\d+)\\/(sub_issues|dependencies\\/blocked_by)/);
+if(link){const key=link[1]+link[2];
+  if(a.includes('POST')){if(!process.env.TEST_NO_LINK)links[key]=[...(links[key]||[]),Number(field(link[2]==='sub_issues'?'sub_issue_id':'issue_id'))/100];fs.writeFileSync(file,JSON.stringify(links));out({});}
+  else out([(links[key]||[]).map(number=>({number}))]);
+  process.exit(0);}
+const issue=path.match(/issues\\/(\\d+)$/);
+if(issue&&a.includes('PATCH')){const m=field('milestone');out({number:Number(issue[1]),body:field('body'),milestone:m&&!process.env.TEST_NO_MILESTONE?{title:'v1'}:null});process.exit(0);}
+if(issue){out({id:Number(issue[1])*100,number:Number(issue[1])});process.exit(0);}
+if(path.endsWith('/issues')){const m=field('milestone');out({number:9,milestone:m&&!process.env.TEST_NO_MILESTONE?{title:'v1'}:null});process.exit(0);}
+out({});
+`);
+  chmodSync(gh, 0o755);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  writeFileSync(join(f.repo, 'body.md'), 'Body text');
+  f.env.TEST_CALLS = join(f.root, 'calls.log');
+  f.env.TEST_LINKS = join(f.root, 'links.json');
+  return f;
+}
+const calls = f => readFileSync(f.env.TEST_CALLS, 'utf8');
+const links = f => JSON.parse(readFileSync(f.env.TEST_LINKS, 'utf8'));
+
+test('issue edit sets a milestone by name without a body file and confirms it', t => {
+  const f = structureFixture(t);
+  const result = f.cliRun('issue', 'edit', '--number', '4', '--milestone', 'v1');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Edited #4/);
+  assert.match(calls(f), /-X PATCH repos\/acme\/app\/issues\/4 -F milestone=3/);
+  assert.doesNotMatch(calls(f), /body=/);
+  f.env.TEST_NO_MILESTONE = '1';
+  const dropped = f.cliRun('issue', 'edit', '--number', '4', '--milestone', 'v1');
+  assert.match(dropped.stderr, /did not confirm #4 in milestone v1/);
+  const unknown = f.cliRun('issue', 'edit', '--number', '4', '--milestone', 'nope');
+  assert.match(unknown.stderr, /no milestone named nope/);
+});
+
+test('issue edit links a parent epic once and confirms it from GitHub', t => {
+  const f = structureFixture(t);
+  for (let run = 0; run < 2; run++) {
+    const result = f.cliRun('issue', 'edit', '--number', '4', '--parent', '1');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Linked #4 under #1/);
+  }
+  assert.deepEqual(links(f)['1sub_issues'], [4]);
+  assert.equal(calls(f).split('\n').filter(line => /POST .*issues\/1\/sub_issues -F sub_issue_id=400/.test(line)).length, 1);
+  rmSync(f.env.TEST_LINKS); f.env.TEST_NO_LINK = '1';
+  assert.match(f.cliRun('issue', 'edit', '--number', '4', '--parent', '1').stderr, /did not confirm #4 under #1/);
+});
+
+test('issue edit adds each blocked-by link and skips one already present', t => {
+  const f = structureFixture(t);
+  assert.equal(f.cliRun('issue', 'edit', '--number', '4', '--blocked-by', '2').status, 0);
+  const result = f.cliRun('issue', 'edit', '--number', '4', '--blocked-by', '2,3');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Blocked #4 by #2, #3/);
+  assert.deepEqual(links(f)['4dependencies/blocked_by'], [2, 3]);
+  assert.equal(f.cliRun('issue', 'edit', '--number', '4', '--blocked-by', '4').status, 1);
+  assert.match(f.cliRun('issue', 'edit', '--number', '4', '--blocked-by', 'x').stderr, /--blocked-by expects issue numbers/);
+});
+
+test('issue edit with nothing to change prints its usage', t => {
+  const f = structureFixture(t);
+  assert.match(f.cliRun('issue', 'edit', '--number', '4').stderr, /Usage: issue edit --number N/);
+});
+
+test('issue create sets the milestone, parent and blocked-by links on the new issue', t => {
+  const f = structureFixture(t);
+  const result = f.cliRun('issue', 'create', '--title', 'Slice', '--body-file', 'body.md', '--milestone', 'v1', '--parent', '1', '--blocked-by', '2,3');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Created: #9/);
+  assert.match(result.stdout, /Linked #9 under #1/);
+  assert.match(result.stdout, /Blocked #9 by #2, #3/);
+  assert.match(calls(f), /repos\/acme\/app\/issues -f title=Slice -f body=Body text -F milestone=3/);
+  assert.deepEqual(links(f)['1sub_issues'], [9]);
+  assert.deepEqual(links(f)['9dependencies/blocked_by'], [2, 3]);
+  f.env.TEST_NO_MILESTONE = '1';
+  assert.match(f.cliRun('issue', 'create', '--title', 'Slice', '--body-file', 'body.md', '--milestone', 'v1').stderr, /did not confirm #9 in milestone v1/);
+});
 test('a locked issue command run by a relative path does not wait on its own lock', async t => {
   if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
   const f = lockedIssueFixture(t);
@@ -337,8 +429,8 @@ test('a locked issue command completes from a path ps cannot show literally', as
 
 test('a usage error on a locked command reports only the usage message', t => {
   const f = fixture(t);
-  const result = f.cliRun('issue', 'edit', '--number', '304', '--body-file', 'F', '--milestone', '12.0.0');
+  const result = f.cliRun('issue', 'edit', '--number', '304', '--body-file', 'F', '--bogus', '12.0.0');
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Expected --number --body-file/);
-  assert.doesNotMatch(result.stderr, /lock/);
+  assert.match(result.stderr, /Expected --number --body-file --milestone --parent --blocked-by/);
+  assert.doesNotMatch(result.stderr, /\block\b/);
 });
