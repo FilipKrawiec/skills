@@ -658,6 +658,12 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     },
     // Drive posts as the implementer identity, so only its comments count as assessments.
     assessment: (issue, pr) => latestAssessment(gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${pr ? pr.number : issue.number}/comments?per_page=100`]).flat(), lanes.implementer),
+    noteTakeover: (number, held, now) => {
+      if (!number) return;
+      const body = join(workflowScratch(), `drive-${number}-takeover.md`);
+      writeFileSync(body, `<!-- workflow:drive-takeover -->\nDrive took over this claim from session \`${held.session}\` at ${new Date(now).toISOString()}: it made no drive progress since ${new Date(held.progressAt ?? held.at).toISOString()}. Resuming from GitHub state.\n`);
+      run('gh', ['issue', 'comment', String(number), '--repo', repo, '--body-file', body]);
+    },
     assess: (issue, pr, record) => {
       const body = join(workflowScratch(), `drive-${issue.number}-risk.md`);
       writeFileSync(body, assessmentComment(record));
@@ -1120,7 +1126,7 @@ export function driveNext(io, numbers, lanes, handBack = {}) {
 
 // One drive session per target. The claim belongs to the session, not to one CLI call: every `drive` call refreshes its
 // heartbeat, and the session releases it when drive returns `done`, `owner` or `blocked`. A claim another session holds
-// blocks it until the heartbeat is older than `staleMs`; then that session is idle or gone and the next one takes over.
+// blocks it until the heartbeat is older than `staleMs` or it has made no progress (an unchanged answer) for `progressMs`; then that session is idle, orphaned or gone and the next one takes over.
 // Without an id in the environment, the session is the nearest ancestor that is no shell: each Bash call of one agent
 // session is a fresh shell under the same long-lived agent process, so its pid and start time stay stable across calls.
 const shells = /^(-?(sh|bash|zsh|dash|fish|ksh|tcsh|csh)|env|sudo|script|login)$/;
@@ -1141,15 +1147,38 @@ export function driveSessionId(env = process.env, info = processInfo) {
   }
   return `ppid-${process.ppid}`;
 }
-export function acquireRunLock({ directory, key, session, now = Date.now(), staleMs = 30 * 60_000 }) {
+export function acquireRunLock({ directory, key, session, now = Date.now(), staleMs = 30 * 60_000, progressMs = 10 * 60_000 }) {
   mkdirSync(directory, { recursive: true });
   const path = join(directory, `${key.replace(/[^A-Za-z0-9._-]/g, '_')}.json`);
   let held = null;
   try { held = JSON.parse(readFileSync(path, 'utf8')); } catch { /* none or unreadable: free */ }
-  if (held && held.session !== session && now - held.at < staleMs) return { acquired: false, by: held };
-  writeFileSync(path, JSON.stringify({ session, at: now }));
-  return { acquired: true, tookOver: held && held.session !== session ? held : null, release: () => { try { if (JSON.parse(readFileSync(path, 'utf8')).session === session) rmSync(path); } catch { /* already gone */ } } };
+  const other = held && held.session !== session;
+  // A heartbeat alone keeps nothing: the holder must also have made drive progress (its answer changed) within `progressMs`.
+  const progressAt = held?.progressAt ?? held?.at ?? now;
+  if (other && now - held.at < staleMs && now - progressAt < progressMs) return { acquired: false, by: held, takeOverAt: progressAt + progressMs };
+  const mine = !other && held;
+  const state = { session, at: now, progressAt: mine ? progressAt : now, fingerprint: mine ? held.fingerprint : undefined };
+  writeFileSync(path, JSON.stringify(state));
+  const read = () => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
+  return {
+    acquired: true,
+    tookOver: other ? held : null,
+    // Records what drive answered; a changed answer is progress. False when another session took the claim meanwhile.
+    record: (fingerprint, at = now) => {
+      const current = read();
+      if (!current || current.session !== session) return false;
+      writeFileSync(path, JSON.stringify({ ...current, fingerprint, progressAt: current.fingerprint === fingerprint ? current.progressAt : at }));
+      return true;
+    },
+    release: () => { try { if (JSON.parse(readFileSync(path, 'utf8')).session === session) rmSync(path); } catch { /* already gone */ } },
+  };
 }
+const blockedClaim = (issue, lock, now) => {
+  const when = lock.takeOverAt > now ? `it may be taken over after ${new Date(lock.takeOverAt).toISOString()} if it makes no progress` : 'it may be taken over on the next call';
+  return { blocked: { ...(issue ? { issue } : {}), reason: `another drive session (${lock.by.session}) is live on ${issue ? `#${issue}` : '--next'} and is making progress; it never races, so run drive again later: ${when}` } };
+};
+const lostClaim = issue => ({ blocked: { ...(issue ? { issue } : {}), reason: 'another drive session took over this claim; this session stops without pushing or posting' } });
+const fingerprintOf = result => JSON.stringify(result);
 export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory = join(homedir(), '.cache', 'workflow-cli', 'drive-runs'), session = driveSessionId(), now = Date.now(), notice = versionNotice(pluginVersion()) } = {}) {
   const usage = 'Usage: drive NUMBER [--hand-back FILE|-] | drive --next';
   let handBack = {};
@@ -1164,8 +1193,10 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   if (args[0] === '--next') {
     const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)));
     const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
-    if (!lock.acquired) { console.log(JSON.stringify({ blocked: { reason: 'another drive session is live on --next; it never races, so run drive again when it ends or its heartbeat goes stale' } })); return; }
+    if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(null, lock, now))); return; }
+    if (lock.tookOver) io.noteTakeover?.(null, lock.tookOver, now);
     const result = driveNext(io, numbers, lanes, handBack);
+    if (!lock.record(fingerprintOf(result), now)) { console.log(JSON.stringify(lostClaim(null))); return; }
     if (notice) console.error(notice);
     if (result.done || result.owner || result.blocked) lock.release();
     console.log(JSON.stringify(withConfigCommit(result, lanes)));
@@ -1173,8 +1204,10 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   } else if (/^[1-9]\d*$/.test(args[0])) n = Number(args[0]);
   else throw new Error(usage);
   const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${n}`, session, now });
-  if (!lock.acquired) { console.log(JSON.stringify({ blocked: { issue: n, reason: `another drive session is live on #${n}; it never races, so run drive again when it ends or its heartbeat goes stale` } })); return; }
+  if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(n, lock, now))); return; }
+  if (lock.tookOver) io.noteTakeover?.(n, lock.tookOver, now);
   const result = drive(io, n, lanes, handBack);
+  if (!lock.record(fingerprintOf(result), now)) { console.log(JSON.stringify(lostClaim(n))); return; }
   if (notice) console.error(notice);
   if (result.done || result.owner || result.blocked) lock.release();
   console.log(JSON.stringify(withConfigCommit(result, lanes)));

@@ -1867,14 +1867,56 @@ test('a drive session holds its claim between calls, is never raced, and is take
   try {
     const key = 'acme/app-620'; const window = 30 * 60_000;
     assert.equal(acquireRunLock({ directory, key, session: 'A', now: 1000 }).acquired, true);
-    assert.equal(acquireRunLock({ directory, key, session: 'A', now: 1000 + window - 1 }).acquired, true, 'the same session refreshes its heartbeat');
-    const raced = acquireRunLock({ directory, key, session: 'B', now: 2000 + window - 2 });
+    const again = acquireRunLock({ directory, key, session: 'A', now: 1000 + window - 1, progressMs: window });
+    assert.equal(again.acquired, true, 'the same session refreshes its heartbeat');
+    again.record('progress', 1000 + window - 1);
+    const raced = acquireRunLock({ directory, key, session: 'B', now: 2000 + window - 2, progressMs: window });
     assert.deepEqual([raced.acquired, raced.by.session], [false, 'A'], 'a recent heartbeat is never raced, even with no process alive');
     const idle = acquireRunLock({ directory, key, session: 'B', now: 1000 + 2 * window });
     assert.deepEqual([idle.acquired, idle.tookOver.session], [true, 'A'], 'an idle session is taken over');
     idle.release();
     assert.equal(acquireRunLock({ directory, key, session: 'C', now: 1100 + 2 * window }).acquired, true, 'a released claim is free');
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a claim whose holder only heartbeats is orphaned; a progressing holder is refused; the old holder stops', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  try {
+    const key = 'acme/app-639'; const win = 10 * 60_000;
+    const a = acquireRunLock({ directory, key, session: 'A', now: 0 });
+    a.record('step-1', 0);
+    for (const t of [win / 2, win - 1]) acquireRunLock({ directory, key, session: 'A', now: t }).record('step-1', t);
+    const live = acquireRunLock({ directory, key, session: 'B', now: win - 1 });
+    assert.deepEqual([live.acquired, live.by.session], [false, 'A'], 'a holder inside the progress window is refused');
+    assert.equal(live.takeOverAt, win, 'the refusal says when it may be taken over');
+    acquireRunLock({ directory, key, session: 'A', now: win + 10 }).record('step-2', win + 10);
+    assert.equal(acquireRunLock({ directory, key, session: 'B', now: win + 20 }).acquired, false, 'a changed answer is progress');
+    const hb = 3 * win;
+    acquireRunLock({ directory, key, session: 'A', now: hb - 1 }).record('step-2', hb - 1);
+    const taken = acquireRunLock({ directory, key, session: 'B', now: hb + win });
+    assert.deepEqual([taken.acquired, taken.tookOver.session], [true, 'A'], 'heartbeats alone no longer keep the claim');
+    const woke = acquireRunLock({ directory, key, session: 'A', now: hb + win + 1 });
+    assert.equal(woke.acquired, false, 'the old holder loses the claim');
+    assert.equal(a.record('step-3', hb + win + 2), false, 'and its record of an in-flight answer is refused');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('driveCommand records a takeover on the issue and the old holder stops without acting', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  let said = '';
+  const log = console.log; console.log = text => { said = JSON.parse(text); };
+  try {
+    const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+    const notes = []; repo.io.noteTakeover = (n, held, now) => notes.push([n, held.session, now]);
+    const call = (session, now) => driveCommand(['3'], lanes, repo.io, { lockDirectory: directory, session, now });
+    call('A', 1000);
+    call('A', 1000 + 11 * 60_000);
+    call('B', 1000 + 12 * 60_000);
+    assert.equal(said.agent, 'implementer', 'the new session resumes with no owner step');
+    assert.deepEqual(notes, [[3, 'A', 1000 + 12 * 60_000]]);
+    call('A', 1000 + 13 * 60_000);
+    assert.match(said.blocked.reason, /another drive session/, 'the old holder is refused and acts on nothing');
+  } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('driveCommand keeps the claim across calls until drive returns done, owner or blocked', () => {
