@@ -6,9 +6,9 @@ allowed-tools: Skill Read Write Edit Bash Agent
 
 # Deliver
 
-`drive` handles mechanical changes; agents add judgment and `devops` judges risk (`review`'s `references/risk.md`). `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
+`drive` handles mechanical changes; agents judge and `devops` judges risk (`review`'s `references/risk.md`). `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
 
-Run one plain command per Bash call. Use `drive` and `wait`, never `gh` or polling, for labels, claims, cards, auto-merge and CI.
+Run one plain command per Bash call. Use `drive` and `wait`, never `gh` or polling, for labels, claims, cards, auto-merge, CI.
 
 Branch on your role, first match wins:
 
@@ -33,18 +33,18 @@ Drive each `alsoReady` slice alone. Report a result's `consolidated` merge. Back
 
 ## 2. Implement
 
-Work only in the worktree your brief names, doing only the brief's task.
+Work only in your brief's worktree, on its task.
 
 - Work test-first through `tdd`: run the focused test you changed while you work, never the full suite.
-- When the change is complete, run the brief's `check` once. Rerun it only after fixing a failure.
+- When the change is complete, run the brief's `check` once. Rerun only after fixing a failure.
 - Commit only with the brief's `commit` command, or leave the changes and name `commit` and `paths` in the hand-back; drive commits and pushes.
-- Fix only failing checks and Blocker and Important findings from `review-context`. Nits never block; leave them open. Hand back `status: disputed` with the evidence in `note` only to dispute a finding; a `done` without a commit reruns the fix. Only the Reviewer handles threads.
+- Fix only failing checks and Blocker and Important findings from `review-context`. Nits never block; leave them open. Dispute one with `status: disputed` plus `note`; `done` without a commit reruns the fix. Only the Reviewer handles threads.
 - Resolve base conflicts with `git merge --no-ff --no-commit origin/<base>`, then the brief's `commit` command.
 - Use the project's documented capture command; no native build is needed unless documented. Capture after the UI settles.
 - Add no capability, option or refactor the issue did not ask for.
 - Never push, open, label, ready or merge a PR, never start an agent and never print a token.
 
-Hand back the brief's format, at most 6 lines:
+Hand back the brief's format, 6 lines at most:
 
 ```text
 status: done
@@ -54,7 +54,7 @@ check: pass
 note: drive releases the claim only after the push succeeds
 ```
 
-Use `status: replan` when the issue contradicts the code or splits at a logical seam, and `status: blocked` when a person must act.
+Use `status: replan` when the issue contradicts the code or splits at a logical seam, `status: blocked` when a person must act.
 
 **Exit gate:** `check` passed and the hand-back returned, or `replan` or `blocked` with its reason.
 
