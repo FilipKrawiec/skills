@@ -662,24 +662,54 @@ test('check lets at most two gates run at once on the machine', async t => {
   assert.ok(peak >= 1 && peak <= 2, `peak ${peak}`);
 });
 
-test('epic refinement ambiguity halts before mutation', () => {
+test('epic refinement ambiguity goes to the planner before mutation', () => {
   const epic = issue({ number: 9, labels: [label('type:epic')] });
   const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, title: 'Refinement' }) }, subs: { 9: [10] } });
   const result = drive(repo.io, 9, lanes, {});
-  assert.match(result.owner, /#10/);
+  assert.equal(result.owner, undefined);
+  assert.equal(result.agent, 'planner');
+  assert.match(result.reason, /#10/);
   assert.deepEqual(repo.calls, []);
 });
 
-test('refinement candidates are classified before creation or repair', () => {
+test('two live refinement candidates return the planner instruction, never an owner step', () => {
   const epic = issue({ number: 9, labels: [label('type:epic')] });
   for (const bodies of [
     ['<!-- workflow:epic-refinement -->', '<!-- workflow:epic-refinement -->'],
     ['<!-- workflow:epic-refinement -->', 'Review the merged whole epic against its Outcome, Decisions and architecture rules'],
   ]) {
     const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, body: bodies[0] }), 11: issue({ number: 11, body: bodies[1] }) }, subs: { 9: [10, 11] } });
-    assert.match(drive(repo.io, 9, lanes, {}).owner, /#10, #11/);
+    const result = drive(repo.io, 9, lanes, {});
+    assert.equal(result.owner, undefined);
+    assert.equal(result.agent, 'planner');
+    assert.match(result.reason, /#10, #11/);
     assert.deepEqual(repo.calls, []);
   }
+});
+
+test('a refinement candidate closed as not planned or consolidated is retired, not a rival', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const marker = '<!-- workflow:epic-refinement -->';
+  for (const retired of [
+    issue({ number: 10, state: 'CLOSED', stateReason: 'NOT_PLANNED', body: marker }),
+    issue({ number: 10, state: 'CLOSED', body: `${marker}\n<!-- workflow:consolidated-into 11 -->` }),
+  ]) {
+    const repo = fakeRepo({ issues: { 9: epic, 10: retired, 11: issue({ number: 11, body: marker }) }, subs: { 9: [10, 11] } });
+    const result = drive(repo.io, 9, lanes, {});
+    assert.doesNotMatch(result.owner || '', /classify/);
+    assert.notEqual(result.mode, 'refinement');
+  }
+});
+
+test('the planner consolidating refinement candidates lets drive continue', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const marker = '<!-- workflow:epic-refinement -->';
+  const first = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, body: marker }), 11: issue({ number: 11, body: marker }) }, subs: { 9: [10, 11] } });
+  assert.equal(drive(first.io, 9, lanes, {}).agent, 'planner');
+  const after = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, body: marker }), 11: issue({ number: 11, state: 'CLOSED', stateReason: 'NOT_PLANNED', body: `${marker}\n<!-- workflow:consolidated-into 10 -->` }) }, subs: { 9: [10, 11] } });
+  const result = drive(after.io, 9, lanes, { status: 'consolidated', into: '10', closed: '11' });
+  assert.doesNotMatch(result.owner || '', /classify/);
+  assert.notEqual(result.mode, 'refinement');
 });
 
 test('a closed or merely refine-titled sub-issue is not a refinement candidate', () => {
