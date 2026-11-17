@@ -71,10 +71,10 @@ export function parseUsageLine(line) {
   const fields = Object.fromEntries([...line.matchAll(/(\w+)=(\S+)/g)].map(match => [match[1].toLowerCase(), match[2]]));
   const number = key => (/^\d+(\.\d+)?$/.test(fields[key] || '') ? Number(fields[key]) : null);
   const usage = { input: number('in'), output: number('out'), cacheRead: number('cache'), cacheWrite: number('cache_write'), cost: number('cost') };
-  return { usage: Object.values(usage).some(value => value !== null) ? usage : null, model: fields.model || null, effort: fields.effort || null, host: fields.host || null };
+  return { usage: Object.values(usage).some(value => value !== null) ? usage : null, model: fields.model || null, effort: fields.effort || null, host: fields.host || null, plugin: fields.plugin || null };
 }
-export function usageEntry({ role, host, model, effort, usage, key }) {
-  const entry = { role: String(role), host: host || unreported, model: model || unreported, effort: effort || unreported, ...(usage || empty) };
+export function usageEntry({ role, host, model, effort, usage, key, plugin }) {
+  const entry = { role: String(role), host: host || unreported, model: model || unreported, effort: effort || unreported, ...(plugin ? { plugin } : {}), ...(usage || empty) };
   entry.key = key || createHash('sha1').update(JSON.stringify([entry, Date.now(), Math.random()])).digest('hex').slice(0, 12);
   return entry;
 }
@@ -84,8 +84,8 @@ export function usageTotals(entries = []) {
   const rows = new Map();
   for (const entry of entries) {
     const effort = entry.effort || unreported;
-    const id = [entry.role, entry.model, effort, entry.host].join('\0');
-    const row = rows.get(id) || { role: entry.role, model: entry.model, effort, host: entry.host, sessions: 0, reported: 0, input: null, output: null, cacheRead: null, cacheWrite: null, cost: null };
+    const id = [entry.role, entry.model, effort, entry.host, entry.plugin || ''].join('\0');
+    const row = rows.get(id) || { role: entry.role, model: entry.model, effort, host: entry.host, ...(entry.plugin ? { plugin: entry.plugin } : {}), sessions: 0, reported: 0, input: null, output: null, cacheRead: null, cacheWrite: null, cost: null };
     row.sessions += 1;
     if (reported(entry)) row.reported += 1;
     for (const field of ['input', 'output', 'cacheRead', 'cacheWrite', 'cost']) if (count(entry[field]) !== null) row[field] = (row[field] || 0) + entry[field];

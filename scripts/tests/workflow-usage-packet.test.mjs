@@ -44,7 +44,7 @@ test('reviewer commands ask each host for machine-readable output, and the host 
   assert.equal(commandModel(codex), 'gpt');
 });
 test('a hand-back usage line parses and does not take one of the six lines', () => {
-  assert.deepEqual(parseUsageLine('in=1200 out=300 cache=5000 cost=0.12 model=sonnet host=claude'), { usage: { input: 1200, output: 300, cacheRead: 5000, cacheWrite: null, cost: 0.12 }, model: 'sonnet', effort: null, host: 'claude' });
+  assert.deepEqual(parseUsageLine('in=1200 out=300 cache=5000 cost=0.12 model=sonnet host=claude'), { usage: { input: 1200, output: 300, cacheRead: 5000, cacheWrite: null, cost: 0.12 }, model: 'sonnet', effort: null, host: 'claude', plugin: null });
   assert.equal(parseUsageLine('nothing useful').usage, null);
   const hb = parseHandBack('status: done\ncommit: fix: a\npaths: a.js\ncheck: pass\nnote: ok\nbody: /e.md\nusage: in=1 out=2');
   assert.equal(hb.usage, 'in=1 out=2');

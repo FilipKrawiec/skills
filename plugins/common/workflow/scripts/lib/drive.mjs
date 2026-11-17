@@ -16,6 +16,7 @@ import { addCriterionIds, tickCriteria, verifyEpicClosure } from './epic-closure
 import { prState } from './state.mjs';
 import { exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
+import { pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
 import { approveReady, previousReviewedHead } from './vcs.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
 
@@ -367,6 +368,7 @@ export function implementerBrief(f) {
 Mode: ${f.step.mode}${f.step.reason ? ` (${f.step.reason})` : ''}. Risk ${f.risk}. Model ${f.model || modelForStep(f.step, f.risk, f.round)}. Effort ${f.effort || sessionFor(f.step.agent, f.risk, { round: f.round, fresh: Boolean(f.step.fresh) }).effort}.${f.step.outOfScope?.length ? `
 Out of scope: ${f.step.outOfScope.join(', ')}. Revert each of these paths (the issue's scope packet does not cover them), or hand back \`replan\` naming why the issue needs them.` : ''}
 Issue: ${f.issue.url}
+Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 Worktree: ${f.tree.path} (branch ${f.tree.branch}, base origin/${f.base})
 PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}, round ${f.round}` : 'none yet; drive opens it'}
 
@@ -390,7 +392,7 @@ paths: <changed file paths only, not directories; drive commits only explicit fi
 check: pass | fail
 note: <one line: what changed, or why replan or blocked>
 body: <optional absolute path to a Markdown evidence file>
-usage: <optional, when the host reports it: in=N out=N cache=N cost=USD model=M effort=E host=H>
+usage: <optional, when the host reports it: in=N out=N cache=N cost=USD model=M effort=E host=H plugin=V>
 \`\`\`
 
 ## Issue
@@ -404,6 +406,7 @@ export function devopsBrief(f) {
 
 Task: risk. Assess ${f.pr ? `the diff of PR #${f.pr.number} at head ${f.pr.headRefOid}` : 'this issue before its build'} by the factors in ${riskGuide}, and set R0, R1 or R2 with a one-line reason (${f.step.reason}).
 Issue: ${f.issue.url}
+Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 ${f.pr ? `PR: ${f.pr.url}. Read the diff with \`gh pr diff ${f.pr.number} --repo ${f.repo}\`; it changes ${f.diffPaths.length} files: ${f.diffPaths.join(', ') || 'none listed'}.` : 'Read the issue below, its scope packet and the code it names.'}
 ${last ? `The last assessment set ${last.risk} at ${String(last.head || '').slice(0, 7)}: ${last.reason}` : ''}
 ${f.floor ? `The issue's owner-set \`risk:${f.floor}\` is a floor drive applies after you; assess the change on its own.` : ''}
@@ -468,6 +471,7 @@ export function plannerBrief(f) {
 
 Task: ${f.step.mode === 'consolidate' ? `${f.step.reason}. Merge the overlapping unstarted issues ${f.step.overlaps.map(n => `#${n}`).join(', ')} and #${f.issue.number} into one canonical issue that carries every outcome, criterion, dependency, decision and milestone; close the others as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical issue) to each body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Split only for an independent outcome, a meaningful dependency, an authority boundary or a delivery constraint, never by size. Never merge a started issue, one with an open PR, issues in different epics without a shared outcome, or anything under \`lane:owner\`. When they are distinct outcomes, append \`${distinctMarker('M')}\` to #${f.issue.number} for each other issue M (and say why in a comment) and hand back \`distinct\`` : f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Invoke the `plan` skill to create the final refinement slice' + (f.step.uncovered?.length ? `. Epic criteria no slice covers yet: ${f.step.uncovered.map(c => `\`${c.id || c.text}\` (${c.text})`).join('; ')}. Add slices for them, each citing its criterion's ID or exact text in its body, or tick a criterion the epic already delivers` : '') : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Ignore base conflicts when narrowing scope; the implementer merges the base. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam into an epic with one-PR sub-issues (spec's split.md: set \`type:epic\` first) and hand back \`sliced\``}. Invoke the \`spec\` skill for the issue form.
 Issue: ${f.issue.url}
+Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 Commands: \`node ${cli} issue create --title T --body-file PATH [--milestone NAME] [--parent N] [--blocked-by N,M]\`, \`node ${cli} issue edit --number N [--body-file PATH] [--milestone NAME] [--parent N] [--blocked-by N,M]\` (milestone, sub-issue link and blocked-by links, each confirmed from GitHub) and \`node ${cli} issue comment --number N --body-file PATH\`. Never run raw \`gh\`.
 Never write code and never start an agent. Slices follow the epic's approved outcome; the owner decides epic-level outcomes only.
 
@@ -488,7 +492,7 @@ ${f.issue.body || '(no body)'}
 export function reviewerCommand(model, brief, name, host = 'claude', executable = host, effort = null) {
   if (host === 'codex') return [executable, 'exec', '--json', '-m', model, ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []), `Read ${fileURLToPath(new URL('../../skills/review/SKILL.md', import.meta.url))}, then follow your brief at ${brief}. Return at most 5 lines.`];
   if (host !== 'claude') throw new Error('Unsupported reviewer host');
-  return [executable, '--print', '--output-format', 'json', '--agent', 'filipkrawiec-workflow:reviewer', '--model', model, ...(effort ? ['--effort', effort] : []), '--permission-mode', 'auto', '--name', name, `Follow your brief at ${brief}. Return at most 5 lines.`];
+  return [executable, '--print', '--output-format', 'json', '--agent', 'filipkrawiec-workflow:reviewer', '--model', model, ...(effort ? ['--effort', effort] : []), '--plugin-dir', pluginRoot.replace(/\/$/, ''), '--permission-mode', 'auto', '--name', name, `Follow your brief at ${brief}. Return at most 5 lines.`];
 }
 export const waitCommandFor = (pr, until) => ['node', cli, 'wait', String(pr), '--until', until];
 
@@ -707,7 +711,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const parsed = parseUsageLine(hb.usage);
       const role = handBackRole(hb);
       const key = createHash('sha1').update([pr.number, pr.headRefOid, role, hb.status, hb.usage, hb.note, hb.commit].join('\0')).digest('hex').slice(0, 12);
-      recordUsage({ repo, pr: pr.number, author: lanes.implementer, entry: usageEntry({ role, host: parsed?.host, model: parsed?.model, effort: parsed?.effort, usage: parsed?.usage, key }) }, { gh });
+      recordUsage({ repo, pr: pr.number, author: lanes.implementer, entry: usageEntry({ role, host: parsed?.host, model: parsed?.model, effort: parsed?.effort, plugin: parsed?.plugin, usage: parsed?.usage, key }) }, { gh });
     },
     packetFacts(context) { return gatherPacketFacts({ repo, lanes, gh, threads: pr => this.reviewThreads(pr), ...context }); },
     reviewSession: (pr, tree) => {
@@ -836,7 +840,7 @@ function instruction(io, facts, step, lanes) {
   const context = { issue, pr, tree, step, risk, model, effort, round, handBack: facts.handBack, packet, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
   if (packet) writePacket(io, packet, { issue, pr, tree, round, lanes });
   io.write(brief, briefs[step.agent](context));
-  const out = { agent: step.agent, host, model, effort, brief, issue: issue.number, pr: pr?.number ?? null, session, mode: step.mode, cwd: tree?.path || null };
+  const out = { agent: step.agent, host, model, effort, plugin: pluginVersion(), brief, issue: issue.number, pr: pr?.number ?? null, session, mode: step.mode, cwd: tree?.path || null };
   const configured = lanes.delivery?.roles?.[step.agent === 'implementer' && step.fresh ? 'freshImplementer' : step.agent];
   if (Array.isArray(configured)) out.alternatives = configured.slice(1);
   if (step.task) out.task = step.task;
@@ -1142,7 +1146,7 @@ export function acquireRunLock({ directory, key, session, now = Date.now(), stal
   writeFileSync(path, JSON.stringify({ session, at: now }));
   return { acquired: true, tookOver: held && held.session !== session ? held : null, release: () => { try { if (JSON.parse(readFileSync(path, 'utf8')).session === session) rmSync(path); } catch { /* already gone */ } } };
 }
-export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory = join(homedir(), '.cache', 'workflow-cli', 'drive-runs'), session = driveSessionId(), now = Date.now() } = {}) {
+export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory = join(homedir(), '.cache', 'workflow-cli', 'drive-runs'), session = driveSessionId(), now = Date.now(), notice = versionNotice(pluginVersion()) } = {}) {
   const usage = 'Usage: drive NUMBER [--hand-back FILE|-] | drive --next';
   let handBack = {};
   const at = args.indexOf('--hand-back');
@@ -1158,6 +1162,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
     if (!lock.acquired) { console.log(JSON.stringify({ blocked: { reason: 'another drive session is live on --next; it never races, so run drive again when it ends or its heartbeat goes stale' } })); return; }
     const result = driveNext(io, numbers, lanes, handBack);
+    if (notice) console.error(notice);
     if (result.done || result.owner || result.blocked) lock.release();
     console.log(JSON.stringify(withConfigCommit(result, lanes)));
     return;
@@ -1166,6 +1171,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${n}`, session, now });
   if (!lock.acquired) { console.log(JSON.stringify({ blocked: { issue: n, reason: `another drive session is live on #${n}; it never races, so run drive again when it ends or its heartbeat goes stale` } })); return; }
   const result = drive(io, n, lanes, handBack);
+  if (notice) console.error(notice);
   if (result.done || result.owner || result.blocked) lock.release();
   console.log(JSON.stringify(withConfigCommit(result, lanes)));
 }
