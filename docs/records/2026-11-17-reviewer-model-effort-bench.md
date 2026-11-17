@@ -37,3 +37,7 @@ Three known-defect PRs and five known-clean PRs, one run per setting, no repeats
 ## Recommendation for the owner
 
 Make no change to drive's Reviewer selection yet. By the epic's rule (a Fable or Sonnet Reviewer only if it matches the best recall with no more false positives, Fable under $1 per review): Fable does not qualify (more false positives than Sonnet and Opus medium; over $1 at R1) and Sonnet medium does not match the best recall. Opus medium stays the Reviewer at R0 and R1; the data does not support Opus high at R2 over Opus medium (more false positives, no extra catches). Sonnet medium matches Opus medium here at about 40 percent of the cost, but only on this sample; decide whether to repeat the run (about $17 for all four settings) or to grow the snapshot with R0 and further R2 PRs before adopting it. This record changes no configuration.
+
+## Owner decision
+
+2026-11-17: the owner chose "Keep Opus medium" for the Reviewer at every risk (epic #610; applied by #614). drive's table drops the R2 high cell to medium, `scripts/tests/workflow-decisions.test.mjs` pins Opus at medium for R0, R1 and R2, and AGENTS.md, `docs/CONCEPTS.md` and the review skill's risk reference say so. The setting is the one this record measured at R0 and R1 (Opus medium: best recall with the fewest false positives), so no rerun at a new setting applies.

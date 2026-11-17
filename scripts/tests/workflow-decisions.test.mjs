@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { deliveryAssignment, drive, decideIssue, implementerBrief, modelForStep, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { deliveryAssignment, drive, decideIssue, implementerBrief, modelForStep, reviewerBrief, sessionFor, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { prState } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 
 const root = new URL('../../', import.meta.url);
@@ -44,6 +44,13 @@ test('decision 2026-11-16 (#560): the Reviewer runs Opus at every risk', () => {
   for (const risk of ['R0', 'R1', 'R2']) {
     assert.equal(modelForStep({ agent: 'reviewer' }, risk), 'opus');
     assert.equal(deliveryAssignment(undefined, { agent: 'reviewer' }, risk).model, 'opus');
+  }
+});
+
+test('decision 2026-11-17 (#610, #613, #614): the Reviewer runs Opus at medium effort at every risk', () => {
+  for (const risk of ['R0', 'R1', 'R2']) {
+    assert.deepEqual(sessionFor('reviewer', risk), { model: 'opus', effort: 'medium' }, risk);
+    assert.equal(deliveryAssignment(undefined, { agent: 'reviewer' }, risk).effort, 'medium', risk);
   }
 });
 
