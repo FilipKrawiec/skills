@@ -74,7 +74,7 @@ export function prCommand(args, lanes) {
     const refusal = prReadyRefusal(pr, lanes);
     if (refusal) throw new Error(`pr ready refused: ${refusal}`);
     run('gh', ['pr', 'ready', number, '--repo', repo]);
-    // CODEOWNERS may auto-request the owner; team review requests the owner only on `verdict=owner`.
+    // The owner is no code owner, but an older project may still auto-request them; review requests the owner only on `verdict=owner`.
     try { run('gh', ['pr', 'edit', number, '--repo', repo, '--remove-reviewer', lanes.owner]); } catch { console.error(`Warning: could not drop ${lanes.owner}'s review request on #${number}; remove it by hand.`); }
     console.log(`PR #${number} ready for review at ${pr.headRefOid}`);
     return;
