@@ -144,7 +144,7 @@ test('delivery skills keep one plain command per Bash call, inline plan scoring,
 });
 
 test('workflow role definitions leave model selection to the host', () => {
-  for (const role of ['devops', 'implementer', 'improver', 'planner', 'reviewer']) {
+  for (const role of ['conflict-resolver', 'devops', 'implementer', 'improver', 'planner', 'reviewer']) {
     const text = readFileSync(join(commonRoot, 'workflow/agents', `${role}.md`), 'utf8');
     assert.doesNotMatch(text.split('---')[1], /^model:/m, role);
   }

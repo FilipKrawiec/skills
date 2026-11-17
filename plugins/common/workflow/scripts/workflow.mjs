@@ -35,7 +35,7 @@ import {
 } from './lib/vcs.mjs';
 import { nitsCommand, prCommand } from './lib/pr.mjs';
 import { nextCommand, statusCommand, waitCommand } from './lib/state.mjs';
-import { checkCommand, driveCommand } from './lib/drive.mjs';
+import { checkCommand, driveCommand, waitSlotCommand } from './lib/drive.mjs';
 import { benchCommand, reviewerIo } from './lib/bench.mjs';
 import { runResponsibility } from './lib/responsibility.mjs';
 import { worktreeCommand } from './lib/worktrees.mjs';
@@ -49,6 +49,7 @@ const help = `Usage:
   node workflow.mjs scratch
   node workflow.mjs status NUMBER
   node workflow.mjs wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]
+  node workflow.mjs wait slot
   node workflow.mjs next [--owner]
   node workflow.mjs drive NUMBER [--hand-back FILE|-] | drive --next
   node workflow.mjs responsibility NAME BRIEF
@@ -161,7 +162,7 @@ async function execute(command, args) {
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'reopen') { config(); issueReopen(args.slice(1)); }
   else if (command === 'status') { const { lanes } = config(); statusCommand(args, lanes); }
-  else if (command === 'wait') { const { lanes } = config(); process.exitCode = waitCommand(args, lanes); }
+  else if (command === 'wait') { const { lanes } = config(); process.exitCode = args[0] === 'slot' ? waitSlotCommand(args.slice(1), lanes) : waitCommand(args, lanes); }
   else if (command === 'next') { const { lanes } = config(); nextCommand(args, lanes); }
   else if (command === 'responsibility') { if (args.length !== 2) throw new Error('Usage: responsibility NAME BRIEF'); const { lanes } = config(); process.stdout.write(runResponsibility(lanes.delivery, args[0], args[1])); }
   else if (command === 'drive') { const { lanes } = fetchedConfig(); driveCommand(args, lanes); }

@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, holdBaseUpdates, latestAssessment,
-  driveCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  driveCommand, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
@@ -1987,4 +1987,124 @@ console.log(JSON.stringify([call(), call()]));`);
   assert.notEqual(session()[0], first, 'another session is a different claim holder');
   } finally { rmSync(dir, { recursive: true, force: true }); }
   assert.equal(driveSessionId({ WORKFLOW_DRIVE_SESSION: 'x' }), 'x');
+});
+
+test('drive allows six concurrent runs per repository and a seventh waits until a slot frees', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  let said = '';
+  const log = console.log; console.log = text => { said = JSON.parse(text); };
+  try {
+    assert.equal(maxRuns, 6);
+    const repo = fakeRepo({ issues: Object.fromEntries([3, 4, 5, 6, 7, 8, 9].map(n => [n, issue({ number: n, labels: [label('state:started'), label('risk:R1')], assessment: assessed() })])), trees: Object.fromEntries([3, 4, 5, 6, 7, 8, 9].map(n => [n, tree({ path: `/w/${n}`, branch: `${n}-x`, commits: 1 })])) });
+    const call = (n, now = 1000) => driveCommand([String(n)], lanes, repo.io, { lockDirectory: directory, session: `S${n}`, now });
+    for (const n of [3, 4, 5, 6, 7, 8]) { call(n); assert.equal(said.agent, 'implementer', `run ${n} starts`); }
+    call(9);
+    assert.equal(said.wait.until, 'slot', 'the seventh waits');
+    assert.deepEqual(said.command.slice(2), ['wait', 'slot']);
+    call(3, 2000);
+    assert.equal(said.agent, 'implementer', 'a run keeps its own slot');
+    call(9, 2000 + 31 * 60_000);
+    assert.equal(said.agent, 'implementer', 'stale claims free their slots');
+    call(9, 2000 + 31 * 60_000);
+    assert.equal(said.agent, 'implementer');
+  } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('a released claim frees a slot for the seventh run, and wait slot exits when one is free', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  try {
+    const held = [1, 2, 3, 4, 5, 6].map(n => acquireRunLock({ directory, key: `${lanes.repo}-${n}`, session: `S${n}`, now: 1000 }));
+    let clock = 1000; const pauses = [];
+    const code = waitSlotCommand([], lanes, { directory, now: () => clock, pause: seconds => { pauses.push(seconds); clock += seconds * 1000; if (pauses.length === 2) held[0].release(); } });
+    assert.equal(code, 0);
+    assert.equal(pauses.length, 2, 'it waited until a claim was released');
+    const full = [1, 2, 3, 4, 5, 6].map(n => acquireRunLock({ directory, key: `${lanes.repo}-x${n}`, session: `S${n}`, now: 1000 }));
+    assert.ok(full.every(lock => lock.acquired));
+    assert.equal(waitSlotCommand([], lanes, { directory, now: () => clock, pause: seconds => { clock += seconds * 1000; } }), 0, 'non-numeric claims never count');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+const conflictFor = (extra = {}) => ({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, mergeable: 'CONFLICTING', reviews: [review('fixes')] })], ...extra });
+const withMergeBase = (repo, result) => { repo.io.mergeBase = t => { repo.calls.push(['merge-base']); if (result.committed) t.unpushed = true; return result; }; };
+
+test('a manifest-only base conflict is merged by drive with no model, then pushed', () => {
+  const repo = fakeRepo(conflictFor());
+  withMergeBase(repo, { conflicts: ['plugins/common/workflow/package-metadata.json'], committed: true, manifest: true });
+  const step = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(repo.calls.slice(0, 2), [['merge-base'], ['push']]);
+  assert.deepEqual(step.wait, { pr: 5, until: 'ci' }, 'the new head needs its checks');
+  assert.equal(step.agent, undefined);
+});
+
+test('another mechanical base conflict goes to a Haiku conflict-resolver and its gated result is committed', () => {
+  const repo = fakeRepo(conflictFor());
+  withMergeBase(repo, { conflicts: ['src/a.js'], committed: false });
+  const step = drive(repo.io, 3, lanes, {});
+  assert.equal(step.agent, 'conflict-resolver');
+  assert.equal(step.model, 'haiku');
+  assert.match(repo.writes[step.brief], /agent: conflict-resolver/);
+  assert.match(repo.writes[step.brief], /src\/a\.js/);
+  repo.s.trees[3].merging = true; repo.s.trees[3].dirty = true;
+  assert.equal(drive(repo.io, 3, lanes, {}).agent, 'conflict-resolver', 'rerunning repeats the resolver while its merge is in progress');
+  drive(repo.io, 3, lanes, { agent: 'conflict-resolver', status: 'done', commit: 'chore: merge origin/main into 3-x', paths: ['src/a.js'], check: 'pass' });
+  assert.deepEqual(repo.calls.slice(-2), [['commit'], ['push']]);
+});
+
+test('a conflict-resolver that fails the gate leaves the merge to the implementer', () => {
+  for (const hb of [{ agent: 'conflict-resolver', status: 'done', commit: 'Merge', paths: ['a'], check: 'fail' }, { agent: 'conflict-resolver', status: 'blocked', note: 'needs a behavior call' }]) {
+    const repo = fakeRepo(conflictFor({ trees: { 3: tree({ commits: 1, dirty: true, merging: true }) } }));
+    withMergeBase(repo, { conflicts: ['src/a.js'], committed: false });
+    const step = drive(repo.io, 3, lanes, hb);
+    assert.equal(step.agent, 'implementer');
+    assert.match(step.reason, /conflict-resolver failed the gate/);
+    assert.ok(!repo.calls.some(call => call[0] === 'merge-base' || call[0] === 'commit'), 'nothing is merged again or committed');
+    assert.equal(drive(repo.io, 3, lanes, {}).agent, 'implementer', 'a rerun stays with the implementer');
+  }
+});
+
+test('mergeBaseIntoHead takes the base side of manifest conflicts and syncs, else leaves other conflicts', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'merge-base-'));
+  const git = (...args) => { const r = spawnSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { cwd: dir, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r; };
+  try {
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.name', 'T'); git('config', 'user.email', 't@example.test');
+    writeFileSync(join(dir, 'package-metadata.json'), '{"version":"1.0.0"}\n'); writeFileSync(join(dir, 'a.js'), 'one\n');
+    git('add', '.'); git('commit', '-qm', 'init');
+    git('checkout', '-qb', 'head');
+    writeFileSync(join(dir, 'package-metadata.json'), '{"version":"1.1.0"}\n'); writeFileSync(join(dir, 'a.js'), 'head\n');
+    git('commit', '-qam', 'head');
+    git('checkout', '-q', 'main');
+    writeFileSync(join(dir, 'package-metadata.json'), '{"version":"1.0.1"}\n');
+    git('commit', '-qam', 'base manifest');
+    git('update-ref', 'refs/remotes/origin/main', 'main');
+    git('checkout', '-q', 'head');
+    const calls = [];
+    const only = mergeBaseIntoHead({ path: dir, base: 'main', syncManifests: () => calls.push('sync'), commit: () => { calls.push('commit'); git('commit', '-qm', 'merge'); } });
+    assert.deepEqual(only, { conflicts: ['package-metadata.json'], committed: true, manifest: true });
+    assert.deepEqual(calls, ['sync', 'commit']);
+    assert.equal(readFileSync(join(dir, 'package-metadata.json'), 'utf8'), '{"version":"1.0.1"}\n', 'the base version wins');
+    assert.equal(git('rev-list', '--merges', '--count', 'HEAD').stdout.trim(), '1', 'a merge commit, never a rebase');
+    // a code conflict next to a manifest conflict is left for the resolver
+    git('checkout', '-q', 'main'); writeFileSync(join(dir, 'a.js'), 'base\n'); writeFileSync(join(dir, 'package-metadata.json'), '{"version":"1.0.2"}\n'); git('commit', '-qam', 'base again'); git('update-ref', 'refs/remotes/origin/main', 'main');
+    git('checkout', '-q', 'head'); writeFileSync(join(dir, 'package-metadata.json'), '{"version":"1.2.0"}\n'); git('commit', '-qam', 'head again');
+    const mixed = mergeBaseIntoHead({ path: dir, base: 'main', syncManifests: () => assert.fail('no sync'), commit: () => assert.fail('no commit') });
+    assert.equal(mixed.committed, false);
+    assert.deepEqual(mixed.conflicts.sort(), ['a.js', 'package-metadata.json']);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  assert.ok(isManifestPath('plugins/common/core/.claude-plugin/plugin.json') && isManifestPath('.claude-plugin/marketplace.json') && !isManifestPath('src/a.js'));
+});
+
+test('the merge commit message passes the real commit command on a merge in progress', t => {
+  const f = fixture(t);
+  const g = (...args) => run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.repo });
+  writeFileSync(join(f.repo, 'song.txt'), 'base'); assert.equal(g('add', 'song.txt').status, 0); assert.equal(g('commit', '-qm', 'base').status, 0);
+  assert.equal(g('checkout', '-qb', 'other').status, 0);
+  writeFileSync(join(f.repo, 'other.txt'), 'theirs'); assert.equal(g('add', 'other.txt').status, 0); assert.equal(g('commit', '-qm', 'other').status, 0);
+  assert.equal(g('checkout', '-q', 'feature/test').status, 0);
+  assert.equal(g('merge', '--no-ff', '--no-commit', 'other').status, 0);
+  const message = mergeCommitMessage('main', 'feature/test');
+  const result = f.cliRun('commit', '--message', message);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.linkedGit('show', '-s', '--format=%p', 'HEAD').stdout.trim().split(' ').length, 2);
+  assert.equal(f.linkedGit('show', '-s', '--format=%s', 'HEAD').stdout.trim(), message);
 });
