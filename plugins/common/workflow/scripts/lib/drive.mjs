@@ -662,6 +662,12 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const id = gh(['api', `repos/${repo}/issues/${blocker}`]).id;
       run('gh', ['api', '--method', 'POST', `repos/${repo}/issues/${n}/dependencies/blocked_by`, '-F', `issue_id=${id}`]);
     },
+    mergedPr: (n, base) => {
+      try {
+        const pr = gh(['api', `repos/${repo}/pulls/${n}`]);
+        return pr.merged === true && pr.base?.ref === base && pr.base?.repo?.full_name?.toLowerCase() === repo.toLowerCase();
+      } catch { return false; }
+    },
     mergedClosingPr: (n, base) => {
       const [owner, name] = repo.split('/');
       const query = `query($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { issue(number:$number) { closedByPullRequestsReferences(first:100) { nodes { merged baseRefName } } } } }`;
@@ -1033,10 +1039,16 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
 }
 function unresolvedDelivery(io, slice, base, epic, ancestors = new Set()) {
   if (!slice || slice.state !== 'CLOSED' || ancestors.has(slice.number)) return [slice?.number].filter(Boolean);
-  // A slice the planner folded into another stands for it: the target's delivery counts.
+  // A slice folded into another issue stands for it; one folded into a PR is delivered once that PR merged into the base.
   const target = consolidatedInto(slice.body);
-  if (target && target !== slice.number && !ancestors.has(target)) return unresolvedDelivery(io, io.issue(target), base, epic, new Set([...ancestors, slice.number]));
-  if (!isEpic(slice)) return io.mergedClosingPr(slice.number, base) || ((slice.body || '').includes(refinementMarker) && io.noChangeEvidence?.(slice.number)) || io.consolidatedDelivery?.(epic, slice, base) ? [] : [slice.number];
+  if (target && target !== slice.number && !ancestors.has(target)) {
+    if (io.mergedPr?.(target, base)) return [];
+    const folded = io.issue(target);
+    return folded ? unresolvedDelivery(io, folded, base, epic, new Set([...ancestors, slice.number])) : [target];
+  }
+  // A completed slice that says it makes no repository changes needed no code, as dependencies already count it.
+  const needsNoCode = /^completed$/i.test(slice.stateReason || '') && pathsFromIssueBody(slice.body || '')?.length === 0;
+  if (!isEpic(slice)) return needsNoCode || io.mergedClosingPr(slice.number, base) || ((slice.body || '').includes(refinementMarker) && io.noChangeEvidence?.(slice.number)) || io.consolidatedDelivery?.(epic, slice, base) ? [] : [slice.number];
   const seen = new Set([...ancestors, slice.number]);
   try {
     const children = io.subIssues(slice.number);
