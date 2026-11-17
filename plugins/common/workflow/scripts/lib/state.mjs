@@ -1,7 +1,7 @@
 import { prRecord } from './board.mjs';
 import { jsonCommand } from './core.mjs';
 import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
-import { findUsageComment, usageSummary } from './usage.mjs';
+import { findUsageComment, usageCost, usageSummary } from './usage.mjs';
 import { checkState, failedStates, passedStates, prFields } from './pr.mjs';
 import { ownerPaths } from './codeowners.mjs';
 
@@ -82,16 +82,19 @@ const number = value => { if (!/^[1-9]\d*$/.test(value || '')) throw new Error('
 // Per-PR usage totals by role and model from the PR's usage comment; "unreported" when none, and never a failure.
 // `numbers` is the PR plus the issues it closes: rows drive wrote on the issue before the PR existed count toward the PR.
 function prUsage(repo, numbers, lanes, read) {
-  const entries = numbers.flatMap(n => { try { return findUsageComment(read(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat(), lanes.implementer)?.entries || []; } catch { return []; } });
-  return usageSummary(entries);
+  const entries = prUsageEntries(repo, numbers, lanes, read);
+  return { usage: usageSummary(entries), cost: usageCost(entries) };
+}
+function prUsageEntries(repo, numbers, lanes, read) {
+  return numbers.flatMap(n => { try { return findUsageComment(read(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat(), lanes.implementer)?.entries || []; } catch { return []; } });
 }
 export function statusCommand(args, lanes, read = args => jsonCommand('gh', args), readPullRequest = readPr) {
   if (args.length !== 1) throw new Error('Usage: status NUMBER');
   const n = number(args[0]);
   const isPr = Boolean(read(['api', `repos/${lanes.repo}/issues/${n}`]).pull_request);
-  if (!isPr) { const state = issueState(lanes.repo, n, lanes, read); console.log(JSON.stringify({ ...state, usage: prUsage(lanes.repo, [n], lanes, read) })); return; }
+  if (!isPr) { const state = issueState(lanes.repo, n, lanes, read); console.log(JSON.stringify({ ...state, ...prUsage(lanes.repo, [n], lanes, read) })); return; }
   const state = prState(readPullRequest(lanes.repo, n), lanes);
-  console.log(JSON.stringify({ ...state, usage: prUsage(lanes.repo, [n, ...(state.issues || [])], lanes, read) }));
+  console.log(JSON.stringify({ ...state, ...prUsage(lanes.repo, [n, ...(state.issues || [])], lanes, read) }));
 }
 const sleep = seconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
 // Whether the condition holds (true), failed for good (false) or still pending (null). No checks right after a push
