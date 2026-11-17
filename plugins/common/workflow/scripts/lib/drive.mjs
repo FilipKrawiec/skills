@@ -276,13 +276,17 @@ export function decideIssue(facts, lanes) {
   // A narrowed issue changes what the head is judged against: the Reviewer judges the same head again, no new build.
   if (hb.status === 'narrowed' && state.verdict === 'fixes' && !conflictOnly && next.reason !== 'conflicts with its base') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
   if (next.action === 'fix' && conflictOnly && hb.status !== 'done') return agent('implementer', 'fix', { reason: 'base conflict is the only open Blocker or Important finding', resume: true });
-  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'done') return agent('reviewer', 'review', { reason: 'the completed fix changed no commit', sameHead: true, round: state.round + 1 });
+  // A disputed finding is the implementer's evidence, not a skipped fix: the Reviewer judges the same head again.
+  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'disputed') return agent('reviewer', 'review', { reason: 'the implementer disputed the blocking findings; the Reviewer weighs its evidence', sameHead: true, dispute: hb.note || '', round: state.round + 1 });
+  // A fix-mode hand-back at the head the Reviewer judged fixed nothing: the fix reruns with the blocking findings quoted.
+  const quoted = blocking.map(finding => finding.trim().replace(/\s+/g, ' ').slice(0, 600)).filter(Boolean).slice(0, 10);
+  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'done') return agent('implementer', 'fix', { reason: 'the hand-back left the head the Reviewer judged unchanged; fix the findings quoted below', resume: true, findings: quoted });
   if (next.action === 'fix') {
     if (!tree) return { do: 'start' };
     if (next.reason === 'conflicts with its base') return agent('implementer', 'fix', { reason: next.reason, resume: true });
     if (state.verdict === 'fixes' && state.round > freshFixRound) return agent('planner', 'replan', { reason: `round ${state.round}: the fresh fix round left blocking findings; narrow the issue to what the PR delivers` });
     const fresh = state.verdict === 'fixes' && state.round === freshFixRound;
-    return agent('implementer', 'fix', fresh ? { reason: `round ${state.round}: the whole open set, fresh`, fresh: true } : { reason: next.reason, resume: true });
+    return agent('implementer', 'fix', fresh ? { reason: `round ${state.round}: the whole open set, fresh`, fresh: true, ...(quoted.length ? { findings: quoted } : {}) } : { reason: next.reason, resume: true, ...(quoted.length ? { findings: quoted } : {}) });
   }
   if (next.action === 'wait-ci') return { wait: { pr: pr.number, until: 'ci' } };
   // An unapproved `ready` verdict on a ready PR asks only for the approval; anything else is a review round.
@@ -377,7 +381,7 @@ PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}, round ${f.round}` : 'none yet; 
 
 ## Task
 
-${f.step.handoff ? `Handoff: a fresh session takes over this PR because the risk changed the model. Start from the open findings (\`review-context\` lists them), the branch above and the last hand-back${f.handBack?.status ? ` (status ${f.handBack.status}${f.handBack.note ? `: ${f.handBack.note}` : ''})` : ''}. ` : ''}${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focused tests.' : /base conflict|conflicts with its base/.test(f.step.reason || '') ? `Merge the base with \`git merge --no-ff --no-commit origin/${f.base}\`, resolve conflicts and commit the merge.` : f.step.fresh ? 'Earlier fix rounds did not converge. Read every open Blocker and Important thread `review-context` lists and the issue\'s criteria, find their shared cause and fix it whole, with the neighbouring cases the same cause breaks, each with a focused test. Fix nothing outside the criteria; Nits never block.' : 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.'} Set cwd to ${f.tree.path} for every command. Work only in that worktree. Run one plain command per Bash call.
+${f.step.handoff ? `Handoff: a fresh session takes over this PR because the risk changed the model. Start from the open findings (\`review-context\` lists them), the branch above and the last hand-back${f.handBack?.status ? ` (status ${f.handBack.status}${f.handBack.note ? `: ${f.handBack.note}` : ''})` : ''}. ` : ''}${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focused tests.' : /base conflict|conflicts with its base/.test(f.step.reason || '') ? `Merge the base with \`git merge --no-ff --no-commit origin/${f.base}\`, resolve conflicts and commit the merge.` : f.step.fresh ? 'Earlier fix rounds did not converge. Read every open Blocker and Important thread `review-context` lists and the issue\'s criteria, find their shared cause and fix it whole, with the neighbouring cases the same cause breaks, each with a focused test. Fix nothing outside the criteria; Nits never block.' : 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.'}${fix && f.step.findings?.length ? ` Blocking findings to fix (the head is unchanged until a new commit fixes each):\n${f.step.findings.map(finding => `- ${finding}`).join('\n')}\n` : ''} Set cwd to ${f.tree.path} for every command. Work only in that worktree. Run one plain command per Bash call.
 
 ## Commands you may run
 
@@ -389,7 +393,7 @@ Never push, open, label, ready or merge a PR, and never start an agent: drive do
 ## Hand-back, at most 5 lines
 
 \`\`\`text
-status: done | replan | blocked
+status: done | ${fix ? 'disputed | ' : ''}replan | blocked
 commit: <Conventional Commit subject, only if you left changes uncommitted>
 paths: <changed file paths only, not directories; drive commits only explicit files>
 check: pass | fail
@@ -497,7 +501,7 @@ export function reviewerBrief(f) {
 ${f.packet ? `Read the review packet first: ${f.packet}. It holds the issue criteria, CI, the project gate, the diff by area, the delta since your last verdict with open threads, and call sites of changed exports. Do not re-gather them; check blast radius outside it yourself.\n\n` : ''}Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
-${f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
+${f.step.dispute ? `Same head, disputed: the implementer disputes the blocking findings and changed no commit. Its evidence: ${f.step.dispute}\nJudge the evidence against the code; resolve a finding it refutes, repost the rest.\n` : f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 
 - \`node ${cli} review-context --pr ${f.pr.number} --issue ${f.issue.number} --claim\`
