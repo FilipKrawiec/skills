@@ -2,11 +2,15 @@
   "version": 1,
   "identities": {
     "implementer": "filipkrawiec-bot",
-    "reviewer": "filipkrawiec-reviewer"
+    "reviewer": "filipkrawiec-reviewer",
+    "owner": "FilipKrawiec"
   },
   "steps": {
     "process": null,
     "assemble": null,
-    "test": ["just", "verify"]
+    "test": [
+      "just",
+      "verify"
+    ]
   }
 }

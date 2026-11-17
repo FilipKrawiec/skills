@@ -10,7 +10,7 @@ const identity = { ...process.env, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@ex
 const git = (cwd, ...args) => { const r = spawnSync('git', args, { cwd, env: identity, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
 const writeConfig = (dir, implementer) => {
   mkdirSync(join(dir, '.agents'), { recursive: true }); mkdirSync(join(dir, '.github'), { recursive: true });
-  writeFileSync(join(dir, '.agents', 'config.json'), JSON.stringify({ version: 1, identities: { implementer, reviewer: 'reviewer' } }));
+  writeFileSync(join(dir, '.agents', 'config.json'), JSON.stringify({ version: 1, identities: { implementer, reviewer: 'reviewer', owner: 'owner' } }));
   writeFileSync(join(dir, '.github', 'CODEOWNERS'), '* @reviewer\n/*.rules @owner\n');
   git(dir, 'add', '.'); git(dir, 'commit', '-qm', `config ${implementer}`);
 };

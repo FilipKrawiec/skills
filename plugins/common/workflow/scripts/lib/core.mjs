@@ -101,10 +101,12 @@ export function config(requireLanes = true, allowBootstrap = false, allowBootstr
   }
   const raw = configPath ? JSON.parse(git('show', configPath)) : null;
   if (configPath && (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 || Object.hasOwn(raw, 'explore') || ![raw.identities ?? {}, raw.github ?? {}, raw.steps ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration; use steps.process/assemble/test instead of an explore block');
-  if (raw && source === 'branch bootstrap' && (['owner'].some(key => Object.hasOwn(raw.identities || {}, key))
-    || ['repo', 'base'].some(key => Object.hasOwn(raw.github || {}, key))
+  if (raw && source === 'branch bootstrap' && (['repo', 'base'].some(key => Object.hasOwn(raw.github || {}, key))
     || Object.hasOwn(raw, 'labels'))) {
-    throw new Error('Workflow roles and GitHub metadata come from CODEOWNERS/Git and the local cache; use CLI defaults for labels and repository scripts under steps');
+    throw new Error('Workflow GitHub metadata comes from Git and the local cache; use CLI defaults for labels and repository scripts under steps');
+  }
+  if (raw && source === 'branch bootstrap' && !allowBootstrapBranchOwner && Object.hasOwn(raw.identities || {}, 'owner')) {
+    throw new Error('A branch config may set identities.owner only for push --owner-bootstrap; merge it to base first');
   }
   // Other top-level keys, such as the removed watcher's block, are ignored, so older configs still load.
   const lanes = raw ? { ...raw.github, ...raw.identities, steps: validateWorkflowSteps(raw.steps || {}), delivery: raw.delivery } : { steps: {} };
@@ -112,10 +114,10 @@ export function config(requireLanes = true, allowBootstrap = false, allowBootstr
   lanes.repo = githubRepoFromRemote(remote);
   lanes.base = baseRef.slice('refs/remotes/origin/'.length);
   lanes.requiredChecks ??= workflowDefaults.github.requiredChecks;
-  const roles = codeownersRoles(baseRef, lanes.repo, allowBootstrapBranchOwner && source === 'branch bootstrap', raw?.identities?.owner);
+  const roles = codeownersRolesFrom(codeownersContents(baseRef), lanes.repo, raw?.identities?.owner);
   const { owner, defaultReviewer } = roles;
   lanes.owner = owner;
-  if (roles.ownerInferred) lanes.ownerInferred = true;
+  if (roles.ownerInferred && raw) requireUserRepositoryOwner(lanes.repo);
   lanes.codeowners = roles.contents;
   if (lanes.reviewer != null && (typeof lanes.reviewer !== 'string' || !/^[A-Za-z0-9-]+$/.test(lanes.reviewer))) throw new Error('identities.reviewer must be a GitHub login');
   if (!defaultReviewer) throw new Error('The trusted .github/CODEOWNERS must name exactly one user for the default Reviewer');
@@ -134,34 +136,28 @@ export function githubRepoFromRemote(remote) {
   if (!match) throw new Error('origin must identify a GitHub owner/repository');
   return match[1];
 }
-function codeownersRoles(baseRef, repo, allowBranchOwner = false, configOwner) {
-  let contents;
-  try { contents = git('show', `${baseRef}:.github/CODEOWNERS`); }
+function codeownersContents(baseRef) {
+  try { return git('show', `${baseRef}:.github/CODEOWNERS`); }
   catch { throw new Error('The trusted base must contain .github/CODEOWNERS to identify review roles'); }
-  const roles = { ...codeownersRolesFrom(contents, repo, !allowBranchOwner, configOwner), contents };
-  if (!roles.ownerInferred || !allowBranchOwner) return roles;
-  let branchContents;
-  try { branchContents = git('show', 'HEAD:.github/CODEOWNERS'); }
-  catch { throw new Error('The committed bootstrap branch must contain .github/CODEOWNERS to identify the Owner'); }
-  const branch = codeownersRolesFrom(branchContents, repo, false);
-  return branch.ownerInferred ? roles : { ...roles, owner: branch.owner, ownerInferred: false };
 }
-// The Owner is the account CODEOWNERS names besides the Reviewer; when it names only the Reviewer, identities.owner, else the personal repository owner.
-export function codeownersRolesFrom(contents, repo, requireOwner = true, configOwner) {
+// An organization has no user login; only a personal repository owner can stand in for the Owner.
+function requireUserRepositoryOwner(repo) {
+  let type;
+  try { type = gh(['api', `repos/${repo}`]).owner?.type; } catch { throw new Error('Cannot verify the repository owner is a user account; set identities.owner in .agents/config.json'); }
+  if (type !== 'User') throw new Error('The repository owner is not a user account; set identities.owner in .agents/config.json to the Owner login');
+}
+// The Owner is identities.owner, else the personal repository owner; CODEOWNERS only names the default Reviewer.
+export function codeownersRolesFrom(contents, repo, configOwner) {
   const rules = contents.split(/\r?\n/).map(line => line.replace(/#.*/, '').trim().split(/\s+/).filter(Boolean)).filter(parts => parts.length);
   const wildcard = [...rules].reverse().find(parts => parts[0] === '*');
   const defaultOwners = wildcard?.slice(1).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)) || [];
   if (defaultOwners.length !== 1) throw new Error('The trusted .github/CODEOWNERS must name exactly one user for the default Reviewer');
   const defaultReviewer = defaultOwners[0];
-  const repoOwner = repo.split('/')[0];
-  const owners = [...new Set(rules.flatMap((parts, index) => index === rules.indexOf(wildcard) ? [] : parts.slice(1)).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)))];
-  const owner = owners.find(value => value.toLowerCase() === repoOwner.toLowerCase())
-    || (owners.length === 1 ? owners[0] : null)
-    || (!owners.length && typeof configOwner === 'string' && /^[A-Za-z0-9-]+$/.test(configOwner) ? configOwner : null);
-  // No named owner: the repository slug stands in, unverified; `push` checks it is a personal account before using it.
-  if (!owner && !owners.length) return { owner: repoOwner, defaultReviewer, ownerInferred: true };
-  if (!owner && requireOwner) throw new Error('The trusted .github/CODEOWNERS must identify one Owner account; organization repositories cannot use the organization slug as a user login');
-  return { owner, defaultReviewer };
+  if (configOwner != null) {
+    if (typeof configOwner !== 'string' || !/^[A-Za-z0-9-]+$/.test(configOwner)) throw new Error('identities.owner must be a GitHub login');
+    return { owner: configOwner, defaultReviewer, contents };
+  }
+  return { owner: repo.split('/')[0], defaultReviewer, ownerInferred: true, contents };
 }
 export function validateWorkflowSteps(steps) {
   if (!steps || typeof steps !== 'object' || Array.isArray(steps)) throw new Error('steps must be an object');
