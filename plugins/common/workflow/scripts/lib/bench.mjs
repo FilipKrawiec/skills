@@ -108,6 +108,8 @@ function parseArgs(args) {
   return options;
 }
 const readJson = file => JSON.parse(readFileSync(file, 'utf8'));
+// A legacy result has top-level rows and summary and no runs: wrap it as one run.
+const readResult = file => { const value = readJson(file); return !value.runs && Array.isArray(value.rows) && value.summary ? { ...value, runs: [value] } : value; };
 
 export async function benchCommand(args, io) {
   const options = parseArgs(args);
@@ -117,7 +119,7 @@ export async function benchCommand(args, io) {
   const emit = (value, text) => console.log(options.json ? JSON.stringify(value, null, 2) : text);
   const settings = options.settings ? parseSettings(options.settings) : [{ model: io.model ?? null, effort: io.effort ?? null }];
   let result;
-  if (options.from) result = readJson(options.from);
+  if (options.from) result = readResult(options.from);
   else if (!options.run) {
     const would = snapshot.entries.map(({ pr, kind, risk, title, base, head }) => ({ pr, kind, risk, title, base, head }));
     emit({ run: false, cost: 0, counts: snapshot.counts, settings, would }, [`Dry listing; nothing run, nothing spent. Snapshot holds ${snapshot.counts.defect} known-defect and ${snapshot.counts.clean} known-clean PRs, replayed once per setting (${settings.map(setting => `${setting.model ?? 'configured'} ${setting.effort ?? 'default'}`).join(', ')}). Pass --run to replay them through the Reviewer (real model spend).`, ...would.map(entry => `#${entry.pr} ${entry.risk} ${entry.kind} ${entry.title || ''} ${entry.base.slice(0, 10)}..${entry.head.slice(0, 10)}`)].join('\n'));
@@ -136,7 +138,7 @@ export async function benchCommand(args, io) {
   }
   let comparisons = [];
   if (options.compare) {
-    const saved = readJson(options.compare);
+    const saved = readResult(options.compare);
     comparisons = result.runs.map(run => { const before = saved.runs.find(other => settingKey(other) === settingKey(run)); return before ? compareResults(before, run) : null; });
   }
   if (options.out) writeFileSync(options.out, `${JSON.stringify(result, null, 2)}\n`);

@@ -6,7 +6,7 @@ GitHub and the host enforce authority; skill text is not a security boundary. Fr
 node <this-skill-directory>/../../scripts/workflow.mjs safety check
 ```
 
-Exit 1 reports drift. `safety apply` changes repository permissions and branch protection; run it only after an explicit owner instruction. The CLI derives repository/base from Git and Owner from CODEOWNERS, else `identities.owner`, else the repository owner. `.agents/config.json` names implementer and Reviewer; CODEOWNERS must name exactly that Reviewer on its default rule. `verify` is the default required check, with an optional override only when a repo uses another check. Project metadata is discovered from GitHub and cached locally.
+Exit 1 reports drift. `safety apply` changes repository permissions and branch protection; run it only after an explicit owner instruction. The CLI derives repository/base from Git and Owner from `identities.owner`, else a personal repository owner. `.agents/config.json` names implementer and Reviewer; CODEOWNERS must name exactly that Reviewer on its default rule. `verify` is the default required check, with an optional override only when a repo uses another check. Project metadata is discovered from GitHub and cached locally.
 
 ## Judgment, identity and credentials
 

@@ -1,11 +1,6 @@
 # Drive transcript check: stagely-pro#1611
 
-Verdict: **not met as worded** (issue #605). Agent roles ran raw `gh` edits, and the owner session ran several by hand.
-
-Gap: the CLI `issue create/edit` has no milestone, parent or blocked-by option, so planners fall back to raw `gh`. Follow-up: filed separately.
-
-
-**Result: the criterion is not met as worded.** Implementers, devops and Reviewer sessions ran no `gh issue edit`, `gh pr edit`, `gh pr merge` or board call. Planner and improver subagents did run raw `gh` mutations, and the owner session ran several by hand outside drive.
+**Result: the criterion is not met as worded** (issue #605). Implementers, devops and Reviewer sessions ran no `gh issue edit`, `gh pr edit`, `gh pr merge` or board call. Planner and improver subagents did run raw `gh` mutations, and the owner session ran several by hand outside drive.
 
 ### Method
 I scanned every Bash call in these transcripts (tool_use records, de-duplicated by id) for `gh issue edit|close|comment|create`, `gh pr edit|merge|ready|create|comment`, `gh project`, `gh api` with `-X`/`-f`/`-F`/`graphql`, `--add-label`, `--remove-label`, `--milestone`, `auto-merge`, and `workflow.mjs issue|pr`.
@@ -31,7 +26,7 @@ Slices and PRs in scope: #1627 (#1632), #1630 (#1635), #1631 (#1636), #1633 (#16
 
 Reviewer rounds otherwise used only `review-context`, `review-post`, `wait`, `status`, `scratch` and read-only `gh` (`pr view`, `pr diff`, `api` GETs).
 
-Cause of the planner raw calls: `workflow.mjs issue create` takes only `--title --body-file [--labels] [--repo] [--unique] [--check]` and `issue edit` only the body, so milestone, parent link and blocked-by have no CLI route. The planners fell back to `gh`.
+Cause of the planner raw calls: `workflow.mjs issue create` takes only `--title --body-file [--labels] [--repo] [--unique] [--check]` and `issue edit` only the body, so milestone, parent link and blocked-by have no CLI route. The planner brief also instructs `gh api` for the sub-issue and blocked-by links, so the planners fell back to `gh`. [#629](https://github.com/FilipKrawiec/skills/issues/629) adds the CLI options.
 
 ### Owner session, by hand, outside drive
 | When (UTC) | Calls | Cause |
