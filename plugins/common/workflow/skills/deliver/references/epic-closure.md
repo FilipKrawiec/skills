@@ -4,7 +4,7 @@ Drive adds a stable ID to any criterion without one and ticks each criterion the
 
 When every slice is merged and lessons are recorded but no current outcome comment exists (none, or one that misses a child or criterion), drive dispatches the Reviewer in a separate session to post it (`review`'s `epic-outcome.md`) instead of asking the owner. Drive returns an owner step only when the Reviewer marks a criterion `unmet` or `unverifiable`, or the epic is `lane:owner`.
 
-The Reviewer posts a JSON comment on the epic; a newer comment supersedes an older one without deleting it:
+The Reviewer posts a JSON comment on the epic (raw JSON, or JSON in one fenced block, with or without a leading `<!-- workflow:epic-outcomes -->` marker; `drive` reads both); a newer comment supersedes an older one without deleting it:
 
 ```json
 {"kind":"workflow:epic-outcomes","version":1,"epic":9,"children":[10,11],"outcomes":[{"criterion":{"id":"sign-in","text":"Users can sign in"},"state":"met","explanation":"Why the evidence shows it.","evidence":["https://github.com/OWNER/REPO/pull/12"]}]}

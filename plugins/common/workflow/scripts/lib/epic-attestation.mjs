@@ -1,7 +1,13 @@
 import { config, gh, git, parseRepo } from './core.mjs';
 
 const login = value => typeof value === 'string' && /^[A-Za-z0-9-]+$/.test(value);
-const parse = body => { try { return JSON.parse(body); } catch { return null; } };
+// Accepts raw JSON or one fenced block, after an optional leading HTML comment marker.
+const parse = body => {
+  if (typeof body !== 'string') return null;
+  const text = body.replace(/^\s*<!--[\s\S]*?-->/, '').trim();
+  const fenced = text.match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i);
+  try { return JSON.parse(fenced ? fenced[1] : text); } catch { return null; }
+};
 
 // The newest outcome comment by the configured Reviewer is the current assessment; older ones stay as history.
 export function resolveNativeEpicEvidence({ repo, issue }, adapters = {}) {
