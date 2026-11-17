@@ -21,7 +21,7 @@ Refusals that were not dispatch failures (classifier denials, an orphaned lock, 
 | Median total cost per merged drive PR | $1.96 (upper bound, all roles) | unknown: implementer, devops, planner and drive-session usage are unreported |
 | Median Reviewer-only cost per merged PR | $0.51 (0.44, 0.47, 0.51, 0.83, 1.13) | $1.03 (0.91, 1.02, 1.03, 1.29, 1.72) |
 
-The like-for-like Reviewer figure is **higher** in #635 (2-3 Reviewer sessions per PR on policy-path PRs, including the `review:owner` hold), so the claim "median below baseline" is not supported by the data. The total cannot be compared until the host reports every role. Per the owner's decision on #615 (2026-11-17 17:55) the full per-role comparison carries to the next Sonnet-low epic via #659. This miss and its cause are raised to the owner on #610.
+The like-for-like Reviewer figure is **higher** in #635 (2-3 Reviewer sessions per PR on policy-path PRs, including the `review:owner` hold), so the claim "median below baseline" is not supported by the data. The total cannot be compared until the host reports every role. Per the owner's decision on #615 (2026-11-17 17:55) the full per-role comparison carries to the next Sonnet-low epic via #659. This miss and its cause still need to be raised to the owner on #610; this record does not claim that has happened (the PR's coordinator posts it, and #610 is the place to look).
 
 ## Reviewer recall
 
