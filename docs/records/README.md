@@ -24,3 +24,5 @@ Name records as `YYYY-MM-DD-short-topic.md`.
 - [Epic closure refinement](2026-11-14-epic-closure-refinement.md): outcome assessment and timing evidence.
 
 - [Measured review epic refinement](2026-11-16-measured-review-refinement.md): epic #560 assessment, timing, usage, benchmark and packet cost evidence.
+
+- [Reviewer model and effort bench](2026-11-17-reviewer-model-effort-bench.md): Sonnet, Opus and Fable settings compared per risk, with a recommendation ([results](2026-11-17-reviewer-bench-results.json)).

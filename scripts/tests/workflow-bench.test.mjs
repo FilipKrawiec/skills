@@ -4,11 +4,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { benchCommand, compareResults, parseVerdict, renderResults, scoreEntry, summarize, validateSnapshot } from '../../plugins/common/workflow/scripts/lib/bench.mjs';
+import { benchCommand, compareResults, parseSettings, parseVerdict, renderResults, scoreEntry, summarize, summarizeByRisk, validateSnapshot } from '../../plugins/common/workflow/scripts/lib/bench.mjs';
 
 const sha = char => char.repeat(40);
-const defect = { pr: 1, issue: 11, title: 'feat: a', kind: 'defect', base: sha('a'), head: sha('b'), defect: { name: 'reverses delta-only rounds', keywords: ['delta', 'whole diff'] } };
-const clean = { pr: 2, issue: 12, title: 'chore: b', kind: 'clean', base: sha('c'), head: sha('d') };
+const defect = { pr: 1, issue: 11, title: 'feat: a', kind: 'defect', risk: 'R1', base: sha('a'), head: sha('b'), defect: { name: 'reverses delta-only rounds', keywords: ['delta', 'whole diff'] } };
+const clean = { pr: 2, issue: 12, title: 'chore: b', kind: 'clean', risk: 'R2', base: sha('c'), head: sha('d') };
 const snapshot = { version: 1, repo: 'o/r', counts: { defect: 1, clean: 1 }, entries: [defect, clean] };
 const review = (verdict, text = '', cost = 0.25) => ({ verdict, text, usage: { cost } });
 
@@ -61,16 +61,41 @@ test('compare shows the delta in catches, false positives and cost', () => {
   const unreported = { summary: { ...after.summary, cost: { total: 'unreported', mean: 'unreported', reported: 0, unreported: 5 } } };
   assert.deepEqual(compareResults(before, unreported), { caught: 1, falsePositives: -1, totalCost: 'unreported', meanCost: 'unreported' });
 });
-test('text output names verdict, catch, false positive and cost per PR', () => {
+test('settings are model:effort pairs and reject anything else', () => {
+  assert.deepEqual(parseSettings('sonnet:medium,opus:high'), [{ model: 'sonnet', effort: 'medium' }, { model: 'opus', effort: 'high' }]);
+  assert.throws(() => parseSettings('opus'), /model:effort/);
+  assert.throws(() => parseSettings('opus:extreme'), /effort/);
+  assert.throws(() => parseSettings('opus:high,opus:high'), /twice/);
+});
+test('each snapshot entry names its risk', () => {
+  assert.match(validateSnapshot({ ...snapshot, entries: [{ ...defect, risk: undefined }, clean] }).join('\n'), /#1: risk must be R0, R1 or R2/);
+  assert.match(validateSnapshot({ ...snapshot, entries: [{ ...defect, risk: 'R3' }, clean] }).join('\n'), /#1: risk must be R0, R1 or R2/);
+});
+test('summaries split by the risk of each entry, with its sample size', () => {
   const rows = [
-    { pr: 1, kind: 'defect', title: 'feat: a', verdict: 'fixes', caught: true, falsePositive: null, cost: 0.2 },
-    { pr: 2, kind: 'clean', title: 'chore: b', verdict: 'fixes', caught: null, falsePositive: true, cost: null },
+    { pr: 1, kind: 'defect', risk: 'R1', caught: true, falsePositive: null, cost: 0.2 },
+    { pr: 3, kind: 'defect', risk: 'R2', caught: false, falsePositive: null, cost: 0.4 },
+    { pr: 2, kind: 'clean', risk: 'R1', caught: null, falsePositive: true, cost: 0.1 },
   ];
-  const result = { rows, summary: summarize(rows) };
-  const text = renderResults(result, { caught: 1, falsePositives: 0, totalCost: 0.1, meanCost: 0.05 });
-  assert.match(text, /#1 defect fixes caught \$0\.20/);
-  assert.match(text, /#2 clean fixes false positive unreported/);
+  const byRisk = summarizeByRisk(rows);
+  assert.deepEqual(Object.keys(byRisk), ['R0', 'R1', 'R2']);
+  assert.deepEqual([byRisk.R0.defects, byRisk.R0.clean], [0, 0]);
+  assert.deepEqual([byRisk.R1.defects, byRisk.R1.caught, byRisk.R1.clean, byRisk.R1.falsePositives, byRisk.R1.cost.total], [1, 1, 1, 1, 0.3]);
+  assert.deepEqual([byRisk.R2.defects, byRisk.R2.caught, byRisk.R2.falsePositives], [1, 0, 0]);
+});
+test('text output names verdict, catch, false positive and cost per PR and per risk', () => {
+  const rows = [
+    { pr: 1, kind: 'defect', risk: 'R1', title: 'feat: a', verdict: 'fixes', caught: true, falsePositive: null, cost: 0.2 },
+    { pr: 2, kind: 'clean', risk: 'R2', title: 'chore: b', verdict: 'fixes', caught: null, falsePositive: true, cost: null },
+  ];
+  const result = { runs: [{ model: 'opus', effort: 'high', rows, summary: summarize(rows), byRisk: summarizeByRisk(rows) }] };
+  const text = renderResults(result, [{ caught: 1, falsePositives: 0, totalCost: 0.1, meanCost: 0.05 }]);
+  assert.match(text, /== opus high/);
+  assert.match(text, /#1 R1 defect fixes caught \$0\.20/);
+  assert.match(text, /#2 R2 clean fixes false positive unreported/);
   assert.match(text, /caught 1\/1; false positives 1\/1; cost total \$0\.20, mean \$0\.20 \(1 unreported\)/);
+  assert.match(text, /R1: caught 1\/1; false positives 0\/0; cost total \$0\.20/);
+  assert.match(text, /R2: caught 0\/0; false positives 1\/1/);
   assert.match(text, /vs saved: caught \+1, false positives \+0, total cost \+\$0\.10, mean cost \+\$0\.05/);
 });
 
@@ -85,15 +110,16 @@ const withSnapshot = async action => {
   try { const file = join(dir, 'snapshot.json'); writeFileSync(file, JSON.stringify(snapshot)); return await action(dir, file); } finally { rmSync(dir, { recursive: true, force: true }); }
 };
 
-test('without --run the command validates and lists what it would run, spending nothing', async () => {
+test('without --run the command validates and lists what it would run per setting, spending nothing', async () => {
   let calls = 0;
   await withSnapshot(async (dir, file) => {
-    const { code, out } = await capture({ args: ['--snapshot', file, '--json'], io: { review: () => { calls++; return review('ready'); } } });
+    const { code, out } = await capture({ args: ['--snapshot', file, '--settings', 'sonnet:medium,opus:high', '--json'], io: { review: () => { calls++; return review('ready'); } } });
     assert.equal(code, 0);
     const printed = JSON.parse(out);
     assert.equal(printed.run, false);
     assert.equal(printed.cost, 0);
     assert.deepEqual(printed.would.map(entry => entry.pr), [1, 2]);
+    assert.deepEqual(printed.settings, [{ model: 'sonnet', effort: 'medium' }, { model: 'opus', effort: 'high' }]);
     assert.equal(calls, 0);
     const text = await capture({ args: ['--snapshot', file], io: { review: () => { calls++; } } });
     assert.match(text.out, /Dry listing; nothing run/);
@@ -111,21 +137,36 @@ test('an invalid snapshot fails before any replay', async () => {
     assert.equal(calls, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('--run replays every PR through the stubbed Reviewer, saves JSON and compares against an earlier result', async () => {
+test('--run replays the snapshot once per setting through the stubbed Reviewer, saves JSON and compares per setting', async () => {
   await withSnapshot(async (dir, file) => {
-    const reviews = { 1: review('fixes', 'whole diff restored', 0.3), 2: { verdict: 'ready', text: '', usage: null } };
-    const io = { review: entry => reviews[entry.pr] };
+    const seen = [];
+    const reviews = { 'sonnet:medium': { 1: review('ready', '', 0.1), 2: review('fixes', 'Important: x', 0.1) }, 'opus:high': { 1: review('fixes', 'whole diff restored', 0.3), 2: { verdict: 'ready', text: '', usage: null } } };
+    const io = { review: (entry, setting) => { seen.push(`${setting.model}:${setting.effort}:${entry.pr}`); return reviews[`${setting.model}:${setting.effort}`][entry.pr]; } };
+    const args = ['--snapshot', file, '--run', '--settings', 'sonnet:medium,opus:high'];
     const out = join(dir, 'now.json');
-    const first = await capture({ args: ['--snapshot', file, '--run', '--json', '--out', out], io });
+    const first = await capture({ args: [...args, '--json', '--out', out], io });
+    assert.deepEqual(seen, ['sonnet:medium:1', 'sonnet:medium:2', 'opus:high:1', 'opus:high:2']);
     const result = JSON.parse(first.out);
-    assert.deepEqual(result.rows.map(row => [row.pr, row.verdict, row.caught, row.falsePositive, row.cost]), [[1, 'fixes', true, null, 0.3], [2, 'ready', null, false, null]]);
-    assert.equal(result.summary.caught, 1);
-    assert.equal(result.summary.cost.unreported, 1);
-    assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')).summary, result.summary);
-    reviews[1] = review('ready', '', 0.1);
-    const second = await capture({ args: ['--snapshot', file, '--run', '--compare', out], io });
+    assert.deepEqual(result.runs.map(run => [run.model, run.effort, run.summary.caught, run.summary.falsePositives]), [['sonnet', 'medium', 0, 1], ['opus', 'high', 1, 0]]);
+    const opus = result.runs[1];
+    assert.deepEqual(opus.rows.map(row => [row.pr, row.risk, row.verdict, row.caught, row.falsePositive, row.cost]), [[1, 'R1', 'fixes', true, null, 0.3], [2, 'R2', 'ready', null, false, null]]);
+    assert.equal(opus.summary.cost.unreported, 1);
+    assert.equal(opus.byRisk.R1.caught, 1);
+    assert.equal(opus.byRisk.R2.falsePositives, 0);
+    assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')).runs.map(run => run.summary), result.runs.map(run => run.summary));
+    reviews['opus:high'][1] = review('ready', '', 0.1);
+    const second = await capture({ args: [...args, '--compare', out], io });
     assert.match(second.out, /vs saved: caught -1/);
     const replayed = await capture({ args: ['--snapshot', file, '--from', out, '--compare', out], io: { review: () => { throw new Error('must not run'); } } });
     assert.match(replayed.out, /vs saved: caught \+0/);
+  });
+});
+test('--run without --settings uses the single configured setting', async () => {
+  await withSnapshot(async (dir, file) => {
+    const seen = [];
+    const io = { model: 'opus', effort: 'medium', review: (entry, setting) => { seen.push(`${setting.model}:${setting.effort}`); return review('ready'); } };
+    const { out } = await capture({ args: ['--snapshot', file, '--run', '--json'], io });
+    assert.deepEqual(seen, ['opus:medium', 'opus:medium']);
+    assert.equal(JSON.parse(out).runs.length, 1);
   });
 });

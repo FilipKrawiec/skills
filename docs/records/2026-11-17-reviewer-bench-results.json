@@ -1,0 +1,581 @@
+{
+  "snapshot": "FilipKrawiec/skills",
+  "runs": [
+    {
+      "model": "sonnet",
+      "effort": "medium",
+      "rows": [
+        {
+          "pr": 539,
+          "kind": "defect",
+          "risk": "R1",
+          "title": "fix(review): review the whole diff every round",
+          "defect": "reverses the owner decision on delta-only later review rounds (fixed by #558)",
+          "verdict": "fixes",
+          "caught": true,
+          "falsePositive": null,
+          "cost": 0.21062820000000002
+        },
+        {
+          "pr": 555,
+          "kind": "defect",
+          "risk": "R1",
+          "title": "feat(workflow): support independent AGY reviewer sessions",
+          "defect": "AGY review session has no timeout, so a hung session holds its claim (fixed by #558)",
+          "verdict": "fixes",
+          "caught": false,
+          "falsePositive": null,
+          "cost": 0.2049012
+        },
+        {
+          "pr": 500,
+          "kind": "defect",
+          "risk": "R2",
+          "title": "fix(drive): verify nested epic delivery evidence",
+          "defect": "nested epic descendants not checked when closing (fixed by #529)",
+          "verdict": "ready",
+          "caught": false,
+          "falsePositive": null,
+          "cost": 0.10705480000000002
+        },
+        {
+          "pr": 568,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(release): publish versions on a release branch so main stops moving on every release",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.16106560000000003
+        },
+        {
+          "pr": 559,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(workflow): simplify epic closure to merged children plus one Reviewer outcome comment",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.2601288
+        },
+        {
+          "pr": 540,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(workflow): sweep historical reviewer nits",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.1293525
+        },
+        {
+          "pr": 526,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "fix(drive): update PR body from implementer hand-back",
+          "defect": null,
+          "verdict": "fixes",
+          "caught": null,
+          "falsePositive": true,
+          "cost": 0.1712454
+        },
+        {
+          "pr": 478,
+          "kind": "clean",
+          "risk": "R2",
+          "title": "fix(drive): a ready PR behind its base merges the base in before any owner step",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.18508950000000005
+        }
+      ],
+      "summary": {
+        "defects": 3,
+        "caught": 1,
+        "clean": 5,
+        "falsePositives": 1,
+        "cost": {
+          "total": 1.429466,
+          "mean": 0.178683,
+          "reported": 8,
+          "unreported": 0
+        }
+      },
+      "byRisk": {
+        "R0": {
+          "defects": 0,
+          "caught": 0,
+          "clean": 0,
+          "falsePositives": 0,
+          "cost": {
+            "total": "unreported",
+            "mean": "unreported",
+            "reported": 0,
+            "unreported": 0
+          }
+        },
+        "R1": {
+          "defects": 2,
+          "caught": 1,
+          "clean": 4,
+          "falsePositives": 1,
+          "cost": {
+            "total": 1.137322,
+            "mean": 0.189554,
+            "reported": 6,
+            "unreported": 0
+          }
+        },
+        "R2": {
+          "defects": 1,
+          "caught": 0,
+          "clean": 1,
+          "falsePositives": 0,
+          "cost": {
+            "total": 0.292144,
+            "mean": 0.146072,
+            "reported": 2,
+            "unreported": 0
+          }
+        }
+      }
+    },
+    {
+      "model": "opus",
+      "effort": "medium",
+      "rows": [
+        {
+          "pr": 539,
+          "kind": "defect",
+          "risk": "R1",
+          "title": "fix(review): review the whole diff every round",
+          "defect": "reverses the owner decision on delta-only later review rounds (fixed by #558)",
+          "verdict": "fixes",
+          "caught": true,
+          "falsePositive": null,
+          "cost": 0.27641879999999996
+        },
+        {
+          "pr": 555,
+          "kind": "defect",
+          "risk": "R1",
+          "title": "feat(workflow): support independent AGY reviewer sessions",
+          "defect": "AGY review session has no timeout, so a hung session holds its claim (fixed by #558)",
+          "verdict": "fixes",
+          "caught": false,
+          "falsePositive": null,
+          "cost": 0.8260672000000001
+        },
+        {
+          "pr": 500,
+          "kind": "defect",
+          "risk": "R2",
+          "title": "fix(drive): verify nested epic delivery evidence",
+          "defect": "nested epic descendants not checked when closing (fixed by #529)",
+          "verdict": "ready",
+          "caught": false,
+          "falsePositive": null,
+          "cost": 0.3147158
+        },
+        {
+          "pr": 568,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(release): publish versions on a release branch so main stops moving on every release",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.39633960000000007
+        },
+        {
+          "pr": 559,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(workflow): simplify epic closure to merged children plus one Reviewer outcome comment",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.695249
+        },
+        {
+          "pr": 540,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(workflow): sweep historical reviewer nits",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.3323712
+        },
+        {
+          "pr": 526,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "fix(drive): update PR body from implementer hand-back",
+          "defect": null,
+          "verdict": "fixes",
+          "caught": null,
+          "falsePositive": true,
+          "cost": 0.4311882000000001
+        },
+        {
+          "pr": 478,
+          "kind": "clean",
+          "risk": "R2",
+          "title": "fix(drive): a ready PR behind its base merges the base in before any owner step",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.516727
+        }
+      ],
+      "summary": {
+        "defects": 3,
+        "caught": 1,
+        "clean": 5,
+        "falsePositives": 1,
+        "cost": {
+          "total": 3.789077,
+          "mean": 0.473635,
+          "reported": 8,
+          "unreported": 0
+        }
+      },
+      "byRisk": {
+        "R0": {
+          "defects": 0,
+          "caught": 0,
+          "clean": 0,
+          "falsePositives": 0,
+          "cost": {
+            "total": "unreported",
+            "mean": "unreported",
+            "reported": 0,
+            "unreported": 0
+          }
+        },
+        "R1": {
+          "defects": 2,
+          "caught": 1,
+          "clean": 4,
+          "falsePositives": 1,
+          "cost": {
+            "total": 2.957634,
+            "mean": 0.492939,
+            "reported": 6,
+            "unreported": 0
+          }
+        },
+        "R2": {
+          "defects": 1,
+          "caught": 0,
+          "clean": 1,
+          "falsePositives": 0,
+          "cost": {
+            "total": 0.831443,
+            "mean": 0.415721,
+            "reported": 2,
+            "unreported": 0
+          }
+        }
+      }
+    },
+    {
+      "model": "opus",
+      "effort": "high",
+      "rows": [
+        {
+          "pr": 539,
+          "kind": "defect",
+          "risk": "R1",
+          "title": "fix(review): review the whole diff every round",
+          "defect": "reverses the owner decision on delta-only later review rounds (fixed by #558)",
+          "verdict": "fixes",
+          "caught": true,
+          "falsePositive": null,
+          "cost": 0.35051699999999997
+        },
+        {
+          "pr": 555,
+          "kind": "defect",
+          "risk": "R1",
+          "title": "feat(workflow): support independent AGY reviewer sessions",
+          "defect": "AGY review session has no timeout, so a hung session holds its claim (fixed by #558)",
+          "verdict": "fixes",
+          "caught": false,
+          "falsePositive": null,
+          "cost": 0.8323069999999998
+        },
+        {
+          "pr": 500,
+          "kind": "defect",
+          "risk": "R2",
+          "title": "fix(drive): verify nested epic delivery evidence",
+          "defect": "nested epic descendants not checked when closing (fixed by #529)",
+          "verdict": "ready",
+          "caught": false,
+          "falsePositive": null,
+          "cost": 0.33984460000000005
+        },
+        {
+          "pr": 568,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(release): publish versions on a release branch so main stops moving on every release",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.5101134
+        },
+        {
+          "pr": 559,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(workflow): simplify epic closure to merged children plus one Reviewer outcome comment",
+          "defect": null,
+          "verdict": "fixes",
+          "caught": null,
+          "falsePositive": true,
+          "cost": 0.7877247999999999
+        },
+        {
+          "pr": 540,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(workflow): sweep historical reviewer nits",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.3608046000000001
+        },
+        {
+          "pr": 526,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "fix(drive): update PR body from implementer hand-back",
+          "defect": null,
+          "verdict": "fixes",
+          "caught": null,
+          "falsePositive": true,
+          "cost": 0.4941428
+        },
+        {
+          "pr": 478,
+          "kind": "clean",
+          "risk": "R2",
+          "title": "fix(drive): a ready PR behind its base merges the base in before any owner step",
+          "defect": null,
+          "verdict": "fixes",
+          "caught": null,
+          "falsePositive": true,
+          "cost": 0.9023909999999999
+        }
+      ],
+      "summary": {
+        "defects": 3,
+        "caught": 1,
+        "clean": 5,
+        "falsePositives": 3,
+        "cost": {
+          "total": 4.577845,
+          "mean": 0.572231,
+          "reported": 8,
+          "unreported": 0
+        }
+      },
+      "byRisk": {
+        "R0": {
+          "defects": 0,
+          "caught": 0,
+          "clean": 0,
+          "falsePositives": 0,
+          "cost": {
+            "total": "unreported",
+            "mean": "unreported",
+            "reported": 0,
+            "unreported": 0
+          }
+        },
+        "R1": {
+          "defects": 2,
+          "caught": 1,
+          "clean": 4,
+          "falsePositives": 2,
+          "cost": {
+            "total": 3.33561,
+            "mean": 0.555935,
+            "reported": 6,
+            "unreported": 0
+          }
+        },
+        "R2": {
+          "defects": 1,
+          "caught": 0,
+          "clean": 1,
+          "falsePositives": 1,
+          "cost": {
+            "total": 1.242236,
+            "mean": 0.621118,
+            "reported": 2,
+            "unreported": 0
+          }
+        }
+      }
+    },
+    {
+      "model": "fable",
+      "effort": "medium",
+      "rows": [
+        {
+          "pr": 539,
+          "kind": "defect",
+          "risk": "R1",
+          "title": "fix(review): review the whole diff every round",
+          "defect": "reverses the owner decision on delta-only later review rounds (fixed by #558)",
+          "verdict": "fixes",
+          "caught": true,
+          "falsePositive": null,
+          "cost": 0.853696
+        },
+        {
+          "pr": 555,
+          "kind": "defect",
+          "risk": "R1",
+          "title": "feat(workflow): support independent AGY reviewer sessions",
+          "defect": "AGY review session has no timeout, so a hung session holds its claim (fixed by #558)",
+          "verdict": "fixes",
+          "caught": true,
+          "falsePositive": null,
+          "cost": 1.4295488000000003
+        },
+        {
+          "pr": 500,
+          "kind": "defect",
+          "risk": "R2",
+          "title": "fix(drive): verify nested epic delivery evidence",
+          "defect": "nested epic descendants not checked when closing (fixed by #529)",
+          "verdict": "ready",
+          "caught": false,
+          "falsePositive": null,
+          "cost": 0.5440311999999999
+        },
+        {
+          "pr": 568,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(release): publish versions on a release branch so main stops moving on every release",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.7005872
+        },
+        {
+          "pr": 559,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(workflow): simplify epic closure to merged children plus one Reviewer outcome comment",
+          "defect": null,
+          "verdict": "fixes",
+          "caught": null,
+          "falsePositive": true,
+          "cost": 1.3231996000000001
+        },
+        {
+          "pr": 540,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "chore(workflow): sweep historical reviewer nits",
+          "defect": null,
+          "verdict": "ready",
+          "caught": null,
+          "falsePositive": false,
+          "cost": 0.7557914
+        },
+        {
+          "pr": 526,
+          "kind": "clean",
+          "risk": "R1",
+          "title": "fix(drive): update PR body from implementer hand-back",
+          "defect": null,
+          "verdict": "fixes",
+          "caught": null,
+          "falsePositive": true,
+          "cost": 1.0824536
+        },
+        {
+          "pr": 478,
+          "kind": "clean",
+          "risk": "R2",
+          "title": "fix(drive): a ready PR behind its base merges the base in before any owner step",
+          "defect": null,
+          "verdict": "fixes",
+          "caught": null,
+          "falsePositive": true,
+          "cost": 1.1551174
+        }
+      ],
+      "summary": {
+        "defects": 3,
+        "caught": 2,
+        "clean": 5,
+        "falsePositives": 3,
+        "cost": {
+          "total": 7.844425,
+          "mean": 0.980553,
+          "reported": 8,
+          "unreported": 0
+        }
+      },
+      "byRisk": {
+        "R0": {
+          "defects": 0,
+          "caught": 0,
+          "clean": 0,
+          "falsePositives": 0,
+          "cost": {
+            "total": "unreported",
+            "mean": "unreported",
+            "reported": 0,
+            "unreported": 0
+          }
+        },
+        "R1": {
+          "defects": 2,
+          "caught": 2,
+          "clean": 4,
+          "falsePositives": 2,
+          "cost": {
+            "total": 6.145277,
+            "mean": 1.024213,
+            "reported": 6,
+            "unreported": 0
+          }
+        },
+        "R2": {
+          "defects": 1,
+          "caught": 0,
+          "clean": 1,
+          "falsePositives": 1,
+          "cost": {
+            "total": 1.699149,
+            "mean": 0.849574,
+            "reported": 2,
+            "unreported": 0
+          }
+        }
+      }
+    }
+  ]
+}

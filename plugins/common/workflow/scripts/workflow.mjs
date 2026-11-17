@@ -50,7 +50,7 @@ const help = `Usage:
   node workflow.mjs next [--owner]
   node workflow.mjs drive NUMBER [--hand-back FILE|-] | drive --next
   node workflow.mjs responsibility NAME BRIEF
-  node workflow.mjs bench [--snapshot FILE] [--run] [--model M] [--host claude|codex] [--json] [--out FILE] [--compare FILE] [--from FILE]
+  node workflow.mjs bench [--snapshot FILE] [--run] [--model M] [--effort E] [--settings model:effort,...] [--host claude|codex] [--json] [--out FILE] [--compare FILE] [--from FILE]
   node workflow.mjs check --worktree PATH
   node workflow.mjs pr ready|auto-merge --pr NUMBER
   node workflow.mjs nits [--days N] [--done PR...]
@@ -73,7 +73,7 @@ pr ready and pr auto-merge refuse a PR whose body links no issue (Closes #N or P
 pr auto-merge binds squash auto-merge to the head only when the Reviewer approved it (verdict=ready, or verdict=owner with the owner's approval under review:owner), no owner change request stands, no check failed and the base requires code-owner review and the configured checks.
 A PR reviewer runs through review-session.mjs, which records the session's usage on the PR when the host prints it (status shows totals by role and model); review-context --claim and review-post require that session's atomic claim. review-post posts as the configured Reviewer, gives each inline finding a stable key (its path, optional criterion and failure, else its first line) and skips findings whose key an open thread already carries, so a retry never duplicates a thread; it resolves the Reviewer's own threads (named by --resolve-thread, plus Nit, Pre-existing and Follow-up ones on APPROVE), adds review:owner only on an APPROVE with verdict=owner (it refuses verdict=owner on any other event), then removes state:reviewing; a failed post comments a post-failed marker, and every exit releases the claim that review-context --claim took.
 drive advances an issue or epic from GitHub state: it performs every mechanical step (claim, worktree, commit and push from a hand-back, draft PR, risk, ready, auto-merge, close, worktree removal) and prints one JSON instruction: an agent to start with its model and brief, a wait command to run in the background, an owner step, or done. Re-running it on unchanged state repeats the instruction.
-bench replays the pinned known-defect and known-clean PRs of docs/review-benchmark.json through the Reviewer with a drive-built packet and reports catches, false positives and cost; without --run it only validates the snapshot and lists what it would run, spending nothing; --out saves the JSON result and --compare shows the delta against a saved one.
+bench replays the pinned known-defect and known-clean PRs of docs/review-benchmark.json through the Reviewer with a drive-built packet and reports catches, false positives and cost per setting and per risk; --settings model:effort,... replays the snapshot once per setting; without --run it only validates the snapshot and lists what it would run, spending nothing; --out saves the JSON result and --compare shows the delta against a saved one.
 check runs steps.test under a machine-wide lock with two slots, so at most two gates run at once.
 A body or comments file is - (stdin) or a path inside the worktree; scratch creates the git-ignored .wf/ directory for such files and prints its path.`;
 export function hasLockfAncestor(commands) {
@@ -161,7 +161,7 @@ async function execute(command, args) {
   else if (command === 'next') { const { lanes } = config(); nextCommand(args, lanes); }
   else if (command === 'responsibility') { if (args.length !== 2) throw new Error('Usage: responsibility NAME BRIEF'); const { lanes } = config(); process.stdout.write(runResponsibility(lanes.delivery, args[0], args[1])); }
   else if (command === 'drive') { const { lanes } = config(); driveCommand(args, lanes); }
-  else if (command === 'bench') { const { lanes, root } = config(); const options = {}; for (const key of ['model', 'host']) { const at = args.indexOf(`--${key}`); if (at >= 0) options[key] = args[at + 1]; } process.exitCode = await benchCommand(args, reviewerIo(lanes, root, options)); }
+  else if (command === 'bench') { const { lanes, root } = config(); const options = {}; for (const key of ['model', 'effort', 'host']) { const at = args.indexOf(`--${key}`); if (at >= 0) options[key] = args[at + 1]; } process.exitCode = await benchCommand(args, reviewerIo(lanes, root, options)); }
   else if (command === 'check') { const { lanes } = config(); process.exitCode = checkCommand(args, lanes); }
   else if (command === 'scratch' && !args.length) console.log(JSON.stringify({ path: workflowScratch() }));
   else if (command === 'labels') labelsCommand(args);
