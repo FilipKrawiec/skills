@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, holdBaseUpdates, latestAssessment,
-  driveCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  driveCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
@@ -1778,4 +1778,13 @@ test('a resumed session that started fresh on a stronger model keeps it when the
   const step = drive(repo.io, 3, lanes, {});
   assert.deepEqual([step.resume, step.handoff, step.model], [true, undefined, 'opus'], 'same risk: no handoff, the session keeps opus');
   assert.match(repo.writes[brief], /Model opus\. Effort /);
+});
+
+test('the documented drive session launches on Sonnet at low effort', () => {
+  assert.deepEqual(driveSession, { model: 'sonnet', effort: 'low' });
+  const command = driveSessionCommand('<issue|epic>');
+  assert.equal(command, 'claude --model sonnet --effort low "/deliver drive <issue|epic>"');
+  const read = doc => readFileSync(new URL(`../../${doc}`, import.meta.url), 'utf8');
+  assert.ok(read('docs/CONCEPTS.md').includes(command));
+  assert.ok(read('plugins/common/workflow/skills/deliver/references/setup.md').includes('Start it on Sonnet at low effort'));
 });

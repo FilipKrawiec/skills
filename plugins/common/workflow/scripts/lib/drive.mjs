@@ -44,6 +44,9 @@ export function sessionFor(agent, risk, { round = 0, fresh = false } = {}) {
   }
   return { model: 'opus', effort: 'medium' };
 }
+// The owner's session only routes drive's JSON, so it starts on Sonnet at low effort; the owner starts it with this command.
+export const driveSession = { model: 'sonnet', effort: 'low' };
+export const driveSessionCommand = target => `claude --model ${driveSession.model} --effort ${driveSession.effort} "/deliver drive ${target}"`;
 export const modelFor = risk => sessionFor('implementer', risk).model;
 export const modelForStep = (step, risk, round = 0) => sessionFor(step.agent, risk, { round, fresh: Boolean(step.fresh) }).model;
 // AGY is advisory only: in the 2026-11-16 dry run its Flash reviewer approved two defective PRs. It may second-guess a risk,
