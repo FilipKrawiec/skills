@@ -2067,6 +2067,7 @@ test('mergeBaseIntoHead takes the base side of manifest conflicts and syncs, els
   const git = (...args) => { const r = spawnSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { cwd: dir, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r; };
   try {
     git('init', '-q', '-b', 'main');
+    git('config', 'user.name', 'T'); git('config', 'user.email', 't@example.test');
     writeFileSync(join(dir, 'package-metadata.json'), '{"version":"1.0.0"}\n'); writeFileSync(join(dir, 'a.js'), 'one\n');
     git('add', '.'); git('commit', '-qm', 'init');
     git('checkout', '-qb', 'head');
