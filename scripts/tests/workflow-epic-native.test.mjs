@@ -47,6 +47,22 @@ test('cited PRs must exist in the repository and be merged into the base; other 
   assert.equal(other.check().complete, true);
 });
 
+test('outcome parsing rows: text after the marker, a commit link and rejection messages that show the expected format', () => {
+  const rows = [
+    { name: 'text after the criterion marker', mutate: f => { f.epic.body = f.epic.body.replace('-->', '--> (owner: dev)'); }, complete: true },
+    { name: 'a commit link resolves to its merged PR', over: { evidence: ['https://github.com/a/b/commit/abcdef1234567'] }, mutate: f => { f.adapters.commitPr = (repo, sha) => (sha === 'abcdef1234567' ? 12 : null); }, complete: true },
+    { name: 'a commit in no merged PR names the PR link format', over: { evidence: ['https://github.com/a/b/commit/abcdef1234567'] }, mutate: f => { f.adapters.commitPr = () => null; }, complete: false, message: /pull\/<number>/ },
+    { name: 'a criterion without an ID names the marker format', mutate: f => { f.epic.body = '### Acceptance criteria\n- [x] Works\n'; }, complete: false, message: /- \[ \] <criterion text> <!-- workflow:criterion <id> -->/ },
+    { name: 'a non-URL evidence entry names the link format', over: { evidence: ['not a url'] }, complete: false, message: /pull\/<number>/ },
+  ];
+  for (const row of rows) {
+    const f = fixture(row.over); row.mutate?.(f);
+    const result = f.check();
+    assert.equal(result.complete, row.complete, `${row.name}: ${result.issues}`);
+    if (row.message) assert.match(result.issues.join(' '), row.message, row.name);
+  }
+});
+
 test('unmet outcomes keep the epic open with a concrete follow-up', () => {
   const result = fixture({ state: 'unmet', nextAction: 'Fix the gap' }).check();
   assert.equal(result.complete, false);
