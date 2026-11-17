@@ -71,6 +71,23 @@ function structureOptions(o) {
   if (blockers.some(value => !positive(value))) throw new Error('--blocked-by expects issue numbers such as 12 or 12,13');
   return { milestone: o['--milestone'] || null, parent, blockers };
 }
+const labelNames = labels => (labels || []).map(label => label.name ?? label);
+// Backlogs have two levels: an epic whose children are stories or bugs. Null when the structure holds, else why it does not.
+export function backlogViolation({ number, labels, parent, parentLabels }) {
+  const own = labelNames(labels);
+  const retired = own.find(name => name === 'type:task' || name === 'type:chore');
+  if (retired) return `${retired} is retired: file a type:story or type:bug under an epic`;
+  const target = number ? `#${number}` : 'the issue';
+  if (own.includes('type:epic') && parent) return `${target} is an epic and cannot sit under #${parent}: epics are never nested; file a sibling story or bug under the epic instead`;
+  if (parent && !labelNames(parentLabels).includes('type:epic')) return `#${parent} is not a type:epic: ${target} must sit directly under one epic`;
+  if (!number && !parent && (own.includes('type:story') || own.includes('type:bug'))) return 'a type:story or type:bug needs --parent N, the one epic it sits under';
+  return null;
+}
+function requireBacklogStructure(repo, { number = null, labels, parent }) {
+  const parentLabels = parent ? gh(['api', `repos/${repo}/issues/${parent}`]).labels : [];
+  const problem = backlogViolation({ number, labels, parent, parentLabels });
+  if (problem) throw new Error(problem);
+}
 function milestoneNumber(repo, name) {
   const found = gh(['api', '--paginate', '--slurp', `repos/${repo}/milestones?state=all&per_page=100`]).flat().find(milestone => milestone.title === name);
   if (!found) throw new Error(`${repo} has no milestone named ${name}`);
@@ -108,9 +125,10 @@ export function issueCreate(args) {
   const repo = issueWriteRepo(cfg, o['--repo']);
   requireImplementer(cfg);
   const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
+  if (!check) requireBacklogStructure(repo, { labels, parent: structure.parent });
   // List without --search: the search index lags new issues and would hide a concurrent duplicate.
   const open = () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body']);
-  const followUp = labels.includes('type:bug') || labels.includes('type:chore');
+  const followUp = labels.includes('type:bug');
   return withRepoLock('issue-create', () => {
     const issues = unique || followUp || check ? open() : [];
     const existing = unique ? oldestExactTitle(issues, title) : null;
@@ -159,6 +177,7 @@ export function issueEdit(args) {
   const root = git('rev-parse', '--show-toplevel');
   const body = o['--body-file'] ? validateIssueCommentBody(readWorkspaceText(root, o['--body-file'])) : null;
   const cfg = writerConfig(); loadEnvironment(cfg); requireImplementer(cfg);
+  if (structure.parent) requireBacklogStructure(cfg.repo, { number: n, labels: gh(['api', `repos/${cfg.repo}/issues/${n}`]).labels, parent: structure.parent });
   return withRepoLock(`issue-edit-${n}`, () => {
     if (body !== null || structure.milestone) {
       const milestone = structure.milestone ? milestoneNumber(cfg.repo, structure.milestone) : null;

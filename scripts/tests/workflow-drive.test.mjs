@@ -185,7 +185,7 @@ test('a cut after the fresh round keeps the PR: the planner narrows its issue an
   assert.deepEqual(drive(repo.io, 3, lanes, {}).agent, 'reviewer');
   assert.deepEqual(repo.calls, [['ready'], ['unclaim', 3]]);
   // Without a PR, a cut splits the issue into an epic; a `sliced` hand-back on a story reports blocked, not another planner round.
-  assert.match(plannerBrief({ issue: started, pr: null, step: { mode: 'replan', reason: 'two seams' } }), /into an epic with one-PR sub-issues/);
+  assert.match(plannerBrief({ issue: started, pr: null, step: { mode: 'replan', reason: 'two seams' } }), /sibling story or bug under the same epic/);
   assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: blocked }), handBack: { status: 'sliced' } }), { blocked: { issue: 3, reason: 'the planner handed back sliced, yet the issue is not an epic' } });
 });
 
@@ -586,6 +586,26 @@ test('a slice with a dropped dependency or an epic blocked by an epic is not dri
   assert.match(decideEpic({ epic, slices }).owner, /#12 depends on #7/);
   const repo = fakeRepo({ issues: { 9: epic, 8: issue({ number: 8, labels: [label('type:epic')] }), 10: issue({ number: 10 }) }, subs: { 9: [10] }, blockers: { 9: [8] } });
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { blocked: { issue: 9, by: [8] } });
+});
+
+test('legacy type:task, type:chore and untyped slices are driven as stories', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, labels: [label('type:task')] }), 11: issue({ number: 11, labels: [label('type:chore')] }), 12: issue({ number: 12 }) }, subs: { 9: [10, 11, 12] } });
+  const result = drive(repo.io, 9, lanes, {});
+  assert.deepEqual([result.agent, result.mode, result.issue, result.alsoReady], ['implementer', 'build', 10, [11, 12]]);
+});
+test('a legacy open epic nested under an epic is reported, not driven or crashed on', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 8: issue({ number: 8, labels: [label('type:epic')] }), 10: issue({ number: 10 }) }, subs: { 9: [8, 10], 8: [] } });
+  const result = drive(repo.io, 9, lanes, {});
+  assert.equal(result.blocked.issue, 9);
+  assert.match(result.blocked.reason, /nested epic #8; epics are never nested/);
+  repo.s.issues[8].state = 'CLOSED';
+  assert.equal(drive(repo.io, 9, lanes, {}).blocked, undefined, 'a closed nested epic no longer blocks');
+});
+test('the planner brief names the two-level backlog and sibling splits', () => {
+  const brief = plannerBrief({ issue: issue({ number: 5 }), step: { mode: 'replan', reason: 'x' }, base: 'main', repo: 'acme/app' });
+  assert.match(brief, /never a nested epic, `type:task` or `type:chore`; a split yields sibling stories or bugs under the same epic/);
 });
 
 test('--next takes the lowest-numbered ready item and skips unmet or dropped dependencies', () => {
