@@ -1113,7 +1113,26 @@ export function driveNext(io, numbers, lanes, handBack = {}) {
 // One drive session per target. The claim belongs to the session, not to one CLI call: every `drive` call refreshes its
 // heartbeat, and the session releases it when drive returns `done`, `owner` or `blocked`. A claim another session holds
 // blocks it until the heartbeat is older than `staleMs`; then that session is idle or gone and the next one takes over.
-export const driveSessionId = (env = process.env) => env.WORKFLOW_DRIVE_SESSION || env.CLAUDE_SESSION_ID || env.CODEX_SESSION_ID || `ppid-${process.ppid}`;
+// Without an id in the environment, the session is the nearest ancestor that is no shell: each Bash call of one agent
+// session is a fresh shell under the same long-lived agent process, so its pid and start time stay stable across calls.
+const shells = /^(-?(sh|bash|zsh|dash|fish|ksh|tcsh|csh)|env|sudo|script|login)$/;
+function processInfo(pid) {
+  const out = spawnSync('ps', ['-o', 'ppid=,lstart=,comm=', '-p', String(pid)], { encoding: 'utf8' });
+  const match = out.status === 0 && out.stdout.trim().match(/^(\d+)\s+(.{24})\s+(.+)$/);
+  return match ? { ppid: Number(match[1]), started: match[2].trim(), name: match[3].trim().split('/').pop() } : null;
+}
+export function driveSessionId(env = process.env, info = processInfo) {
+  const set = env.WORKFLOW_DRIVE_SESSION || env.CLAUDE_SESSION_ID || env.CODEX_SESSION_ID;
+  if (set) return set;
+  let pid = process.ppid;
+  for (let depth = 0; pid > 1 && depth < 16; depth++) {
+    const here = info(pid);
+    if (!here) break;
+    if (!shells.test(here.name)) return `proc-${pid}-${here.started.replace(/\s+/g, '_')}`;
+    pid = here.ppid;
+  }
+  return `ppid-${process.ppid}`;
+}
 export function acquireRunLock({ directory, key, session, now = Date.now(), staleMs = 30 * 60_000 }) {
   mkdirSync(directory, { recursive: true });
   const path = join(directory, `${key.replace(/[^A-Za-z0-9._-]/g, '_')}.json`);
