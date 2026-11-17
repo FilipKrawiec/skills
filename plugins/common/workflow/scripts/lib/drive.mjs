@@ -1159,7 +1159,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     if (!lock.acquired) { console.log(JSON.stringify({ blocked: { reason: 'another drive session is live on --next; it never races, so run drive again when it ends or its heartbeat goes stale' } })); return; }
     const result = driveNext(io, numbers, lanes, handBack);
     if (result.done || result.owner || result.blocked) lock.release();
-    console.log(JSON.stringify(result));
+    console.log(JSON.stringify(withConfigCommit(result, lanes)));
     return;
   } else if (/^[1-9]\d*$/.test(args[0])) n = Number(args[0]);
   else throw new Error(usage);
@@ -1167,8 +1167,9 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   if (!lock.acquired) { console.log(JSON.stringify({ blocked: { issue: n, reason: `another drive session is live on #${n}; it never races, so run drive again when it ends or its heartbeat goes stale` } })); return; }
   const result = drive(io, n, lanes, handBack);
   if (result.done || result.owner || result.blocked) lock.release();
-  console.log(JSON.stringify(result));
+  console.log(JSON.stringify(withConfigCommit(result, lanes)));
 }
+const withConfigCommit = (result, lanes) => (lanes.configCommit ? { ...result, configCommit: lanes.configCommit } : result);
 
 // ---- check: the project gate under a machine-wide lock with two slots, so at most 2 run at once.
 

@@ -105,3 +105,21 @@ export function ownedReviewSession(root, repo, reviewer, pr, head, nonce) {
   if (!session || session.oid !== local.oid || session.claim.nonce !== nonce || session.claim.head !== head || session.claim.pid !== local.pid || session.claim.host !== local.host || session.claim.startedAt !== local.startedAt) throw new Error('Reviewer claim changed or cannot be verified');
   return session;
 }
+
+// A failed post releases the claim so drive can recover, but marks the session retryable once: the same session may claim the PR again
+// (the claim object is unchanged) and post again, with no new Reviewer session.
+export function markRetryable(root, nonce, retry) {
+  const path = join(root, '.wf', `review-session-${nonce}.json`);
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), retry }));
+}
+export function resumeReviewSession(root, repo, reviewer, pr, head, nonce) {
+  try { return ownedReviewSession(root, repo, reviewer, pr, head, nonce); } catch (error) {
+    let local;
+    try { local = JSON.parse(readFileSync(join(root, '.wf', `review-session-${nonce}.json`), 'utf8')); } catch { throw error; }
+    if (local?.retry !== 1 || !local.acquired || local.pr !== String(pr) || local.head !== head || local.nonce !== nonce) throw error;
+    if (sessionClaim(root, repo, reviewer, pr)) throw error;
+    if (!withReviewTransport(root, repo, reviewer, (directory, remote, env) => acquireReviewRef(directory, remote, pr, local.oid, env))) throw error;
+    markRetryable(root, nonce, 0);
+    return { ...ownedReviewSession(root, repo, reviewer, pr, head, nonce), reclaimed: true };
+  }
+}

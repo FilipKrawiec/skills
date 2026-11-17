@@ -1896,6 +1896,18 @@ test('driveCommand keeps the claim across calls until drive returns done, owner 
   } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('driveCommand names the commit the configuration came from', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  let said = '';
+  const log = console.log; console.log = text => { said = JSON.parse(text); };
+  try {
+    const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+    driveCommand(['3'], { ...lanes, configCommit: 'c0ffee'.padEnd(40, '0') }, repo.io, { lockDirectory: directory, session: 'A', now: 1000 });
+    assert.equal(said.configCommit, 'c0ffee'.padEnd(40, '0'));
+    assert.equal(said.agent, 'implementer');
+  } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('a blocked hand-back returns the owner step even with uncommitted or unpushed work', () => {
   const base = { issue: started, pr: pr({ reviews: [review('fixes')] }), handBack: { status: 'blocked', note: 'needs a credential' } };
   for (const extra of [{ dirty: true }, { unpushed: true }, {}]) assert.match(decide({ ...base, tree: tree({ commits: 1, ...extra }) }).owner, /credential/, JSON.stringify(extra));

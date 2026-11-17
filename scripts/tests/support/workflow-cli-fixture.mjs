@@ -47,8 +47,10 @@ if (args[0] === 'auth' && args[1] === 'token') {
   out(JSON.parse(process.env.BRANCH_RULES));
 } else if (args[0] === 'api') {
   if (process.env.GH_TOKEN !== 'SECRET_TOKEN') process.exit(1);
+  if (args.some(arg => /^repos\\/acme\\/app\\/pulls\\/\\d+\\/files/.test(arg))) { out([JSON.parse(process.env.PR_FILES || '[{"filename":"a.txt","patch":"@@ -0,0 +1,5 @@\\\\n+1\\\\n+2\\\\n+3\\\\n+4\\\\n+5"}]')]); process.exit(0); }
   const review = args.find(arg => /^repos\\/acme\\/app\\/pulls\\/\\d+\\/reviews$/.test(arg));
   if (review) {
+    if (process.env.FAIL_REVIEW_POST_ONCE && !fs.existsSync(process.env.FAIL_REVIEW_POST_ONCE)) { fs.writeFileSync(process.env.FAIL_REVIEW_POST_ONCE, '1'); process.stderr.write('gh: Unprocessable Entity (HTTP 422)\\n'); process.exit(1); }
     if (process.env.FAIL_REVIEW_POST) { process.stderr.write('post rejected SECRET_TOKEN'); process.exit(1); }
     if (process.env.REVIEW_RECORD) fs.writeFileSync(process.env.REVIEW_RECORD, JSON.stringify({ token: process.env.GH_TOKEN, payload: JSON.parse(fs.readFileSync(0, 'utf8')) }));
     if (process.env.GH_LOG) fs.appendFileSync(process.env.GH_LOG, 'post\\n');

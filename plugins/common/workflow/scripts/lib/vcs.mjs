@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { ownedReviewSession, releaseSessionClaim } from './review-ref.mjs';
+import { markRetryable, ownedReviewSession, releaseSessionClaim, resumeReviewSession } from './review-ref.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -315,6 +315,22 @@ function reviewerToken(root, login) {
   if (!token || /\s/.test(token)) throw new Error('No usable reviewer credential');
   return token;
 }
+// The new-file line numbers a review comment can anchor to (added and context lines), per changed path.
+export function diffLines(repo, pr, options) {
+  const files = jsonCommand('gh', ['api', '--hostname', 'github.com', '--paginate', '--slurp', `repos/${repo}/pulls/${pr}/files?per_page=100`], options).flat();
+  const lines = new Map();
+  for (const file of files) {
+    const set = new Set(); let line = 0;
+    for (const text of String(file.patch || '').split('\n')) {
+      const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(text);
+      if (hunk) { line = Number(hunk[1]); continue; }
+      if (!line || text.startsWith('\\') || text.startsWith('-')) continue;
+      set.add(line); line += 1;
+    }
+    lines.set(file.filename, set);
+  }
+  return lines;
+}
 const resolveMutation = 'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}';
 function reviewerThreads(threads, login, approve, flagged) {
   return threads.nodes.filter(thread => {
@@ -362,9 +378,13 @@ export function reviewPost(args) {
     } catch { /* preserve the argument error and retain any unverified claim */ }
     throw error;
   }
-  const session = ownedReviewSession(root, repo, login, pr, o['--sha'], process.env.WORKFLOW_REVIEW_NONCE);
+  const session = resumeReviewSession(root, repo, login, pr, o['--sha'], process.env.WORKFLOW_REVIEW_NONCE);
   const env = { ...cleanEnvironment(), GH_TOKEN: reviewerToken(root, login) };
   const options = { cwd: root, env };
+  if (session.reclaimed) {
+    console.log(`Reclaimed #${pr} for this session to retry the failed post`);
+    try { run('gh', ['pr', 'edit', pr, '--repo', `github.com/${repo}`, '--add-label', 'state:reviewing'], options); } catch { /* the label is only a visible indication of the claim */ }
+  }
   const approve = o['--event'] === 'APPROVE';
   try {
     const threads = readThreads(repo, pr, options);
@@ -380,7 +400,16 @@ export function reviewPost(args) {
       present.add(key); fresh.push({ ...comment, body: `${comment.body}\n\n<!-- finding-key:${key} -->` });
     }
     if (skipped) console.log(`Skipped ${skipped} finding${skipped === 1 ? '' : 's'} already on #${pr}`);
-    const payload = { commit_id: o['--sha'], body: o.body, event: o['--event'], comments: fresh.map(c => ({ path: c.path, line: c.line, side: 'RIGHT', body: c.body })) };
+    // GitHub refuses an inline comment on a line outside the diff and rejects the whole review, so those findings go in the body.
+    const inDiff = fresh.length ? diffLines(repo, pr, options) : new Map();
+    const inline = fresh.filter(c => inDiff.get(c.path)?.has(c.line));
+    const moved = fresh.filter(c => !inline.includes(c));
+    let body = o.body;
+    if (moved.length) {
+      body += `\n\n**Findings outside the diff** (GitHub cannot anchor them inline)\n${moved.map(c => `- \`${c.path}:${c.line}\` ${c.body.replace(/\n*<!-- finding-key:[\w.-]+ -->\s*$/, '').replace(/\n/g, '\n  ')}`).join('\n')}`;
+      console.log(`Moved ${moved.length} finding${moved.length === 1 ? '' : 's'} outside the PR diff into the review body: ${moved.map(c => `${c.path}:${c.line}`).join(', ')}`);
+    }
+    const payload = { commit_id: o['--sha'], body, event: o['--event'], comments: inline.map(c => ({ path: c.path, line: c.line, side: 'RIGHT', body: c.body })) };
     const posted = jsonCommand('gh', ['api', '--hostname', 'github.com', `repos/${repo}/pulls/${pr}/reviews`, '--input', '-'], { ...options, input: JSON.stringify(payload) });
     if (!Number.isInteger(posted?.id)) throw new Error('GitHub did not confirm the review');
     console.log(`Posted review ${posted.id} on #${pr}`);
@@ -398,7 +427,10 @@ export function reviewPost(args) {
     const reason = String(error.message).replace(/\s+/g, ' ').slice(0, 300);
     try { run('gh', ['pr', 'comment', pr, '--repo', `github.com/${repo}`, '--body', `<!-- agent-review post-failed sha=${o['--sha']} --> Review post failed (${o['--event']}): ${reason}`], options); } catch { /* the exit code still signals failure */ }
     let released = false;
-    try { released = releaseSessionClaim(root, repo, login, pr, session.oid); if (released) releaseClaim(pr, repo, options); } catch { /* retain an unverified claim */ }
+    try {
+      released = releaseSessionClaim(root, repo, login, pr, session.oid);
+      if (released) { releaseClaim(pr, repo, options); if (!session.reclaimed) markRetryable(root, process.env.WORKFLOW_REVIEW_NONCE, 1); }
+    } catch { /* retain an unverified claim */ }
     const locations = o.comments.map(comment => `${comment.path}:${comment.line}`).join(', ');
     console.error(`Blocked: review post failed (${reason}); ${released ? 'claim released, retry' : 'claim retained; rerun drive'}.${locations ? ` Inline locations: ${locations}` : ''}`);
     process.exitCode = 1;
