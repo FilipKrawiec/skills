@@ -277,7 +277,7 @@ export function decideIssue(facts, lanes) {
   if (hb.status === 'narrowed' && state.verdict === 'fixes' && !conflictOnly && next.reason !== 'conflicts with its base') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
   if (next.action === 'fix' && conflictOnly && hb.status !== 'done') return agent('implementer', 'fix', { reason: 'base conflict is the only open Blocker or Important finding', resume: true });
   // A disputed finding is the implementer's evidence, not a skipped fix: the Reviewer judges the same head again.
-  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'disputed') return agent('reviewer', 'review', { reason: 'the implementer disputed the blocking findings; the Reviewer weighs its evidence', sameHead: true, round: state.round + 1 });
+  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'disputed') return agent('reviewer', 'review', { reason: 'the implementer disputed the blocking findings; the Reviewer weighs its evidence', sameHead: true, dispute: hb.note || '', round: state.round + 1 });
   // A fix-mode hand-back at the head the Reviewer judged fixed nothing: the fix reruns with the blocking findings quoted.
   const quoted = blocking.map(finding => finding.trim().replace(/\s+/g, ' ').slice(0, 600)).filter(Boolean).slice(0, 10);
   if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'done') return agent('implementer', 'fix', { reason: 'the hand-back left the head the Reviewer judged unchanged; fix the findings quoted below', resume: true, findings: quoted });
@@ -393,7 +393,7 @@ Never push, open, label, ready or merge a PR, and never start an agent: drive do
 ## Hand-back, at most 5 lines
 
 \`\`\`text
-status: done | replan | blocked
+status: done | ${fix ? 'disputed | ' : ''}replan | blocked
 commit: <Conventional Commit subject, only if you left changes uncommitted>
 paths: <changed file paths only, not directories; drive commits only explicit files>
 check: pass | fail
@@ -501,7 +501,7 @@ export function reviewerBrief(f) {
 ${f.packet ? `Read the review packet first: ${f.packet}. It holds the issue criteria, CI, the project gate, the diff by area, the delta since your last verdict with open threads, and call sites of changed exports. Do not re-gather them; check blast radius outside it yourself.\n\n` : ''}Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
-${f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
+${f.step.dispute ? `Same head, disputed: the implementer disputes the blocking findings and changed no commit. Its evidence: ${f.step.dispute}\nJudge the evidence against the code; resolve a finding it refutes, repost the rest.\n` : f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 
 - \`node ${cli} review-context --pr ${f.pr.number} --issue ${f.issue.number} --claim\`
