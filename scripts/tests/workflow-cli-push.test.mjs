@@ -298,3 +298,16 @@ test('a commit failure reports git\'s first line without credentials', () => {
   assert.equal(gitFailureLine('\nerror: cannot push https://x:ghp_abc123@github.com/a/b token github_pat_Z9_y\nhint: more'), 'error: cannot push https://[redacted]@github.com/a/b token [redacted]');
   assert.equal(gitFailureLine(''), '');
 });
+
+test('push refuses an organization repository whose CODEOWNERS names only the Reviewer', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.main, '.github', 'CODEOWNERS'), '* @reviewer\n');
+  writeFileSync(join(f.main, configPath), json(config({ repo: 'acme/app', implementer: 'builder', reviewer: 'reviewer' })));
+  assert.equal(f.git('add', configPath, '.github/CODEOWNERS').status, 0);
+  commitFixture(f, f.main);
+  f.env.REMOTE_BASE_SHA = f.git('rev-parse', 'HEAD').stdout.trim();
+  const result = f.cliRun('push');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Organization repositories require an explicit trusted owner/);
+  assertNoPush(f);
+});

@@ -84,7 +84,7 @@ export async function push(args) {
   const repo = parseRepo(lanes.repo);
   const user = lanes.implementer;
   const reviewer = lanes.reviewer;
-  let owner = lanes.owner;
+  let owner = lanes.ownerInferred ? null : lanes.owner;
   if (owner == null) {
     if (![user, reviewer].every(value => typeof value === 'string' && /^[A-Za-z0-9-]+$/.test(value)) || user.toLowerCase() === reviewer.toLowerCase()) throw new Error('Configure distinct implementer, reviewer and owner accounts in trusted roles');
   } else assertDistinctPushRoles({ owner, implementer: user, reviewer });
