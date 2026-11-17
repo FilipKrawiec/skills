@@ -344,7 +344,7 @@ if(link){const key=link[1]+link[2];
   process.exit(0);}
 const issue=path.match(/issues\\/(\\d+)$/);
 if(issue&&a.includes('PATCH')){const m=field('milestone');out({number:Number(issue[1]),body:field('body'),milestone:m&&!process.env.TEST_NO_MILESTONE?{title:'v1'}:null});process.exit(0);}
-if(issue){out({id:Number(issue[1])*100,number:Number(issue[1])});process.exit(0);}
+if(issue){out({id:Number(issue[1])*100,number:Number(issue[1]),labels:[{name:{1:'type:epic',5:'type:epic',4:'type:story'}[issue[1]]||'type:story'}]});process.exit(0);}
 if(path.endsWith('/issues')){const m=field('milestone');out({number:9,milestone:m&&!process.env.TEST_NO_MILESTONE?{title:'v1'}:null});process.exit(0);}
 out({});
 `);
@@ -416,6 +416,22 @@ test('issue create sets the milestone, parent and blocked-by links on the new is
   assert.deepEqual(links(f)['9dependencies/blocked_by'], [2, 3]);
   f.env.TEST_NO_MILESTONE = '1';
   assert.match(f.cliRun('issue', 'create', '--title', 'Slice', '--body-file', 'body.md', '--milestone', 'v1').stderr, /did not confirm #9 in milestone v1/);
+});
+test('issue create and edit enforce the epic -> story|bug backlog', t => {
+  const f = structureFixture(t);
+  const create = (...extra) => f.cliRun('issue', 'create', '--title', 'Slice', '--body-file', 'body.md', ...extra);
+  assert.match(create('--labels', 'type:epic', '--parent', '1').stderr, /is an epic and cannot sit under #1: epics are never nested/);
+  assert.match(create('--labels', 'type:task', '--parent', '1').stderr, /type:task is retired/);
+  assert.match(create('--labels', 'type:chore', '--parent', '1').stderr, /type:chore is retired/);
+  assert.match(create('--labels', 'type:story').stderr, /needs --parent N/);
+  assert.match(create('--labels', 'type:bug').stderr, /needs --parent N/);
+  assert.match(create('--labels', 'type:story', '--parent', '4').stderr, /#4 is not a type:epic/);
+  assert.doesNotMatch(calls(f), /issues -f title/, 'nothing was created');
+  assert.equal(create('--labels', 'type:story', '--parent', '1').status, 0);
+  assert.equal(create('--labels', 'type:epic').status, 0, 'a top-level epic is allowed');
+  assert.match(f.cliRun('issue', 'edit', '--number', '5', '--parent', '1').stderr, /#5 is an epic and cannot sit under #1/);
+  assert.match(f.cliRun('issue', 'edit', '--number', '6', '--parent', '4').stderr, /#4 is not a type:epic/);
+  assert.equal(f.cliRun('issue', 'edit', '--number', '4', '--parent', '1').status, 0);
 });
 test('a locked issue command run by a relative path does not wait on its own lock', async t => {
   if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }

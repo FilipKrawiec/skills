@@ -300,8 +300,6 @@ export const workflowLabels = {
   'type:epic': ['3e4b9e', 'Parent of bounded work items'],
   'type:story': ['a2eeef', 'New or changed user-visible behavior'],
   'type:bug': ['d73a4a', 'A fix for something that does not work as specified'],
-  'type:chore': ['cfd3d7', 'Code change with no new user-visible behavior'],
-  'type:task': ['c5def5', 'Work that ends in a finding or setting'],
 };
 // Creates each workflow label the repository lacks and returns their names; `list` and `create` default to gh.
 export function ensureWorkflowLabels(repo, list = () => jsonCommand('gh', ['label', 'list', '--repo', repo, '--limit', '1000', '--json', 'name']), create = (name, color, description) => run('gh', ['label', 'create', name, '--repo', repo, '--color', color, '--description', description])) {

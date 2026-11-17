@@ -56,7 +56,7 @@ test('a scope packet or an explicit no-repository-change constraint gives the is
 test('workflow label catalog is centralized in the CLI', () => {
   assert.deepEqual(Object.keys(workflowLabels), [
     'lane:owner', 'state:started', 'state:reviewing',
-    'review:owner', 'risk:R0', 'risk:R1', 'risk:R2', 'nits:swept', 'type:epic', 'type:story', 'type:bug', 'type:chore', 'type:task',
+    'review:owner', 'risk:R0', 'risk:R1', 'risk:R2', 'nits:swept', 'type:epic', 'type:story', 'type:bug',
   ]);
 });
 
