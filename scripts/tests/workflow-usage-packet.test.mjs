@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { commandEffort, commandModel, findUsageComment, parseUsage, parseUsageComment, parseUsageLine, recordUsage, usageComment, usageEntry, usageHost, usageSummary, usageTotals, visibleResult } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
+import { commandEffort, commandModel, findUsageComment, parseUsage, parseUsageComment, parseUsageLine, recordUsage, usageComment, usageCost, usageEntry, usageHost, usageSummary, usageTotals, visibleResult } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
 import { exportedSymbols, issueCriteria, reviewPacket } from '../../plugins/common/workflow/scripts/lib/packet.mjs';
 import { drive, githubIo, handBackRole, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { statusCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
@@ -71,6 +71,12 @@ test('usage totals sum per role and model, and a host without data stays unrepor
   assert.match(comment, /Baseline: 2026-11-16 dry-run baseline \(Opus reviews without a packet\): \$0\.21-0\.46/);
   assert.equal(parseUsageComment(comment).length, 4);
 });
+test('usageCost totals reported cost and names each role with an unreported session', () => {
+  const row = (role, cost) => usageEntry({ role, host: 'claude', model: 'm', usage: cost === null ? null : { input: 1, output: 1, cacheRead: null, cacheWrite: null, cost } });
+  assert.deepEqual(usageCost([row('implementer', 0.5), row('reviewer', 0.25), row('devops', null), row('devops', null)]), { total: 0.75, unreported: ['devops'] });
+  assert.deepEqual(usageCost([row('planner', null)]), { total: 'unreported', unreported: ['planner'] });
+  assert.deepEqual(usageCost([]), { total: 'unreported', unreported: [] });
+});
 test('recordUsage creates the comment, then updates it, ignores a repeated key and never throws', () => {
   const store = []; const writes = [];
   const gh = () => [store];
@@ -100,6 +106,7 @@ test('status shows per-PR usage totals, "unreported" with none, and survives a f
   assert.equal(withIssueRows.usage.find(row => row.model === 'opus').sessions, 2);
   assert.equal(withUsage.usage.find(row => row.model === 'gpt').output, 'unreported');
   assert.equal(withUsage.usage.find(row => row.model === 'opus').sessions, 2);
+  assert.deepEqual(withUsage.cost, { total: 0.62, unreported: ['implementer', 'reviewer'] }, 'status totals the reported cost and names the roles that reported none');
   assert.equal(run(args => (args[1] === '--paginate' ? [[]] : { pull_request: {} })).usage, 'unreported');
   assert.equal(run(args => { if (args[1] === '--paginate') throw new Error('x'); return { pull_request: {} }; }).usage, 'unreported');
 });
