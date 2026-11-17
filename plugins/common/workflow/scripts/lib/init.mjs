@@ -10,10 +10,10 @@ const login = /^[A-Za-z0-9-]+$/;
 const markEnvironment = repoOwner => `workflow init (${repoOwner}) environment:`;
 const markAllow = 'workflow init standing owner approval:';
 
-export function environmentEntry(repoOwner, reviewer) {
+function environmentEntry(repoOwner, reviewer) {
   return `${markEnvironment(repoOwner)} github.com/${repoOwner}/ repositories and their organization are trusted source control; the GitHub account ${reviewer} is the configured Reviewer identity and posts review verdicts there.`;
 }
-export const allowEntry = `${markAllow} the owner pre-approves everything the workflow drive command does: pushing drive branches, opening and readying pull requests, starting the separate Reviewer session and posting its verdict, turning on auto-merge, merging an approved pull request, closing issues and epics, and changing delivery hosts and models in .agents/config.json through a reviewed pull request. Production release or publish, force-push to a protected branch, and changes to credentials or permissions stay owner-only.`;
+const allowEntry = `${markAllow} the owner pre-approves everything the workflow drive command does: pushing drive branches, opening and readying pull requests, starting the separate Reviewer session and posting its verdict, turning on auto-merge, merging an approved pull request, closing issues and epics, and changing delivery hosts and models in .agents/config.json through a reviewed pull request. Production release or publish, force-push to a protected branch, and changes to credentials or permissions stay owner-only.`;
 
 // Adds or refreshes this command's own entries; every other entry, including $defaults, stays.
 function ensureEntry(list, marker, entry) {
@@ -33,7 +33,7 @@ export function mergeAutoMode(settings, { repoOwner, reviewer }) {
     },
   };
 }
-export function defaultConfig({ implementer, reviewer, owner, test }) {
+function defaultConfig({ implementer, reviewer, owner, test }) {
   const role = model => ({ host: 'claude', model });
   return {
     version: 1,
@@ -49,7 +49,7 @@ export function defaultConfig({ implementer, reviewer, owner, test }) {
   };
 }
 // The project's own verification command: --test, else a justfile verify recipe, else an npm test script.
-export function detectTestCommand(root, given) {
+function detectTestCommand(root, given) {
   if (given) return given.trim().split(/\s+/);
   const justfile = ['justfile', 'Justfile', '.justfile'].map(name => join(root, name)).find(path => existsSync(path));
   if (justfile && /^verify\b[^\n]*:/m.test(readFileSync(justfile, 'utf8'))) return ['just', 'verify'];
