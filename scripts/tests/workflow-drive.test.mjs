@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, holdBaseUpdates, latestAssessment,
-  driveCommand, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  driveCommand, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
@@ -2046,7 +2046,7 @@ test('another mechanical base conflict goes to a Haiku conflict-resolver and its
   assert.match(repo.writes[step.brief], /src\/a\.js/);
   repo.s.trees[3].merging = true; repo.s.trees[3].dirty = true;
   assert.equal(drive(repo.io, 3, lanes, {}).agent, 'conflict-resolver', 'rerunning repeats the resolver while its merge is in progress');
-  drive(repo.io, 3, lanes, { agent: 'conflict-resolver', status: 'done', commit: 'Merge origin/main into 3-x', paths: ['src/a.js'], check: 'pass' });
+  drive(repo.io, 3, lanes, { agent: 'conflict-resolver', status: 'done', commit: 'chore: merge origin/main into 3-x', paths: ['src/a.js'], check: 'pass' });
   assert.deepEqual(repo.calls.slice(-2), [['commit'], ['push']]);
 });
 
@@ -2092,4 +2092,19 @@ test('mergeBaseIntoHead takes the base side of manifest conflicts and syncs, els
     assert.deepEqual(mixed.conflicts.sort(), ['a.js', 'package-metadata.json']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
   assert.ok(isManifestPath('plugins/common/core/.claude-plugin/plugin.json') && isManifestPath('.claude-plugin/marketplace.json') && !isManifestPath('src/a.js'));
+});
+
+test('the merge commit message passes the real commit command on a merge in progress', t => {
+  const f = fixture(t);
+  const g = (...args) => run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.repo });
+  writeFileSync(join(f.repo, 'song.txt'), 'base'); assert.equal(g('add', 'song.txt').status, 0); assert.equal(g('commit', '-qm', 'base').status, 0);
+  assert.equal(g('checkout', '-qb', 'other').status, 0);
+  writeFileSync(join(f.repo, 'other.txt'), 'theirs'); assert.equal(g('add', 'other.txt').status, 0); assert.equal(g('commit', '-qm', 'other').status, 0);
+  assert.equal(g('checkout', '-q', 'feature/test').status, 0);
+  assert.equal(g('merge', '--no-ff', '--no-commit', 'other').status, 0);
+  const message = mergeCommitMessage('main', 'feature/test');
+  const result = f.cliRun('commit', '--message', message);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.linkedGit('show', '-s', '--format=%p', 'HEAD').stdout.trim().split(' ').length, 2);
+  assert.equal(f.linkedGit('show', '-s', '--format=%s', 'HEAD').stdout.trim(), message);
 });

@@ -403,6 +403,8 @@ usage: <optional, when the host reports it: in=N out=N cache=N cost=USD model=M 
 ${f.issue.body || '(no body)'}
 `;
 }
+// `workflow commit` accepts only a Conventional Commit subject, merge commits included.
+export const mergeCommitMessage = (base, branch) => `chore: merge origin/${base} into ${branch}`;
 export function conflictResolverBrief(f) {
   return `# Conflict-resolver brief: #${f.issue.number} ${f.issue.title}
 
@@ -419,7 +421,7 @@ Drive merged origin/${f.base} into this branch with \`git merge --no-ff --no-com
 ## Commands you may run
 
 - \`node ${cli} check --worktree ${shellQuote(f.tree.path)}\`: the project gate, under the machine-wide lock. It must pass before you hand back \`done\`.
-- \`node ${cli} commit --message "Merge origin/${f.base} into ${f.tree.branch}" -- <resolved paths>\`
+- \`node ${cli} commit --message "${mergeCommitMessage(f.base, f.tree.branch)}" -- <resolved paths>\`
 
 Never push, open, label, ready or merge a PR, and never start an agent: drive does that.
 
@@ -428,7 +430,7 @@ Never push, open, label, ready or merge a PR, and never start an agent: drive do
 \`\`\`text
 agent: conflict-resolver
 status: done | blocked
-commit: Merge origin/${f.base} into ${f.tree.branch}
+commit: ${mergeCommitMessage(f.base, f.tree.branch)}
 paths: <resolved file paths only, not directories>
 check: pass | fail
 note: <one line: how each conflict was resolved, or why blocked>
@@ -740,7 +742,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       }
     },
     commit: (tree, message, paths) => self(['commit', '--message', message, '--', ...paths], tree.path),
-    mergeBase: tree => mergeBaseIntoHead({ path: tree.path, base: lanes.base, syncManifests: () => self(['manifests', 'sync', tree.path], tree.path), commit: () => self(['commit', '--message', `Merge origin/${lanes.base} into ${tree.branch}`], tree.path) }),
+    mergeBase: tree => mergeBaseIntoHead({ path: tree.path, base: lanes.base, syncManifests: () => self(['manifests', 'sync', tree.path], tree.path), commit: () => self(['commit', '--message', mergeCommitMessage(lanes.base, tree.branch)], tree.path) }),
     push: tree => self(['push'], tree.path),
     open: (issue, tree, risk, hb) => {
       const body = join(workflowScratch(tree.path), `drive-${issue.number}-pr.md`);
