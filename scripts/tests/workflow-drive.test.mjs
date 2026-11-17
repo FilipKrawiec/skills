@@ -1,4 +1,5 @@
 import { addCriterionIds, verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
+import { pluginVersion } from '../../plugins/common/workflow/scripts/lib/plugin.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -352,7 +353,7 @@ test('drive performs the mechanical steps and stops at one instruction; re-runni
   const repo = fakeRepo({ issues: { 3: issue({ body: '```scope\n{"paths":["docs/a.md"]}\n```', assessment: assessed('R0') }) } });
   const first = drive(repo.io, 3, lanes, {});
   assert.deepEqual(repo.calls, [['start', 3]]);
-  assert.deepEqual({ ...first, brief: undefined }, { agent: 'implementer', host: 'claude', model: 'sonnet', brief: undefined, issue: 3, pr: null, session: 'subagent', mode: 'build', cwd: '/w/3', effort: 'medium' });
+  assert.deepEqual({ ...first, brief: undefined }, { agent: 'implementer', host: 'claude', model: 'sonnet', plugin: pluginVersion(), brief: undefined, issue: 3, pr: null, session: 'subagent', mode: 'build', cwd: '/w/3', effort: 'medium' });
   assert.equal(first.brief, '/w/3/.wf/drive-3-implementer.md');
   assert.match(repo.writes[first.brief], /status: done \| replan \| blocked/);
   const brief = repo.writes[first.brief];
