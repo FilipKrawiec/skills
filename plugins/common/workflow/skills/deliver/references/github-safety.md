@@ -6,7 +6,7 @@ GitHub and the host enforce authority; skill text is not a security boundary. Fr
 node <this-skill-directory>/../../scripts/workflow.mjs safety check
 ```
 
-Exit 1 reports drift. `safety apply` changes repository permissions and branch protection; run it only after an explicit owner instruction. The CLI derives repository/base from Git and Owner from CODEOWNERS. `.agents/config.json` names implementer and Reviewer; CODEOWNERS must name exactly that Reviewer on its default rule. `verify` is the default required check, with an optional override only when a repo uses another check. Project metadata is discovered from GitHub and cached locally.
+Exit 1 reports drift. `safety apply` changes repository permissions and branch protection; run it only after an explicit owner instruction. The CLI derives repository/base from Git and Owner from CODEOWNERS, else `identities.owner`, else the repository owner. `.agents/config.json` names implementer and Reviewer; CODEOWNERS must name exactly that Reviewer on its default rule. `verify` is the default required check, with an optional override only when a repo uses another check. Project metadata is discovered from GitHub and cached locally.
 
 ## Judgment, identity and credentials
 
@@ -16,13 +16,13 @@ Exit 1 reports drift. `safety apply` changes repository permissions and branch p
 | Implementer | Write identity | Existing authorized mechanism; no owner/production fallback |
 | Reviewer | Distinct Write identity: reviews, `gh pr review <N> --approve`, `workflow.mjs pr auto-merge --pr <N>`, dismisses only its own outdated reviews; never pushes | Existing authorized mechanism for Reviewer decisions |
 
-Set implementer and Reviewer identities in `.agents/config.json`; configure path ownership in `.github/CODEOWNERS`. Verify Owner, Reviewer and the cached Project with `workflow.mjs cache show`. Missing identity or access is a setup gap; creating accounts or provisioning credentials needs separate owner authorization. Never give workers the owner's credentials.
+Set implementer and Reviewer identities in `.agents/config.json`; configure `.github/CODEOWNERS` with the Reviewer as sole owner. Verify Owner, Reviewer and the cached Project with `workflow.mjs cache show`. Missing identity or access is a setup gap; creating accounts or provisioning credentials needs separate owner authorization. Never give workers the owner's credentials.
 
 Use fresh native contexts for judgment and existing authorized credentials for posting. Keep the implementer from reviewer authority by assignment. Verify `gh api user --jq .login` matches the Reviewer without printing tokens. Push HTTPS; production credentials stay behind native controls.
 
 ## Base protection
 
-Each project owner configures `.github/CODEOWNERS` and branch protection or an active branch ruleset. Require code-owner review, latest-push approval, stale-review dismissal, named checks, resolved threads and linear history; disable force pushes and deletion and inspect bypasses. Configure one owner per rule: the reviewer for ordinary paths and the owner for held paths. GitHub accepts any one owner when a rule lists multiple; it does not require each. Automated review remains separate from native code-owner approval. If protection or ownership is unclear, keep merge disabled and continue preparation.
+Each project owner configures `.github/CODEOWNERS` and branch protection or an active branch ruleset. Require code-owner review, latest-push approval, stale-review dismissal, named checks, resolved threads and linear history; disable force pushes and deletion and inspect bypasses. The Reviewer is the sole code owner; the owner keeps admin override and gets a merge notice on policy paths. GitHub accepts any one owner when a rule lists multiple; it does not require each. Automated review remains separate from native code-owner approval. If protection or ownership is unclear, keep merge disabled and continue preparation.
 
 ## Repository and deployment
 
@@ -34,13 +34,12 @@ Each project owner configures `.github/CODEOWNERS` and branch protection or an a
 
 ## CODEOWNERS gate
 
-Use a global reviewer rule and owner-only rules for owner-held paths:
+Use one global reviewer rule; the owner is not a code owner:
 
 ```text
 *                    @<reviewer>
-/.github/workflows/  @<owner>
 ```
 
-The checker requires the global reviewer rule and one recognized owner on every rule. GitHub uses the last matching rule. The checker does not verify branch-protection effectiveness, bypasses, secret isolation or production approval; inspect those separately.
+The checker requires the global reviewer rule and one recognized owner (reviewer or owner) on every rule. GitHub uses the last matching rule. Inspect branch-protection effectiveness, bypasses, secret isolation and production approval separately.
 
 Neither engineering nor merge approval grants production permission.

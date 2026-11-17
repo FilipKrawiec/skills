@@ -1,5 +1,5 @@
 // Owner decisions of epics #409 and #560 that code or skill text implements, one test each, named with its decision and date.
-// CODEOWNERS assigns this file to the owner. A decision changes only when the owner records a new one first: never edit,
+// The owner is notified when this file merges. A decision changes only when the owner records a new one first: never edit,
 // weaken or delete a test here to make a change pass; stop and ask the owner.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -79,7 +79,8 @@ test('decision 2026-11-16 (#560): a diff outside the issue scope is blocked befo
 });
 
 test('decision 2026-11-16 (#560): only the owner changes a recorded decision', () => {
-  assert.match(text('.github/CODEOWNERS'), /^\/scripts\/tests\/workflow-decisions\.test\.mjs @FilipKrawiec$/m);
+  assert.equal(text('.github/CODEOWNERS').replace(/^#.*\n/gm, ''), '* @filipkrawiec-reviewer\n', 'the Reviewer bot is the sole code owner (#628)');
+  assert.match(text('.github/workflows/policy-notice.yml'), /workflow-decisions\\\.test\\\.mjs/);
   assert.match(text('plugins/common/workflow/skills/spec/references/decision-records.md'), /decision changes only when the owner records a new one first/);
   assert.match(text('scripts/tests/workflow-decisions.test.mjs'), /A decision changes only when the owner records a new one first/);
 });

@@ -12,7 +12,8 @@ import { cli, configPath, json, config, run, fixture, commitFixture, changeConfi
 test('CODEOWNERS roles reject an organization slug when several path owners exist', () => {
   assert.throws(() => codeownersRolesFrom('* @reviewer\n/*.rules @alice\n/*.json @bob\n', 'acme/app'), /identify one Owner account/);
   assert.deepEqual(codeownersRolesFrom('* @reviewer\n/*.rules @alice\n', 'acme/app'), { owner: 'alice', defaultReviewer: 'reviewer' });
-  assert.throws(() => codeownersRolesFrom('* @reviewer\n', 'acme/app'), /identify one Owner account/);
+  assert.deepEqual(codeownersRolesFrom('* @reviewer\n', 'acme/app'), { owner: 'acme', defaultReviewer: 'reviewer' });
+  assert.deepEqual(codeownersRolesFrom('* @reviewer\n', 'acme/app', true, 'boss'), { owner: 'boss', defaultReviewer: 'reviewer' });
   assert.throws(() => codeownersRolesFrom('* @reviewer @other\n/*.rules @alice\n', 'acme/app'), /exactly one user/);
 });
 

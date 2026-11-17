@@ -112,7 +112,7 @@ export function config(requireLanes = true, allowBootstrap = false, allowBootstr
   lanes.repo = githubRepoFromRemote(remote);
   lanes.base = baseRef.slice('refs/remotes/origin/'.length);
   lanes.requiredChecks ??= workflowDefaults.github.requiredChecks;
-  const roles = codeownersRoles(baseRef, lanes.repo, allowBootstrapBranchOwner && source === 'branch bootstrap');
+  const roles = codeownersRoles(baseRef, lanes.repo, allowBootstrapBranchOwner && source === 'branch bootstrap', raw?.identities?.owner);
   const { owner, defaultReviewer } = roles;
   lanes.owner = owner;
   lanes.codeowners = roles.contents;
@@ -133,11 +133,11 @@ export function githubRepoFromRemote(remote) {
   if (!match) throw new Error('origin must identify a GitHub owner/repository');
   return match[1];
 }
-function codeownersRoles(baseRef, repo, allowBranchOwner = false) {
+function codeownersRoles(baseRef, repo, allowBranchOwner = false, configOwner) {
   let contents;
   try { contents = git('show', `${baseRef}:.github/CODEOWNERS`); }
   catch { throw new Error('The trusted base must contain .github/CODEOWNERS to identify review roles'); }
-  const roles = { ...codeownersRolesFrom(contents, repo, !allowBranchOwner), contents };
+  const roles = { ...codeownersRolesFrom(contents, repo, !allowBranchOwner, configOwner), contents };
   if (roles.owner || !allowBranchOwner) return roles;
   let branchContents;
   try { branchContents = git('show', 'HEAD:.github/CODEOWNERS'); }
@@ -146,7 +146,8 @@ function codeownersRoles(baseRef, repo, allowBranchOwner = false) {
   if (!branchOwner) throw new Error('The committed bootstrap branch CODEOWNERS must identify one Owner account');
   return { ...roles, owner: branchOwner };
 }
-export function codeownersRolesFrom(contents, repo, requireOwner = true) {
+// The Owner is the account CODEOWNERS names besides the Reviewer; when it names only the Reviewer, identities.owner, else the personal repository owner.
+export function codeownersRolesFrom(contents, repo, requireOwner = true, configOwner) {
   const rules = contents.split(/\r?\n/).map(line => line.replace(/#.*/, '').trim().split(/\s+/).filter(Boolean)).filter(parts => parts.length);
   const wildcard = [...rules].reverse().find(parts => parts[0] === '*');
   const defaultOwners = wildcard?.slice(1).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)) || [];
@@ -155,7 +156,8 @@ export function codeownersRolesFrom(contents, repo, requireOwner = true) {
   const repoOwner = repo.split('/')[0];
   const owners = [...new Set(rules.flatMap((parts, index) => index === rules.indexOf(wildcard) ? [] : parts.slice(1)).filter(value => /^@[A-Za-z0-9-]+$/.test(value)).map(value => value.slice(1)))];
   const owner = owners.find(value => value.toLowerCase() === repoOwner.toLowerCase())
-    || (owners.length === 1 ? owners[0] : null);
+    || (owners.length === 1 ? owners[0] : null)
+    || (!owners.length ? (typeof configOwner === 'string' && /^[A-Za-z0-9-]+$/.test(configOwner) ? configOwner : repoOwner) : null);
   if (!owner && requireOwner) throw new Error('The trusted .github/CODEOWNERS must identify one Owner account; organization repositories cannot use the organization slug as a user login');
   return { owner, defaultReviewer };
 }

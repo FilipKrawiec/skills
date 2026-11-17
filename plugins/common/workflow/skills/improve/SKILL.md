@@ -18,7 +18,7 @@ A lesson needs two linked occurrences or the owner's request. A revert or fix-fo
 
 Prefer an existing deterministic gate; otherwise delete or sharpen the owning rule. Add a helper only for a demonstrated boundary existing tools cannot enforce. Choose one target per lesson: the phase skill for general rules, project rules for local ones, scope configuration for authority, or the issue template for unbuildable issues. A lesson about a skill or the workflow CLI becomes a follow-up issue in the skills' origin repository, never agent memory or a local edit: comment evidence on an open match with `issue comment --number N --body-file PATH` (never raw `gh`), like an `issue create --check` overlap; otherwise `issue create --repo <origin>` a routine `type:bug`/`type:chore` via `spec`. A CLI refusal is owner-reserved: comment it on the issue `issue create --unique --title "Owner improvements" --labels type:task,lane:owner --body-file PATH` returns. Scrub secrets, internal hostnames, client names and local paths.
 
-Routine engineering within approved constraints is delegated. Product intent, cost, owner paths, credential or merge authority, production approval and configuration/CODEOWNERS changes remain reserved. A documentation label does not change authority. Link duplicate proposals.
+Routine engineering within approved constraints is delegated. Product intent, cost, policy paths (the owner gets a merge notice), credential or merge authority, production approval and configuration/CODEOWNERS changes remain reserved. A documentation label does not change authority. Link duplicate proposals.
 
 **Exit gate:** target and change or a named reserved decision.
 

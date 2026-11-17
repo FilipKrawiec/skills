@@ -1,7 +1,3 @@
-# The reviewer owns ordinary paths; the owner owns security and workflow policy.
-# The owner also owns the recorded decisions: one changes only when the owner records a new one first.
+# The Reviewer bot owns every path. The owner keeps admin override on any PR and gets a notice when a policy path merges
+# (.github/workflows/policy-notice.yml). A recorded decision still changes only when the owner records a new one first.
 * @filipkrawiec-reviewer
-/.github/CODEOWNERS @FilipKrawiec
-/.github/workflows/ @FilipKrawiec
-/.agents/config.json @FilipKrawiec
-/scripts/tests/workflow-decisions.test.mjs @FilipKrawiec
