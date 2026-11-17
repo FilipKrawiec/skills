@@ -273,6 +273,8 @@ export function decideIssue(facts, lanes) {
   // A narrowed issue changes what the head is judged against: the Reviewer judges the same head again, no new build.
   if (hb.status === 'narrowed' && state.verdict === 'fixes' && !conflictOnly && next.reason !== 'conflicts with its base') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
   if (next.action === 'fix' && conflictOnly && hb.status !== 'done') return agent('implementer', 'fix', { reason: 'base conflict is the only open Blocker or Important finding', resume: true });
+  // A disputed finding is the implementer's evidence, not a skipped fix: the Reviewer judges the same head again.
+  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'disputed') return agent('reviewer', 'review', { reason: 'the implementer disputed the blocking findings; the Reviewer weighs its evidence', sameHead: true, round: state.round + 1 });
   // A fix-mode hand-back at the head the Reviewer judged fixed nothing: the fix reruns with the blocking findings quoted.
   const quoted = blocking.map(finding => finding.trim().replace(/\s+/g, ' ').slice(0, 600)).filter(Boolean).slice(0, 10);
   if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'done') return agent('implementer', 'fix', { reason: 'the hand-back left the head the Reviewer judged unchanged; fix the findings quoted below', resume: true, findings: quoted });

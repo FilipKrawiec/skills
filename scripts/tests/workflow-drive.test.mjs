@@ -1159,6 +1159,12 @@ test('a fix-mode hand-back at the judged head is rejected and the fix reruns wit
   assert.doesNotMatch(step.findings.join('\n'), /rename x/);
 });
 
+test('a disputed fix-mode hand-back goes to the Reviewer instead of looping the implementer', () => {
+  const step = decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: [blockingReview] }), handBack: { status: 'disputed', note: 'the finding misreads line 4' } });
+  assert.equal(step.agent, 'reviewer');
+  assert.equal(step.sameHead, true);
+});
+
 test('a fix-mode brief quotes the blocking findings, not only a pointer to review-context', () => {
   const brief = implementerBrief({ issue: started, tree: tree(), pr: pr(), step: { mode: 'fix', reason: 'blocking review findings', findings: ['src/a.mjs:4 rejects nothing'] }, base: 'main' });
   assert.match(brief, /Blocking findings[\s\S]*src\/a\.mjs:4 rejects nothing/);

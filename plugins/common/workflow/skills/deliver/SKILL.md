@@ -38,7 +38,7 @@ Work only in the worktree your brief names, doing only the brief's task.
 - Work test-first through `tdd`: run the focused test you changed while you work, never the full suite.
 - When the change is complete, run the brief's `check` once. Rerun it only after fixing a failure.
 - Commit only with the brief's `commit` command, or leave the changes and name `commit` and `paths` in the hand-back; drive commits and pushes.
-- Fix only failing checks and Blocker and Important findings from `review-context`. Nits never block; leave them and disputed findings open; give evidence in `note`. Only the Reviewer handles threads.
+- Fix only failing checks and Blocker and Important findings from `review-context`. Nits never block; leave them open. Hand back `status: disputed` with the evidence in `note` only to dispute a finding; a `done` without a commit reruns the fix. Only the Reviewer handles threads.
 - Resolve base conflicts with `git merge --no-ff --no-commit origin/<base>`, then the brief's `commit` command.
 - Use the project's documented capture command; no native build is needed unless documented. Capture after the UI settles.
 - Add no capability, option or refactor the issue did not ask for.
