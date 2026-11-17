@@ -11,3 +11,7 @@ The Reviewer posts a JSON comment on the epic (raw JSON, or JSON in a fenced blo
 ```
 
 Evidence is a list of links. Drive checks that each cited PR or issue of this repository exists and each cited PR is merged into the base; it does not hash or re-read content. `unmet` or `unverifiable` needs a `nextAction`: the epic stays open with a linked follow-up. A closed child without its own closing PR adds `"consolidated":[{"issue":10,"pr":25,"state":"met"}]`, naming a PR merged into the base.
+
+## Refinement with nothing to change
+
+A refinement slice (`workflow:epic-refinement`) whose review finds nothing to change makes no commit. The implementer writes the evidence to a file and hands back `status: done`, empty `paths` and `body: <file>`. Drive posts the file as a comment on the issue, closes it as completed with no PR, and counts it delivered for the epic. Other issues still need a commit.

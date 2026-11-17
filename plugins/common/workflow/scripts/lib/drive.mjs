@@ -86,6 +86,8 @@ export function deliveryAssignment(delivery, step, risk, round = 0) {
 const riskLabel = labels => labels.map(label => label.name ?? label).find(name => /^risk:R\d$/.test(name))?.slice(5) || null;
 // An epic's final refinement slice: drive finds it by the marker and creates it with the criteria `plan` gives the planner.
 const refinementMarker = '<!-- workflow:epic-refinement -->';
+// drive posts this with a no-change refinement's evidence; the comment stands in for a closing PR.
+const noChangeMarker = '<!-- workflow:refinement-no-change -->';
 const refinementReview = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
 const refinementCriteria = [
   `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths.`,
@@ -214,7 +216,11 @@ export function decideIssue(facts, lanes) {
     if (!claimed || !tree) return { do: 'start' };
     if (hb.status !== 'done') return agent('implementer', 'build');
     if (tree.dirty) return hb.commit && hb.paths?.length ? { do: 'commit' } : agent('implementer', 'build', { reason: 'uncommitted changes and no commit/paths in the hand-back' });
-    if (!tree.commits) return agent('implementer', 'build', { reason: 'no commits ahead of the base' });
+    if (!tree.commits) {
+      // A refinement that found nothing to change has no commit: its evidence on the issue delivers it.
+      if ((issue.body || '').includes(refinementMarker) && !hb.paths?.length && hb.body) return { do: 'close-no-change' };
+      return agent('implementer', 'build', { reason: 'no commits ahead of the base' });
+    }
     const stray = outOfScopePaths(issue, tree);
     if (stray.length) return scopeStep('build', stray);
     return tree.unpushed ? { do: 'push' } : { do: 'open' };
@@ -820,6 +826,13 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       return !!lanes.requiredChecks?.length && lanes.requiredChecks.every(name => policy?.strictChecks?.includes(name));
     },
     autoMerge: (pr, tree) => self(['pr', 'auto-merge', '--pr', String(pr.number)], tree?.path || process.cwd()),
+    noChangeEvidence: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().some(comment => String(comment.body || '').startsWith(noChangeMarker)),
+    closeNoChange: (issue, tree, hb) => {
+      const file = join(workflowScratch(tree.path), `drive-${issue.number}-no-change.md`);
+      writeFileSync(file, `${noChangeMarker}\n\n${readFileSync(hb.body, 'utf8')}`);
+      run('gh', ['issue', 'comment', String(issue.number), '--repo', repo, '--body-file', file]);
+      run('gh', ['issue', 'close', String(issue.number), '--repo', repo, '--reason', 'completed']);
+    },
     close: issue => {
       const current = gh(['issue', 'view', String(issue.number), '--repo', repo, '--json', 'state']);
       if (current.state === 'OPEN') run('gh', ['issue', 'close', String(issue.number), '--repo', repo, '--reason', 'completed']);
@@ -1011,6 +1024,7 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     // GitHub reports the merge state late, so drive waits on the new head's CI instead of reading BEHIND again.
     else if (step.do === 'update-branch') { if (pr.autoMergeRequest) io.disableAutoMerge(pr); io.updateBranch(pr); return finish({ wait: { pr: pr.number, until: 'ci' }, reason: 'merged the base into the head' }); }
     else if (step.do === 'close') { io.close(issue); io.board(n, 'DONE'); }
+    else if (step.do === 'close-no-change') { io.closeNoChange(issue, tree, handBack); io.board(n, 'DONE'); }
     else if (step.do === 'remove-worktree') { io.removeTree(tree); return { done: { issue: n } }; }
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
@@ -1020,7 +1034,7 @@ function unresolvedDelivery(io, slice, base, epic, ancestors = new Set()) {
   // A slice the planner folded into another stands for it: the target's delivery counts.
   const target = consolidatedInto(slice.body);
   if (target && target !== slice.number && !ancestors.has(target)) return unresolvedDelivery(io, io.issue(target), base, epic, new Set([...ancestors, slice.number]));
-  if (!isEpic(slice)) return io.mergedClosingPr(slice.number, base) || io.consolidatedDelivery?.(epic, slice, base) ? [] : [slice.number];
+  if (!isEpic(slice)) return io.mergedClosingPr(slice.number, base) || ((slice.body || '').includes(refinementMarker) && io.noChangeEvidence?.(slice.number)) || io.consolidatedDelivery?.(epic, slice, base) ? [] : [slice.number];
   const seen = new Set([...ancestors, slice.number]);
   try {
     const children = io.subIssues(slice.number);

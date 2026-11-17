@@ -2164,3 +2164,23 @@ test('the merge commit message passes the real commit command on a merge in prog
   assert.equal(f.linkedGit('show', '-s', '--format=%p', 'HEAD').stdout.trim().split(' ').length, 2);
   assert.equal(f.linkedGit('show', '-s', '--format=%s', 'HEAD').stdout.trim(), message);
 });
+
+test('a refinement that found nothing to change closes with its evidence and counts as delivered', () => {
+  const marker = '<!-- workflow:epic-refinement -->';
+  const refinement = issue({ number: 99, body: marker, labels: [label('state:started')] });
+  const empty = { status: 'done', paths: [], body: '/w/.wf/evidence.md' };
+  assert.deepEqual(decide({ issue: refinement, tree: tree(), handBack: empty }), { do: 'close-no-change' });
+  assert.equal(decide({ issue: started, tree: tree(), handBack: empty }).agent, 'implementer', 'a non-refinement still needs a commit');
+  assert.equal(decide({ issue: refinement, tree: tree(), handBack: { status: 'done', paths: [] } }).agent, 'implementer', 'evidence is required');
+
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, lessons: [9], trees: { 99: tree({ path: '/w/99' }) } });
+  const posted = [];
+  repo.io.closeNoChange = (i, t, hb) => { posted.push([i.number, hb.body]); i.state = 'CLOSED'; };
+  const step = drive(repo.io, 99, lanes, empty);
+  assert.deepEqual(posted, [[99, '/w/.wf/evidence.md']]);
+  assert.equal(step.done.issue, 99);
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #99/);
+  repo.io.noChangeEvidence = n => n === 99;
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+});
