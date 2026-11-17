@@ -602,7 +602,7 @@ test('--next takes the lowest-numbered ready item and skips unmet or dropped dep
 
 test('delivery assignments select configured hosts and models and reject unsupported hosts', () => {
   const delivery = { orchestrator: 'codex', roles: { reviewer: { host: 'codex', model: 'gpt-6.1-terra' }, implementer: { host: 'codex', model: 'gpt-6.1-terra' } } };
-  assert.deepEqual(deliveryAssignment(delivery, { agent: 'reviewer' }, 'R2'), { host: 'codex', model: 'gpt-6.1-terra', effort: 'high', session: 'separate' });
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'reviewer' }, 'R2'), { host: 'codex', model: 'gpt-6.1-terra', effort: 'medium', session: 'separate' });
   assert.deepEqual(deliveryAssignment(delivery, { agent: 'implementer' }, 'R1'), { host: 'codex', model: 'gpt-6.1-terra', effort: 'medium', session: 'subagent' });
   assert.throws(() => deliveryAssignment(delivery, { agent: 'implementer', fresh: true }, 'R2'), /freshImplementer/);
   delivery.roles.freshImplementer = { host: 'codex', model: 'strongest-model' };
@@ -1480,7 +1480,7 @@ test('review: a later round judges the delta, round 1 the whole diff, and a revi
 test('the Reviewer runs Opus at R0, R1 and R2 without delivery configuration; implementer models by risk are unchanged', () => {
   for (const risk of ['R0', 'R1', 'R2']) {
     assert.equal(modelForStep({ agent: 'reviewer' }, risk), 'opus');
-    assert.deepEqual(deliveryAssignment(undefined, { agent: 'reviewer', mode: 'approve' }, risk), { host: 'claude', model: 'opus', effort: risk === 'R2' ? 'high' : 'medium', session: 'separate' });
+    assert.deepEqual(deliveryAssignment(undefined, { agent: 'reviewer', mode: 'approve' }, risk), { host: 'claude', model: 'opus', effort: 'medium', session: 'separate' });
   }
   assert.deepEqual(['R0', 'R1', 'R2'].map(risk => modelForStep({ agent: 'implementer' }, risk)), ['sonnet', 'sonnet', 'opus']);
 });
@@ -1707,7 +1707,7 @@ test('one role x risk x round table names model and effort; no cell ever yields 
     assert.ok(['low', 'medium', 'high'].includes(cell.effort), `${agent} ${risk} r${round} effort ${cell.effort}`);
   }
   assert.deepEqual(['R0', 'R1', 'R2'].map(risk => sessionFor('implementer', risk).effort), ['low', 'medium', 'high']);
-  assert.deepEqual(['R0', 'R1', 'R2'].map(risk => sessionFor('reviewer', risk)), [{ model: 'opus', effort: 'medium' }, { model: 'opus', effort: 'medium' }, { model: 'opus', effort: 'high' }]);
+  assert.deepEqual(['R0', 'R1', 'R2'].map(risk => sessionFor('reviewer', risk)), [{ model: 'opus', effort: 'medium' }, { model: 'opus', effort: 'medium' }, { model: 'opus', effort: 'medium' }]);
   for (const risk of ['R0', 'R1', 'R2']) for (const agent of ['devops', 'planner', 'improver']) assert.equal(sessionFor(agent, risk).effort, 'medium');
   assert.deepEqual(['R0', 'R1', 'R2'].map(risk => sessionFor('implementer', risk).model), ['sonnet', 'sonnet', 'opus']);
   assert.equal(sessionFor('devops', 'R2').model, 'sonnet');
@@ -1729,8 +1729,8 @@ test('drive names effort in the instruction and the brief, and the Reviewer comm
   repo.s.trees[3].dirty = true;
   drive(repo.io, 3, lanes, { status: 'done', commit: 'feat(a): b', paths: ['a'] });
   const reviewer = drive(repo.io, 3, lanes, { risk: 'R2', reason: 'a gate' });
-  assert.equal(reviewer.effort, 'high');
-  assert.deepEqual(reviewer.command.slice(reviewer.command.indexOf('--model'), reviewer.command.indexOf('--model') + 4), ['--model', 'opus', '--effort', 'high']);
+  assert.equal(reviewer.effort, 'medium');
+  assert.deepEqual(reviewer.command.slice(reviewer.command.indexOf('--model'), reviewer.command.indexOf('--model') + 4), ['--model', 'opus', '--effort', 'medium']);
   assert.equal(reviewerCommand('opus', '/b.md', 'n', 'codex', 'codex', 'high').includes('model_reasoning_effort="high"'), true);
 });
 

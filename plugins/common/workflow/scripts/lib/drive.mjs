@@ -24,9 +24,9 @@ const riskGuide = fileURLToPath(new URL('../../skills/review/references/risk.md'
 const risks = ['R0', 'R1', 'R2'];
 export const maxRisk = (...values) => risks[Math.max(...values.filter(Boolean).map(value => risks.indexOf(value)), 0)];
 // One role x risk x round table names the model and effort of every session drive starts. The Reviewer runs Opus at every
-// risk (2026-11-16 dry run: Flash approved two defective PRs); the implementer runs Opus only at R2; the risk assessor runs
+// risk at medium effort (2026-11-16 dry run: Flash approved two defective PRs; 2026-11-17 bench, owner kept Opus medium); the implementer runs Opus only at R2; the risk assessor runs
 // Sonnet; the planner and improver run Opus and Sonnet-or-better as before. Effort follows risk (R0 implementer low; R2
-// implementer and Reviewer high; every other cell medium) and never exceeds high: no cell and no escalation yields xhigh or max.
+// implementer high; every other cell medium) and never exceeds high: no cell and no escalation yields xhigh or max.
 const efforts = ['low', 'medium', 'high'];
 // From the third blocking verdict on, narrow fixes have stopped converging: one fresh implementer on the strongest model
 // takes the whole open set. A blocking verdict after that fresh round cuts scope through the planner (`spec`), who narrows
@@ -36,7 +36,7 @@ export const freshFixRound = 3;
 // step before the model changes; the fresh round moves up one model at medium effort.
 export function sessionFor(agent, risk, { round = 0, fresh = false } = {}) {
   if (agent === 'devops') return { model: 'sonnet', effort: 'medium' };
-  if (agent === 'reviewer') return { model: 'opus', effort: risk === 'R2' ? 'high' : 'medium' };
+  if (agent === 'reviewer') return { model: 'opus', effort: 'medium' };
   if (agent === 'implementer') {
     if (fresh) return { model: 'opus', effort: 'medium' };
     const base = efforts.indexOf(risk === 'R2' ? 'high' : risk === 'R0' ? 'low' : 'medium');
