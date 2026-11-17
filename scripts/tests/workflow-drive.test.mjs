@@ -1739,6 +1739,8 @@ test('an epic counts a slice folded into a merged PR, and a completed slice that
   const folded = issue({ number: 10, state: 'CLOSED', body: '<!-- workflow:consolidated-into 25 -->' });
   const noCode = issue({ number: 11, state: 'CLOSED', stateReason: 'COMPLETED', body: 'Verify only. Make no repository changes.' });
   const repo = fakeRepo({ issues: { 9: epic, 10: folded, 11: noCode }, subs: { 9: [10, 11] }, mergedPrs: [25], lessons: [9] });
+  // The final close check asks the same delivery question for every child.
+  repo.io.verifyEpic = (current, children, base, merged) => (children.every(child => merged(child.number, base)) ? { complete: true, issues: [] } : { complete: false, issues: ['undelivered child'] });
   drive(repo.io, 9, lanes, {});
   repo.s.issues[99].state = 'CLOSED';
   repo.s.merged = [99];
