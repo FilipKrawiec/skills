@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fixture, nativeRemote } from './support/workflow-cli-fixture.mjs';
 import { findingKey } from '../../plugins/common/workflow/scripts/lib/vcs.mjs';
@@ -275,7 +276,7 @@ test('a reviewer without the session token cannot post or release another claim'
 test('a repeated post skips findings whose key an open thread already carries', t => {
   const key = findingKey({ path: 'a.txt', body: '**Nit** rename' });
   const existing = thread('K1', 'reviewer', `**Nit** rename\n\n<!-- finding-key:${key} -->`);
-  const { f, post, record, log } = setup(t, { REVIEW_THREADS: JSON.stringify([existing]) });
+  const { f, post, record, log } = setup(t, { REVIEW_THREADS: JSON.stringify([existing]), PR_FILES: JSON.stringify([{ filename: 'b.txt', patch: '@@ -0,0 +1,2 @@\n+x\n+y' }]) });
   writeFileSync(join(f.repo, 'comments.json'), JSON.stringify([{ path: 'a.txt', line: 3, body: '**Nit** rename' }, { path: 'b.txt', line: 1, criterion: 'AC4', failure: 'no retry', body: '**Important** retry duplicates' }]));
   const result = post('--event', 'COMMENT', '--comments-file', 'comments.json');
   assert.equal(result.status, 0, result.stderr);
@@ -299,4 +300,50 @@ test('findingKey is stable across retries and differs by path, criterion and fai
   assert.equal(findingKey(base), findingKey({ ...base, body: 'reworded' }));
   for (const change of [{ path: 'b.js' }, { criterion: 'AC2' }, { failure: 'other' }]) assert.notEqual(findingKey(base), findingKey({ ...base, ...change }));
   assert.equal(findingKey({ ...base, key: 'my-key-1' }), 'my-key-1');
+});
+
+test('an inline comment outside the diff moves into the review body and the output says so', t => {
+  const { f, post, record } = setup(t);
+  writeFileSync(join(f.repo, 'comments.json'), JSON.stringify([{ path: 'a.txt', line: 3, body: '**Nit** inside' }, { path: 'a.txt', line: 90, body: '**Important** outside' }, { path: 'gone.txt', line: 1, body: '**Nit** unknown file' }]));
+  const result = post('--event', 'REQUEST_CHANGES', '--comments-file', 'comments.json');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Moved 2 findings outside the PR diff into the review body: a\.txt:90, gone\.txt:1/);
+  const { payload } = record();
+  assert.deepEqual(payload.comments.map(c => `${c.path}:${c.line}`), ['a.txt:3']);
+  assert.match(payload.body, /^<!-- agent-review sha=/);
+  assert.match(payload.body, /- `a\.txt:90` \*\*Important\*\* outside/);
+  assert.match(payload.body, /- `gone\.txt:1` \*\*Nit\*\* unknown file/);
+  assert.doesNotMatch(payload.body, /finding-key/);
+});
+
+test('the same session claims again once after a failed post and retries', t => {
+  const { f, post, log, record } = setup(t, { FAIL_REVIEW_POST_ONCE: join(tmpdir(), `once-${process.pid}-${Math.random()}`) });
+  t.after(() => rmSync(f.env.FAIL_REVIEW_POST_ONCE, { force: true }));
+  const first = post('--event', 'COMMENT');
+  assert.equal(first.status, 1);
+  assert.match(first.stderr, /claim released, retry/);
+  const second = post('--event', 'COMMENT');
+  assert.equal(second.status, 0, second.stderr);
+  assert.match(second.stdout, /Reclaimed #5 .*Posted review 7/s);
+  assert.equal(record().payload.event, 'COMMENT');
+  assert.ok(log().includes('pr edit 5 --repo github.com/acme/app --add-label state:reviewing'));
+  const ref = spawnSync(f.env.REAL_GIT, ['ls-remote', '--refs', f.env.TEST_REVIEW_REMOTE, 'refs/heads/workflow-review-claims/pr-5'], { cwd: f.repo, encoding: 'utf8' });
+  assert.equal(ref.stdout.trim(), '', 'the retry releases the claim again');
+});
+
+test('a second failed post gets no further retry', t => {
+  const { post } = setup(t, { FAIL_REVIEW_POST: '1' });
+  assert.equal(post('--event', 'COMMENT').status, 1);
+  assert.equal(post('--event', 'COMMENT').status, 1);
+  const third = post('--event', 'COMMENT');
+  assert.equal(third.status, 1);
+  assert.match(third.stderr, /Reviewer claim changed or cannot be verified/);
+});
+
+test('a failed GitHub call names its command and GitHub error line, without the token', t => {
+  const { post } = setup(t, { FAIL_REVIEW_POST: '1' });
+  const result = post('--event', 'COMMENT');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /GitHub command failed \(gh api --hostname github\.com repos\/acme\/app\/pulls\/5\/reviews\): post rejected \[redacted\]/);
+  assert.doesNotMatch(result.stderr, /SECRET_TOKEN/);
 });

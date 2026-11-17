@@ -15,9 +15,29 @@ export function run(program, args, options = {}) {
   if (result.error || result.status !== 0) {
     const scopeFailure = program === 'gh' ? githubScopeFailure(result.stderr || '') : null;
     const network = program === 'gh' && /error connecting|could not resolve host|failed to connect|connection (?:timed out|refused)|network is unreachable|no such host|dial tcp/i.test(result.stderr || '');
-    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? 'GitHub command failed; check network access and the configured account before reauthenticating.' : `${program} ${args[0]} failed${failureCause(result)}`));
+    const subject = program === 'gh' ? githubSubject(args) : '';
+    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? `GitHub command failed (${subject})${githubFailureLine(result, options)}; check network access and the configured account before reauthenticating.` : `${program} ${args[0]} failed${failureCause(result)}`));
   }
   return result.stdout.trim();
+}
+// The command's subject (`gh api repos/o/r/issues/362/sub_issues`), without payload flags, so a failure names what was asked.
+const payloadFlags = new Set(['-f', '-F', '--field', '--raw-field', '--body', '--input', '--jq', '-q', '--json', '--template', '--title', '--body-file']);
+function githubSubject(args) {
+  const words = [];
+  for (const arg of args) { if (payloadFlags.has(arg) || /^(?:query|-f)=/.test(arg)) break; words.push(arg); }
+  return `gh ${words.join(' ')}`.slice(0, 160);
+}
+// GitHub's own error line or HTTP status, with the active token removed.
+function githubFailureLine(result, options) {
+  if (result.error) return `: ${result.error.code || result.error.message}`;
+  const lines = String(result.stderr || '').split(/\r?\n/).map(text => text.trim()).filter(Boolean);
+  let line = lines.find(text => /\bHTTP \d{3}\b/.test(text)) || lines[0] || '';
+  let detail = '';
+  try { detail = JSON.parse(result.stdout || '').message || ''; } catch { /* no JSON body */ }
+  if (detail && !line.includes(detail)) line = `${line} ${detail}`.trim();
+  for (const token of [options.env?.GH_TOKEN, process.env.GH_TOKEN].filter(Boolean)) line = line.split(token).join('[redacted]');
+  line = gitFailureLine(line, { max: 240 });
+  return line ? `: ${line}` : result.status ? ` (exit ${result.status})` : '';
 }
 // Name the cause so an intermittent failure can be diagnosed instead of re-run blindly.
 function failureCause(result) {
@@ -99,7 +119,14 @@ export function config(requireLanes = true, allowBootstrap = false, allowBootstr
   if (lanes.reviewer != null && (typeof lanes.reviewer !== 'string' || !/^[A-Za-z0-9-]+$/.test(lanes.reviewer))) throw new Error('identities.reviewer must be a GitHub login');
   if (!defaultReviewer) throw new Error('The trusted .github/CODEOWNERS must name exactly one user for the default Reviewer');
   if (lanes.reviewer && lanes.reviewer.toLowerCase() !== defaultReviewer.toLowerCase()) throw new Error('identities.reviewer must match the default .github/CODEOWNERS reviewer');
+  // The commit the configuration came from, so an instruction can name it.
+  lanes.configCommit = configPath ? git('rev-parse', configPath.startsWith('HEAD:') ? 'HEAD' : baseRef) : undefined;
   return { root, lanes, baseRef, configSource: source, configAvailable: Boolean(configPath) };
+}
+// Drive reads delivery roles from the remote default branch, so a merged config change applies without a manual fetch.
+export function fetchedConfig(...args) {
+  git('fetch', '--quiet', 'origin');
+  return config(...args);
 }
 export function githubRepoFromRemote(remote) {
   const match = /^(?:https:\/\/(?:www\.)?github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(remote || '');
