@@ -273,13 +273,15 @@ export function decideIssue(facts, lanes) {
   // A narrowed issue changes what the head is judged against: the Reviewer judges the same head again, no new build.
   if (hb.status === 'narrowed' && state.verdict === 'fixes' && !conflictOnly && next.reason !== 'conflicts with its base') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
   if (next.action === 'fix' && conflictOnly && hb.status !== 'done') return agent('implementer', 'fix', { reason: 'base conflict is the only open Blocker or Important finding', resume: true });
-  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'done') return agent('reviewer', 'review', { reason: 'the completed fix changed no commit', sameHead: true, round: state.round + 1 });
+  // A fix-mode hand-back at the head the Reviewer judged fixed nothing: the fix reruns with the blocking findings quoted.
+  const quoted = blocking.map(finding => finding.trim().replace(/\s+/g, ' ').slice(0, 600)).filter(Boolean).slice(0, 10);
+  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'done') return agent('implementer', 'fix', { reason: 'the hand-back left the head the Reviewer judged unchanged; fix the findings quoted below', resume: true, findings: quoted });
   if (next.action === 'fix') {
     if (!tree) return { do: 'start' };
     if (next.reason === 'conflicts with its base') return agent('implementer', 'fix', { reason: next.reason, resume: true });
     if (state.verdict === 'fixes' && state.round > freshFixRound) return agent('planner', 'replan', { reason: `round ${state.round}: the fresh fix round left blocking findings; narrow the issue to what the PR delivers` });
     const fresh = state.verdict === 'fixes' && state.round === freshFixRound;
-    return agent('implementer', 'fix', fresh ? { reason: `round ${state.round}: the whole open set, fresh`, fresh: true } : { reason: next.reason, resume: true });
+    return agent('implementer', 'fix', fresh ? { reason: `round ${state.round}: the whole open set, fresh`, fresh: true, ...(quoted.length ? { findings: quoted } : {}) } : { reason: next.reason, resume: true, ...(quoted.length ? { findings: quoted } : {}) });
   }
   if (next.action === 'wait-ci') return { wait: { pr: pr.number, until: 'ci' } };
   // An unapproved `ready` verdict on a ready PR asks only for the approval; anything else is a review round.
@@ -374,7 +376,7 @@ PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}, round ${f.round}` : 'none yet; 
 
 ## Task
 
-${f.step.handoff ? `Handoff: a fresh session takes over this PR because the risk changed the model. Start from the open findings (\`review-context\` lists them), the branch above and the last hand-back${f.handBack?.status ? ` (status ${f.handBack.status}${f.handBack.note ? `: ${f.handBack.note}` : ''})` : ''}. ` : ''}${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focused tests.' : /base conflict|conflicts with its base/.test(f.step.reason || '') ? `Merge the base with \`git merge --no-ff --no-commit origin/${f.base}\`, resolve conflicts and commit the merge.` : f.step.fresh ? 'Earlier fix rounds did not converge. Read every open Blocker and Important thread `review-context` lists and the issue\'s criteria, find their shared cause and fix it whole, with the neighbouring cases the same cause breaks, each with a focused test. Fix nothing outside the criteria; Nits never block.' : 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.'} Set cwd to ${f.tree.path} for every command. Work only in that worktree. Run one plain command per Bash call.
+${f.step.handoff ? `Handoff: a fresh session takes over this PR because the risk changed the model. Start from the open findings (\`review-context\` lists them), the branch above and the last hand-back${f.handBack?.status ? ` (status ${f.handBack.status}${f.handBack.note ? `: ${f.handBack.note}` : ''})` : ''}. ` : ''}${!fix ? 'Deliver the issue below so every acceptance criterion holds, with focused tests.' : /base conflict|conflicts with its base/.test(f.step.reason || '') ? `Merge the base with \`git merge --no-ff --no-commit origin/${f.base}\`, resolve conflicts and commit the merge.` : f.step.fresh ? 'Earlier fix rounds did not converge. Read every open Blocker and Important thread `review-context` lists and the issue\'s criteria, find their shared cause and fix it whole, with the neighbouring cases the same cause breaks, each with a focused test. Fix nothing outside the criteria; Nits never block.' : 'Fix the failing check or the Blocker and Important findings of the newest review; `review-context` lists the open threads. Fix nothing else; Nits never block.'}${fix && f.step.findings?.length ? ` Blocking findings to fix (the head is unchanged until a new commit fixes each):\n${f.step.findings.map(finding => `- ${finding}`).join('\n')}\n` : ''} Set cwd to ${f.tree.path} for every command. Work only in that worktree. Run one plain command per Bash call.
 
 ## Commands you may run
 

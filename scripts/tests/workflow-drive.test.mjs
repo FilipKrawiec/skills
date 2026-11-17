@@ -1148,10 +1148,20 @@ test('base conflicts always return to the implementer, even after the fresh roun
   assert.match(step.reason, /conflicts with its base/);
 });
 
-test('a completed evidence-only fix requests a fresh review of the unchanged head', () => {
-  const step = decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: [review('fixes')] }), handBack: { status: 'done', note: 'Corrected PR evidence' } });
-  assert.equal(step.agent, 'reviewer');
-  assert.equal(step.sameHead, true);
+const blockingReview = { ...review('fixes'), body: `<!-- agent-review sha=${head} round=1 verdict=fixes -->\n**Blocker** src/a.mjs:4 rejects nothing when the head is unchanged.\n**Nit** rename x` };
+
+test('a fix-mode hand-back at the judged head is rejected and the fix reruns with the finding quoted', () => {
+  const step = decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: [blockingReview] }), handBack: { status: 'done', note: 'Corrected PR evidence' } });
+  assert.deepEqual([step.agent, step.mode, step.resume], ['implementer', 'fix', true]);
+  assert.match(step.reason, /unchanged|judged head/);
+  assert.equal(step.findings.length, 1);
+  assert.match(step.findings[0], /src\/a\.mjs:4 rejects nothing/);
+  assert.doesNotMatch(step.findings.join('\n'), /rename x/);
+});
+
+test('a fix-mode brief quotes the blocking findings, not only a pointer to review-context', () => {
+  const brief = implementerBrief({ issue: started, tree: tree(), pr: pr(), step: { mode: 'fix', reason: 'blocking review findings', findings: ['src/a.mjs:4 rejects nothing'] }, base: 'main' });
+  assert.match(brief, /Blocking findings[\s\S]*src\/a\.mjs:4 rejects nothing/);
 });
 
 test('a structured conflict-only verdict sends the implementer to merge the base at every round', () => {
