@@ -62,7 +62,8 @@ function resolveDependency(repo, number, read, seen = new Set()) {
 }
 // The issue's dependencies, resolved, from its blocked-by links and its scope packet.
 export function readDependencies(repo, issue, read = defaultRead) {
-  const links = read(['api', `repos/${repo}/issues/${issue.number}/dependencies/blocked_by`]).map(dep => dep.number);
+  // Every page of links: GitHub returns 30 by default, and an unread blocker would let a blocked issue start. A failed read throws.
+  const links = read(['api', '--paginate', '--slurp', `repos/${repo}/issues/${issue.number}/dependencies/blocked_by?per_page=100`]).flat().map(dep => dep.number);
   const numbers = [...new Set([...links, ...dependenciesFromIssueBody(issue.body || '')])].filter(n => n !== issue.number).sort((a, b) => a - b);
   const resolved = numbers.map(number => resolveDependency(repo, number, read)).filter(dep => dep.number !== issue.number);
   return resolved.filter((dep, index) => resolved.findIndex(other => other.number === dep.number) === index);

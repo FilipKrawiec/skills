@@ -185,7 +185,7 @@ function fakeGh(issues, prs = []) {
     const [kind, path] = args;
     const key = args.join(' ');
     const at = /issues\/(\d+)/.exec(path || '')?.[1];
-    if (kind === 'api' && path.endsWith('/blocked_by')) return (issues[at].blockedBy || []).map(number => ({ number }));
+    if (kind === 'api' && args.at(-1).includes('/blocked_by')) return [(issues[args.at(-1).match(/issues\/(\d+)/)[1]].blockedBy || []).map(number => ({ number }))];
     if (kind === 'api' && path.includes('/sub_issues')) return (issues[at].subs || []).map(number => ({ number, state: issues[number].state, body: issues[number].body || '' }));
     if (kind === 'api') return { state: issues[at].state, state_reason: issues[at].reason, labels: (issues[at].labels || []).map(name => ({ name })), body: issues[at].body || '' };
     if (key.startsWith('issue view')) { const n = Number(args[2]); return { number: n, url: `u/${n}`, state: issues[n].state.toUpperCase(), title: 't', body: issues[n].body || '', labels: (issues[n].labels || []).map(name => ({ name })) }; }
