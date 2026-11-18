@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { gate, isGraphql, isGraphqlRead } from './quota.mjs';
 
 export const heldWorkflowLocks = new Set();
 export const workflowDefaults = {
@@ -10,7 +11,19 @@ export const workflowDefaults = {
   cli: { environmentFile: '~/.config/gh-agents/workflow-env.json', toolingRepository: 'https://github.com/FilipKrawiec/skills.git' },
   explore: { personas: '.agents/personas.md', maxIssues: 3, capturesBranch: 'explore-captures' },
 };
+// Identical GraphQL reads within one invocation run once; any other GitHub call may change state and clears them.
+const readMemo = new Map();
+export const quotaPolicy = { memo: true, waitWhenExhausted: false };
 export function run(program, args, options = {}) {
+  if (program !== 'gh' || options.quota === false || process.env.WORKFLOW_QUOTA === 'off' || !isGraphql(args)) return execute(program, args, options);
+  const memoKey = quotaPolicy.memo && isGraphqlRead(args) ? JSON.stringify([args, options.cwd, options.input]) : null;
+  if (memoKey && readMemo.has(memoKey)) return readMemo.get(memoKey);
+  gate(args, { waitWhenExhausted: quotaPolicy.waitWhenExhausted });
+  const output = execute(program, args, options);
+  if (memoKey) readMemo.set(memoKey, output); else readMemo.clear();
+  return output;
+}
+function execute(program, args, options = {}) {
   const result = spawnSync(program, args, { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, ...options });
   if (result.error || result.status !== 0) {
     const scopeFailure = program === 'gh' ? githubScopeFailure(result.stderr || '') : null;

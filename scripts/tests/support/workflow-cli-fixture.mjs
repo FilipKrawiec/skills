@@ -157,6 +157,7 @@ function fixture(t) {
   writeFileSync(join(bin, 'git-review.cjs'), `const { spawnSync } = require('node:child_process'); const args = process.argv.slice(2).map(arg => arg === 'https://github.com/acme/app.git' ? process.env.TEST_REVIEW_REMOTE : arg); const child = spawnSync(process.env.REAL_GIT, args, { stdio: 'inherit' }); process.exit(child.status ?? 1);`);
   const env = {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('WORKFLOW_'))),
+    WORKFLOW_QUOTA: 'off',
     PATH: `${bin}:${process.env.PATH}`,
     HOME: home,
     REAL_GIT: realGit,

@@ -1,5 +1,6 @@
 import { boardStatus, prLinkedIssues, prRecord, sweepBoard } from './board.mjs';
-import { cachedGithubMetadata, jsonCommand } from './core.mjs';
+import { cachedGithubMetadata, jsonCommand, quotaPolicy } from './core.mjs';
+import { pollSeconds, quotaStatus, sharedRead } from './quota.mjs';
 import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { findUsageComment, usageCost, usageSummary } from './usage.mjs';
 import { checkState, failedStates, passedStates, prFields } from './pr.mjs';
@@ -92,10 +93,11 @@ export function statusCommand(args, lanes, read = args => jsonCommand('gh', args
   if (args.length !== 1) throw new Error('Usage: status NUMBER');
   const n = number(args[0]);
   const isPr = Boolean(read(['api', `repos/${lanes.repo}/issues/${n}`]).pull_request);
-  if (!isPr) { const state = issueState(lanes.repo, n, lanes, read); console.log(JSON.stringify({ ...state, ...prUsage(lanes.repo, [n], lanes, read) })); return; }
+  if (!isPr) { const state = issueState(lanes.repo, n, lanes, read); console.log(JSON.stringify({ ...state, ...prUsage(lanes.repo, [n], lanes, read), ...quotaField() })); return; }
   const state = prState(readPullRequest(lanes.repo, n), lanes);
-  console.log(JSON.stringify({ ...state, ...prUsage(lanes.repo, [n, ...(state.issues || [])], lanes, read) }));
+  console.log(JSON.stringify({ ...state, ...prUsage(lanes.repo, [n, ...(state.issues || [])], lanes, read), ...quotaField() }));
 }
+const quotaField = () => { const quota = quotaStatus(); return quota ? { quota } : {}; };
 const sleep = seconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
 // Whether the condition holds (true), failed for good (false) or still pending (null). No checks right after a push
 // means GitHub has not registered them yet, so `none` settles only in a repo without required checks. `base` is the
@@ -115,16 +117,20 @@ const moveClosingCards = (lanes, pr) => {
   const closing = new Set((pr.closingIssuesReferences || []).map(issue => issue.number));
   return prLinkedIssues(pr, lanes.repo).filter(n => closing.has(n) && boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, n, 'DONE', true));
 };
-export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = readPr, checksAt = readChecksAt, sweep = sweepClosedBoard, moveClosing = moveClosingCards } = {}) {
+// One query per PR per interval for every `wait` on this machine.
+const sharedReadPr = (repo, n) => sharedRead(`pr:${repo}#${n}`, 55_000, () => readPr(repo, n));
+export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = sharedReadPr, random = Math.random, checksAt = readChecksAt, sweep = sweepClosedBoard, moveClosing = moveClosingCards } = {}) {
   const usage = 'Usage: wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]';
   const [value, ...rest] = args;
   const o = {};
   while (rest.length) { const key = rest.shift(); if (!['--until', '--timeout', '--interval'].includes(key) || !rest.length || Object.hasOwn(o, key)) throw new Error(usage); o[key] = rest.shift(); }
   if (!['ci', 'reviewed', 'merged', 'base'].includes(o['--until'])) throw new Error(usage);
   const n = number(value);
-  const timeout = Number(o['--timeout'] ?? 120), interval = Number(o['--interval'] ?? 30);
+  const timeout = Number(o['--timeout'] ?? 120), interval = Number(o['--interval'] ?? 60);
   if (!(timeout > 0) || !(interval >= 1)) throw new Error(usage);
   const deadline = now() + timeout * 60_000;
+  // Polling re-reads on purpose, and below the quota floor it sleeps until the reset instead of failing.
+  quotaPolicy.memo = false; quotaPolicy.waitWhenExhausted = true;
   let last = '';
   for (;;) {
     const pr = read(lanes.repo, n);
@@ -144,7 +150,7 @@ export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read =
       return done ? 0 : 1;
     }
     if (now() >= deadline) { console.error(`workflow: timed out after ${timeout} minutes waiting for ${o['--until']} on #${n}`); return 1; }
-    pause(interval);
+    pause(pollSeconds(interval, random));
   }
 }
 // Issues the owner must unblock: a dropped dependency, or a dependency cycle among an epic's slices.
