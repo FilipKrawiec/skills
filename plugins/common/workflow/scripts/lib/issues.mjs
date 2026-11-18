@@ -205,6 +205,13 @@ export function issueEdit(args) {
   });
 }
 export const closeFormsMessage = n => `Cannot close #${n} as completed: it has none of the three accepted forms. Add one, or close as not planned with --reason not_planned: (1) a closing PR merged into the base (Closes #${n}); (2) a <!-- workflow:consolidated-into N --> marker in its body, N being the issue that holds its outcome; (3) the statement "Make no repository changes." in its body.`;
+// The one rule for closing as completed: an epic, a consolidated issue, a no-change issue or one with a merged closing PR.
+export function completedCloseAllowed(issue, hasMergedClosingPr) {
+  const isEpic = (issue.labels || []).some(label => (label.name ?? label) === 'type:epic');
+  const folded = consolidatedInto(issue.body || '') !== null;
+  const noChange = pathsFromIssueBody(issue.body || '')?.length === 0;
+  return isEpic || folded || noChange || !!hasMergedClosingPr();
+}
 export function issueClose(args) {
   const o = flags(args, ['--number', '--reason']);
   const n = Number(o['--number']);
@@ -214,10 +221,7 @@ export function issueClose(args) {
   return withRepoLock(`issue-close-${n}`, () => {
     if (reason === 'completed') {
       const issue = gh(['api', `repos/${cfg.repo}/issues/${n}`]);
-      const isEpic = (issue.labels || []).some(label => (label.name ?? label) === 'type:epic');
-      const folded = consolidatedInto(issue.body || '') !== null;
-      const noChange = pathsFromIssueBody(issue.body || '')?.length === 0;
-      if (!isEpic && !folded && !noChange && !mergedClosingPr(cfg.repo, n, cfg.base)) throw new Error(closeFormsMessage(n));
+      if (!completedCloseAllowed(issue, () => mergedClosingPr(cfg.repo, n, cfg.base))) throw new Error(closeFormsMessage(n));
     }
     const result = gh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, '-f', 'state=closed', ...(reason === 'not_planned' ? ['-f', 'state_reason=not_planned'] : [])]);
     if (result.state !== 'closed') throw new Error(`GitHub did not confirm #${n} closed`);
