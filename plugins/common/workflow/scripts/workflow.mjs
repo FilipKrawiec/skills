@@ -37,6 +37,7 @@ import {
 import { nitsCommand, prCommand } from './lib/pr.mjs';
 import { nextCommand, statusCommand, waitCommand } from './lib/state.mjs';
 import { checkCommand, driveCommand, waitSlotCommand } from './lib/drive.mjs';
+import { runnerCommand } from './lib/runner.mjs';
 import { benchCommand, reviewerIo } from './lib/bench.mjs';
 import { runResponsibility } from './lib/responsibility.mjs';
 import { worktreeCommand } from './lib/worktrees.mjs';
@@ -55,6 +56,7 @@ const help = `Usage:
   node workflow.mjs wait slot
   node workflow.mjs next [--owner]
   node workflow.mjs drive NUMBER [--hand-back FILE|-] | drive --next
+  node workflow.mjs runner poll|status
   node workflow.mjs responsibility NAME BRIEF
   node workflow.mjs bench [--snapshot FILE] [--run] [--model M] [--effort E] [--settings model:effort,...] [--host claude|codex] [--json] [--out FILE] [--compare FILE] [--from FILE]
   node workflow.mjs check --worktree PATH
@@ -180,6 +182,7 @@ async function execute(command, args) {
   else if (command === 'next') { const { lanes } = config(); nextCommand(args, lanes); }
   else if (command === 'responsibility') { if (args.length !== 2) throw new Error('Usage: responsibility NAME BRIEF'); const { lanes } = config(); process.stdout.write(runResponsibility(lanes.delivery, args[0], args[1])); }
   else if (command === 'drive') { const { lanes } = fetchedConfig(); driveCommand(args, lanes); }
+  else if (command === 'runner') { const { lanes } = fetchedConfig(); runnerCommand(args, lanes); }
   else if (command === 'bench') { const { lanes, root } = config(); const options = {}; for (const key of ['model', 'effort', 'host']) { const at = args.indexOf(`--${key}`); if (at >= 0) options[key] = args[at + 1]; } process.exitCode = await benchCommand(args, reviewerIo(lanes, root, options)); }
   else if (command === 'check') { const { lanes } = config(); process.exitCode = checkCommand(args, lanes); }
   else if (command === 'scratch' && !args.length) console.log(JSON.stringify({ path: workflowScratch() }));
