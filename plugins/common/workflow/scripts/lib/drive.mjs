@@ -14,6 +14,7 @@ import { consolidatedInto, droppedReason, findCycle, readDependencies, splitDepe
 import { checkState, failedStates, prFields } from './pr.mjs';
 import { addCriterionIds, tickCriteria, verifyEpicClosure } from './epic-closure.mjs';
 import { prState } from './state.mjs';
+import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
 import { exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
 import { pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
@@ -1034,7 +1035,11 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     else if (step.do === 'auto-merge') { if (!io.strictPolicy()) return { owner: `${lanes.base} must require configured checks on an up-to-date branch`, url: `https://github.com/${lanes.repo}/settings/rules` }; io.autoMerge(pr, tree); }
     // GitHub reports the merge state late, so drive waits on the new head's CI instead of reading BEHIND again.
     else if (step.do === 'update-branch') { if (pr.autoMergeRequest) io.disableAutoMerge(pr); io.updateBranch(pr); return finish({ wait: { pr: pr.number, until: 'ci' }, reason: 'merged the base into the head' }); }
-    else if (step.do === 'close') { io.close(issue); io.board(n, 'DONE'); }
+    else if (step.do === 'close') {
+      // Same rule as `issue close`: a PR that only says "Part of" closes nothing as completed.
+      if (!completedCloseAllowed(issue, () => io.mergedClosingPr(n, lanes.base))) return finish({ blocked: { issue: n, reason: closeFormsMessage(n) } });
+      io.close(issue); io.board(n, 'DONE');
+    }
     else if (step.do === 'close-no-change') { io.closeNoChange(issue, tree, handBack); io.board(n, 'DONE'); }
     else if (step.do === 'remove-worktree') { io.removeTree(tree); return { done: { issue: n } }; }
   }
