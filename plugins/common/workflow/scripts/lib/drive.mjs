@@ -50,6 +50,7 @@ export function sessionFor(agent, risk, { round = 0, fresh = false } = {}) {
 }
 // The owner's session only routes drive's JSON, so it starts on Sonnet at low effort; the owner starts it with this command.
 export const driveSession = { model: 'sonnet', effort: 'low' };
+export const driveHeadlessArgs = () => ['-p', '--model', driveSession.model, '--effort', driveSession.effort, '--permission-mode', 'auto', '/deliver drive --next'];
 export const driveSessionCommand = target => `claude --model ${driveSession.model} --effort ${driveSession.effort} "/deliver drive ${target}"`;
 export const modelFor = risk => sessionFor('implementer', risk).model;
 export const modelForStep = (step, risk, round = 0) => sessionFor(step.agent, risk, { round, fresh: Boolean(step.fresh) }).model;
