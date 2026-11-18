@@ -51,12 +51,18 @@ export function issueTargetRepo(cfg, requested) {
   if (requested === tooling) return tooling;
   throw new Error(`Issue writes reach only ${cfg.repo} or the workflow tooling repository ${tooling}`);
 }
-export function assertIssueVisibility(source, target) {
-  if (source.private && !target.private) throw new Error(`${target.name} is public and ${source.name} is private; file in ${source.name} and link it instead`);
+const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// A private source may write to a public repository of the same owner, as long as the text does not name or link the source.
+export function assertIssueVisibility(source, target, texts = []) {
+  if (!source.private || target.private) return;
+  const [sourceOwner, sourceName] = source.name.split('/');
+  if (sourceOwner.toLowerCase() !== target.name.split('/')[0].toLowerCase()) throw new Error(`${target.name} is public and ${source.name} is private with a different owner; file in ${source.name} and link it instead`);
+  const named = new RegExp(`(?<![\\w.-])(?:${escapeRegExp(source.name)}|${escapeRegExp(sourceName)})(?![\\w-])`, 'i');
+  if (texts.some(text => named.test(text || ''))) throw new Error(`${target.name} is public and ${source.name} is private: remove the name ${sourceName} and any ${source.name} link from the title and body, and word the issue without project nouns`);
 }
-function issueWriteRepo(cfg, requested) {
+function issueWriteRepo(cfg, requested, texts = []) {
   const repo = issueTargetRepo(cfg, requested);
-  if (repo !== cfg.repo) assertIssueVisibility({ name: cfg.repo, private: gh(['api', `repos/${cfg.repo}`]).private === true }, { name: repo, private: gh(['api', `repos/${repo}`]).private === true });
+  if (repo !== cfg.repo) assertIssueVisibility({ name: cfg.repo, private: gh(['api', `repos/${cfg.repo}`]).private === true }, { name: repo, private: gh(['api', `repos/${repo}`]).private === true }, texts);
   return repo;
 }
 export function oldestExactTitle(issues, title) {
@@ -128,7 +134,7 @@ export function issueCreate(args) {
   const root = git('rev-parse', '--show-toplevel');
   const body = validateIssueCommentBody(readWorkspaceText(root, o['--body-file']));
   const cfg = writerConfig(); loadEnvironment(cfg);
-  const repo = issueWriteRepo(cfg, o['--repo']);
+  const repo = issueWriteRepo(cfg, o['--repo'], [title, body]);
   requireImplementer(cfg);
   const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
   if (!check) requireBacklogStructure(repo, { labels, parent: structure.parent });
@@ -166,7 +172,7 @@ export function issueComment(args) {
   const root = git('rev-parse', '--show-toplevel');
   const body = validateIssueCommentBody(readWorkspaceText(root, o['--body-file']));
   const cfg = writerConfig(); loadEnvironment(cfg);
-  const repo = issueWriteRepo(cfg, o['--repo']);
+  const repo = issueWriteRepo(cfg, o['--repo'], [body]);
   requireImplementer(cfg);
   return withRepoLock(`issue-comment-${n}`, () => {
     const result = gh(['api', `repos/${repo}/issues/${n}/comments`, '-f', `body=${body}`]);
