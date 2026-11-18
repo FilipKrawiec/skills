@@ -719,6 +719,8 @@ test('a refinement candidate closed as not planned or consolidated is retired, n
     const result = drive(repo.io, 9, lanes, {});
     assert.doesNotMatch(result.owner || '', /classify/);
     assert.notEqual(result.mode, 'refinement');
+    assert.notEqual(result.agent, 'planner', 'a retired candidate is no rival');
+    if (retired.stateReason === 'NOT_PLANNED') assert.deepEqual([result.owner, result.agent, result.issue, result.mode], [undefined, 'implementer', 11, 'build'], '#11 is the refinement');
   }
 });
 
@@ -731,6 +733,7 @@ test('the planner consolidating refinement candidates lets drive continue', () =
   const result = drive(after.io, 9, lanes, { status: 'consolidated', into: '10', closed: '11' });
   assert.doesNotMatch(result.owner || '', /classify/);
   assert.notEqual(result.mode, 'refinement');
+  assert.notEqual(result.agent, 'planner', 'the planner already folded the candidates');
 });
 
 test('a closed or merely refine-titled sub-issue is not a refinement candidate', () => {
@@ -1240,6 +1243,14 @@ test('a fix-mode brief offers disputed and the Reviewer brief carries the disput
   assert.doesNotMatch(buildBrief, /disputed/);
   const reviewText = reviewerBrief({ repo: 'acme/app', pr: pr(), issue: issue(), risk: 'R1', step: { mode: 'review', sameHead: true, dispute: 'the finding misreads line 4', round: 2 }, lanes, base: 'main' });
   assert.match(reviewText, /disputes[\s\S]*the finding misreads line 4/);
+});
+
+test('a disputed hand-back with an empty note still tells the Reviewer a dispute happened', () => {
+  const step = decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: [blockingReview] }), handBack: { status: 'disputed', note: '' } });
+  assert.equal(step.disputed, true);
+  const text = reviewerBrief({ repo: 'acme/app', pr: pr(), issue: issue(), risk: 'R1', step, lanes, base: 'main' });
+  assert.match(text, /Same head, disputed[\s\S]*no note/);
+  assert.doesNotMatch(text, /Its evidence/);
 });
 
 test('a fix-mode brief quotes the blocking findings, not only a pointer to review-context', () => {

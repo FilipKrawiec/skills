@@ -58,5 +58,6 @@ jobs:
             echo "main moved since this release was cut; nothing published, the next run releases."
             exit 0
           fi
-          git push --force origin "HEAD:refs/heads/release"
           gh release create "${tag}" -R "${GITHUB_REPOSITORY}" --verify-tag --generate-notes --title "${tag}"
+          # The tag is out and its Release exists; a failed branch move must not leave a rerun with nothing to publish.
+          git push --force origin "HEAD:refs/heads/release" || echo "::warning::release branch not moved; move it by hand."

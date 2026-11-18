@@ -74,6 +74,9 @@ export function cleanEnvironment(source = process.env) {
   env.GIT_NO_REPLACE_OBJECTS = '1';
   return env;
 }
+// The shape `config()` accepts for .agents/config.json: version 1, no explore block, object sections.
+export const validConfigShape = raw => Boolean(raw) && typeof raw === 'object' && !Array.isArray(raw) && raw.version === 1 && !Object.hasOwn(raw, 'explore') &&
+  [raw.identities ?? {}, raw.github ?? {}, raw.steps ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v));
 export function assertDistinctPushRoles({ owner, implementer, reviewer }) {
   const values = [owner, implementer, reviewer];
   if (values.some(value => typeof value !== 'string' || !/^[A-Za-z0-9-]+$/.test(value)) || new Set(values.map(value => value.toLowerCase())).size !== values.length) {
@@ -100,7 +103,7 @@ export function config(requireLanes = true, allowBootstrap = false, allowBootstr
     source = 'branch bootstrap';
   }
   const raw = configPath ? JSON.parse(git('show', configPath)) : null;
-  if (configPath && (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 || Object.hasOwn(raw, 'explore') || ![raw.identities ?? {}, raw.github ?? {}, raw.steps ?? {}].every(v => v && typeof v === 'object' && !Array.isArray(v)))) throw new Error('Invalid workflow configuration; use steps.process/assemble/test instead of an explore block');
+  if (configPath && !validConfigShape(raw)) throw new Error('Invalid workflow configuration; use steps.process/assemble/test instead of an explore block');
   if (raw && source === 'branch bootstrap' && (['repo', 'base'].some(key => Object.hasOwn(raw.github || {}, key))
     || Object.hasOwn(raw, 'labels'))) {
     throw new Error('Workflow GitHub metadata comes from Git and the local cache; use CLI defaults for labels and repository scripts under steps');
