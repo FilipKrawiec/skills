@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { syncManifests, validateRepositoryReleaseVersion } from './manifests.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-const RELEASE_BRANCH = 'release';
 const TAG = /^v(\d+)\.(\d+)\.(\d+)$/;
 function fail(message) { throw new Error(message); }
 function git(root, ...args) {
@@ -86,8 +85,7 @@ export function performRelease({ bump = 'auto', message, dryRun = false, root = 
   console.log(`=== Release Automation: ${current.join('.')} -> ${version} (${resolvedBump}) ===`);
   if (dryRun) { console.log(`[dry-run] Would bump version to ${version} and create tag ${tag}`); return version; }
 
-  // Versions live on the release branch only: main never moves. The branch is main's HEAD plus one manifest-only commit.
-  git(root, 'switch', '-q', '-C', RELEASE_BRANCH);
+  // main carries the released version: the manifest-only bump commit lands on main and is tagged, so main always equals the newest tag.
   for (const name of commonPackages(root)) {
     const path = resolve(root, 'plugins/common', name, 'package-metadata.json');
     const data = JSON.parse(readFileSync(path, 'utf8'));

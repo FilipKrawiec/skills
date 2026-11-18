@@ -77,7 +77,7 @@ test('release refuses dirty, non-main, ahead and behind checkouts', t => {
   assert.throws(() => performRelease({ bump: 'patch', root }), /not level with origin\/main/);
 });
 
-test('release commits the manifests to the release branch and tags it without moving main', t => {
+test('release commits the manifests on main and tags that commit', t => {
   const root = project(t);
   for (const name of ['core', 'workflow']) {
     const dir = join(root, 'plugins/common', name);
@@ -88,13 +88,27 @@ test('release commits the manifests to the release branch and tags it without mo
   command(root, 'git', 'add', '.');
   command(root, 'git', 'commit', '-q', '-m', 'feat: add capability');
   command(root, 'git', 'push', '-q', 'origin', 'main');
-  const main = command(root, 'git', 'rev-parse', 'main');
+  const before = command(root, 'git', 'rev-parse', 'main');
   assert.equal(performRelease({ root }), '8.4.0');
-  assert.equal(command(root, 'git', 'rev-parse', 'main'), main);
-  assert.equal(command(root, 'git', 'branch', '--show-current'), 'release');
-  assert.equal(command(root, 'git', 'rev-parse', 'release^'), main);
-  assert.equal(command(root, 'git', 'rev-parse', 'v8.4.0^{commit}'), command(root, 'git', 'rev-parse', 'release'));
-  assert.equal(command(root, 'git', 'log', '-1', '--format=%s', 'release'), 'chore(release): bump version to 8.4.0');
-  assert.deepEqual(command(root, 'git', 'show', '--name-only', '--format=', 'release').split('\n').filter(f => !f.endsWith('package-metadata.json') && !f.endsWith('plugin.json') && !f.includes('marketplace')), []);
-  assert.match(command(root, 'git', 'show', 'main:plugins/common/core/package-metadata.json'), /8\.3\.0/);
+  assert.equal(command(root, 'git', 'branch', '--show-current'), 'main');
+  assert.equal(command(root, 'git', 'rev-parse', 'main^'), before);
+  assert.equal(command(root, 'git', 'rev-parse', 'v8.4.0^{commit}'), command(root, 'git', 'rev-parse', 'main'));
+  assert.equal(command(root, 'git', 'log', '-1', '--format=%s', 'main'), 'chore(release): bump version to 8.4.0');
+  assert.deepEqual(command(root, 'git', 'show', '--name-only', '--format=', 'main').split('\n').filter(f => !f.endsWith('package-metadata.json') && !f.endsWith('plugin.json') && !f.includes('marketplace')), []);
+  assert.match(command(root, 'git', 'show', 'main:plugins/common/core/package-metadata.json'), /8\.4\.0/);
+});
+
+test('the bump commit is tagged at HEAD so its own run releases nothing', t => {
+  const root = project(t);
+  for (const name of ['core', 'workflow']) {
+    const dir = join(root, 'plugins/common', name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'package-metadata.json'), `${JSON.stringify({ version: '8.3.0', description: name })}\n`);
+  }
+  command(root, 'git', 'add', '.');
+  command(root, 'git', 'commit', '-q', '-m', 'fix: add packages');
+  command(root, 'git', 'push', '-q', 'origin', 'main');
+  assert.equal(performRelease({ root }), '8.3.1');
+  command(root, 'git', 'push', '-q', '--atomic', 'origin', 'HEAD:main', 'refs/tags/v8.3.1');
+  assert.equal(performRelease({ root }), null);
 });
