@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,4 +25,22 @@ export function versionNotice(cliVersion, installed = installedPlugins()) {
   if (!stale.length) return null;
   const versions = [...new Set(stale.map(install => install.version))].join(', ');
   return `workflow: installed plugin ${versions} differs from this CLI's ${cliVersion}; drive's sessions load ${cliVersion} through --plugin-dir. To update the installation, run: claude plugin update ${stale[0].key} --scope ${stale[0].scope}`;
+}
+
+// The newest release this machine knows: the marketplace checkout Claude Code keeps current (with auto-update on).
+export const latestRelease = (home = homedir()) => pluginVersion(join(home, '.claude', 'plugins', 'marketplaces', 'filipkrawiec', 'plugins', 'common', 'workflow'));
+const numbers = version => String(version).split(/[.-]/).slice(0, 3).map(part => Number(part) || 0);
+export function isOlder(running, latest) {
+  if (!running || !latest) return false;
+  const a = numbers(running); const b = numbers(latest);
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i];
+  return false;
+}
+// One line per session when the running copy is older than the latest release; the marker file keeps every later command quiet.
+export function staleCopyNotice({ running = pluginVersion(), latest = latestRelease(), session = process.env.CLAUDE_CODE_SESSION_ID || String(process.ppid), directory = join(homedir(), '.cache', 'workflow-cli', 'stale-notice') } = {}) {
+  if (!isOlder(running, latest)) return null;
+  const marker = join(directory, `${session}`.replace(/[^\w.-]/g, '_'));
+  try { if (readFileSync(marker, 'utf8') === latest) return null; } catch { /* first command of this session */ }
+  try { mkdirSync(directory, { recursive: true }); writeFileSync(marker, latest); } catch { /* an unwritable cache only repeats the warning */ }
+  return `workflow: this CLI is ${running} but ${latest} is released; run \`claude plugin update filipkrawiec-workflow@filipkrawiec\` (init turns on automatic updates so this stops needing you)`;
 }

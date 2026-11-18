@@ -59,3 +59,17 @@ test('every role brief names the plugin version', () => {
   const briefs = { reviewer: reviewerBrief(facts), epicOutcome: reviewerBrief({ ...facts, pr: null, step: { mode: 'epic-outcome', round: 1 } }), improver: improverBrief(facts), devops: devopsBrief(facts), planner: plannerBrief(facts) };
   for (const [role, brief] of Object.entries(briefs)) assert.ok(brief.includes(`Plugin: workflow ${manifest.version}`), role);
 });
+
+test('a copy older than the latest release warns once per session', async () => {
+  const { mkdtempSync: mk } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { staleCopyNotice, isOlder } = await import('../../plugins/common/workflow/scripts/lib/plugin.mjs');
+  const directory = mk(join(tmpdir(), 'stale-'));
+  const options = { running: '11.96.8', latest: '11.96.13', session: 's1', directory };
+  assert.match(staleCopyNotice(options), /11\.96\.8 but 11\.96\.13 is released/);
+  assert.equal(staleCopyNotice(options), null, 'quiet for the rest of the session');
+  assert.match(staleCopyNotice({ ...options, session: 's2' }), /released/);
+  assert.equal(staleCopyNotice({ ...options, running: '11.96.13', session: 's3' }), null);
+  assert.equal(isOlder('11.9.0', '11.10.0'), true);
+  assert.equal(isOlder('11.96.13', '11.96.9'), false);
+});
