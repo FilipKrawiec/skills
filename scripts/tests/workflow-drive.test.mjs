@@ -1186,6 +1186,22 @@ test('verified consolidated children and refinements close an epic without anoth
   }
 });
 
+test('an epic closes when its refinement closed with a no-change comment and no PR', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }), 99: issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' }) }, subs: { 9: [10, 99] }, merged: [10], lessons: [9] });
+  repo.io.noChangeEvidence = n => n === 99;
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+});
+
+test('the closure check wraps every optional IO method unresolvedDelivery calls', () => {
+  const source = readFileSync(new URL('../../plugins/common/workflow/scripts/lib/drive.mjs', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('function unresolvedDelivery('), source.indexOf('const seen = new Set([...ancestors, slice.number]);'));
+  const wrapped = source.slice(source.indexOf('const deliveryIo = {'), source.indexOf('const merged = (n, base) => unresolvedDelivery('));
+  const optional = [...body.matchAll(/\bio\.(\w+)\?\./g)].map(m => m[1]);
+  assert.ok(optional.includes('noChangeEvidence') && optional.includes('consolidatedDelivery'));
+  for (const name of new Set(optional)) assert.match(wrapped, new RegExp(`\\b${name}:`), `deliveryIo must wrap io.${name}`);
+});
+
 test('a current-head Reviewer verdict after the claim releases it immediately', () => {
   const since = Date.parse('2026-11-11T10:00:00Z');
   const claimed = pr({ labels: [label('risk:R1'), label('state:reviewing')], reviews: [{ ...review('owner', 'APPROVED'), submittedAt: '2026-11-11T10:01:00Z' }] });
