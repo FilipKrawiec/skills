@@ -46,13 +46,16 @@ test('idle: no ready work starts nothing and logs one line', () => {
   assert.match(lines(t.logDirectory)[0], /ready=0 live=0 started=0 recovered=0 idle/);
 });
 
-test('ready work starts one session per free slot, never past the cap, each with its own id', () => {
+test('ready work starts one session per poll, since drive --next admits one at a time', () => {
   const t = setup();
-  assert.equal(t.poll().started.length, maxRuns);
-  assert.equal(new Set(t.world.started).size, maxRuns);
-  const full = setup();
-  for (let i = 0; i < maxRuns - 2; i++) full.claim(`other-${i}`, 100 + i);
-  assert.equal(full.poll().started.length, 2, 'only the free slots start');
+  const first = t.poll();
+  assert.equal(first.started.length, 1);
+  t.advance(runnerDefaults.minIntervalMs);
+  assert.deepEqual(t.poll().started, [], 'the first has not claimed yet');
+  assert.match(lines(t.logDirectory)[1], /next claim held/);
+  t.claim(first.started[0], 'next');
+  t.advance(runnerDefaults.minIntervalMs);
+  assert.deepEqual(t.poll().started, [], 'a session holding only the next claim counts and blocks another');
 });
 
 test('every slot taken starts nothing and exits without reading issues', () => {
@@ -99,16 +102,18 @@ test('a crashed session releases its claim so drive takes the issue again', () =
 
 test('a hung session is terminated and its claim released; a progressing one is left alone', () => {
   const t = setup();
-  const ids = t.poll().started;
-  t.claim(ids[0], 3, { progressAt: T0 });
-  t.claim(ids[1], 4, { progressAt: T0 });
+  const [a] = t.poll().started;
+  t.claim(a, 3, { progressAt: T0 });
   t.advance(runnerDefaults.hangMs);
-  t.claim(ids[1], 4, { progressAt: t.world.now - 1000, at: t.world.now });
-  const result = t.poll();
-  const hung = result.recovered.map(item => item.id);
-  assert.ok(hung.includes(ids[0]) && !hung.includes(ids[1]));
-  assert.ok(t.world.terminated.length >= 1);
+  const hung = t.poll();
+  assert.deepEqual(hung.recovered.map(item => item.id), [a]);
+  assert.equal(t.world.terminated.length, 1);
   assert.equal(existsSync(join(t.claims, 'acme_app-3.json')), false);
+  const [b] = hung.started;
+  t.claim(b, 4, { progressAt: T0 });
+  t.advance(runnerDefaults.hangMs - 1000);
+  t.claim(b, 4, { progressAt: t.world.now - 1000, at: t.world.now });
+  assert.deepEqual(t.poll().recovered, []);
   assert.equal(existsSync(join(t.claims, 'acme_app-4.json')), true);
 });
 

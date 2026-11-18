@@ -2,7 +2,7 @@ import { spawn as nodeSpawn, spawnSync } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { driveHeadlessArgs, githubIo, liveRuns, maxRuns, nextTargets } from './drive.mjs';
+import { driveHeadlessArgs, githubIo, maxRuns, nextTargets } from './drive.mjs';
 import { splitDependencies } from './dependencies.mjs';
 
 // The runner holds no scheduler or queue logic: it asks drive whether ready work exists and starts today's `drive --next`.
@@ -87,16 +87,18 @@ export function runnerPoll(lanes, { io = realIo(lanes), logDirectory = runnerLog
     return result;
   };
   if (!quota || quota.remaining < quota.limit * options.quotaBelow) return finish(quota ? `backoff until ${quota.resetAt}` : 'backoff: quota unknown', { backoff: true });
-  const live = liveRuns({ directory: claims, repo: lanes.repo, now: at }) + sessions.filter(session => !session.claimed).length;
-  const free = maxRuns - live;
-  if (free <= 0) return finish('slots full', { live, ready: 0 });
-  const taken = new Set(readClaims(claims, lanes.repo).filter(claim => at - claim.at < 30 * 60_000).map(claim => claim.issue));
+  // Drive's `--next` claim admits one session at a time, so a second `drive --next` would only return blocked: start one session per poll, and none while one holds that claim or is still starting.
+  const fresh = readClaims(claims, lanes.repo).filter(claim => at - claim.at < options.hangMs);
+  const pending = sessions.filter(session => !session.claimed).length;
+  const live = new Set(fresh.map(claim => claim.session ?? claim.file)).size + pending;
+  if (live >= maxRuns) return finish('slots full', { live, ready: 0 });
+  if (pending || fresh.some(claim => claim.issue === 'next')) return finish('next claim held', { live, ready: 0 });
+  const taken = new Set(fresh.map(claim => claim.issue));
   const ready = [];
   for (const number of nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)))) {
-    if (!taken.has(String(number))) ready.push(number);
-    if (ready.length >= free) break;
+    if (!taken.has(String(number))) { ready.push(number); break; }
   }
-  for (let index = 0; index < ready.length; index++) {
+  for (const index of ready.keys()) {
     const session = io.start({ id: `runner-${at}-${index}`, cwd, logDirectory, now: at });
     result.started.push(session.id);
     keep(session, false);
