@@ -1,6 +1,7 @@
 import { localClaimIsDead, releaseSessionClaim, sessionClaim } from './review-ref.mjs';
 import { verifyConsolidatedDelivery } from './consolidated-delivery.mjs';
 import { createHash } from 'node:crypto';
+import { INBOX_MARKER, INBOX_TITLE, notifyOwner as notifyOwnerStep, resolveOwner as resolveOwnerStep } from './inbox.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -660,6 +661,15 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   const repo = lanes.repo;
   const trees = () => parseWorktreeList(git('worktree', 'list', '--porcelain'));
   const openIssues = () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,labels,body']);
+  const inboxApi = () => ({
+    comments: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat(),
+    comment: (n, body) => run('gh', ['issue', 'comment', String(n), '--repo', repo, '--body', body]),
+    isOpen: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'state']).state === 'OPEN',
+    findInbox: () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '200', '--json', 'number,body']).find(i => (i.body || '').includes(INBOX_MARKER)) || null,
+    createInbox: body => gh(['api', '--method', 'POST', `repos/${repo}/issues`, '-f', `title=${INBOX_TITLE}`, '-f', `body=${body}`]).number,
+    pin: number => run('gh', ['issue', 'pin', String(number), '--repo', repo]),
+    updateBody: (number, body) => run('gh', ['issue', 'edit', String(number), '--repo', repo, '--body', body]),
+  });
   const io = {
     issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,stateReason,title,body,labels,assignees,milestone']),
     dependencies: issue => readDependencies(repo, issue, gh),
@@ -867,14 +877,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     // The brief drive wrote when it last started this role; null when none, so a first dispatch never hands off.
     read: path => { try { return readFileSync(path, 'utf8'); } catch { return null; } },
     openIssues,
-    notifyOwner: (n, step) => {
-      const text = `${step.owner}${step.url ? ` ${step.url}` : ''}`;
-      const marker = `<!-- workflow:owner-step ${createHash('sha1').update(text).digest('hex').slice(0, 12)} -->`;
-      const comments = gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat();
-      const last = comments.filter(comment => /<!-- workflow:owner-step [0-9a-f]+ -->/.test(comment.body || '')).at(-1);
-      if (last?.body?.includes(marker)) return;
-      run('gh', ['issue', 'comment', String(n), '--repo', repo, '--body', `${marker}\n**Owner step (drive):** ${step.owner}${step.url ? `\n\n${step.url}` : ''}\n\nDecision: the owner acts on the link above, then \`drive ${n}\` continues.`]);
-    },
+    notifyOwner: (n, step) => notifyOwnerStep(inboxApi(), lanes.owner || repo.split('/')[0], n, step),
+    resolveOwner: n => resolveOwnerStep(inboxApi(), n),
     // The unstarted issues `issue` overlaps; GitHub is read only for those whose scope paths overlap.
     overlaps: issue => findOverlaps(issue, openIssues(), {
       parentOf: n => { try { return gh(['api', `repos/${repo}/issues/${n}/parent`]).number ?? null; } catch { return null; } },
@@ -1202,6 +1206,8 @@ export function drive(io, n, lanes, handBack = {}) {
   if (result.owner) {
     try { io.notifyOwner?.(n, result); } catch (error) { console.error(`drive: could not record the owner step on #${n}: ${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}`); }
     if (result.alsoReady?.length) return { ...result, continue: `report the owner step, then drive each alsoReady slice alone (${result.alsoReady.map(m => `#${m}`).join(', ')}); the owner step holds only one slice` };
+  } else if (!result.wait) {
+    try { io.resolveOwner?.(n); } catch (error) { console.error(`drive: could not update the Owner inbox for #${n}: ${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}`); }
   }
   return result;
 }
@@ -1228,7 +1234,7 @@ function driveTarget(io, n, lanes, handBack = {}) {
 // An item with an unmet or dropped dependency never qualifies; `depsOf` reads them lazily, in that order.
 export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] })) {
   const names = issue => issue.labels.map(label => label.name ?? label);
-  const candidates = issues.filter(issue => !names(issue).includes('lane:owner'));
+  const candidates = issues.filter(issue => !names(issue).includes('lane:owner') && !(issue.body || '').includes(INBOX_MARKER));
   const rank = issue => Number(!names(issue).includes('state:started'));
   const ordered = [...candidates].sort((a, b) => rank(a) - rank(b) || a.number - b.number);
   for (const issue of ordered) { const { blockers, dropped } = depsOf(issue); if (!blockers.length && !dropped.length) yield issue.number; }
