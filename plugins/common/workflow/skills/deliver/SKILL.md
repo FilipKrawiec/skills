@@ -69,7 +69,7 @@ Use `status: replan` when the issue contradicts the code or splits at a seam, `s
 
 ## Setup
 
-Read [setup.md](references/setup.md) to set up a repository for `drive`; read [epic-closure.md](references/epic-closure.md) for epic closure evidence and follow-ups.
+Read [setup.md](references/setup.md) to set up a repository for `drive`; read [epic-closure.md](references/epic-closure.md) for epic closure evidence and follow-ups; [runner.md](references/runner.md): runner.
 
 ## Output
 
