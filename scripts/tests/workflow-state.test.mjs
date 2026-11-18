@@ -152,6 +152,16 @@ test('wait --until merged sweeps closed cards to Done once the PR merges, and on
   assert.deepEqual(run('MERGED', 'ci'), { code: 0, sweeps: 0 });
 });
 
+test('wait --until merged moves the closing issues of the merged PR itself before the sweep, so a late issue close skips no card', () => {
+  const order = []; const log = console.log; console.log = () => {};
+  try {
+    const closing = [{ number: 7, repository: { owner: { login: 'acme' }, name: 'app' } }];
+    const code = waitCommand(['5', '--until', 'merged'], lanes, { read: () => pr({ state: 'MERGED', closingIssuesReferences: closing }), moveClosing: (l, merged) => { order.push(['move', merged.closingIssuesReferences.map(i => i.number)]); }, sweep: () => { order.push(['sweep']); return []; }, pause: () => {}, now: () => 0 });
+    assert.equal(code, 0);
+  } finally { console.log = log; }
+  assert.deepEqual(order, [['move', [7]], ['sweep']]);
+});
+
 test('wait --until merged exits 1 on a PR behind or in conflict with its base, printing the state', () => {
   const error = console.error; const errors = []; console.error = line => errors.push(line);
   try {

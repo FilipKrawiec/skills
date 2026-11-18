@@ -114,3 +114,10 @@ test('consolidated delivery needs the Reviewer to name a merged PR; the issue bo
   packet.consolidated[0].state = 'unmet'; assert.equal(check(), false);
   adapters.native = () => { throw Error('unavailable'); }; assert.equal(check(), false);
 });
+
+test('the first fence tagged json is read even after an earlier non-JSON fence', () => {
+  const json = JSON.stringify({ kind: 'workflow:epic-outcomes', version: 1, n: 7 });
+  const body = `<!-- workflow:epic-outcomes -->\n\`\`\`text\nsee below\n\`\`\`\n\`\`\`json\n${json}\n\`\`\``;
+  const read = resolveNativeEpicEvidence({ repo: 'a/b', issue: 9 }, { trustedConfig: () => cfg, comments: () => [{ user: { login: 'reviewer' }, created_at: '2026-01-01T00:00:00Z', body }] });
+  assert.equal(read.n, 7);
+});

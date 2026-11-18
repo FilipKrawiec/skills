@@ -1,11 +1,11 @@
 import { config, gh, git, parseRepo } from './core.mjs';
 
 const login = value => typeof value === 'string' && /^[A-Za-z0-9-]+$/.test(value);
-// Accepts raw JSON or the first fenced block, after an optional leading HTML comment marker; prose around the fence is ignored.
+// Accepts raw JSON, the first fence tagged json, else the first untagged fence, after an optional leading HTML comment marker; prose around the fence is ignored.
 const parse = body => {
   if (typeof body !== 'string') return null;
   const text = body.replace(/^\s*<!--[\s\S]*?-->/, '').trim();
-  const fenced = text.match(/```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```/i);
+  const fenced = text.match(/```json[ \t]*\r?\n([\s\S]*?)\r?\n```/i) || text.match(/```[ \t]*\r?\n([\s\S]*?)\r?\n```/);
   try { return JSON.parse(fenced ? fenced[1] : text); } catch { return null; }
 };
 

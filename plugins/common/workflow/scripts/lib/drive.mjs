@@ -83,6 +83,8 @@ export function deliveryAssignment(delivery, step, risk, round = 0) {
   if (step.agent !== 'reviewer' && role.host !== delivery.orchestrator) throw new Error(`Unsupported cross-host subagent for ${step.agent}; resume drive in the ${role.host} orchestrator or reorder delivery.roles.${roleName} to the current orchestrator, preserving the work state`);
   return { host: role.host, model: role.model, effort, session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
 }
+// A REST pull merged into `base` of this repo, not a fork's namesake.
+const isMergedInto = (pr, repo, base) => pr.merged === true && pr.base?.ref === base && pr.base?.repo?.full_name?.toLowerCase() === repo.toLowerCase();
 const riskLabel = labels => labels.map(label => label.name ?? label).find(name => /^risk:R\d$/.test(name))?.slice(5) || null;
 // An epic's final refinement slice: drive finds it by the marker and creates it with the criteria `plan` gives the planner.
 const refinementMarker = '<!-- workflow:epic-refinement -->';
@@ -90,7 +92,7 @@ const refinementMarker = '<!-- workflow:epic-refinement -->';
 const noChangeMarker = '<!-- workflow:refinement-no-change -->';
 const refinementReview = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
 const refinementCriteria = [
-  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths.`,
+  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. With nothing to change, hand back \`status: done\`, empty \`paths\` and \`body: <file>\`.`,
   'Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.',
   'Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.',
   'Assess the epic\'s delivery flow: blocked and owner steps, rework, review rounds and cost. File at most two improvements, each with its evidence.',
@@ -283,7 +285,7 @@ export function decideIssue(facts, lanes) {
   if (hb.status === 'narrowed' && state.verdict === 'fixes' && !conflictOnly && next.reason !== 'conflicts with its base') return agent('reviewer', 'review', { reason: 'the planner narrowed the issue to what the PR delivers', narrowed: true, round: state.round + 1 });
   if (next.action === 'fix' && conflictOnly && hb.status !== 'done') return agent('implementer', 'fix', { reason: 'base conflict is the only open Blocker or Important finding', resume: true });
   // A disputed finding is the implementer's evidence, not a skipped fix: the Reviewer judges the same head again.
-  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'disputed') return agent('reviewer', 'review', { reason: 'the implementer disputed the blocking findings; the Reviewer weighs its evidence', sameHead: true, dispute: hb.note || '', round: state.round + 1 });
+  if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'disputed') return agent('reviewer', 'review', { reason: 'the implementer disputed the blocking findings; the Reviewer weighs its evidence', sameHead: true, disputed: true, dispute: hb.note || '', round: state.round + 1 });
   // A fix-mode hand-back at the head the Reviewer judged fixed nothing: the fix reruns with the blocking findings quoted.
   const quoted = blocking.map(finding => finding.trim().replace(/\s+/g, ' ').slice(0, 600)).filter(Boolean).slice(0, 10);
   if (next.action === 'fix' && next.reason === 'blocking review findings' && hb.status === 'done') return agent('implementer', 'fix', { reason: 'the hand-back left the head the Reviewer judged unchanged; fix the findings quoted below', resume: true, findings: quoted });
@@ -507,7 +509,7 @@ export function reviewerBrief(f) {
 ${f.packet ? `Read the review packet first: ${f.packet}. It holds the issue criteria, CI, the project gate, the diff by area, the delta since your last verdict with open threads, and call sites of changed exports. Do not re-gather them; check blast radius outside it yourself.\n\n` : ''}Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
-${f.step.dispute ? `Same head, disputed: the implementer disputes the blocking findings and changed no commit. Its evidence: ${f.step.dispute}\nJudge the evidence against the code; resolve a finding it refutes, repost the rest.\n` : f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
+${f.step.disputed || f.step.dispute ? `Same head, disputed: the implementer disputes the blocking findings and changed no commit.${f.step.dispute ? ` Its evidence: ${f.step.dispute}` : ' It gave no note.'}\nJudge the evidence against the code; resolve a finding it refutes, repost the rest.\n` : f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 
 - \`node ${cli} review-context --pr ${f.pr.number} --issue ${f.issue.number} --claim\`
@@ -664,8 +666,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     },
     mergedPr: (n, base) => {
       try {
-        const pr = gh(['api', `repos/${repo}/pulls/${n}`]);
-        return pr.merged === true && pr.base?.ref === base && pr.base?.repo?.full_name?.toLowerCase() === repo.toLowerCase();
+        return isMergedInto(gh(['api', `repos/${repo}/pulls/${n}`]), repo, base);
       } catch { return false; }
     },
     mergedClosingPr: (n, base) => {
@@ -677,7 +678,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     consolidatedDelivery: (epic, child, base) => verifyConsolidatedDelivery({ epic, child, repo, base }, {
       mergedPr: (number, target) => {
         const pr = gh(['api', `repos/${repo}/pulls/${number}`]);
-        return pr.number === number && pr.merged === true && pr.base?.ref === target && pr.base?.repo?.full_name?.toLowerCase() === repo.toLowerCase();
+        return pr.number === number && isMergedInto(pr, repo, target);
       }
     }),
     hasLessons: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().some(comment => /^## Lessons\s*$/m.test(comment.body || '')),
@@ -1119,6 +1120,7 @@ export function driveEpic(io, epic, lanes) {
           subIssues: n => { const subIssues = io.subIssues(n); delivery.push(['children', n, subIssues]); return subIssues; },
           mergedClosingPr: (n, base) => { const merged = io.mergedClosingPr(n, base); delivery.push(['merged', n, merged]); return merged; },
           mergedPr: (n, base) => { const merged = io.mergedPr?.(n, base) || false; delivery.push(['merged-pr', n, merged]); return merged; },
+          noChangeEvidence: n => { const found = io.noChangeEvidence?.(n) || false; delivery.push(['no-change', n, found]); return found; },
           consolidatedDelivery: (epic, child, base) => { const verified = io.consolidatedDelivery?.(epic, child, base) || false; delivery.push(['consolidated', child.number, verified]); return verified; }
         };
         const merged = (n, base) => unresolvedDelivery(deliveryIo, children.find(child => child.number === n), base, current.number).length === 0;

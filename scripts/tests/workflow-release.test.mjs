@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -111,4 +111,12 @@ test('the bump commit is tagged at HEAD so its own run releases nothing', t => {
   assert.equal(performRelease({ root }), '8.3.1');
   command(root, 'git', 'push', '-q', '--atomic', 'origin', 'HEAD:main', 'refs/tags/v8.3.1');
   assert.equal(performRelease({ root }), null);
+});
+
+test('the release workflow creates the GitHub Release before the release branch move, which cannot fail the run', () => {
+  const text = readFileSync(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8');
+  const create = text.indexOf('gh release create');
+  const move = text.indexOf('HEAD:refs/heads/release');
+  assert.ok(create > 0 && move > create, 'Release first, branch move after');
+  assert.match(text.slice(move).split('\n')[0], /\|\|/);
 });
