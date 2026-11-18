@@ -215,6 +215,8 @@ export function decideIssue(facts, lanes) {
   if (hb.status === 'sliced') return { blocked: { issue: issue.number, reason: 'the planner handed back sliced, yet the issue is not an epic' } };
   const claimed = (issue.labels || []).some(label => (label.name ?? label) === 'state:started');
   if (!pr || pr.state !== 'OPEN') {
+    // An owner-lane issue is the owner's task: drive claims, labels and builds nothing for it.
+    if (!claimed && (issue.labels || []).some(label => (label.name ?? label) === 'lane:owner')) return { owner: `#${issue.number} is an owner task (lane:owner)`, url: issue.url };
     if (!claimed || !tree) return { do: 'start' };
     if (hb.status !== 'done') return agent('implementer', 'build');
     if (tree.dirty) return hb.commit && hb.paths?.length ? { do: 'commit' } : agent('implementer', 'build', { reason: 'uncommitted changes and no commit/paths in the hand-back' });
@@ -1176,8 +1178,13 @@ export function driveEpic(io, epic, lanes) {
     } catch (error) { return { owner: `epic #${epic.number}: closure verification failed: ${error.message}`, url: epic.url }; }
   }
   if (!step.slices) return finish(instruction(io, { issue: epic, pr: null, tree: null }, step, lanes));
-  const entries = step.slices.map(number => { const facts = readIssueFacts(io, number, {}); return { number, pr: facts.pr, step: decideIssue(facts, lanes) }; });
+  const entries = step.slices.map(number => { const facts = readIssueFacts(io, number, {}); const step = decideIssue(facts, lanes); return { number, pr: facts.pr, step, ownerLane: !!step.owner && (facts.issue.labels || []).some(label => (label.name ?? label) === 'lane:owner') && facts.issue.state === 'OPEN' && !(facts.issue.labels || []).some(label => (label.name ?? label) === 'state:started') }; });
   const chosen = pickSlice(holdBaseUpdates(entries));
+  const held = entries.filter(entry => entry.ownerLane);
+  if (held.length && !entries.some(entry => entry.step.do || entry.step.agent || entry.step.wait)) {
+    const alsoReady = step.slices.filter(number => !held.some(entry => entry.number === number));
+    return { owner: `epic #${epic.number}: ${held.map(entry => `#${entry.number}`).join(', ')} ${held.length > 1 ? 'are owner tasks' : 'is an owner task'} (lane:owner)`, url: held[0].step.url, epic: epic.number, ...(alsoReady.length ? { alsoReady } : {}) };
+  }
   const result = driveIssue(io, chosen.number, lanes);
   const alsoReady = step.slices.filter(number => number !== chosen.number);
   return { ...result, epic: epic.number, ...(alsoReady.length ? { alsoReady } : {}) };
