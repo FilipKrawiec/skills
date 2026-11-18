@@ -1,4 +1,4 @@
-import { prRecord, sweepBoard } from './board.mjs';
+import { boardStatus, prLinkedIssues, prRecord, sweepBoard } from './board.mjs';
 import { cachedGithubMetadata, jsonCommand } from './core.mjs';
 import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { findUsageComment, usageCost, usageSummary } from './usage.mjs';
@@ -110,7 +110,12 @@ function settled(until, state, lanes) {
 }
 // Blocks in the CLI, not in an agent: a session runs it in the background and is woken once, when it exits.
 const sweepClosedBoard = lanes => sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project });
-export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = readPr, checksAt = readChecksAt, sweep = sweepClosedBoard } = {}) {
+// The merged PR's closing issues, moved directly: a late issue close leaves them open for the sweep above (best effort).
+const moveClosingCards = (lanes, pr) => {
+  const closing = new Set((pr.closingIssuesReferences || []).map(issue => issue.number));
+  return prLinkedIssues(pr, lanes.repo).filter(n => closing.has(n) && boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, n, 'DONE', true));
+};
+export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = readPr, checksAt = readChecksAt, sweep = sweepClosedBoard, moveClosing = moveClosingCards } = {}) {
   const usage = 'Usage: wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]';
   const [value, ...rest] = args;
   const o = {};
@@ -133,6 +138,7 @@ export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read =
     if (done !== null) {
       // The merge closes the issue; its card moves now, not on some later drive run (best effort).
       if (done && o['--until'] === 'merged' && state.state === 'MERGED') {
+        try { moveClosing(lanes, pr); } catch (error) { console.error(`workflow: closing-issue card move skipped: ${error.message}`); }
         try { const moved = sweep(lanes); if (moved.length) console.error(`workflow: moved ${moved.map(m => `#${m}`).join(', ')} to Done`); } catch (error) { console.error(`workflow: board sweep skipped: ${error.message}`); }
       }
       return done ? 0 : 1;
