@@ -264,6 +264,46 @@ test('issue edit replaces an issue body from a worktree file and confirms it', t
   assert.notEqual(dropped.status, 0);
   assert.match(dropped.stderr, /did not confirm #4/);
 });
+test('issue close as completed needs a merged closing PR, a fold marker or a no-change statement; not planned is unaffected', t => {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node
+const a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));
+require('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');
+if(a[0]==='auth'){console.log('SECRET_TOKEN');process.exit(0);}
+if(a.includes('user')){out({login:'builder'});process.exit(0);}
+if(a.includes('PATCH')){out({state:'closed'});process.exit(0);}
+if(a.includes('graphql')){out({data:{repository:{issue:{closedByPullRequestsReferences:{nodes:JSON.parse(process.env.TEST_PRS||'[]')}}}}});process.exit(0);}
+if(a.some(x=>/issues\\/4$/.test(x))){out({number:4,state:'open',body:process.env.TEST_BODY||'Do the thing.',labels:[]});process.exit(0);}
+out({});
+`);
+  chmodSync(gh, 0o755);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.TEST_CALLS = join(f.root, 'calls.log');
+  const refused = f.cliRun('issue', 'close', '--number', '4');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /closing PR/);
+  assert.match(refused.stderr, /consolidated-into/);
+  assert.match(refused.stderr, /Make no repository changes/);
+  assert.doesNotMatch(readFileSync(f.env.TEST_CALLS, 'utf8'), /PATCH/);
+  f.env.TEST_PRS = JSON.stringify([{ merged: true, baseRefName: 'other' }, { merged: false, baseRefName: 'main' }]);
+  assert.notEqual(f.cliRun('issue', 'close', '--number', '4').status, 0);
+  f.env.TEST_PRS = JSON.stringify([{ merged: true, baseRefName: 'main' }]);
+  assert.equal(f.cliRun('issue', 'close', '--number', '4').status, 0);
+  delete f.env.TEST_PRS;
+  f.env.TEST_BODY = 'Folded.\n<!-- workflow:consolidated-into 9 -->';
+  assert.equal(f.cliRun('issue', 'close', '--number', '4').status, 0);
+  f.env.TEST_BODY = 'Make no repository changes.';
+  assert.equal(f.cliRun('issue', 'close', '--number', '4').status, 0);
+  f.env.TEST_BODY = 'Do the thing.';
+  const notPlanned = f.cliRun('issue', 'close', '--number', '4', '--reason', 'not_planned');
+  assert.equal(notPlanned.status, 0, notPlanned.stderr);
+  assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /-f state=closed -f state_reason=not_planned/);
+});
+
 test('issue edit reaches the public tooling repository from a private consumer and refuses a leaking body', t => {
   const f = fixture(t);
   const gh = join(f.root, 'bin', 'gh');

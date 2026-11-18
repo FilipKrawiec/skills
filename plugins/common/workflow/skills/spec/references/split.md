@@ -5,3 +5,7 @@ Keep related fixes, implementation, tests and docs in one bounded, independently
 ## Consolidate unstarted duplicates
 
 The planner (or `refine`) merges unstarted issues that share an outcome, never a started issue, one with an open PR, issues in different epics without a shared outcome, or anything under `lane:owner`. Carry every outcome, criterion, dependency, decision and milestone into one canonical issue N, comment where each went, append `<!-- workflow:consolidated-into N -->` to each other body and close it as not planned. A dependency on a closed one then follows N, never an owner step. Only a started or `lane:owner` duplicate needs owner authority. `drive` sends overlapping unstarted issues (shared epic, overlapping `scope` paths) to the planner before it starts one, and reports what merged.
+
+## Close without its own PR
+
+`issue close --number N` refuses to close as completed an issue that has none of: a closing PR merged into the base, a `<!-- workflow:consolidated-into N -->` marker in its body, or the statement "Make no repository changes." in its body. Add one before closing; close as not planned (`--reason not_planned`) when the work will not happen. Epics are exempt.
