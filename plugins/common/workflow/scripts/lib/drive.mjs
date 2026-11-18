@@ -18,6 +18,7 @@ import { prState } from './state.mjs';
 import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
 import { exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
+import { collectSession } from './session-log.mjs';
 import { pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
 import { approveReady, previousReviewedHead } from './vcs.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
@@ -805,11 +806,23 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
         seen.add(cursor); after = cursor;
       }
     },
-    recordUsage: (pr, hb) => {
+    recordUsage: (pr, hb, where = {}) => {
       const parsed = parseUsageLine(hb.usage);
       const role = handBackRole(hb);
-      const key = createHash('sha1').update([pr.number, pr.headRefOid, role, hb.status, hb.usage, hb.note, hb.commit].join('\0')).digest('hex').slice(0, 12);
+      // The session drive issued for this role, read back from beside its brief; the row and the log comment share its key.
+      let sessionId = null;
+      try { sessionId = readFileSync(join(workflowScratch(where.tree?.path), `drive-${where.issue ?? pr.number}-${role}.session`), 'utf8').trim() || null; } catch { /* no session issued */ }
+      const key = sessionId ? `session-${sessionId}` : createHash('sha1').update([pr.number, pr.headRefOid, role, hb.status, hb.usage, hb.note, hb.commit].join('\0')).digest('hex').slice(0, 12);
       recordUsage({ repo, pr: pr.number, author: lanes.implementer, entry: usageEntry({ role, host: parsed?.host, model: parsed?.model, effort: parsed?.effort, plugin: parsed?.plugin, usage: parsed?.usage, key }) }, { gh });
+      if (sessionId) collectSession({ repo, pr: pr.number, author: lanes.implementer, session: { id: sessionId, role, status: hb.status || hb.risk, usage: hb.usage } });
+    },
+    // A runner-started orchestrator names its session in the environment; its transcript is linked from the PR it finished (else the issue).
+    orchestratorLog: (n, outcome) => {
+      const id = process.env.WORKFLOW_DRIVE_SESSION;
+      if (!id) return;
+      let target = n;
+      try { target = io.pr(n)?.number ?? n; } catch { /* comment on the issue */ }
+      collectSession({ repo, pr: target, author: lanes.implementer, session: { id, role: 'orchestrator', outcome } });
     },
     packetFacts(context) { return gatherPacketFacts({ repo, lanes, gh, threads: pr => this.reviewThreads(pr), ...context }); },
     reviewSession: (pr, tree) => {
@@ -940,7 +953,12 @@ function instruction(io, facts, step, lanes) {
   const packet = step.agent === 'reviewer' && pr ? join(io.scratch(tree), 'review-packet.md') : null;
   const context = { issue, pr, tree, step, risk, model, effort, round, handBack: facts.handBack, packet, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
   if (packet) writePacket(io, packet, { issue, pr, tree, round, lanes });
-  io.write(brief, briefs[step.agent](context));
+  // Drive issues the session id: the brief names it, and the agent's transcript (which holds the brief it read) is found by it.
+  // It is derived from the state the brief describes, so rerunning drive on an unchanged state repeats the same brief and session.
+  const hash = createHash('sha256').update(JSON.stringify([issue.number, step.agent, step.mode, step.reason, pr?.headRefOid, round, Boolean(step.fresh), Boolean(step.resume)])).digest('hex');
+  const sessionId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
+  io.write(brief, briefs[step.agent](context).replace(/\n/, `\n\nSession: ${sessionId}`));
+  io.write(`${brief.replace(/\.md$/, '')}.session`, sessionId);
   const out = { agent: step.agent, host, model, effort, plugin: pluginVersion(), brief, issue: issue.number, pr: pr?.number ?? null, session, mode: step.mode, cwd: tree?.path || null };
   const configured = lanes.delivery?.roles?.[step.agent === 'implementer' && step.fresh ? 'freshImplementer' : step.agent];
   if (Array.isArray(configured)) out.alternatives = configured.slice(1);
@@ -972,7 +990,7 @@ export function driveIssue(io, n, lanes, handBack = {}) {
   const result = driveIssueSteps(io, n, lanes, handBack, state);
   if (!state.recorded && (handBack.status || handBack.risk || handBack.usage)) {
     state.recorded = true;
-    try { io.recordUsage?.({ number: n, headRefOid: '' }, handBack); } catch { /* usage is optional */ }
+    try { io.recordUsage?.({ number: n, headRefOid: '' }, handBack, { issue: n, tree: state.tree }); } catch { /* usage is optional */ }
   }
   return result;
 }
@@ -982,10 +1000,11 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
   const resolverFailed = handBack.agent === 'conflict-resolver' && (handBack.status !== 'done' || handBack.check === 'fail');
   for (let i = 0; i < 12; i++) {
     const facts = readIssueFacts(io, n, resolverFailed ? {} : handBack);
+    state.tree = facts.tree;
     // A failure never blocks a step.
     if (!state.recorded && (handBack.status || handBack.risk || handBack.usage) && facts.pr?.state === 'OPEN') {
       state.recorded = true;
-      try { io.recordUsage?.(facts.pr, handBack); } catch { /* usage is optional */ }
+      try { io.recordUsage?.(facts.pr, handBack, { issue: n, tree: facts.tree }); } catch { /* usage is optional */ }
     }
     if (!bodyUpdated && handBack.status === 'done' && (handBack.note || handBack.body) && facts.pr?.state === 'OPEN' && facts.tree && !facts.tree.dirty && !facts.tree.unpushed) {
       io.updateBody(facts.pr, facts.tree, handBack);
@@ -1395,7 +1414,10 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   const result = drive(io, n, lanes, handBack);
   if (!lock.record(fingerprintOf(result), now)) { console.log(JSON.stringify(lostClaim(n))); return; }
   if (notice) console.error(notice);
-  if (result.done || result.owner || result.blocked) lock.release();
+  if (result.done || result.owner || result.blocked) {
+    lock.release();
+    try { io.orchestratorLog?.(n, Object.keys(result).find(key => ['done', 'owner', 'blocked'].includes(key))); } catch { /* a session log never blocks delivery */ }
+  }
   console.log(JSON.stringify(withConfigCommit(result, lanes)));
 }
 const withConfigCommit = (result, lanes) => (lanes.configCommit ? { ...result, configCommit: lanes.configCommit } : result);

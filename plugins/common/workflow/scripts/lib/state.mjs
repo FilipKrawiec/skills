@@ -2,6 +2,7 @@ import { boardStatus, prLinkedIssues, prRecord, sweepBoard } from './board.mjs';
 import { cachedGithubMetadata, jsonCommand, quotaPolicy } from './core.mjs';
 import { pollSeconds, quotaStatus, sharedRead } from './quota.mjs';
 import { droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
+import { sessionLogEntries } from './session-log.mjs';
 import { findUsageComment, usageCost, usageSummary } from './usage.mjs';
 import { checkState, failedStates, passedStates, prFields } from './pr.mjs';
 import { ownerPaths } from './codeowners.mjs';
@@ -86,8 +87,16 @@ function prUsage(repo, numbers, lanes, read) {
   const entries = prUsageEntries(repo, numbers, lanes, read);
   return { usage: usageSummary(entries), cost: usageCost(entries) };
 }
+// Rows from the usage comment, plus the per-session log records whose session that comment does not already carry.
 function prUsageEntries(repo, numbers, lanes, read) {
-  return numbers.flatMap(n => { try { return findUsageComment(read(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat(), lanes.implementer)?.entries || []; } catch { return []; } });
+  return numbers.flatMap(n => {
+    try {
+      const comments = read(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat();
+      const entries = findUsageComment(comments, lanes.implementer)?.entries || [];
+      const keys = new Set(entries.map(entry => entry.key));
+      return [...entries, ...sessionLogEntries(comments, lanes.implementer).filter(entry => !keys.has(entry.key))];
+    } catch { return []; }
+  });
 }
 export function statusCommand(args, lanes, read = args => jsonCommand('gh', args), readPullRequest = readPr) {
   if (args.length !== 1) throw new Error('Usage: status NUMBER');
