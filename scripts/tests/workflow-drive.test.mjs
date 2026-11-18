@@ -564,7 +564,7 @@ test('readDependencies unions blocked-by links with packet dependencies, issues 
   const read = args => {
     calls.push(args.join(' '));
     const [kind, path] = args;
-    if (path?.endsWith('/dependencies/blocked_by')) return [{ number: 12 }, { number: 20 }];
+    if (args.at(-1)?.includes('/dependencies/blocked_by')) return [[{ number: 12 }, { number: 20 }]];
     if (path === 'repos/acme/app/issues/12') return { state: 'closed', state_reason: 'not_planned', labels: [], body: '' };
     if (path === 'repos/acme/app/issues/20') return { state: 'open', labels: [] };
     if (path === 'repos/acme/app/issues/30') return { state: 'open', pull_request: {} };
@@ -574,7 +574,7 @@ test('readDependencies unions blocked-by links with packet dependencies, issues 
   const deps = readDependencies('acme/app', { number: 3, body: '```scope\n{"dependencies":[30]}\n```' }, read);
   assert.deepEqual(splitDependencies(deps), { blockers: [20], dropped: [12] });
   assert.deepEqual(deps.find(dep => dep.number === 30), { number: 30, kind: 'pr', state: 'MERGED', merged: true });
-  const closer = nodes => args => (args[1] === 'graphql' ? { data: { repository: { issue: { closedByPullRequestsReferences: { nodes } } } } } : args[0] === 'api' && args[1].endsWith('blocked_by') ? [{ number: 7 }] : { state: 'closed', state_reason: 'completed', labels: [], body: '' });
+  const closer = nodes => args => (args[1] === 'graphql' ? { data: { repository: { issue: { closedByPullRequestsReferences: { nodes } } } } } : args[0] === 'api' && args.at(-1).includes('blocked_by') ? [[{ number: 7 }]] : { state: 'closed', state_reason: 'completed', labels: [], body: '' });
   assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 3, body: '' }, closer([{ merged: false }]))), { blockers: [], dropped: [7] }, 'closed as completed with no merged PR is dropped');
   assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 3, body: '' }, closer([{ merged: false }, { merged: true }]))), { blockers: [], dropped: [] }, 'asks GitHub about the issue itself, however old its PR'
   );
@@ -1773,10 +1773,27 @@ test('githubIo reads the epic and open PR of only the issues whose scope overlap
   assert.equal(asked.some(call => /issues\/5\//.test(call)), false, 'the docs-only issue is never read');
 });
 
+test('readDependencies keeps an issue blocked by an open blocker past the first page of links', () => {
+  const pages = [Array.from({ length: 30 }, (_, i) => ({ number: 100 + i })), Array.from({ length: 30 }, (_, i) => ({ number: 130 + i })), [{ number: 999 }]];
+  const read = args => {
+    const path = args.at(-1);
+    if (path.includes('/dependencies/blocked_by')) {
+      assert.deepEqual(args.slice(1, 3), ['--paginate', '--slurp'], 'reads every page');
+      return pages;
+    }
+    const number = Number(/issues\/(\d+)$/.exec(path)[1]);
+    return number === 999 ? { state: 'open', labels: [] } : { state: 'closed', state_reason: 'completed', labels: [{ name: 'type:epic' }], body: '' };
+  };
+  assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 3, body: '' }, read)).blockers, [999]);
+  const failing = () => { throw new Error('page 3 failed'); };
+  assert.throws(() => readDependencies('acme/app', { number: 3, body: '' }, failing), /page 3 failed/);
+});
+
 test('a dependency on an issue closed as consolidated follows its target, never an owner step', () => {
   const read = (targetState, extra = {}) => args => {
-    const [kind, path] = args;
-    if (path?.endsWith('/dependencies/blocked_by')) return [{ number: 422 }, { number: 560 }];
+    const kind = args[0];
+    const path = args.at(-1);
+    if (path?.includes('/dependencies/blocked_by')) return [[{ number: 422 }, { number: 560 }]];
     if (path === 'repos/acme/app/issues/422') return { state: 'closed', state_reason: 'not_planned', labels: [], body: 'old\n<!-- workflow:consolidated-into 560 -->' };
     if (path === 'repos/acme/app/issues/560') return { state: targetState, state_reason: 'completed', labels: [], body: '```scope\n{"paths":["a/"]}\n```', ...extra };
     if (args[1] === 'graphql') return { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [{ merged: true }] } } } } };
@@ -1784,9 +1801,9 @@ test('a dependency on an issue closed as consolidated follows its target, never 
   };
   assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 551, body: '' }, read('open'))), { blockers: [560], dropped: [] }, 'waits on the target, once');
   assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 551, body: '' }, read('closed'))), { blockers: [], dropped: [] }, 'met when the target merged');
-  const dropped = args => (args[1]?.endsWith('/dependencies/blocked_by') ? [{ number: 422 }] : { state: 'closed', state_reason: 'not_planned', labels: [], body: 'no marker' });
+  const dropped = args => (args.at(-1)?.includes('/dependencies/blocked_by') ? [[{ number: 422 }]] : { state: 'closed', state_reason: 'not_planned', labels: [], body: 'no marker' });
   assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 551, body: '' }, dropped)), { blockers: [], dropped: [422] }, 'closed as not planned with no consolidation target is still dropped');
-  const itself = args => (args[1]?.endsWith('/dependencies/blocked_by') ? [{ number: 422 }] : { state: 'closed', state_reason: 'not_planned', labels: [], body: '<!-- workflow:consolidated-into 551 -->' });
+  const itself = args => (args.at(-1)?.includes('/dependencies/blocked_by') ? [[{ number: 422 }]] : { state: 'closed', state_reason: 'not_planned', labels: [], body: '<!-- workflow:consolidated-into 551 -->' });
   assert.deepEqual(readDependencies('acme/app', { number: 551, body: '' }, itself), [], 'a dependency folded into the issue itself disappears');
 });
 
