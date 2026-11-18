@@ -2379,3 +2379,17 @@ test('a refinement that found nothing to change closes with its evidence and cou
   repo.io.noChangeEvidence = n => n === 99;
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
 });
+
+test('epic closure counts a child closed as not planned as resolved but holds a PR-less completed child', () => {
+  const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
+  const dropped = issue({ number: 10, state: 'CLOSED', stateReason: 'NOT_PLANNED' });
+  const delivered = issue({ number: 11, state: 'CLOSED', stateReason: 'COMPLETED' });
+  const repo = fakeRepo({ issues: { 9: epic, 10: dropped, 11: delivered }, subs: { 9: [10, 11] }, merged: [11], lessons: [9] });
+  repo.io.verifyEpic = (current, children, base, merged) => (children.every(child => merged(child.number, base)) ? { complete: true, issues: [] } : { complete: false, issues: ['undelivered child'] });
+  drive(repo.io, 9, lanes, {});
+  repo.s.issues[99].state = 'CLOSED';
+  repo.s.merged = [11, 99];
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  repo.s.merged = [99]; repo.s.issues[9].state = 'OPEN';
+  assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #11$/, 'a completed child without a PR still holds the epic');
+});

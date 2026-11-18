@@ -1135,7 +1135,11 @@ export function driveEpic(io, epic, lanes) {
           noChangeEvidence: n => { const found = io.noChangeEvidence?.(n) || false; delivery.push(['no-change', n, found]); return found; },
           consolidatedDelivery: (epic, child, base) => { const verified = io.consolidatedDelivery?.(epic, child, base) || false; delivery.push(['consolidated', child.number, verified]); return verified; }
         };
-        const merged = (n, base) => unresolvedDelivery(deliveryIo, children.find(child => child.number === n), base, current.number).length === 0;
+        // A child closed as not planned was dropped by the owner and has no delivery to prove, as in the open-work check.
+        const merged = (n, base) => {
+          const child = children.find(candidate => candidate.number === n);
+          return notPlanned(child) || unresolvedDelivery(deliveryIo, child, base, current.number).length === 0;
+        };
         const result = io.verifyEpic(current, children, lanes.base, merged);
         return { current, children, delivery, result };
       };
