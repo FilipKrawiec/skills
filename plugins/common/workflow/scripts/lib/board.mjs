@@ -7,8 +7,14 @@ function scopePacket(body) {
   const scope = /```scope[ \t]*\r?\n([\s\S]*?)\r?\n```/.exec(body);
   try { return scope ? JSON.parse(scope[1]) : null; } catch { return null; }
 }
+// The no-change statement counts only as a declaration: its own sentence or line outside code and quotes, so an issue
+// that merely mentions it keeps its scope.
+function declaresNoChange(body) {
+  const bare = body.replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ').replace(/"[^"\n]*"|\u201c[^\u201d\n]*\u201d/g, ' ');
+  return /(?:^|[.!?]\s+)(?:[-*>]\s+)?(?:make\s+no|do\s+not\s+make(?:\s+any)?)\s+(?:repository|repo)\s+(?:changes|files|commits)\b(?=\s*(?:[.,;]|$))/im.test(bare);
+}
 export function pathsFromIssueBody(body = '') {
-  if (/\b(?:make\s+no|do\s+not\s+make(?:\s+any)?)\s+(?:repository|repo)\s+(?:changes|files|commits)\b/i.test(body)) return [];
+  if (declaresNoChange(body)) return [];
   const parsed = scopePacket(body)?.paths;
   if (Array.isArray(parsed) && parsed.length && parsed.every(value => typeof value === 'string' && value.trim() && value.trim() !== '.')) return parsed.map(value => value.startsWith('./') ? value.slice(2) : value.replace(/^\//, ''));
   return null;
