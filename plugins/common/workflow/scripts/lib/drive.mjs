@@ -1120,6 +1120,7 @@ export function driveEpic(io, epic, lanes) {
           subIssues: n => { const subIssues = io.subIssues(n); delivery.push(['children', n, subIssues]); return subIssues; },
           mergedClosingPr: (n, base) => { const merged = io.mergedClosingPr(n, base); delivery.push(['merged', n, merged]); return merged; },
           mergedPr: (n, base) => { const merged = io.mergedPr?.(n, base) || false; delivery.push(['merged-pr', n, merged]); return merged; },
+          noChangeEvidence: n => { const found = io.noChangeEvidence?.(n) || false; delivery.push(['no-change', n, found]); return found; },
           consolidatedDelivery: (epic, child, base) => { const verified = io.consolidatedDelivery?.(epic, child, base) || false; delivery.push(['consolidated', child.number, verified]); return verified; }
         };
         const merged = (n, base) => unresolvedDelivery(deliveryIo, children.find(child => child.number === n), base, current.number).length === 0;
