@@ -1,5 +1,6 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { consolidatedInto } from './dependencies.mjs';
 import { boardStatus, sweepBoard, pathsFromIssueBody, pathsWithinScope } from './board.mjs';
 import {
   cachedGithubMetadata,
@@ -203,16 +204,31 @@ export function issueEdit(args) {
     linkIssue(repo, n, structure);
   });
 }
+export const closeFormsMessage = n => `Cannot close #${n} as completed: it has none of the three accepted forms. Add one, or close as not planned with --reason not_planned: (1) a closing PR merged into the base (Closes #${n}); (2) a <!-- workflow:consolidated-into N --> marker in its body, N being the issue that holds its outcome; (3) the statement "Make no repository changes." in its body.`;
 export function issueClose(args) {
-  const o = flags(args, ['--number']);
+  const o = flags(args, ['--number', '--reason']);
   const n = Number(o['--number']);
-  if (!Number.isInteger(n) || n < 1) throw new Error('Usage: issue close --number N');
+  const reason = o['--reason'] ?? 'completed';
+  if (!Number.isInteger(n) || n < 1 || !['completed', 'not_planned'].includes(reason)) throw new Error('Usage: issue close --number N [--reason completed|not_planned]');
   const cfg = writerConfig(); loadEnvironment(cfg); requireImplementer(cfg);
   return withRepoLock(`issue-close-${n}`, () => {
-    const result = gh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, '-f', 'state=closed']);
+    if (reason === 'completed') {
+      const issue = gh(['api', `repos/${cfg.repo}/issues/${n}`]);
+      const isEpic = (issue.labels || []).some(label => (label.name ?? label) === 'type:epic');
+      const folded = consolidatedInto(issue.body || '') !== null;
+      const noChange = pathsFromIssueBody(issue.body || '')?.length === 0;
+      if (!isEpic && !folded && !noChange && !mergedClosingPr(cfg.repo, n, cfg.base)) throw new Error(closeFormsMessage(n));
+    }
+    const result = gh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, '-f', 'state=closed', ...(reason === 'not_planned' ? ['-f', 'state_reason=not_planned'] : [])]);
     if (result.state !== 'closed') throw new Error(`GitHub did not confirm #${n} closed`);
     console.log(`Closed #${n}`);
   });
+}
+function mergedClosingPr(repo, n, base) {
+  const [owner, name] = repo.split('/');
+  const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){closedByPullRequestsReferences(first:100){nodes{merged baseRefName}}}}}';
+  const found = gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${n}`]);
+  return (found.data?.repository?.issue?.closedByPullRequestsReferences?.nodes || []).some(pr => pr.merged && pr.baseRefName === base);
 }
 export function issueReopen(args) {
   const o = flags(args, ['--number']);
