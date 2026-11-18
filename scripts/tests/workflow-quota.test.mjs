@@ -108,3 +108,37 @@ test('a REST write or a non-gh command clears the read memo', () => {
   const calls = readFileSync(log, 'utf8').trim().split('\n').filter(line => !line.includes('rate_limit'));
   assert.equal(calls.length, 4, 'each read after a REST write or other command reaches gh again');
 });
+
+test('a secondary-limit response is parsed for Retry-After or x-ratelimit-reset and falls back to a default delay', async () => {
+  const { parseSecondaryLimit } = await import('../../plugins/common/workflow/scripts/lib/quota.mjs');
+  assert.equal(parseSecondaryLimit('gh: You have exceeded a secondary rate limit (HTTP 403)\nretry-after: 42', 0).delayMs, 42_000);
+  assert.equal(parseSecondaryLimit('HTTP 429: rate limit already exceeded\nx-ratelimit-reset: 90', 30_000).delayMs, 60_000);
+  assert.equal(parseSecondaryLimit('HTTP 403: secondary rate limit', 0).delayMs, 60_000);
+  assert.equal(parseSecondaryLimit('HTTP 404: Not Found', 0), null);
+  assert.equal(parseSecondaryLimit('retry-after: 0\nHTTP 429', 0).delayMs, 1000, 'never a zero delay');
+});
+
+test('a secondary limit writes one backoff file every process honours, and retries stop after 3 attempts without a tight loop', async () => {
+  const { retrySecondary, readBackoff } = await import('../../plugins/common/workflow/scripts/lib/quota.mjs');
+  const file = join(mkdtempSync(join(tmpdir(), 'backoff-')), 'graphql-backoff.json');
+  let clock = 0; const sleeps = []; let calls = 0;
+  const options = { file, key: 'k', now: () => clock, sleep: ms => { sleeps.push(ms); clock += ms; } };
+  const limited = () => { calls++; throw Object.assign(new Error('limited'), { secondaryLimit: { delayMs: 10_000 } }); };
+  assert.throws(() => retrySecondary(limited, options), /limited/);
+  assert.equal(calls, 4, 'the first try plus 3 retries');
+  assert.equal(sleeps.length, 3);
+  assert.ok(sleeps.every(ms => ms >= 10_000), 'each retry waits the full delay');
+  assert.equal(readBackoff(file, 'k').until, 40_000);
+  // Another process starts inside the backoff window: it waits for the shared deadline before its first call.
+  clock = 5000; sleeps.length = 0; calls = 0;
+  assert.equal(retrySecondary(() => { calls++; return 'ok'; }, options), 'ok');
+  assert.deepEqual(sleeps, [35_000]);
+  assert.equal(calls, 1);
+});
+
+test('a failure that is not a secondary limit is not retried', async () => {
+  const { retrySecondary } = await import('../../plugins/common/workflow/scripts/lib/quota.mjs');
+  let calls = 0;
+  assert.throws(() => retrySecondary(() => { calls++; throw new Error('boom'); }, { file: dir(), key: 'k', now: () => 0, sleep: () => {} }), /boom/);
+  assert.equal(calls, 1);
+});

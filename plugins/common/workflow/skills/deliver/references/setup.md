@@ -1,6 +1,6 @@
 # Setting up a repository for drive
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs init` once, as the owner, in the project (`--dry-run` previews; add `--implementer LOGIN --reviewer LOGIN` and `--test "COMMAND"` when no config exists and no justfile or npm test is found). It merges the standing-approval `autoMode` into the user-level agent settings, writes a missing config and Reviewer-only CODEOWNERS, runs `labels ensure` and `safety check`, and lists what it could not do. Nothing else is configured by hand.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs init` once, as the owner, in the project (`--dry-run` previews; add `--implementer LOGIN --reviewer LOGIN` and `--test "COMMAND"` when no config exists and no justfile or npm test is found). It merges the standing-approval `autoMode` into the user-level agent settings, enables marketplace auto-update, writes a missing config and Reviewer-only CODEOWNERS, runs `labels ensure` and `safety check`, and lists what failed. Nothing else is configured by hand.
 
 ## Configuration: `.agents/config.json`
 

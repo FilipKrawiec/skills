@@ -112,3 +112,20 @@ test('an explicit --test command is split into argv', t => {
   initCommand(args, f.io);
   assert.deepEqual(JSON.parse(readFileSync(join(f.root, '.agents/config.json'), 'utf8')).steps.test, ['make', 'check']);
 });
+
+test('init turns on marketplace auto-update, keeps other marketplaces, and verifies it on rerun', t => {
+  const f = fixture(t);
+  mkdirSync(join(f.dir, 'home'));
+  writeFileSync(f.settings, JSON.stringify({ extraKnownMarketplaces: { other: { source: { source: 'github', repo: 'a/b' } } } }));
+  initCommand(args, f.io);
+  const result = JSON.parse(readFileSync(f.settings, 'utf8'));
+  assert.equal(result.extraKnownMarketplaces.filipkrawiec.autoUpdate, true);
+  assert.equal(result.extraKnownMarketplaces.filipkrawiec.source.repo, 'FilipKrawiec/skills');
+  assert.deepEqual(result.extraKnownMarketplaces.other, { source: { source: 'github', repo: 'a/b' } });
+  f.lines.length = 0;
+  initCommand(args, f.io);
+  assert.ok(f.lines.some(line => /unchanged: .*marketplace auto-update/.test(line)));
+  writeFileSync(f.settings, JSON.stringify({ ...result, extraKnownMarketplaces: { ...result.extraKnownMarketplaces, filipkrawiec: { ...result.extraKnownMarketplaces.filipkrawiec, autoUpdate: false } } }));
+  initCommand(args, f.io);
+  assert.equal(JSON.parse(readFileSync(f.settings, 'utf8')).extraKnownMarketplaces.filipkrawiec.autoUpdate, true, 'a rerun repairs it');
+});
