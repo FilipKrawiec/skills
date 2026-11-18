@@ -2219,6 +2219,33 @@ test('drive allows six concurrent runs per repository and a seventh waits until 
   } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('a claim held by a proc session is free at once when that process is gone or its pid was reused', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  try {
+    const holder = 'proc-4506-Wed_Nov_18_10:00:00_2026';
+    const live = pid => ({ ppid: 1, started: 'Wed Nov 18 10:00:00 2026', name: 'claude' });
+    const gone = () => null;
+    const reused = () => ({ ppid: 1, started: 'Wed Nov 18 11:30:00 2026', name: 'claude' });
+    const key = 'owner-repo-7';
+    acquireRunLock({ directory, key, session: holder, now: 1000 });
+    assert.equal(acquireRunLock({ directory, key, session: 'B', now: 2000, info: live }).acquired, false, 'a live holder keeps the claim');
+    assert.equal(liveRuns({ directory, repo: 'owner-repo', now: 2000, info: live }), 1);
+    assert.equal(liveRuns({ directory, repo: 'owner-repo', now: 2000, info: gone }), 0, 'a dead holder is no run');
+    assert.equal(liveRuns({ directory, repo: 'owner-repo', now: 2000, info: reused }), 0, 'a reused pid is no run');
+    const taken = acquireRunLock({ directory, key, session: 'B', now: 2000, info: gone });
+    assert.equal(taken.acquired, true, 'a dead holder frees the claim at once');
+    assert.equal(taken.tookOver.session, holder);
+    taken.release();
+    acquireRunLock({ directory, key, session: holder, now: 3000 });
+    assert.equal(acquireRunLock({ directory, key, session: 'C', now: 4000, info: reused }).acquired, true, 'a reused pid frees it too');
+    for (const other of ['ppid-4506', 'some-claude-session']) {
+      rmSync(join(directory, `${key}.json`), { force: true });
+      acquireRunLock({ directory, key, session: other, now: 5000 });
+      assert.equal(acquireRunLock({ directory, key, session: 'D', now: 6000, info: gone }).acquired, false, `${other} keeps today's timing`);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('one session holding several fresh claims counts as one run, and six other sessions still fill the slots', () => {
   const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
   try {
