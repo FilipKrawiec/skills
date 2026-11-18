@@ -57,7 +57,7 @@ const help = `Usage:
   node workflow.mjs wait slot
   node workflow.mjs next [--owner]
   node workflow.mjs drive NUMBER [--hand-back FILE|-] | drive --next
-  node workflow.mjs runner poll|status
+  node workflow.mjs runner poll|status|install|uninstall
   node workflow.mjs responsibility NAME BRIEF
   node workflow.mjs bench [--snapshot FILE] [--run] [--model M] [--effort E] [--settings model:effort,...] [--host claude|codex] [--json] [--out FILE] [--compare FILE] [--from FILE]
   node workflow.mjs check --worktree PATH

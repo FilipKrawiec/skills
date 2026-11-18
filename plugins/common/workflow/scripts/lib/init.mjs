@@ -8,6 +8,7 @@ import { git, githubRepoFromRemote } from './core.mjs';
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'workflow.mjs');
 const login = /^[A-Za-z0-9-]+$/;
 const markEnvironment = repoOwner => `workflow init (${repoOwner}) environment:`;
+const runnerInstallCommand = `node ${cli} runner install`;
 const markAllow = 'workflow init standing owner approval:';
 
 // Claude Code's per-marketplace auto-update flag: released plugin versions then reach the installation without the owner.
@@ -20,6 +21,8 @@ function environmentEntry(repoOwner, reviewer) {
   return `${markEnvironment(repoOwner)} github.com/${repoOwner}/ repositories and their organization are trusted source control; the GitHub account ${reviewer} is the configured Reviewer identity and posts review verdicts there.`;
 }
 const allowEntry = `${markAllow} the owner pre-approves everything the workflow drive command does: pushing drive branches, opening and readying pull requests, starting the separate Reviewer session and posting its verdict, turning on auto-merge, merging an approved pull request, closing issues and epics, and changing delivery hosts and models in .agents/config.json through a reviewed pull request. Production release or publish, force-push to a protected branch, and changes to credentials or permissions stay owner-only.`;
+
+export const hasStandingApproval = settings => Array.isArray(settings?.autoMode?.allow) && settings.autoMode.allow.some(item => typeof item === 'string' && item.startsWith(markAllow));
 
 // Adds or refreshes this command's own entries; every other entry, including $defaults, stays.
 function ensureEntry(list, marker, entry) {
@@ -90,6 +93,7 @@ const defaultIo = {
   remote: () => git('remote', 'get-url', 'origin'),
   settingsPath: () => join(homedir(), '.claude', 'settings.json'),
   runCli,
+  verifySettings: path => readJson(path),
   log: line => console.log(line),
 };
 
@@ -131,6 +135,9 @@ export function initCommand(args, io = {}) {
     }
   }
 
+  // The headless runner sessions rely on the standing owner approval entry
+  if (!dry && !hasStandingApproval(env.verifySettings(settingsPath))) unable.push(`autoMode.allow: ${settingsPath} lacks the standing owner approval entry (${markAllow}); add it by hand, or rerun \`init\` once the file is writable`);
+
   // Project: .agents/config.json
   if (existingConfig) said(`left untouched: ${configPath} already exists`);
   else {
@@ -161,7 +168,7 @@ export function initCommand(args, io = {}) {
   }
 
   // GitHub: labels and safety
-  if (dry) said('would run: labels ensure and safety check');
+  if (dry) said(`would run: labels ensure, safety check and \`${runnerInstallCommand}\``);
   else {
     const labels = env.runCli(root, ['labels', 'ensure']);
     said(labels.ok ? `labels ensure: ${labels.text || 'all labels exist'}` : `labels ensure failed: ${labels.text}`);
@@ -169,6 +176,11 @@ export function initCommand(args, io = {}) {
     const safety = env.runCli(root, ['safety', 'check']);
     if (safety.text) said(safety.text);
     if (!safety.ok) unable.push('GitHub safety (branch protection, Reviewer role): follow deliver/references/github-safety.md, then rerun `init`; `safety apply` needs the owner account');
+  }
+  if (!dry) {
+    const installed = env.runCli(root, ['runner', 'install']);
+    said(installed.ok ? `runner install: ${installed.text}` : `runner install failed: ${installed.text}`);
+    if (!installed.ok) unable.push(`runner: the launchd job needs macOS and the owner's session (auto mode blocks agents from installing LaunchAgents); run \`${runnerInstallCommand}\` from this repository`);
   }
   if (todo.length && !dry) unable.push(`commit and merge the new files (${todo.join(', ')}) to the default branch; the first PR for them needs your approval`);
   said(unable.length ? `could not do:\n${unable.map(line => `- ${line}`).join('\n')}` : 'could not do: nothing');

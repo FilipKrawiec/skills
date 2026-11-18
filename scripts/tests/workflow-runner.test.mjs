@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { driveHeadlessArgs, driveSession, maxRuns } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
-import { runnerDefaults, runnerPoll, runnerStatus } from '../../plugins/common/workflow/scripts/lib/runner.mjs';
+import { runnerDefaults, runnerInstall, runnerJob, runnerPoll, runnerStatus, runnerUninstall } from '../../plugins/common/workflow/scripts/lib/runner.mjs';
 
 const lanes = { repo: 'acme/app' };
 const T0 = Date.parse('2026-11-18T10:00:00Z');
@@ -128,4 +128,102 @@ test('status reports health, sessions with their claimed issue, and the log path
   assert.equal(status.sessions[0].issue, '3');
   assert.equal(status.sessions[0].ageSeconds, 5);
   assert.equal(status.log, join(t.logDirectory, 'runner.log'));
+});
+
+// launchd job: a fake launchctl and git, and a temporary home
+function launchd(t, extra = {}) {
+  const home = mkdtempSync(join(tmpdir(), 'launchd-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const world = { loaded: false, calls: [], clones: [], ...extra };
+  const io = {
+    home, uid: 501, nodePath: '/usr/local/bin/node', repoRoot: '/work/app',
+    launchctl: args => {
+      world.calls.push(args.join(' '));
+      if (args[0] === 'print') return { status: world.loaded ? 0 : 113 };
+      if (args[0] === 'bootstrap') world.loaded = true;
+      if (args[0] === 'bootout') world.loaded = false;
+      return { status: 0 };
+    },
+    clone: (url, dir) => { world.clones.push(url); mkdirSync(join(dir, '.git'), { recursive: true }); },
+  };
+  const plist = join(home, 'Library', 'LaunchAgents', 'com.filipkrawiec.workflow-runner.acme-app.plist');
+  return { world, io, home, plist, install: () => runnerInstall(lanes, io), uninstall: () => runnerUninstall(lanes, io) };
+}
+
+test('install writes a per-repo plist, clones the tooling once and bootstraps it', t => {
+  const l = launchd(t);
+  const result = l.install();
+  assert.equal(result.changed, true);
+  const text = readFileSync(l.plist, 'utf8');
+  assert.match(text, /<string>com\.filipkrawiec\.workflow-runner\.acme-app<\/string>/);
+  assert.match(text, /<key>WorkingDirectory<\/key>\s*<string>\/work\/app<\/string>/);
+  assert.match(text, new RegExp(`<string>${l.home}/Library/Logs/workflow-runner/acme-app/launchd\\.out\\.log</string>`));
+  assert.match(text, new RegExp(`<string>${l.home}/Library/Logs/workflow-runner/acme-app/launchd\\.err\\.log</string>`));
+  assert.ok(Number(/<key>StartInterval<\/key>\s*<integer>(\d+)<\/integer>/.exec(text)[1]) >= 60);
+  assert.match(text, new RegExp(`<key>PATH</key>\\s*<string>[^<]*${l.home}/\\.local/bin[:<]`));
+  assert.match(text, /merge --ff-only/);
+  assert.match(text, /runner poll/);
+  assert.equal(l.world.clones.length, 1);
+  assert.ok(l.world.calls.includes(`bootstrap gui/501 ${l.plist}`));
+  assert.equal(l.world.loaded, true);
+});
+
+test('a second install with unchanged inputs changes nothing and says so', t => {
+  const l = launchd(t);
+  l.install();
+  l.world.calls.length = 0;
+  const again = l.install();
+  assert.equal(again.changed, false);
+  assert.match(again.message, /unchanged/);
+  assert.equal(l.world.clones.length, 1);
+  assert.deepEqual(l.world.calls.filter(call => !call.startsWith('print')), []);
+});
+
+test('changed inputs rewrite the plist and reload the job', t => {
+  const l = launchd(t);
+  l.install();
+  l.world.calls.length = 0;
+  l.io.nodePath = '/opt/node/bin/node';
+  assert.equal(l.install().changed, true);
+  assert.match(readFileSync(l.plist, 'utf8'), /\/opt\/node\/bin\/node/);
+  const order = l.world.calls.filter(call => !call.startsWith('print')).map(call => call.split(' ')[0]);
+  assert.deepEqual(order, ['bootout', 'bootstrap']);
+});
+
+test('an unloaded but unchanged job is bootstrapped again', t => {
+  const l = launchd(t);
+  l.install();
+  l.world.loaded = false;
+  assert.equal(l.install().changed, true);
+  assert.equal(l.world.loaded, true);
+});
+
+test('uninstall boots the job out and removes the plist; with none installed it says so', t => {
+  const l = launchd(t);
+  l.install();
+  assert.match(l.uninstall().message, /removed/);
+  assert.equal(existsSync(l.plist), false);
+  assert.equal(l.world.loaded, false);
+  const none = l.uninstall();
+  assert.equal(none.changed, false);
+  assert.match(none.message, /no job installed/);
+});
+
+test('status reports whether the job is installed and loaded', t => {
+  const l = launchd(t);
+  assert.deepEqual(runnerJob(lanes, l.io), { installed: false, loaded: false, plist: l.plist });
+  l.install();
+  assert.deepEqual(runnerJob(lanes, l.io), { installed: true, loaded: true, plist: l.plist });
+});
+
+test('two simultaneous polls: the second finds the lock and does nothing', t => {
+  const x = setup({ issues: [] });
+  mkdirSync(x.logDirectory, { recursive: true });
+  writeFileSync(join(x.logDirectory, 'poll.lock'), String(process.pid));
+  const result = x.poll();
+  assert.equal(result.locked, true);
+  assert.equal(x.world.reads, 0);
+  writeFileSync(join(x.logDirectory, 'poll.lock'), '999999999');
+  assert.equal(x.poll().locked, undefined, 'a lock held by a dead process is taken over');
+  assert.equal(existsSync(join(x.logDirectory, 'poll.lock')), false, 'released after the poll');
 });

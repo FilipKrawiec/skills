@@ -1,7 +1,8 @@
 import { spawn as nodeSpawn, spawnSync } from 'node:child_process';
-import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { git } from './core.mjs';
 import { driveHeadlessArgs, githubIo, maxRuns, nextTargets } from './drive.mjs';
 import { splitDependencies } from './dependencies.mjs';
 
@@ -55,6 +56,19 @@ const realIo = lanes => ({ ...githubIo(lanes), probeQuota, start: startSession, 
 // One poll. `io` supplies the clock, jitter, quota, issues and process control so tests run with fakes.
 export function runnerPoll(lanes, { io = realIo(lanes), logDirectory = runnerLogDirectory(lanes.repo), claims = claimDirectory(), cwd = process.cwd(), options = runnerDefaults } = {}) {
   mkdirSync(logDirectory, { recursive: true });
+  // Two simultaneous polls (a slow one and the next launchd tick) must not both start a session: one holds poll.lock, the other leaves.
+  const lock = join(logDirectory, 'poll.lock');
+  for (let attempt = 0; ; attempt++) {
+    try { writeFileSync(lock, String(process.pid), { flag: 'wx' }); break; } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      const holder = Number(readFileSync(lock, 'utf8'));
+      if (attempt || (holder && alive(holder))) return { skipped: true, locked: true };
+      rmSync(lock, { force: true });
+    }
+  }
+  try { return pollLocked(lanes, { io, logDirectory, claims, cwd, options }); } finally { rmSync(lock, { force: true }); }
+}
+function pollLocked(lanes, { io, logDirectory, claims, cwd, options }) {
   const statePath = join(logDirectory, 'state.json');
   const state = readState(statePath);
   const note = line => writeFileSync(join(logDirectory, 'runner.log'), `${line}\n`, { flag: 'a' });
@@ -119,7 +133,87 @@ export function runnerStatus(lanes, { logDirectory = runnerLogDirectory(lanes.re
   };
 }
 
-export function runnerCommand(args, lanes) {
-  if (args.length !== 1 || !['poll', 'status'].includes(args[0])) throw new Error('Usage: runner poll|status');
-  console.log(JSON.stringify(args[0] === 'poll' ? runnerPoll(lanes) : runnerStatus(lanes)));
+// launchd job: one per repo, running `runner poll` from a CLI-owned tooling checkout that fast-forwards before each poll.
+const toolingUrl = 'https://github.com/FilipKrawiec/skills.git';
+const xml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const jobLabel = repo => `com.filipkrawiec.workflow-runner.${repo.replace(/[^A-Za-z0-9._-]+/g, '-')}`;
+export const startInterval = 120;
+const realLaunchd = () => ({
+  home: homedir(), uid: process.getuid(), nodePath: process.execPath, repoRoot: git('rev-parse', '--show-toplevel'),
+  launchctl: args => ({ status: spawnSync('launchctl', args, { encoding: 'utf8' }).status ?? 1 }),
+  clone: (url, dir) => { mkdirSync(dirname(dir), { recursive: true }); const result = spawnSync('git', ['clone', '--quiet', url, dir], { encoding: 'utf8' }); if (result.status !== 0) throw new Error(`git clone failed: ${result.stderr}`); },
+});
+function jobPaths(lanes, io) {
+  const label = jobLabel(lanes.repo);
+  const logs = join(io.home, 'Library', 'Logs', 'workflow-runner', lanes.repo.replace(/[^A-Za-z0-9._-]+/g, '-'));
+  const checkout = join(io.home, '.cache', 'workflow-cli', 'skills');
+  return { label, logs, checkout, plist: join(io.home, 'Library', 'LaunchAgents', `${label}.plist`), target: `gui/${io.uid}` };
+}
+export function jobPlist(lanes, io) {
+  const { label, logs, checkout } = jobPaths(lanes, io);
+  const script = `cd ${JSON.stringify(checkout)} && { git fetch --quiet origin && git merge --ff-only --quiet origin/HEAD; } || echo "tooling update failed; polling on the current checkout" >&2; cd ${JSON.stringify(io.repoRoot)} && exec ${JSON.stringify(io.nodePath)} ${JSON.stringify(join(checkout, 'plugins', 'common', 'workflow', 'scripts', 'workflow.mjs'))} runner poll`;
+  const path = [dirname(io.nodePath), join(io.home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'].join(':');
+  const item = value => `    <string>${xml(value)}</string>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${xml(label)}</string>
+  <key>ProgramArguments</key>
+  <array>
+${['/bin/sh', '-c', script].map(item).join('\n')}
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${xml(io.repoRoot)}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>${xml(path)}</string>
+    <key>HOME</key>
+    <string>${xml(io.home)}</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>${startInterval}</integer>
+  <key>StandardOutPath</key>
+  <string>${xml(join(logs, 'launchd.out.log'))}</string>
+  <key>StandardErrorPath</key>
+  <string>${xml(join(logs, 'launchd.err.log'))}</string>
+</dict>
+</plist>
+`;
+}
+export function runnerJob(lanes, io = realLaunchd()) {
+  const { label, plist, target } = jobPaths(lanes, io);
+  return { installed: existsSync(plist), loaded: io.launchctl(['print', `${target}/${label}`]).status === 0, plist };
+}
+export function runnerInstall(lanes, io = realLaunchd()) {
+  const { label, logs, checkout, plist, target } = jobPaths(lanes, io);
+  if (!existsSync(join(checkout, '.git'))) io.clone(toolingUrl, checkout);
+  const wanted = jobPlist(lanes, io);
+  const current = existsSync(plist) ? readFileSync(plist, 'utf8') : null;
+  const loaded = () => io.launchctl(['print', `${target}/${label}`]).status === 0;
+  if (current === wanted && loaded()) return { changed: false, message: `unchanged: ${plist} is installed and loaded` };
+  mkdirSync(logs, { recursive: true });
+  mkdirSync(dirname(plist), { recursive: true });
+  if (loaded()) io.launchctl(['bootout', `${target}/${label}`]);
+  writeFileSync(plist, wanted);
+  if (io.launchctl(['bootstrap', target, plist]).status !== 0) throw new Error(`launchctl bootstrap ${target} failed for ${plist}`);
+  return { changed: true, message: `${current === null ? 'installed' : 'updated'}: ${plist} loaded in ${target}` };
+}
+export function runnerUninstall(lanes, io = realLaunchd()) {
+  const { label, plist, target } = jobPaths(lanes, io);
+  const loaded = io.launchctl(['print', `${target}/${label}`]).status === 0;
+  if (!loaded && !existsSync(plist)) return { changed: false, message: `no job installed: ${plist} does not exist` };
+  if (loaded) io.launchctl(['bootout', `${target}/${label}`]);
+  rmSync(plist, { force: true });
+  return { changed: true, message: `removed: ${plist}` };
+}
+
+export function runnerCommand(args, lanes, io) {
+  const commands = ['poll', 'status', 'install', 'uninstall'];
+  if (args.length !== 1 || !commands.includes(args[0])) throw new Error('Usage: runner poll|status|install|uninstall');
+  if (args[0] === 'poll') console.log(JSON.stringify(runnerPoll(lanes)));
+  else if (args[0] === 'status') console.log(JSON.stringify({ ...runnerStatus(lanes), job: runnerJob(lanes, io) }));
+  else console.log((args[0] === 'install' ? runnerInstall(lanes, io) : runnerUninstall(lanes, io)).message);
 }
