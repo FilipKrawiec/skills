@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { gate, isGraphql, isGraphqlRead } from './quota.mjs';
+import { gate, isGraphql, isGraphqlRead, parseSecondaryLimit, retrySecondary } from './quota.mjs';
 
 export const heldWorkflowLocks = new Set();
 export const workflowDefaults = {
@@ -18,10 +18,11 @@ export function run(program, args, options = {}) {
   const memoKey = program === 'gh' && quotaPolicy.memo && isGraphql(args) && isGraphqlRead(args) ? JSON.stringify([args, options.cwd, options.input]) : null;
   // Any call that is not a memoized read may change state, whatever the program or API.
   if (!memoKey) readMemo.clear();
-  if (program !== 'gh' || options.quota === false || process.env.WORKFLOW_QUOTA === 'off' || !isGraphql(args)) return execute(program, args, options);
+  if (program !== 'gh') return execute(program, args, options);
+  // GitHub keeps one secondary limit per token across REST and GraphQL, so REST calls honour the shared backoff too.
+  if (options.quota === false || process.env.WORKFLOW_QUOTA === 'off' || !isGraphql(args)) return retrySecondary(() => execute(program, args, options));
   if (memoKey && readMemo.has(memoKey)) return readMemo.get(memoKey);
-  gate(args, { waitWhenExhausted: quotaPolicy.waitWhenExhausted });
-  const output = execute(program, args, options);
+  const output = retrySecondary(() => { gate(args, { waitWhenExhausted: quotaPolicy.waitWhenExhausted }); return execute(program, args, options); });
   if (memoKey) readMemo.set(memoKey, output); else readMemo.clear();
   return output;
 }
@@ -31,7 +32,8 @@ function execute(program, args, options = {}) {
     const scopeFailure = program === 'gh' ? githubScopeFailure(result.stderr || '') : null;
     const network = program === 'gh' && /error connecting|could not resolve host|failed to connect|connection (?:timed out|refused)|network is unreachable|no such host|dial tcp/i.test(result.stderr || '');
     const subject = program === 'gh' ? githubSubject(args) : '';
-    throw new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? `GitHub command failed (${subject})${githubFailureLine(result, options)}; check network access and the configured account before reauthenticating.` : `${program} ${args[0]} failed${failureCause(result)}`));
+    const secondaryLimit = program === 'gh' ? parseSecondaryLimit(`${result.stderr || ''}\n${result.stdout || ''}`) : null;
+    throw Object.assign(new Error(scopeFailure || (network ? 'Cannot reach GitHub; check network or sandbox access and retry.' : program === 'gh' ? `GitHub command failed (${subject})${githubFailureLine(result, options)}; check network access and the configured account before reauthenticating.` : `${program} ${args[0]} failed${failureCause(result)}`)), { secondaryLimit });
   }
   return result.stdout.trim();
 }

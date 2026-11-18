@@ -10,6 +10,12 @@ const login = /^[A-Za-z0-9-]+$/;
 const markEnvironment = repoOwner => `workflow init (${repoOwner}) environment:`;
 const markAllow = 'workflow init standing owner approval:';
 
+// Claude Code's per-marketplace auto-update flag: released plugin versions then reach the installation without the owner.
+export function ensureMarketplaceAutoUpdate(settings) {
+  const known = settings.extraKnownMarketplaces && typeof settings.extraKnownMarketplaces === 'object' && !Array.isArray(settings.extraKnownMarketplaces) ? settings.extraKnownMarketplaces : {};
+  const entry = known.filipkrawiec && typeof known.filipkrawiec === 'object' ? known.filipkrawiec : {};
+  return { ...settings, extraKnownMarketplaces: { ...known, filipkrawiec: { ...entry, source: entry.source || { source: 'github', repo: 'FilipKrawiec/skills' }, autoUpdate: true } } };
+}
 function environmentEntry(repoOwner, reviewer) {
   return `${markEnvironment(repoOwner)} github.com/${repoOwner}/ repositories and their organization are trusted source control; the GitHub account ${reviewer} is the configured Reviewer identity and posts review verdicts there.`;
 }
@@ -114,10 +120,10 @@ export function initCommand(args, io = {}) {
   const settingsPath = option(args, '--settings') || env.settingsPath();
   const before = readJson(settingsPath) ?? {};
   if (typeof before !== 'object' || Array.isArray(before)) throw new Error(`${settingsPath} must hold a JSON object`);
-  const after = mergeAutoMode(before, { repoOwner, reviewer });
-  if (JSON.stringify(after) === JSON.stringify(before)) said(`unchanged: ${settingsPath} already holds the autoMode entries`);
+  const after = ensureMarketplaceAutoUpdate(mergeAutoMode(before, { repoOwner, reviewer }));
+  if (JSON.stringify(after) === JSON.stringify(before)) said(`unchanged: ${settingsPath} already holds the autoMode entries and marketplace auto-update`);
   else {
-    said(`${dry ? 'would update' : 'updated'}: ${settingsPath} (autoMode.environment for ${repoOwner}, autoMode.allow standing owner approval)`);
+    said(`${dry ? 'would update' : 'updated'}: ${settingsPath} (autoMode.environment for ${repoOwner}, autoMode.allow standing owner approval, extraKnownMarketplaces.filipkrawiec.autoUpdate)`);
     if (!dry) {
       mkdirSync(dirname(settingsPath), { recursive: true });
       if (existsSync(settingsPath)) copyFileSync(settingsPath, `${settingsPath}.bak`);

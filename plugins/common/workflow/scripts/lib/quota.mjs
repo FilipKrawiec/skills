@@ -96,6 +96,33 @@ export function gate(args, { now = Date.now, sleep = ms => Atomics.wait(new Int3
   writeBudget({ ...budget, remaining: Math.max(0, (budget.remaining ?? 0) - 1) }, file, key);
 }
 
+// Secondary (abuse) limits: GitHub answers 403/429 while the hourly budget still shows points left. The delay it asks for
+// is recorded once per token in a file every CLI process reads, so no process retries inside the window.
+export const secondaryDefaults = { retries: 3, defaultDelayMs: 60_000, minDelayMs: 1000, maxDelayMs: 300_000 };
+export const backoffFile = () => budgetFile().replace(/graphql-budget\.json$/, 'graphql-backoff.json');
+export const readBackoff = (file = backoffFile(), key = tokenKey()) => readJson(file)[key] || null;
+export function parseSecondaryLimit(text, now = Date.now()) {
+  const body = String(text || '');
+  if (!/secondary rate limit|abuse detection|rate limit already exceeded|HTTP 429|HTTP 403[^\n]*rate limit|retry-after/i.test(body)) return null;
+  const retryAfter = body.match(/retry-after:?\s*(\d+)/i);
+  const reset = body.match(/x-ratelimit-reset:?\s*(\d+)/i);
+  const asked = retryAfter ? Number(retryAfter[1]) * 1000 : reset ? Number(reset[1]) * 1000 - now : secondaryDefaults.defaultDelayMs;
+  return { delayMs: Math.min(secondaryDefaults.maxDelayMs, Math.max(secondaryDefaults.minDelayMs, asked)) };
+}
+const defaultSleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+// Runs `attempt`; waits out the shared backoff first, and on a secondary limit records the delay and retries at most 3 times.
+export function retrySecondary(attempt, { now = Date.now, sleep = defaultSleep, file = backoffFile(), key = tokenKey(), retries = secondaryDefaults.retries } = {}) {
+  for (let tries = 0; ; tries++) {
+    for (let until = readBackoff(file, key)?.until; until > now(); until = readBackoff(file, key)?.until) sleep(until - now());
+    try { return attempt(); } catch (error) {
+      if (!error?.secondaryLimit) throw error;
+      const until = now() + error.secondaryLimit.delayMs;
+      writeJson(file, { ...readJson(file), [key]: { until: Math.max(until, readBackoff(file, key)?.until || 0) } });
+      if (tries >= retries) throw error;
+    }
+  }
+}
+
 // What `status` shows: the last known quota, never a network call.
 export function quotaStatus(file = budgetFile(), key = tokenKey(), now = Date.now()) {
   const budget = readBudget(file, key);
