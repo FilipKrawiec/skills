@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { gate, isGraphql, isGraphqlRead, parseSecondaryLimit, retrySecondary } from './quota.mjs';
+import { gate, isGraphql, isGraphqlRead, parseSecondaryLimit, retrySecondary, settleCost } from './quota.mjs';
 
 export const heldWorkflowLocks = new Set();
 export const workflowDefaults = {
@@ -23,6 +23,7 @@ export function run(program, args, options = {}) {
   if (options.quota === false || process.env.WORKFLOW_QUOTA === 'off' || !isGraphql(args)) return retrySecondary(() => execute(program, args, options));
   if (memoKey && readMemo.has(memoKey)) return readMemo.get(memoKey);
   const output = retrySecondary(() => { gate(args, { waitWhenExhausted: quotaPolicy.waitWhenExhausted }); return execute(program, args, options); });
+  settleCost(args, output);
   if (memoKey) readMemo.set(memoKey, output); else readMemo.clear();
   return output;
 }
