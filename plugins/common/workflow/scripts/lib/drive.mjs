@@ -1234,7 +1234,7 @@ function driveTarget(io, n, lanes, handBack = {}) {
 // An item with an unmet or dropped dependency never qualifies; `depsOf` reads them lazily, in that order.
 export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] })) {
   const names = issue => issue.labels.map(label => label.name ?? label);
-  const candidates = issues.filter(issue => !names(issue).includes('lane:owner'));
+  const candidates = issues.filter(issue => !names(issue).includes('lane:owner') && !(issue.body || '').includes(INBOX_MARKER));
   const rank = issue => Number(!names(issue).includes('state:started'));
   const ordered = [...candidates].sort((a, b) => rank(a) - rank(b) || a.number - b.number);
   for (const issue of ordered) { const { blockers, dropped } = depsOf(issue); if (!blockers.length && !dropped.length) yield issue.number; }

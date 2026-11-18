@@ -2007,6 +2007,12 @@ test('a thread with another open Important finding keeps a MERGEABLE conflict ve
   assert.doesNotMatch(step.reason || '', /only/);
 });
 
+test('--next never picks the Owner inbox issue', () => {
+  const inbox = { number: 2, labels: [], body: '<!-- workflow:owner-inbox -->\nlist' };
+  assert.deepEqual([...nextTargets([inbox, { number: 5, labels: [], body: '' }])], [5]);
+  assert.equal(nextTarget([inbox]), null);
+});
+
 test('an owner step is recorded on the issue and an owner step beside ready slices says to drive them', () => {
   const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
   const recorded = [];
