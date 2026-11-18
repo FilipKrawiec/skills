@@ -181,24 +181,26 @@ export function issueComment(args) {
   });
 }
 export function issueEdit(args) {
-  const o = flags(args, ['--number', '--body-file', '--milestone', '--parent', '--blocked-by']);
+  const o = flags(args, ['--number', '--body-file', '--repo', '--milestone', '--parent', '--blocked-by']);
   const n = Number(o['--number']);
   const structure = structureOptions(o);
-  const usage = 'Usage: issue edit --number N [--body-file PATH] [--milestone NAME] [--parent N] [--blocked-by N,M]';
+  const usage = 'Usage: issue edit --number N [--body-file PATH] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M]';
   if (!positive(n) || !(o['--body-file'] || structure.milestone || structure.parent || structure.blockers.length)) throw new Error(usage);
   const root = git('rev-parse', '--show-toplevel');
   const body = o['--body-file'] ? validateIssueCommentBody(readWorkspaceText(root, o['--body-file'])) : null;
-  const cfg = writerConfig(); loadEnvironment(cfg); requireImplementer(cfg);
-  if (structure.parent) requireBacklogStructure(cfg.repo, { number: n, labels: gh(['api', `repos/${cfg.repo}/issues/${n}`]).labels, parent: structure.parent });
+  const cfg = writerConfig(); loadEnvironment(cfg);
+  const repo = issueWriteRepo(cfg, o['--repo'], [body]);
+  requireImplementer(cfg);
+  if (structure.parent) requireBacklogStructure(repo, { number: n, labels: gh(['api', `repos/${repo}/issues/${n}`]).labels, parent: structure.parent });
   return withRepoLock(`issue-edit-${n}`, () => {
     if (body !== null || structure.milestone) {
-      const milestone = structure.milestone ? milestoneNumber(cfg.repo, structure.milestone) : null;
-      const result = gh(['api', '-X', 'PATCH', `repos/${cfg.repo}/issues/${n}`, ...(body !== null ? ['-f', `body=${body}`] : []), ...(milestone ? ['-F', `milestone=${milestone}`] : [])]);
+      const milestone = structure.milestone ? milestoneNumber(repo, structure.milestone) : null;
+      const result = gh(['api', '-X', 'PATCH', `repos/${repo}/issues/${n}`, ...(body !== null ? ['-f', `body=${body}`] : []), ...(milestone ? ['-F', `milestone=${milestone}`] : [])]);
       if (body !== null && result.body !== body) throw new Error(`GitHub did not confirm #${n} edited`);
       if (structure.milestone && result.milestone?.title !== structure.milestone) throw new Error(`GitHub did not confirm #${n} in milestone ${structure.milestone}`);
     }
     console.log(`Edited #${n}`);
-    linkIssue(cfg.repo, n, structure);
+    linkIssue(repo, n, structure);
   });
 }
 export function issueClose(args) {
