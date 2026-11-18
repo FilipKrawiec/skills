@@ -1,8 +1,8 @@
 {
   "version": 1,
   "repo": "FilipKrawiec/skills",
-  "note": "Each entry names the risk label drive assessed for its PR (no R0 PR is in the snapshot yet). Pinned to each PR's last head and the base it branched from (merge-base with the squash commit's parent). Defects are the ones later PRs fixed. The 2026-11-16 dry-run harness is not in the repository, so its three known-defect PRs are reconstructed from fix evidence: #539 (the reversal case) and #555, #500, whose defects #558 and #529 fixed. Clean PRs merged without a follow-up fix that this search found.",
-  "counts": { "defect": 3, "clean": 5 },
+  "note": "Each entry names the risk label drive assessed for its PR (no R0 PR is in the snapshot yet). Pinned to each PR's last head and the base it branched from (merge-base with the squash commit's parent). Defects are the ones later PRs fixed. The 2026-11-16 dry-run harness is not in the repository, so its three known-defect PRs are reconstructed from fix evidence: #539 (the reversal case) and #555, #500, whose defects #558 and #529 fixed. #568 is scored as a defect because it moved released versions off main and default-branch consumers stalled until #679 reverted it. The other clean PRs merged without a follow-up fix that this search found.",
+  "counts": { "defect": 4, "clean": 4 },
   "entries": [
     {
       "pr": 539, "issue": 481, "kind": "defect", "risk": "R1", "title": "fix(review): review the whole diff every round",
@@ -20,8 +20,9 @@
       "defect": { "name": "nested epic descendants not checked when closing (fixed by #529)", "keywords": ["nested epic", "descendant", "closure"] }
     },
     {
-      "pr": 568, "issue": 462, "kind": "clean", "risk": "R1", "title": "chore(release): publish versions on a release branch so main stops moving on every release",
-      "base": "b496df470ec55c984625bcc7653197e7186c415f", "head": "fa26a39a05be5e20727f5e0119f75714e31d0435"
+      "pr": 568, "issue": 462, "kind": "defect", "risk": "R1", "title": "chore(release): publish versions on a release branch so main stops moving on every release",
+      "base": "b496df470ec55c984625bcc7653197e7186c415f", "head": "fa26a39a05be5e20727f5e0119f75714e31d0435",
+      "defect": { "name": "moves released versions off main, so default-branch consumers stall on an old version (fixed by #679)", "keywords": ["release branch", "main", "version", "default branch", "consumer", "stall"] }
     },
     {
       "pr": 559, "issue": 557, "kind": "clean", "risk": "R1", "title": "chore(workflow): simplify epic closure to merged children plus one Reviewer outcome comment",

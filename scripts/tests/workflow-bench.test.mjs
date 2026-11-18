@@ -53,6 +53,8 @@ test('the committed snapshot validates and states its counts', () => {
   const committed = JSON.parse(readFileSync(fileURLToPath(new URL('../../docs/review-benchmark.json', import.meta.url)), 'utf8'));
   assert.deepEqual(validateSnapshot(committed), []);
   assert.ok(committed.counts.defect >= 3 && committed.counts.clean >= 1);
+  assert.deepEqual(committed.counts, { defect: 4, clean: 4 });
+  assert.equal(committed.entries.find((e) => e.pr === 568).kind, 'defect');
 });
 test('compare shows the delta in catches, false positives and cost', () => {
   const before = { summary: { defects: 3, caught: 1, clean: 2, falsePositives: 1, cost: { total: 1, mean: 0.2, reported: 5, unreported: 0 } } };
