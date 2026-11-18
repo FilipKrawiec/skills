@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gate, isMergeCritical, plan, pollSeconds, quotaStatus, readBudget, sharedRead, writeBudget } from '../../plugins/common/workflow/scripts/lib/quota.mjs';
@@ -141,4 +141,19 @@ test('a failure that is not a secondary limit is not retried', async () => {
   let calls = 0;
   assert.throws(() => retrySecondary(() => { calls++; throw new Error('boom'); }, { file: dir(), key: 'k', now: () => 0, sleep: () => {} }), /boom/);
   assert.equal(calls, 1);
+});
+
+test('a REST gh call that hits a secondary limit waits, retries once and records the shared backoff', async () => {
+  const { run } = await import('../../plugins/common/workflow/scripts/lib/core.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'rest-'));
+  const bin = join(root, 'bin'); const state = join(root, 'count');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'gh'), `#!/bin/sh\nn=$(cat "${state}" 2>/dev/null || echo 0)\necho $((n+1)) > "${state}"\nif [ "$n" = 0 ]; then echo "HTTP 403: secondary rate limit" >&2; echo "retry-after: 1" >&2; exit 1; fi\necho ok\n`, { mode: 0o755 });
+  const saved = { PATH: process.env.PATH, dir: process.env.WORKFLOW_QUOTA_DIR };
+  process.env.PATH = `${bin}:${saved.PATH}`; process.env.WORKFLOW_QUOTA_DIR = root;
+  try {
+    assert.equal(run('gh', ['api', 'repos/o/r/pulls/1/files']), 'ok');
+    assert.equal(readFileSync(state, 'utf8').trim(), '2', 'one retry after the limit');
+    assert.ok(Object.values(JSON.parse(readFileSync(join(root, 'graphql-backoff.json'), 'utf8')))[0].until > 0);
+  } finally { process.env.PATH = saved.PATH; if (saved.dir === undefined) delete process.env.WORKFLOW_QUOTA_DIR; else process.env.WORKFLOW_QUOTA_DIR = saved.dir; }
 });

@@ -18,7 +18,9 @@ export function run(program, args, options = {}) {
   const memoKey = program === 'gh' && quotaPolicy.memo && isGraphql(args) && isGraphqlRead(args) ? JSON.stringify([args, options.cwd, options.input]) : null;
   // Any call that is not a memoized read may change state, whatever the program or API.
   if (!memoKey) readMemo.clear();
-  if (program !== 'gh' || options.quota === false || process.env.WORKFLOW_QUOTA === 'off' || !isGraphql(args)) return execute(program, args, options);
+  if (program !== 'gh') return execute(program, args, options);
+  // GitHub keeps one secondary limit per token across REST and GraphQL, so REST calls honour the shared backoff too.
+  if (options.quota === false || process.env.WORKFLOW_QUOTA === 'off' || !isGraphql(args)) return retrySecondary(() => execute(program, args, options));
   if (memoKey && readMemo.has(memoKey)) return readMemo.get(memoKey);
   const output = retrySecondary(() => { gate(args, { waitWhenExhausted: quotaPolicy.waitWhenExhausted }); return execute(program, args, options); });
   if (memoKey) readMemo.set(memoKey, output); else readMemo.clear();
