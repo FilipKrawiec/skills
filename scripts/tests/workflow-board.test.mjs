@@ -218,10 +218,21 @@ test('a unique issue title resolves to the oldest open exact match', () => {
   assert.equal(oldestExactTitle(issues, 'Missing'), null);
 });
 
-test('issue writes never carry private repository evidence into a public one', () => {
-  assert.throws(() => assertIssueVisibility({ name: 'acme/app', private: true }, { name: 'acme/skills', private: false }), /acme\/skills is public and acme\/app is private; file in acme\/app/);
-  assert.doesNotThrow(() => assertIssueVisibility({ name: 'acme/app', private: false }, { name: 'acme/skills', private: false }));
-  assert.doesNotThrow(() => assertIssueVisibility({ name: 'acme/app', private: true }, { name: 'acme/skills', private: true }));
+test('a private repository writes to a public one of the same owner, never to another owner', () => {
+  const app = { name: 'acme/app', private: true };
+  assert.doesNotThrow(() => assertIssueVisibility(app, { name: 'acme/skills', private: false }, ['Sharpen the review rule', 'Evidence without project nouns']));
+  assert.throws(() => assertIssueVisibility(app, { name: 'other/skills', private: false }, ['title']), /different owner/);
+  assert.doesNotThrow(() => assertIssueVisibility({ name: 'acme/app', private: false }, { name: 'other/skills', private: false }));
+  assert.doesNotThrow(() => assertIssueVisibility(app, { name: 'other/skills', private: true }));
+});
+
+test('a write to a public repository is refused when it names or links the private source', () => {
+  const app = { name: 'acme/app', private: true };
+  const skills = { name: 'acme/skills', private: false };
+  assert.throws(() => assertIssueVisibility(app, skills, ['Fix in acme/app']), /remove the name app and any acme\/app link/);
+  assert.throws(() => assertIssueVisibility(app, skills, ['ok', 'See https://github.com/acme/app/issues/4']), /remove the name app/);
+  assert.throws(() => assertIssueVisibility(app, skills, ['The App failed']), /remove the name app/);
+  assert.doesNotThrow(() => assertIssueVisibility(app, skills, ['an application of the rule', undefined]));
 });
 
 test('a sweep moves closed issues\' cards that are not Done to Done and leaves open issues alone', () => {
