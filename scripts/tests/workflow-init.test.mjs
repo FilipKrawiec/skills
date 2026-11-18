@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { initCommand, mergeAutoMode } from '../../plugins/common/workflow/scripts/lib/init.mjs';
+import { hasStandingApproval, initCommand, mergeAutoMode } from '../../plugins/common/workflow/scripts/lib/init.mjs';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'init-'));
@@ -56,7 +56,7 @@ test('writes an all-Claude config and a Reviewer-only CODEOWNERS in a bare repo'
   assert.equal(config.delivery.roles.implementer.model, 'sonnet');
   for (const name of ['reviewer', 'planner', 'devops', 'improver', 'freshImplementer']) assert.deepEqual(config.delivery.roles[name], { host: 'claude', model: 'opus' });
   assert.equal(readFileSync(join(f.root, '.github/CODEOWNERS'), 'utf8'), '* @acme-reviewer\n');
-  assert.deepEqual(f.calls, ['labels ensure', 'safety check']);
+  assert.deepEqual(f.calls, ['labels ensure', 'safety check', 'runner install']);
 });
 
 test('leaves an existing config untouched and reports it', t => {
@@ -128,4 +128,32 @@ test('init turns on marketplace auto-update, keeps other marketplaces, and verif
   writeFileSync(f.settings, JSON.stringify({ ...result, extraKnownMarketplaces: { ...result.extraKnownMarketplaces, filipkrawiec: { ...result.extraKnownMarketplaces.filipkrawiec, autoUpdate: false } } }));
   initCommand(args, f.io);
   assert.equal(JSON.parse(readFileSync(f.settings, 'utf8')).extraKnownMarketplaces.filipkrawiec.autoUpdate, true, 'a rerun repairs it');
+});
+
+test('init runs runner install, and names the exact command when it cannot', t => {
+  const f = fixture(t);
+  initCommand(args, f.io);
+  assert.ok(f.calls.includes('runner install'));
+  const g = fixture(t);
+  g.io.runCli = (_root, a) => ({ ok: a[0] !== 'runner', text: 'no launchctl' });
+  const { unable } = initCommand(args, g.io);
+  assert.ok(unable.some(line => line.includes('node ') && line.includes('workflow.mjs runner install')));
+});
+
+test('the standing owner approval check finds the entry and lists it when missing', t => {
+  const f = fixture(t);
+  initCommand(args, f.io);
+  assert.equal(hasStandingApproval(JSON.parse(readFileSync(f.settings, 'utf8'))), true);
+  assert.equal(hasStandingApproval({ autoMode: { allow: ['$defaults'] } }), false);
+  assert.equal(hasStandingApproval({}), false);
+  const g = fixture(t);
+  g.io.verifySettings = () => ({ autoMode: { allow: ['$defaults'] } });
+  const { unable } = initCommand(args, g.io);
+  assert.ok(unable.some(line => line.startsWith('autoMode.allow:')));
+});
+
+test('dry run does not install the runner', t => {
+  const f = fixture(t);
+  initCommand([...args, '--dry-run'], f.io);
+  assert.ok(f.lines.some(line => /would run: .*runner install/.test(line)));
 });
