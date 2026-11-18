@@ -36,6 +36,26 @@ export function isGraphql(args) {
   if (args[0] === 'api') return args.includes('graphql');
   return ['pr', 'issue', 'project', 'repo', 'release', 'run', 'search', 'label'].includes(args[0]);
 }
+// The points a call is expected to spend. GraphQL costs one point per 100 nodes requested, so a `--limit N` list is
+// `ceil(N/100)` pages (a `--paginate` call is counted from its response instead), and `gh project item-list` asks for the
+// field values of every item, about 400 points per 100 items. Anything else is one point.
+export function estimatedCost(args) {
+  const limit = Number(args[args.indexOf('--limit') + 1]);
+  const pages = args.includes('--limit') && limit > 100 ? Math.ceil(limit / 100) : 1;
+  if (args[0] === 'project' && args[1] === 'item-list') return Math.ceil((Number.isFinite(limit) && args.includes('--limit') ? limit : 30) / 100) * 400;
+  return pages;
+}
+// A response that asked for `rateLimit { cost }` reports what the call really spent; null otherwise.
+export function reportedCost(output) {
+  if (typeof output !== 'string' || !output.includes('"rateLimit"')) return null;
+  try { const cost = JSON.parse(output)?.data?.rateLimit?.cost; return Number.isFinite(cost) ? cost : null; } catch { return null; }
+}
+// Corrects the local count after a call whose real cost is known and differs from what the gate deducted.
+export function settleCost(args, output, file = budgetFile(), key = tokenKey()) {
+  const real = reportedCost(output);
+  const budget = real === null ? null : readBudget(file, key);
+  if (budget && Number.isFinite(budget.remaining)) writeBudget({ ...budget, remaining: Math.max(0, budget.remaining + estimatedCost(args) - real) }, file, key);
+}
 // Merge-critical calls keep running below the floor.
 export function isMergeCritical(args) {
   const text = args.join(' ');
@@ -93,7 +113,7 @@ export function gate(args, { now = Date.now, sleep = ms => Atomics.wait(new Int3
     break;
   }
   // Count the call locally until the next probe corrects the figure.
-  writeBudget({ ...budget, remaining: Math.max(0, (budget.remaining ?? 0) - 1) }, file, key);
+  writeBudget({ ...budget, remaining: Math.max(0, (budget.remaining ?? 0) - estimatedCost(args)) }, file, key);
 }
 
 // Secondary (abuse) limits: GitHub answers 403/429 while the hourly budget still shows points left. The delay it asks for

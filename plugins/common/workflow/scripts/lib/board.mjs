@@ -1,4 +1,5 @@
-import { gh, jsonCommand, missingProjectScope, run } from './core.mjs';
+import { gh, githubMetadataPath, jsonCommand, missingProjectScope, readThroughLocalCache, run, workflowDefaults } from './core.mjs';
+import { sharedRead } from './quota.mjs';
 
 // Issue and PR facts `drive`, `status`, `pr` and the issue commands read from GitHub, and the board's Status column.
 
@@ -89,6 +90,20 @@ export function prRecord(pr, cfg) {
   const shipReady = Boolean(pr.isDraft && !broken && !outsideChanges && (verdictOf(latestVerdict) === 'ready' || (verdictOf(latestVerdict) === 'owner' && approved)));
   return { ...pr, issues, approved, ownerApproved, awaitingReview: atHead.length === 0, shipReady };
 }
+// The board's project id, Status field id and option ids (by lower-case name), from the cached GitHub metadata. A miss,
+// a stale entry or a cached board of another project number reads GitHub once and caches the result.
+export function boardMetadata(cfg, project = cfg.project, refresh = false) {
+  const load = () => {
+    const info = jsonCommand('gh', ['project', 'view', String(project.number), '--owner', project.owner, '--format', 'json']);
+    if (project.title && info.title !== project.title) throw new Error('Cached GitHub Project no longer matches; run `workflow.mjs cache refresh`');
+    if (typeof info.id !== 'string' || !info.id) throw new Error('GitHub Project response is missing its id');
+    const field = gh(['project', 'field-list', String(project.number), '--owner', project.owner, '--format', 'json']).fields.find(item => item.name === 'Status');
+    return { board: { number: project.number, projectId: info.id, statusFieldId: field?.id, options: Object.fromEntries((field?.options || []).map(item => [item.name.toLowerCase(), item.id])) } };
+  };
+  const read = force => readThroughLocalCache(githubMetadataPath(), cfg.repo, load, { ttlMs: workflowDefaults.github.metadataCacheHours * 3_600_000, refresh: force, expectedFields: ['board'] }).board;
+  const cached = read(refresh);
+  return cached.number === project.number && cached.statusFieldId ? cached : read(true);
+}
 // Moves an issue's card to a Status column; a closed issue always goes to Done. `silent` skips a missing board, card or
 // option and a token without project scope instead of failing.
 export function boardStatus(cfg, issue, value, silent = false) {
@@ -105,10 +120,8 @@ export function boardStatus(cfg, issue, value, silent = false) {
   try {
     const owner = project.owner;
     if (!owner) throw new Error('Cached GitHub Project is missing its owner; run `workflow.mjs cache refresh`');
-    const projectInfo = jsonCommand('gh', ['project', 'view', String(project.number), '--owner', owner, '--format', 'json']);
-    if (project.title && projectInfo.title !== project.title) throw new Error('Cached GitHub Project no longer matches; run `workflow.mjs cache refresh`');
-    const id = projectInfo.id;
-    if (typeof id !== 'string' || !id) throw new Error('GitHub Project response is missing its id');
+    const meta = boardMetadata(cfg, project);
+    const id = meta.projectId;
     const [org, name] = cfg.repo.split('/');
     const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){state projectItems(first:30){nodes{id project{id}}}}}}';
     const issueData = gh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${org}`, '-F', `name=${name}`, '-F', `number=${issue}`]).data.repository.issue;
@@ -119,13 +132,15 @@ export function boardStatus(cfg, issue, value, silent = false) {
       card = { id: run('gh', ['project', 'item-add', String(project.number), '--owner', owner, '--url', url, '--format', 'json', '--jq', '.id']) };
     }
     const final = issueData.state === 'CLOSED' ? 'Done' : target;
-    const field = gh(['project', 'field-list', String(project.number), '--owner', owner, '--format', 'json']).fields.find(item => item.name === 'Status');
-    const option = field?.options.find(item => item.name.toLowerCase() === final.toLowerCase());
+    let option = meta.options[final.toLowerCase()];
+    // A missing option may mean the board changed since the metadata was cached; read it once more before giving up.
+    const current = option ? meta : boardMetadata(cfg, project, true);
+    option ??= current.options[final.toLowerCase()];
     if (!option) {
       if (silent) return false;
       throw new Error(`Project is missing Status option ${final}`);
     }
-    run('gh', ['project', 'item-edit', '--project-id', id, '--id', card.id, '--field-id', field.id, '--single-select-option-id', option.id]);
+    run('gh', ['project', 'item-edit', '--project-id', id, '--id', card.id, '--field-id', current.statusFieldId, '--single-select-option-id', option]);
     if (!silent) console.log(`#${issue} → ${final}`);
   } catch (error) {
     if (!silent || !missingProjectScope(error)) throw error;
@@ -133,29 +148,49 @@ export function boardStatus(cfg, issue, value, silent = false) {
     return false;
   }
 }
-// Moves every card whose issue is closed but not in Done to Done; open issues stay. `io` reads the board's cards
-// ({ number, status }) and the closed issue numbers, and moves one card; it returns the moved issue numbers.
+// Moves every card the board query returned (closed issue, Status not Done) to Done; the state and status are checked
+// again here, so a board that ignores the filter moves nothing it should not. `io` reads the cards ({ number, state,
+// status }) and moves one; it returns the moved issue numbers.
 export function sweepClosedCards(io) {
-  const closed = new Set(io.closedIssues());
   const moved = [];
   for (const card of io.cards()) {
-    if (!closed.has(card.number) || String(card.status || '').toLowerCase() === 'done') continue;
+    if (card.state !== 'CLOSED' || String(card.status || '').toLowerCase() === 'done') continue;
     if (io.moveToDone(card.number) !== false) moved.push(card.number);
   }
   return moved;
 }
+// One filtered query on the project's items: only closed cards not in Done, each with its id, Status and issue.
+const sweepQuery = 'query($owner:String!,$number:Int!,$q:String!,$after:String){rateLimit{cost} repositoryOwner(login:$owner){... on ProjectV2Owner{projectV2(number:$number){items(first:100,after:$after,query:$q){pageInfo{hasNextPage endCursor} nodes{id status:fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}} content{... on Issue{number state repository{nameWithOwner}}}}}}}}}';
 export function githubBoardSweepIo(cfg) {
   const { project } = cfg;
   return {
-    closedIssues: () => gh(['issue', 'list', '--repo', cfg.repo, '--state', 'closed', '--limit', '1000', '--json', 'number']).map(issue => issue.number),
-    cards: () => gh(['project', 'item-list', String(project.number), '--owner', project.owner, '--limit', '1000', '--format', 'json']).items
-      .filter(item => item.content?.type === 'Issue' && (!item.content.repository || item.content.repository === cfg.repo))
-      .map(item => ({ number: item.content.number, status: item.status })),
+    cards: () => {
+      const cards = []; let after;
+      for (let page = 0; page < 2; page++) {
+        const args = ['api', 'graphql', '-f', `query=${sweepQuery}`, '-F', `owner=${project.owner}`, '-F', `number=${project.number}`, '-f', 'q=is:closed -status:Done'];
+        if (after) args.push('-F', `after=${after}`);
+        const items = gh(args).data.repositoryOwner?.projectV2?.items;
+        if (!items) break;
+        for (const item of items.nodes) {
+          const issue = item.content;
+          if (issue?.number && issue.repository?.nameWithOwner === cfg.repo) cards.push({ number: issue.number, state: issue.state, status: item.status?.name });
+        }
+        if (!items.pageInfo.hasNextPage) break;
+        after = items.pageInfo.endCursor;
+      }
+      return cards;
+    },
     moveToDone: number => boardStatus(cfg, number, 'DONE', true),
   };
 }
-// The count of cards moved; a repository with no usable board sweeps nothing.
-export function sweepBoard(cfg) {
+export const sweepWindowMs = 600_000;
+// The moved issue numbers; a repository with no usable board sweeps nothing. At most one sweep per repository per
+// window on a machine (shared across processes); a call inside it returns [] without touching GitHub. `force` skips the window.
+export function sweepBoard(cfg, { force = false, read = sharedRead } = {}) {
   if (!cfg.project?.number || !cfg.project.owner) return [];
-  return sweepClosedCards(githubBoardSweepIo(cfg));
+  const sweep = () => sweepClosedCards(githubBoardSweepIo(cfg));
+  if (force) return sweep();
+  let moved = [];
+  read(`sweep:${cfg.repo}`, sweepWindowMs, () => { moved = sweep(); return true; });
+  return moved;
 }
