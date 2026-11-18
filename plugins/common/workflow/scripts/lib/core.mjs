@@ -15,8 +15,10 @@ export const workflowDefaults = {
 const readMemo = new Map();
 export const quotaPolicy = { memo: true, waitWhenExhausted: false };
 export function run(program, args, options = {}) {
+  const memoKey = program === 'gh' && quotaPolicy.memo && isGraphql(args) && isGraphqlRead(args) ? JSON.stringify([args, options.cwd, options.input]) : null;
+  // Any call that is not a memoized read may change state, whatever the program or API.
+  if (!memoKey) readMemo.clear();
   if (program !== 'gh' || options.quota === false || process.env.WORKFLOW_QUOTA === 'off' || !isGraphql(args)) return execute(program, args, options);
-  const memoKey = quotaPolicy.memo && isGraphqlRead(args) ? JSON.stringify([args, options.cwd, options.input]) : null;
   if (memoKey && readMemo.has(memoKey)) return readMemo.get(memoKey);
   gate(args, { waitWhenExhausted: quotaPolicy.waitWhenExhausted });
   const output = execute(program, args, options);

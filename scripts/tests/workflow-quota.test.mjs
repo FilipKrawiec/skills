@@ -97,3 +97,14 @@ test('identical GraphQL reads in one invocation run once; a write clears them', 
   const calls = readFileSync(log, 'utf8').trim().split('\n').filter(line => !line.includes('rate_limit'));
   assert.equal(calls.length, 3, 'two reads around a mutation run twice, the repeated one once');
 });
+
+test('a REST write or a non-gh command clears the read memo', () => {
+  const root = mkdtempSync(join(tmpdir(), 'memo-')); const log = join(root, 'calls');
+  writeFileSync(join(root, 'gh'), `#!/bin/sh\necho "$@" >> '${log}'\nif [ "$2" = rate_limit ]; then echo '{"remaining":5000,"limit":5000,"reset":${Math.floor(Date.now() / 1000) + 3600}}'; else echo '{}'; fi\n`, { mode: 0o755 });
+  const core = new URL('../../plugins/common/workflow/scripts/lib/core.mjs', import.meta.url).href;
+  const code = `import { run } from '${core}'; const read = ['api','graphql','-f','query=query{viewer{login}}']; run('gh', read); run('gh', ['api','repos/a/b/pulls/5/reviews','--input','-'], { input: '{}' }); run('gh', read); run('true', []); run('gh', read);`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', env: { ...process.env, PATH: `${root}:${process.env.PATH}`, WORKFLOW_QUOTA: '', WORKFLOW_QUOTA_DIR: root } });
+  assert.equal(result.status, 0, result.stderr);
+  const calls = readFileSync(log, 'utf8').trim().split('\n').filter(line => !line.includes('rate_limit'));
+  assert.equal(calls.length, 4, 'each read after a REST write or other command reaches gh again');
+});
