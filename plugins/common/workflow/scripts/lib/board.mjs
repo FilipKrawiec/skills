@@ -185,11 +185,11 @@ export function githubBoardSweepIo(cfg) {
 }
 export const sweepWindowMs = 600_000;
 // The moved issue numbers; a repository with no usable board sweeps nothing. At most one sweep per repository per
-// window on a machine (shared across processes); a call inside it returns [] without touching GitHub. `force` skips the window.
-export function sweepBoard(cfg, { force = false, read = sharedRead } = {}) {
+// window on a machine (shared across processes) when `windowed`; a call inside it returns [] without touching GitHub.
+export function sweepBoard(cfg, { windowed = false, read = sharedRead } = {}) {
   if (!cfg.project?.number || !cfg.project.owner) return [];
   const sweep = () => sweepClosedCards(githubBoardSweepIo(cfg));
-  if (force) return sweep();
+  if (!windowed) return sweep();
   let moved = [];
   read(`sweep:${cfg.repo}`, sweepWindowMs, () => { moved = sweep(); return true; });
   return moved;

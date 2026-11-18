@@ -111,7 +111,7 @@ function settled(until, state, lanes) {
   return state.verdict ? true : null;
 }
 // Blocks in the CLI, not in an agent: a session runs it in the background and is woken once, when it exits.
-const sweepClosedBoard = lanes => sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project });
+const sweepClosedBoard = lanes => sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, { windowed: true });
 // The merged PR's closing issues, moved directly: a late issue close leaves them open for the sweep above (best effort).
 const moveClosingCards = (lanes, pr) => {
   const closing = new Set((pr.closingIssuesReferences || []).map(issue => issue.number));

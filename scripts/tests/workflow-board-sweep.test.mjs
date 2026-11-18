@@ -42,7 +42,7 @@ function sweepTwice(t) {
   spawnSync('git', ['init', '-q'], { cwd: repo });
   const code = `import { sweepBoard } from ${JSON.stringify(lib('board.mjs'))};
 const cfg = { repo: 'acme/app', project: ${JSON.stringify(project)} };
-console.log(JSON.stringify([sweepBoard(cfg), sweepBoard(cfg)]));`;
+console.log(JSON.stringify([sweepBoard(cfg, { windowed: true }), sweepBoard(cfg, { windowed: true })]));`;
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], { cwd: repo, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, WORKFLOW_QUOTA_DIR: root, WORKFLOW_QUOTA: '' } });
   assert.equal(result.status, 0, result.stderr);
   const calls = readFileSync(join(root, 'calls'), 'utf8').trim().split('\n').filter(line => !line.includes('rate_limit'));

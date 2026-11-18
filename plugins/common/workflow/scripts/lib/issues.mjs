@@ -42,7 +42,7 @@ export function issueStatus(args, lanes) {
 }
 export function issueSweepBoard(lanes) {
   const cfg = writerConfig(); loadEnvironment(cfg); requireImplementer(cfg);
-  const moved = sweepBoard({ ...cfg, project: cachedGithubMetadata(cfg.repo).project }, { force: true });
+  const moved = sweepBoard({ ...cfg, project: cachedGithubMetadata(cfg.repo).project });
   console.log(`Moved ${moved.length} closed issue card${moved.length === 1 ? '' : 's'} to Done${moved.length ? `: ${moved.map(n => `#${n}`).join(', ')}` : ''}.`);
 }
 // Issue writes stay in this repository or the workflow tooling repository, where skill improvements belong.
