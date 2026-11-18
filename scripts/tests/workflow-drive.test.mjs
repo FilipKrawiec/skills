@@ -394,6 +394,26 @@ test('an R2 issue runs Opus for both roles and stops for the owner after approva
   assert.equal(drive(repo.io, 3, lanes, {}).owner, 'review:owner');
 });
 
+test('drive <issue> on an open lane:owner issue answers an owner step and claims nothing', () => {
+  const repo = fakeRepo({ issues: { 3: issue({ labels: [label('lane:owner'), label('risk:R1')] }) } });
+  const result = drive(repo.io, 3, lanes, {});
+  assert.deepEqual([Object.keys(result).sort(), result.owner], [['owner', 'url'], '#3 is an owner task (lane:owner)']);
+  assert.deepEqual(repo.calls.filter(call => ['start', 'claim', 'worktree', 'move'].includes(call[0])), []);
+  assert.deepEqual(repo.s.issues[3].labels.map(l => l.name), ['lane:owner', 'risk:R1']);
+});
+
+test('drive <epic> drives other ready slices first and answers one owner step when all ready slices are lane:owner', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const mine = n => issue({ number: n, labels: [label('lane:owner')] });
+  const mixed = fakeRepo({ issues: { 9: epic, 10: mine(10), 11: issue({ number: 11 }) }, subs: { 9: [10, 11] } });
+  assert.deepEqual([drive(mixed.io, 9, lanes, {}).agent, mixed.s.issues[10].labels.map(l => l.name)], ['implementer', ['lane:owner']]);
+  const only = fakeRepo({ issues: { 9: epic, 10: mine(10), 11: mine(11) }, subs: { 9: [10, 11] } });
+  const result = drive(only.io, 9, lanes, {});
+  assert.equal(result.owner, 'epic #9: #10, #11 are owner tasks (lane:owner)');
+  assert.deepEqual(only.calls.filter(call => ['start', 'claim', 'worktree', 'move'].includes(call[0])), []);
+  assert.deepEqual([only.s.issues[10].labels.map(l => l.name), only.s.issues[11].labels.map(l => l.name)], [['lane:owner'], ['lane:owner']]);
+});
+
 test('a closed issue still carrying a state label drops it before anything else', () => {
   const claimed = issue({ state: 'CLOSED', labels: [label('state:started'), label('risk:R1')] });
   assert.deepEqual(decide({ issue: claimed, tree: tree() }), { do: 'unclaim' });
