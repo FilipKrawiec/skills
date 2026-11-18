@@ -2079,6 +2079,24 @@ test('a holder silent since one call is refused until staleMs, not progressMs', 
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('a held-claim block names the real takeover time, never "next call" while the heartbeat is fresh', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  const log = console.log; let said = '';
+  console.log = text => { said = JSON.parse(text); };
+  try {
+    const stale = 30 * 60_000;
+    const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+    const call = (session, now) => driveCommand(['3'], lanes, repo.io, { lockDirectory: directory, session, now });
+    call('A', 1000);
+    const early = 1000 + 20 * 60_000;
+    call('B', early);
+    assert.match(said.blocked.reason, new RegExp(new Date(1000 + stale).toISOString()), 'names the earliest takeover time');
+    assert.doesNotMatch(said.blocked.reason, /next call/, 'no next-call promise while the heartbeat is fresh');
+    call('B', 1000 + stale);
+    assert.equal(said.blocked, undefined, 'at the named time the next call takes the claim over');
+  } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('driveCommand records a takeover on the issue and the old holder stops without acting', () => {
   const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
   let said = '';
