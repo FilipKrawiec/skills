@@ -1288,7 +1288,8 @@ export function acquireRunLock({ directory, key, session, now = Date.now(), stal
   const progressAt = held?.progressAt ?? held?.at ?? now;
   // Only a holder that called drive again and got the same answer (held.at > progressAt) is orphaned early; a silent one may have an agent working, so it keeps `staleMs`.
   const orphaned = held?.at > progressAt && now - progressAt >= progressMs;
-  if (other && now - held.at < staleMs && !orphaned) return { acquired: false, by: held, takeOverAt: progressAt + progressMs };
+  if (other && now - held.at < staleMs && !orphaned) // The claim code frees it at the earlier of the orphan time (a re-polling holder only) and the heartbeat threshold.
+    return { acquired: false, by: held, takeOverAt: Math.min(held.at + staleMs, held.at > progressAt ? progressAt + progressMs : Infinity) };
   const mine = !other && held;
   const state = { session, at: now, progressAt: mine ? progressAt : now, fingerprint: mine ? held.fingerprint : undefined };
   writeFileSync(path, JSON.stringify(state));
