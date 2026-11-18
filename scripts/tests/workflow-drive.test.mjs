@@ -421,8 +421,29 @@ test('a closed issue still carrying a state label drops it before anything else'
   assert.deepEqual(decide({ issue: issue({ state: 'CLOSED', labels: [label('risk:R1')] }) }), { done: { issue: 3 } });
 });
 
+test('drive does not close a child as completed when its merged PR only says Part of', () => {
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, state: 'MERGED', body: 'Part of #9', closingIssuesReferences: [] })] });
+  repo.io.pr = n => repo.s.prs.find(p => p.issue === n) || null;
+  const result = drive(repo.io, 3, lanes, {});
+  assert.equal(repo.s.issues[3].state, 'OPEN');
+  assert.deepEqual(repo.calls.filter(c => c[0] === 'close'), []);
+  assert.equal(result.blocked.issue, 3);
+  assert.match(result.blocked.reason, /closing PR merged into the base/);
+  assert.match(result.blocked.reason, /workflow:consolidated-into/);
+  assert.match(result.blocked.reason, /Make no repository changes\./);
+});
+
+test('drive closes a child whose body folds it into another issue or states no change', () => {
+  for (const body of ['<!-- workflow:consolidated-into 8 -->', 'Make no repository changes.']) {
+    const repo = fakeRepo({ issues: { 3: { ...started, body } }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, state: 'MERGED', body: 'Part of #9', closingIssuesReferences: [] })] });
+    repo.io.pr = n => repo.s.prs.find(p => p.issue === n) || null;
+    drive(repo.io, 3, lanes, {});
+    assert.equal(repo.s.issues[3].state, 'CLOSED', body);
+  }
+});
+
 test('drive closes an issue after its PR merged and leaves it with no state label', () => {
-  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [pr({ issue: 3, state: 'MERGED' })] });
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, merged: [3], prs: [pr({ issue: 3, state: 'MERGED' })] });
   repo.io.pr = n => repo.s.prs.find(p => p.issue === n) || null;
   assert.deepEqual(drive(repo.io, 3, lanes, {}), { done: { issue: 3 } });
   assert.deepEqual(repo.calls, [['close', 3], ['unclaim', 3], ['remove', '/repo/.worktrees/3-add-a-thing']]);
