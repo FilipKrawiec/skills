@@ -160,6 +160,7 @@ test('install writes a per-repo plist, clones the tooling once and bootstraps it
   assert.match(text, new RegExp(`<string>${l.home}/Library/Logs/workflow-runner/acme-app/launchd\\.out\\.log</string>`));
   assert.match(text, new RegExp(`<string>${l.home}/Library/Logs/workflow-runner/acme-app/launchd\\.err\\.log</string>`));
   assert.ok(Number(/<key>StartInterval<\/key>\s*<integer>(\d+)<\/integer>/.exec(text)[1]) >= 60);
+  assert.match(text, new RegExp(`<key>PATH</key>\\s*<string>[^<]*${l.home}/\\.local/bin[:<]`));
   assert.match(text, /merge --ff-only/);
   assert.match(text, /runner poll/);
   assert.equal(l.world.clones.length, 1);

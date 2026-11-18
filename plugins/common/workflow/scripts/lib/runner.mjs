@@ -152,7 +152,7 @@ function jobPaths(lanes, io) {
 export function jobPlist(lanes, io) {
   const { label, logs, checkout } = jobPaths(lanes, io);
   const script = `cd ${JSON.stringify(checkout)} && { git fetch --quiet origin && git merge --ff-only --quiet origin/HEAD; } || echo "tooling update failed; polling on the current checkout" >&2; cd ${JSON.stringify(io.repoRoot)} && exec ${JSON.stringify(io.nodePath)} ${JSON.stringify(join(checkout, 'plugins', 'common', 'workflow', 'scripts', 'workflow.mjs'))} runner poll`;
-  const path = [dirname(io.nodePath), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'].join(':');
+  const path = [dirname(io.nodePath), join(io.home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'].join(':');
   const item = value => `    <string>${xml(value)}</string>`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
