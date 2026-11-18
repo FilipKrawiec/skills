@@ -244,15 +244,14 @@ test('a write to a public repository is refused when it names or links the priva
   assert.doesNotThrow(() => assertIssueVisibility(app, skills, ['an application of the rule', undefined]));
 });
 
-test('a sweep moves closed issues\' cards that are not Done to Done and leaves open issues alone', () => {
+test('a sweep moves the closed cards the board query returned that are not Done and leaves the rest alone', () => {
   const moved = [];
   const io = {
-    closedIssues: () => [1, 2, 3],
     cards: () => [
-      { number: 1, status: 'Review' },
-      { number: 2, status: 'Done' },
-      { number: 3, status: 'In progress' },
-      { number: 4, status: 'Review' },
+      { number: 1, state: 'CLOSED', status: 'Review' },
+      { number: 2, state: 'CLOSED', status: 'Done' },
+      { number: 3, state: 'CLOSED', status: 'In progress' },
+      { number: 4, state: 'OPEN', status: 'Review' },
     ],
     moveToDone: number => { moved.push(number); },
   };
@@ -261,6 +260,6 @@ test('a sweep moves closed issues\' cards that are not Done to Done and leaves o
 });
 
 test('a sweep does not count a card the board could not move', () => {
-  const io = { closedIssues: () => [1], cards: () => [{ number: 1, status: 'Review' }], moveToDone: () => false };
+  const io = { cards: () => [{ number: 1, state: 'CLOSED', status: 'Review' }], moveToDone: () => false };
   assert.deepEqual(sweepClosedCards(io), []);
 });

@@ -860,7 +860,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     },
     board: (n, value) => board(lanes, n, value),
     // Best effort: a closed issue's card never waits for a rerun of drive for that issue.
-    sweepBoard: () => { try { return sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }); } catch (error) { console.error(`drive: board sweep skipped: ${error.message}`); return []; } },
+    sweepBoard: () => { try { return sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, { windowed: true }); } catch (error) { console.error(`drive: board sweep skipped: ${error.message}`); return []; } },
     // A repository with no board skips the step (boardStatus returns false and says so); any other failure throws.
     requiredBoard: (n, value) => { boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, n, value, false); },
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
@@ -1135,7 +1135,11 @@ export function driveEpic(io, epic, lanes) {
           noChangeEvidence: n => { const found = io.noChangeEvidence?.(n) || false; delivery.push(['no-change', n, found]); return found; },
           consolidatedDelivery: (epic, child, base) => { const verified = io.consolidatedDelivery?.(epic, child, base) || false; delivery.push(['consolidated', child.number, verified]); return verified; }
         };
-        const merged = (n, base) => unresolvedDelivery(deliveryIo, children.find(child => child.number === n), base, current.number).length === 0;
+        // A child closed as not planned was dropped by the owner and has no delivery to prove, as in the open-work check.
+        const merged = (n, base) => {
+          const child = children.find(candidate => candidate.number === n);
+          return notPlanned(child) || unresolvedDelivery(deliveryIo, child, base, current.number).length === 0;
+        };
         const result = io.verifyEpic(current, children, lanes.base, merged);
         return { current, children, delivery, result };
       };
@@ -1285,7 +1289,14 @@ export function driveSessionId(env = process.env, info = processInfo) {
   }
   return `ppid-${process.ppid}`;
 }
-export function acquireRunLock({ directory, key, session, now = Date.now(), staleMs = 30 * 60_000, progressMs = 10 * 60_000 }) {
+// A `proc-<pid>-<lstart>` session names a process on this machine: it is gone when no process has that pid or the pid now started at another time. Any other session form can't be checked, so it keeps the heartbeat timing.
+export function sessionGone(session, info = processInfo) {
+  const match = typeof session === 'string' && session.match(/^proc-(\d+)-(.+)$/);
+  if (!match) return false;
+  const here = info(Number(match[1]));
+  return !here || here.started.replace(/\s+/g, '_') !== match[2];
+}
+export function acquireRunLock({ directory, key, session, now = Date.now(), staleMs = 30 * 60_000, progressMs = 10 * 60_000, info = processInfo }) {
   mkdirSync(directory, { recursive: true });
   const path = join(directory, `${key.replace(/[^A-Za-z0-9._-]/g, '_')}.json`);
   let held = null;
@@ -1295,7 +1306,7 @@ export function acquireRunLock({ directory, key, session, now = Date.now(), stal
   const progressAt = held?.progressAt ?? held?.at ?? now;
   // Only a holder that called drive again and got the same answer (held.at > progressAt) is orphaned early; a silent one may have an agent working, so it keeps `staleMs`.
   const orphaned = held?.at > progressAt && now - progressAt >= progressMs;
-  if (other && now - held.at < staleMs && !orphaned) // The claim code frees it at the earlier of the orphan time (a re-polling holder only) and the heartbeat threshold.
+  if (other && now - held.at < staleMs && !orphaned && !sessionGone(held.session, info)) // The claim code frees it at the earlier of the orphan time (a re-polling holder only) and the heartbeat threshold.
     return { acquired: false, by: held, takeOverAt: Math.min(held.at + staleMs, held.at > progressAt ? progressAt + progressMs : Infinity) };
   const mine = !other && held;
   const state = { session, at: now, progressAt: mine ? progressAt : now, fingerprint: mine ? held.fingerprint : undefined };
@@ -1317,7 +1328,7 @@ export function acquireRunLock({ directory, key, session, now = Date.now(), stal
 // Up to six runs per repository: a run is one session, however many issue claims it holds, so a seventh session waits until a session's claims are all released or go stale.
 export const maxRuns = 6;
 const claimKey = key => `${key.replace(/[^A-Za-z0-9._-]/g, '_')}.json`;
-export function liveRuns({ directory, repo, now = Date.now(), except = null, session = null, staleMs = 30 * 60_000 }) {
+export function liveRuns({ directory, repo, now = Date.now(), except = null, session = null, staleMs = 30 * 60_000, info = processInfo }) {
   const prefix = claimKey(repo).slice(0, -5) + '-';
   let files = [];
   try { files = readdirSync(directory); } catch { /* no claims yet */ }
@@ -1326,7 +1337,7 @@ export function liveRuns({ directory, repo, now = Date.now(), except = null, ses
     if (!file.startsWith(prefix) || !/^\d+\.json$/.test(file.slice(prefix.length)) || file === except) continue;
     try {
       const claim = JSON.parse(readFileSync(join(directory, file), 'utf8'));
-      if (now - claim.at < staleMs && claim.session !== session) sessions.add(claim.session ?? file);
+      if (now - claim.at < staleMs && claim.session !== session && !sessionGone(claim.session, info)) sessions.add(claim.session ?? file);
     } catch { /* unreadable: not a run */ }
   }
   return sessions.size;
