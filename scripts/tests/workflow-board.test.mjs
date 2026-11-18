@@ -53,6 +53,15 @@ test('a scope packet or an explicit no-repository-change constraint gives the is
   assert.equal(pathsFromIssueBody('no valid packet'), null);
 });
 
+test('an issue that only quotes the no-change statement keeps its declared scope', () => {
+  const scope = '\n```scope\n{"paths":["docs/"]}\n```';
+  for (const mention of ['The statement "Make no repository changes." stays as spec writes it.', 'Keep `Make no repository changes.` working.', 'Issues saying Make no repository changes are still no-change.', '- a quote: > Make no repository changes.'.replace('> ', '"') + '"']) {
+    assert.deepEqual(pathsFromIssueBody(mention + scope), ['docs/'], mention);
+  }
+  assert.deepEqual(pathsFromIssueBody('Verify only. Make no repository changes.' + scope), []);
+  assert.deepEqual(pathsFromIssueBody('Make no repository changes.\n'), []);
+});
+
 test('workflow label catalog is centralized in the CLI', () => {
   assert.deepEqual(Object.keys(workflowLabels), [
     'lane:owner', 'state:started', 'state:reviewing',
