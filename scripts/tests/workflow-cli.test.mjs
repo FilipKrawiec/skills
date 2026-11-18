@@ -264,6 +264,25 @@ test('issue edit replaces an issue body from a worktree file and confirms it', t
   assert.notEqual(dropped.status, 0);
   assert.match(dropped.stderr, /did not confirm #4/);
 });
+test('issue edit reaches the public tooling repository from a private consumer and refuses a leaking body', t => {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node\nconst a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));\nrequire('fs').appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');\nif(a[0]==='auth') { console.log('SECRET_TOKEN'); process.exit(0); }\nif(a.includes('PATCH')) { out({number:4, body:a.find(x=>x.startsWith('body=')).slice(5)}); process.exit(0); }\nif(a.includes('user')) { out({login:'builder'}); process.exit(0); }\nif(a.includes('repos/acme/app')) { out({private:true}); process.exit(0); }\nif(a.includes('repos/acme/skills')) { out({private:false}); process.exit(0); }\nout({}); process.exit(0);\n`);
+  chmodSync(gh, 0o755);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] }, github: { toolingRepository: 'https://github.com/acme/skills.git' } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.TEST_CALLS = join(f.root, 'calls.log');
+  writeFileSync(join(f.repo, 'body.md'), 'Sharpen the review rule');
+  const edited = f.cliRun('issue', 'edit', '--number', '4', '--body-file', 'body.md', '--repo', 'acme/skills');
+  assert.equal(edited.status, 0, edited.stderr);
+  assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /-X PATCH repos\/acme\/skills\/issues\/4 -f body=Sharpen the review rule/);
+  writeFileSync(join(f.repo, 'leak.md'), 'Seen in acme/app');
+  const leaked = f.cliRun('issue', 'edit', '--number', '4', '--body-file', 'leak.md', '--repo', 'acme/skills');
+  assert.notEqual(leaked.status, 0);
+  assert.match(leaked.stderr, /remove the name app/);
+});
 test('issue status reports a repository without a board, and errors for tied boards, failed discovery or an unknown value', t => {
   const f = fixture(t);
   const gh = join(f.root, 'bin', 'gh');
@@ -463,6 +482,6 @@ test('a usage error on a locked command reports only the usage message', t => {
   const f = fixture(t);
   const result = f.cliRun('issue', 'edit', '--number', '304', '--body-file', 'F', '--bogus', '12.0.0');
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Expected --number --body-file --milestone --parent --blocked-by/);
+  assert.match(result.stderr, /Expected --number --body-file --repo --milestone --parent --blocked-by/);
   assert.doesNotMatch(result.stderr, /\block\b/);
 });
