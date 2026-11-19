@@ -21,3 +21,5 @@ A refinement slice (`workflow:epic-refinement`) whose review finds nothing to ch
 Every `drive` run first moves each closed issue's board card not yet in Done to Done, and `wait <pr> --until merged` does so when the PR merges, so a merged issue never waits for a rerun. `<cli> issue sweep-board` does the same alone and prints the count; open issues stay.
 
 A child closed as completed without its own PR needs a `<!-- workflow:consolidated-into N -->` marker or the statement "Make no repository changes."; `issue close` refuses otherwise (spec's `split.md`).
+
+`<cli> bugs [--days N] [--repo OWNER/NAME]` prints the bug trend per repo: opened, closed, open, median time to close and duplicates (target 0); `status` shows it as one `Bugs (14d):` line.
