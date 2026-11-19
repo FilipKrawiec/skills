@@ -8,7 +8,7 @@ import { git, githubRepoFromRemote } from './core.mjs';
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'workflow.mjs');
 const login = /^[A-Za-z0-9-]+$/;
 const markEnvironment = repoOwner => `workflow init (${repoOwner}) environment:`;
-const runnerInstallCommand = `node ${cli} runner install`;
+const runnerRecipes = ['install', 'uninstall'].map(verb => ({ name: `runner-${verb}`, text: `runner-${verb}:\n    node ${cli} runner ${verb}\n` }));
 const markAllow = 'workflow init standing owner approval:';
 
 // Claude Code's per-marketplace auto-update flag: released plugin versions then reach the installation without the owner.
@@ -167,8 +167,19 @@ export function initCommand(args, io = {}) {
     unable.push(`CODEOWNERS: edit .github/CODEOWNERS so \`* @${reviewer}\` is the only default owner, then merge it through a pull request`);
   }
 
+  // Project: justfile runner recipes (existing recipes stay)
+  const justPath = ['justfile', 'Justfile', '.justfile'].map(name => join(root, name)).find(path => existsSync(path)) ?? join(root, 'justfile');
+  const justText = existsSync(justPath) ? readFileSync(justPath, 'utf8') : '';
+  const missing = runnerRecipes.filter(recipe => !new RegExp(`^${recipe.name}\\b[^\\n]*:`, 'm').test(justText));
+  if (!missing.length) said(`left untouched: ${justPath} already has the runner recipes`);
+  else {
+    said(`${dry ? 'would add' : 'added'} to ${justPath}: ${missing.map(recipe => recipe.name).join(', ')}`);
+    if (!dry) writeFileSync(justPath, `${justText}${justText && !justText.endsWith('\n\n') ? (justText.endsWith('\n') ? '\n' : '\n\n') : ''}${missing.map(recipe => recipe.text).join('\n')}`);
+    todo.push(justPath.slice(root.length + 1));
+  }
+
   // GitHub: labels and safety
-  if (dry) said(`would run: labels ensure, safety check and \`${runnerInstallCommand}\``);
+  if (dry) said('would run: labels ensure, safety check and runner install');
   else {
     const labels = env.runCli(root, ['labels', 'ensure']);
     said(labels.ok ? `labels ensure: ${labels.text || 'all labels exist'}` : `labels ensure failed: ${labels.text}`);
@@ -180,7 +191,7 @@ export function initCommand(args, io = {}) {
   if (!dry) {
     const installed = env.runCli(root, ['runner', 'install']);
     said(installed.ok ? `runner install: ${installed.text}` : `runner install failed: ${installed.text}`);
-    if (!installed.ok) unable.push(`runner: the launchd job needs macOS and the owner's session (auto mode blocks agents from installing LaunchAgents); run \`just runner-install\` (or \`${runnerInstallCommand}\`) from this repository`);
+    if (!installed.ok) unable.push(`runner: the launchd job needs macOS and the owner's session (auto mode blocks agents from installing LaunchAgents); run \`just runner-install\` from this repository`);
   }
   if (todo.length && !dry) unable.push(`commit and merge the new files (${todo.join(', ')}) to the default branch; the first PR for them needs your approval`);
   said(unable.length ? `could not do:\n${unable.map(line => `- ${line}`).join('\n')}` : 'could not do: nothing');
