@@ -5,6 +5,7 @@ import { droppedReason, findCycle, readDependencies, splitDependencies } from '.
 import { sessionLogEntries } from './session-log.mjs';
 import { findUsageComment, usageCost, usageSummary } from './usage.mjs';
 import { checkState, failedStates, passedStates, prFields } from './pr.mjs';
+import { bugStats, bugsLine } from './issues.mjs';
 import { ownerPaths } from './codeowners.mjs';
 
 // One check summary for the head: red wins over pending, pending over green; no checks reads `none`.
@@ -98,13 +99,18 @@ function prUsageEntries(repo, numbers, lanes, read) {
     } catch { return []; }
   });
 }
-export function statusCommand(args, lanes, read = args => jsonCommand('gh', args), readPullRequest = readPr) {
+export function statusCommand(args, lanes, read = args => jsonCommand('gh', args), readPullRequest = readPr, now = Date.now()) {
   if (args.length !== 1) throw new Error('Usage: status NUMBER');
   const n = number(args[0]);
+  bugsSummary(lanes, read, now);
   const isPr = Boolean(read(['api', `repos/${lanes.repo}/issues/${n}`]).pull_request);
   if (!isPr) { const state = issueState(lanes.repo, n, lanes, read); console.log(JSON.stringify({ ...state, ...prUsage(lanes.repo, [n], lanes, read), ...quotaField() })); return; }
   const state = prState(readPullRequest(lanes.repo, n), lanes);
   console.log(JSON.stringify({ ...state, ...prUsage(lanes.repo, [n, ...(state.issues || [])], lanes, read), ...quotaField() }));
+}
+// The bug trend as one stderr line, so the JSON on stdout stays one document; a failed read never fails status.
+function bugsSummary(lanes, read, now) {
+  try { console.error(bugsLine(bugStats(lanes.repo, 14, read, now))); } catch { /* the trend is best effort */ }
 }
 const quotaField = () => { const quota = quotaStatus(); return quota ? { quota } : {}; };
 const sleep = seconds => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
