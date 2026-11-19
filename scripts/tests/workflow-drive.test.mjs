@@ -11,6 +11,7 @@ import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
   driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
 
@@ -167,6 +168,7 @@ test('a red base files one main-red bug with the marker, the check name and the 
   assert.equal(fileBaseRed(ops, red, lanes), 40);
   assert.equal(ops.created.length, 1);
   assert.ok(ops.created[0].body.includes(BASE_RED_MARKER));
+  assert.ok(baseRedBody(ops.created[0].body), '`issue create` asks the parent-less main-red bug for no epic parent');
   assert.ok(ops.created[0].body.includes('`verify`') && ops.created[0].body.includes(red.url));
   assert.deepEqual(ops.commented, []);
 });
