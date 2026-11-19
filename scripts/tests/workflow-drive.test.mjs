@@ -2313,6 +2313,15 @@ test('a conflict-resolver that fails the gate leaves the merge to the implemente
   }
 });
 
+test('a role that hands back the same blocking cause twice blocks the issue, however it words it', () => {
+  const repo = fakeRepo(conflictFor({ trees: { 3: tree({ commits: 1 }) } }));
+  const first = drive(repo.io, 3, lanes, { status: 'blocked', note: 'tests `a.test.mjs` and `b.test.mjs` fail outside my files' });
+  assert.ok(!first.blocked, 'the first hand-back is handled as before');
+  const second = drive(repo.io, 3, lanes, { agent: 'conflict-resolver', status: 'blocked', note: 'Cannot pass: b.test.mjs and a.test.mjs are failing' });
+  assert.match(second.blocked?.reason, /same blocking cause twice/);
+  assert.equal(second.owner, undefined);
+});
+
 test('mergeBaseIntoHead takes the base side of manifest conflicts and syncs, else leaves other conflicts', () => {
   const dir = mkdtempSync(join(tmpdir(), 'merge-base-'));
   const git = (...args) => { const r = spawnSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { cwd: dir, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r; };
