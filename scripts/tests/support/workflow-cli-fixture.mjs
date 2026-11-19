@@ -10,8 +10,9 @@ const cli = join(root, 'plugins/common/workflow/scripts/workflow.mjs');
 const configPath = '.agents/config.json';
 const json = value => JSON.stringify(value);
 const acceptedProcessTable = '{owner} 1 node {script} issue\n{parent} {owner} lockf -t 300 issue.lock node {script} issue\n{self} {parent} node {script} issue\n';
-// The same table without the lock command between the child and its owner: the child is not the owner's descendant.
-const orphanedProcessTable = '{owner} 1 node {script} issue\n{self} 1 node {script} issue\n';
+// A table where the lock owner is not a workflow.mjs process and the child hangs off init: the child's ancestry does not reach its owner,
+// whether the lock command sits between them (macOS lockf) or not (Linux flock -F execs in place, so the parent is the owner).
+const orphanedProcessTable = '{owner} 1 node unrelated-tool.mjs\n{self} 1 node {script} issue\n';
 const config = values => ({
   version: 1,
   identities: Object.fromEntries(['implementer', 'reviewer', 'owner'].filter(key => ({ owner: 'owner', ...values })[key] != null).map(key => [key, ({ owner: 'owner', ...values })[key]])),
