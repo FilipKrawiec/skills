@@ -2446,3 +2446,24 @@ test('an issue whose owner step is already posted sorts after issues that need n
   const issues = [{ number: 3, labels: [label('state:started')] }, { number: 4, labels: [] }, { number: 5, labels: [label('state:started')] }];
   assert.deepEqual([...nextTargets(issues, undefined, undefined, undefined, i => i.number === 3)], [5, 4, 3]);
 });
+
+test('--next polls post an owner step once, even when a later poll words the step differently', async () => {
+  const { notifyOwner } = await import('../../plugins/common/workflow/scripts/lib/inbox.mjs');
+  const github = { comments: [], inbox: null };
+  const api = {
+    comments: () => github.comments, comment: (n, body) => github.comments.push({ body }), isOpen: () => true,
+    findInbox: () => github.inbox, createInbox: body => { github.inbox = { number: 100, body }; return 100; }, pin: () => {},
+    updateBody: (n, body) => { github.inbox = { number: n, body }; },
+  };
+  const poll = handBack => {
+    const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+    repo.io.notifyOwner = (n, step) => notifyOwner(api, 'owner', n, step);
+    return driveNext(repo.io, [3], lanes, handBack);
+  };
+  assert.match(poll({ status: 'blocked', note: 'needs a credential' }).owner, /credential/);
+  assert.equal(github.comments.length, 1, 'the first poll posts the owner step');
+  poll({ status: 'blocked', note: 'needs a credential' });
+  assert.equal(github.comments.length, 1, 'an identical second poll posts nothing');
+  poll({});
+  assert.equal(github.comments.length, 1, 'a poll without the hand-back note posts no second comment');
+});
