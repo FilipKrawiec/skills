@@ -18,7 +18,7 @@ Each open issue has a native milestone and one type; it carries `lane:owner` onl
 
 ## 2. Transition
 
-Add a fenced `scope` JSON packet when the changed paths are known, such as `{"paths": ["src/feature/", "tests/feature/"], "dependencies": [12]}` (a trailing `/` covers a subtree). The `devops` risk assessor reasons about the change itself, with the packet's paths as evidence, never the verdict (`review`'s `references/risk.md`); set an issue's `risk:R*` label only as the owner's floor. A follow-up to an unmerged PR lands in that PR's next round or lists the PR in `dependencies`. Before filing a `type:bug`, run `issue create --check`; comment on a listed issue with the same outcome instead. Re-read before writing. Replace conflicting family labels; preserve others and owner holds.
+Add a fenced `scope` JSON packet when the changed paths are known, such as `{"paths": ["src/feature/", "tests/feature/"], "dependencies": [12]}` (a trailing `/` covers a subtree). The `devops` risk assessor reasons about the change itself, with the packet's paths as evidence, never the verdict (`review`'s `references/risk.md`); set an issue's `risk:R*` label only as the owner's floor. A follow-up to an unmerged PR joins its next round or lists it in `dependencies`. `issue create` is the only path to a new issue, never raw `gh`; `--distinct-from N --reason "..."` marks a separate one. Re-read before writing. Replace conflicting family labels; preserve others and owner holds.
 
 | Actor | Transition | Condition and consequence |
 | --- | --- | --- |

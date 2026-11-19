@@ -166,6 +166,8 @@ const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...ext
 // ---- Overlap: before drive starts an issue, the planner consolidates unstarted issues that share its outcome.
 
 // The planner appends this to the issue it was briefed on for each other issue it judged a distinct outcome, so drive asks once.
+// An issue body carrying this marker keeps main or the base red; `--next` takes it before everything else.
+export const BASE_RED_MARKER = '<!-- workflow:base-red -->';
 export const distinctMarker = n => `<!-- workflow:distinct ${n} -->`;
 const trimPath = path => path.replace(/^\.\//, '').replace(/\/+$/, '');
 const pathsOverlap = (a, b) => a.some(p => b.some(q => { const x = trimPath(p); const y = trimPath(q); return x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`); }));
@@ -1276,7 +1278,7 @@ function driveTarget(io, n, lanes, handBack = {}) {
   const target = issue.state === 'OPEN' ? n : report.into ?? n;
   return { ...driveIssue(io, target, lanes, target === n ? handBack : {}), consolidated: report };
 }
-// --next: ready items in order, started issues first, then approved epics and standalone issues by number.
+// --next: ready items by one rank (base-red, started, type:bug, the rest), ties by number; owner-waiting issues last.
 // An item with an unmet or dropped dependency never qualifies; `depsOf` reads them lazily, in that order.
 // An issue from an account other than the trusted role logins (or with no readable author) qualifies only when `approved(issue)` says the
 // owner labeled it `owner:approved`; a public repo takes issues from anyone.
@@ -1294,7 +1296,7 @@ export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: []
   const names = issue => issue.labels.map(label => label.name ?? label);
   const candidates = issues.filter(issue => (!untrustedAuthor(issue, trusted) || approved(issue)) && !names(issue).includes('lane:owner') && !(issue.body || '').includes(INBOX_MARKER));
   // An issue whose owner step is already posted (listed on the Owner inbox) waits behind every issue that needs no owner.
-  const rank = issue => ownerWaiting(issue) ? 2 : Number(!names(issue).includes('state:started'));
+  const rank = issue => ownerWaiting(issue) ? 4 : [(issue.body || '').includes(BASE_RED_MARKER), names(issue).includes('state:started'), names(issue).includes('type:bug'), true].indexOf(true);
   const ordered = [...candidates].sort((a, b) => rank(a) - rank(b) || a.number - b.number);
   for (const issue of ordered) { const { blockers, dropped } = depsOf(issue); if (!blockers.length && !dropped.length) yield issue.number; }
 }

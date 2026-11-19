@@ -33,3 +33,5 @@ On the epic, after filing, comment `## Lessons` with occurrences, target and wor
 ## Output
 
 At most 8 lines: **Summary:** change or observations and evidence. **Decision:** next action/actor or reserved options and recommendation. Use “Nothing needed” only with no pending action.
+
+`issue create` is the only path to a new issue, never raw `gh` or GitHub tools; `--distinct-from N --reason "..."` marks a separate one.
