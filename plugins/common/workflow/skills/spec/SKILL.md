@@ -14,7 +14,7 @@ Reuse an issue or template; read relevant code, tests, rules, ADRs and decisions
 
 Each open issue has a native milestone and one type; it carries `lane:owner` only while the owner must take part, and an epic only while a draft. Backlogs are epic, then story or bug under one epic; epics never nest; `task` and `chore` are retired (refinement slices are stories). Titles use `feat`, `fix`, `docs/test/ci/refactor/perf` or `epic`, plus area and outcome. Group related fixes, implementation, tests and docs that ship together into one bounded, reviewable issue and PR. Split only at the seams [split.md](references/split.md) names, never by size, into sibling stories or bugs under the same epic. Only epics, never started, have children. Read [epics.md](references/epics.md) when drafting, slicing, updating or closing a `type:epic`. Each slice ends where a user observes it: a slice building a unit also places it where its criteria name, unless it is a separate reusable component its own tests observe. Never write a conditional criterion. Record outcome dependencies as blocked-by links, not file ordering; verify outcomes, not closure.
 
-**Exit gate:** grounded issue, authority, acceptance, dependencies and reserved decisions recorded.
+**Exit gate:** grounded issue, authority, acceptance, dependencies and reserved decisions recorded; outsiders need `owner:approved`.
 
 ## 2. Transition
 

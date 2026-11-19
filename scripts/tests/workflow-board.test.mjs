@@ -64,7 +64,7 @@ test('an issue that only quotes the no-change statement keeps its declared scope
 
 test('workflow label catalog is centralized in the CLI', () => {
   assert.deepEqual(Object.keys(workflowLabels), [
-    'lane:owner', 'state:started', 'state:reviewing',
+    'lane:owner', 'owner:approved', 'state:started', 'state:reviewing',
     'review:owner', 'risk:R0', 'risk:R1', 'risk:R2', 'nits:swept', 'type:epic', 'type:story', 'type:bug',
   ]);
 });
