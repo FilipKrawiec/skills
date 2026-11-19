@@ -8,3 +8,5 @@ Drive writes `review-packet.md` beside your brief before each round. Its section
 - It is facts only. Blast radius outside it (callers, contracts, configuration) stays yours to check with `git grep` and Read.
 - Large diff: read one area at a time and skip renames marked mechanical. For scripted mechanical edits, check the script and the hand-written remainder.
 - Inline findings: `review-post` keys each by its path, `criterion` and `failure` (else its first line) and skips a key an open thread already carries, so retrying after an error never duplicates a thread.
+
+`issue create` is the only path to a new issue (a follow-up too): it matches open and 30-day-closed issues first, and `Exists: #N` creates nothing. Never use raw `gh` or GitHub tools to create one; `--distinct-from N --reason "<one line>"` marks a separate issue.

@@ -395,6 +395,7 @@ const path=a.find(x=>x.startsWith('repos/'))||'', field=k=>{const x=a.find(v=>v.
 fs.appendFileSync(process.env.TEST_CALLS, a.join(' ')+'\\n');
 if(a[0]==='auth'){console.log('SECRET_TOKEN');process.exit(0);}
 if(a.includes('user')){out({login:'builder'});process.exit(0);}
+if(a[0]==='issue'&&a[1]==='list'){out([]);process.exit(0);}
 if(path.includes('/milestones')){out([[{number:2,title:'v0'},{number:3,title:'v1'}]]);process.exit(0);}
 const link=path.match(/issues\\/(\\d+)\\/(sub_issues|dependencies\\/blocked_by)/);
 if(link){const key=link[1]+link[2];
@@ -524,4 +525,117 @@ test('a usage error on a locked command reports only the usage message', t => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Expected --number --body-file --repo --milestone --parent --blocked-by/);
   assert.doesNotMatch(result.stderr, /\block\b/);
+});
+
+// A stateful fake gh for the duplicate search: issues live in issues.json; creates, comments and state changes are recorded in it.
+function duplicateFixture(t, existing) {
+  const f = fixture(t);
+  const gh = join(f.root, 'bin', 'gh');
+  writeFileSync(gh, `#!/usr/bin/env node
+const fs=require('fs'), a=process.argv.slice(2), out=x=>console.log(JSON.stringify(x));
+const file=process.env.TEST_ISSUES, db=JSON.parse(fs.readFileSync(file,'utf8')), save=()=>fs.writeFileSync(file,JSON.stringify(db));
+const path=a.find(x=>x.startsWith('repos/'))||'', field=k=>{const x=a.find(v=>v.startsWith(k+'='));return x&&x.slice(k.length+1);};
+if(a[0]==='auth'){console.log('SECRET_TOKEN');process.exit(0);}
+if(a.includes('user')){out({login:'builder'});process.exit(0);}
+if(a[0]==='issue'&&a[1]==='list'){out(db.issues);process.exit(0);}
+const comment=path.match(/issues\\/(\\d+)\\/comments$/);
+if(comment){db.comments.push({number:Number(comment[1]),body:field('body')});save();out({id:1});process.exit(0);}
+const sub=path.match(/issues\\/(\\d+)\\/sub_issues/);
+if(sub){if(a.includes('POST')){db.sub.push(Number(field('sub_issue_id'))/100);save();out({});}else out([db.sub.map(number=>({number}))]);process.exit(0);}
+const one=path.match(/issues\\/(\\d+)$/);
+if(one&&a.includes('PATCH')){const i=db.issues.find(x=>x.number===Number(one[1]));if(field('state')==='open')i.state='OPEN';db.patches.push(a.join(' '));save();out({number:i.number});process.exit(0);}
+if(one){out({id:Number(one[1])*100,number:Number(one[1]),labels:[{name:'type:epic'}]});process.exit(0);}
+if(path.endsWith('/issues')){
+  if(db.issues.length&&process.env.TEST_SLOW)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,300);
+  const number=100+db.creates.length;db.creates.push({number,title:field('title'),body:field('body')});db.issues.push({number,title:field('title'),body:field('body'),state:'OPEN',closedAt:null});save();out({number});process.exit(0);}
+out({});
+`);
+  chmodSync(gh, 0o755);
+  writeFileSync(join(f.repo, configPath), json({ ...config({ implementer: 'builder', reviewer: 'reviewer' }), steps: { process: null, assemble: null, test: ['true'] } }));
+  assert.equal(f.linkedGit('add', configPath).status, 0);
+  commitFixture(f);
+  writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
+  f.env.TEST_ISSUES = join(f.root, 'issues.json');
+  writeFileSync(f.env.TEST_ISSUES, JSON.stringify({ issues: existing, creates: [], comments: [], patches: [], sub: [] }));
+  return f;
+}
+const packet = paths => `\u0060\u0060\u0060scope\n${JSON.stringify({ paths })}\n\u0060\u0060\u0060`;
+const daysAgo = days => new Date(Date.now() - days * 86_400_000).toISOString();
+const dupState = f => JSON.parse(readFileSync(f.env.TEST_ISSUES, 'utf8'));
+const FAULT = 'drive loses the claim when the push fails';
+const faultBody = `The claim is lost when the push fails in drive.\n${packet(['plugins/common/workflow/scripts/drive.mjs'])}`;
+const filed = (f, title, body, ...extra) => {
+  writeFileSync(join(f.repo, 'dup.md'), body);
+  return f.cliRun('issue', 'create', '--title', title, '--body-file', 'dup.md', '--parent', '1', ...extra);
+};
+
+for (const type of ['type:bug', 'type:story']) {
+  test(`issue create of a ${type} matching an open issue creates nothing, comments the evidence and prints Exists`, t => {
+    const f = duplicateFixture(t, [{ number: 40, title: FAULT, body: faultBody, state: 'OPEN', closedAt: null }]);
+    const result = filed(f, 'Drive loses its claim after a failed push', faultBody, '--labels', type);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Exists: #40/);
+    const db = dupState(f);
+    assert.equal(db.creates.length, 0, 'no create call was made');
+    assert.equal(db.comments.length, 1);
+    assert.equal(db.comments[0].number, 40);
+    assert.match(db.comments[0].body, /claim is lost when the push fails/);
+  });
+}
+
+test('a closed match is found within 30 days and reopened; one closed 31 days ago is not', t => {
+  const recent = duplicateFixture(t, [{ number: 41, title: FAULT, body: faultBody, state: 'CLOSED', closedAt: daysAgo(29) }]);
+  const found = filed(recent, FAULT, faultBody, '--labels', 'type:bug');
+  assert.equal(found.status, 0, found.stderr);
+  assert.match(found.stdout, /Exists: #41/);
+  assert.match(found.stdout, /Reopened: #41/);
+  assert.equal(dupState(recent).creates.length, 0);
+  assert.match(dupState(recent).patches.join('\n'), /PATCH repos\/acme\/app\/issues\/41 .*state=open/);
+  const old = duplicateFixture(t, [{ number: 42, title: FAULT, body: faultBody, state: 'CLOSED', closedAt: daysAgo(31) }]);
+  const created = filed(old, FAULT, faultBody, '--labels', 'type:bug');
+  assert.equal(created.status, 0, created.stderr);
+  assert.match(created.stdout, /Created: #100/);
+  assert.equal(dupState(old).comments.length, 0);
+});
+
+test('a body sharing a scope path but describing a different behaviour creates a new issue', t => {
+  const f = duplicateFixture(t, [{ number: 40, title: FAULT, body: faultBody, state: 'OPEN', closedAt: null }]);
+  const other = `Render the wave table as a sortable grid for narrow screens.\n${packet(['plugins/common/workflow/scripts/drive.mjs'])}`;
+  const result = filed(f, 'Sortable wave table on narrow screens', other, '--labels', 'type:story');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Created: #100/);
+  assert.equal(dupState(f).comments.length, 0);
+});
+
+test('the same behaviour in a path outside the scope creates a new issue', t => {
+  const f = duplicateFixture(t, [{ number: 40, title: FAULT, body: faultBody, state: 'OPEN', closedAt: null }]);
+  const elsewhere = `The claim is lost when the push fails in drive.\n${packet(['docs/elsewhere.md'])}`;
+  assert.match(filed(f, FAULT, elsewhere, '--labels', 'type:bug').stdout, /Created: #100/);
+});
+
+test('two concurrent issue creates for the same issue create one under the repo lock', async t => {
+  if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
+  const f = duplicateFixture(t, []);
+  f.env.TEST_SLOW = '1';
+  writeFileSync(join(f.repo, 'dup.md'), faultBody);
+  const args = ['issue', 'create', '--title', FAULT, '--body-file', 'dup.md', '--parent', '1', '--labels', 'type:bug'];
+  const runs = await Promise.all([runScriptAsync(f, cli, args, 60000), runScriptAsync(f, cli, args, 60000)]);
+  for (const run of runs) assert.equal(run.status, 0, run.stderr);
+  const db = dupState(f);
+  assert.equal(db.creates.length, 1);
+  assert.equal(db.comments.length, 1);
+  assert.equal(db.patches.length, 0, 'the post-create exact-title close did not fire');
+});
+
+test('--distinct-from with a reason creates the issue and records it; without a reason it prints usage', t => {
+  const f = duplicateFixture(t, [{ number: 40, title: FAULT, body: faultBody, state: 'OPEN', closedAt: null }]);
+  const bare = filed(f, FAULT, faultBody, '--labels', 'type:bug', '--distinct-from', '40');
+  assert.notEqual(bare.status, 0);
+  assert.match(bare.stderr, /Usage: issue create/);
+  assert.match(bare.stderr, /--distinct-from N --reason/);
+  assert.equal(dupState(f).creates.length, 0);
+  const result = filed(f, FAULT, faultBody, '--labels', 'type:bug', '--distinct-from', '40', '--reason', 'Different host, same symptom');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Created: #100/);
+  assert.match(dupState(f).creates[0].body, /Distinct from #40: Different host, same symptom/);
 });

@@ -75,6 +75,21 @@ export function scopeOverlaps(issues, paths) {
   const overlap = (a, b) => pathsWithinScope([a], [b]) || pathsWithinScope([b], [a]);
   return issues.filter(issue => (pathsFromIssueBody(issue.body || '') || []).some(path => paths.some(other => overlap(path, other))));
 }
+const STOP = new Set('the and for with that this when from into after before than then are was were not but has have had its into onto over under about'.split(' '));
+const SCOPE_FENCE = /```scope[\s\S]*?```/g;
+const words = text => new Set((text || '').replace(SCOPE_FENCE, ' ').toLowerCase().match(/[a-z][a-z0-9-]{3,}/g)?.filter(word => !STOP.has(word)) ?? []);
+const jaccard = (a, b) => { if (!a.size || !b.size) return 0; let shared = 0; for (const word of a) if (b.has(word)) shared++; return shared / (a.size + b.size - shared); };
+export const DUPLICATE_WINDOW_DAYS = 30;
+// The same failing behaviour or outcome: the significant words of the two titles overlap by at least 60% (Jaccard), or those of title and body together by at least 50%.
+export function sameOutcome(candidate, title, body) {
+  return jaccard(words(candidate.title), words(title)) >= 0.6 || jaccard(words(`${candidate.title} ${candidate.body}`), words(`${title} ${body}`)) >= 0.5;
+}
+// An existing match: open, or closed within the last 30 days; it shares a scope path and the same outcome. The oldest wins.
+export function findExistingMatch(issues, { title, body, now = Date.now() }) {
+  const cutoff = now - DUPLICATE_WINDOW_DAYS * 86_400_000;
+  const live = issues.filter(issue => issue.state !== 'CLOSED' || (issue.closedAt && Date.parse(issue.closedAt) >= cutoff));
+  return scopeOverlaps(live, pathsFromIssueBody(body)).filter(issue => sameOutcome(issue, title, body)).sort((a, b) => a.number - b.number)[0] ?? null;
+}
 const positive = value => Number.isInteger(value) && value > 0;
 // `--milestone NAME`, `--parent N` and `--blocked-by N[,M]`, validated before any write.
 function structureOptions(o) {
@@ -128,12 +143,17 @@ function linkIssue(repo, n, { parent, blockers }) {
 export function issueCreate(args) {
   const unique = args.includes('--unique');
   const check = args.includes('--check');
-  const o = flags(args.filter(arg => arg !== '--unique' && arg !== '--check'), ['--title', '--body-file', '--labels', '--repo', '--milestone', '--parent', '--blocked-by']);
+  const o = flags(args.filter(arg => arg !== '--unique' && arg !== '--check'), ['--title', '--body-file', '--labels', '--repo', '--milestone', '--parent', '--blocked-by', '--distinct-from', '--reason']);
   const title = (o['--title'] || '').trim();
-  if (!title || !o['--body-file']) throw new Error('Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M] [--unique] [--check]');
+  const usage = 'Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M] [--unique] [--check] [--distinct-from N --reason "<one line>"]. Before creating, any type of issue is matched against every open issue and those closed in the last 30 days: a match shares a scope path and the same failing behaviour or outcome (title words overlap 60%, or title and body words 50%). On a match nothing is created: the evidence is commented on it, a closed match is reopened (the fault is back), and `Exists: #N` is printed. --distinct-from N with --reason creates the issue anyway and records `Distinct from #N: <reason>` in its body.';
+  if (!title || !o['--body-file']) throw new Error(usage);
+  const distinct = o['--distinct-from'] === undefined ? null : Number(o['--distinct-from']);
+  const reason = (o['--reason'] || '').trim();
+  if ((distinct !== null || o['--reason'] !== undefined) && (!positive(distinct) || !reason || /[\r\n]/.test(reason))) throw new Error(usage);
   const structure = structureOptions(o);
   const root = git('rev-parse', '--show-toplevel');
-  const body = validateIssueCommentBody(readWorkspaceText(root, o['--body-file']));
+  const read = validateIssueCommentBody(readWorkspaceText(root, o['--body-file']));
+  const body = distinct ? `${read}\n\nDistinct from #${distinct}: ${reason}` : read;
   const cfg = writerConfig(); loadEnvironment(cfg);
   const repo = issueWriteRepo(cfg, o['--repo'], [title, body]);
   requireImplementer(cfg);
@@ -141,17 +161,28 @@ export function issueCreate(args) {
   if (!check) requireBacklogStructure(repo, { labels, parent: structure.parent });
   // List without --search: the search index lags new issues and would hide a concurrent duplicate.
   const open = () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body']);
-  const followUp = labels.includes('type:bug');
   return withRepoLock('issue-create', () => {
-    const issues = unique || followUp || check ? open() : [];
+    const issues = unique || check ? open() : [];
     const existing = unique ? oldestExactTitle(issues, title) : null;
     if (existing) { console.log(`Exists: #${existing}`); return; }
-    // Advisory: a follow-up sharing a scope path with an open issue usually belongs on that issue as a comment.
-    if (followUp || check) {
+    // Advisory only: `--check` lists the open issues sharing a scope path.
+    if (check) {
       const overlaps = scopeOverlaps(issues, pathsFromIssueBody(body));
       console.log(overlaps.length ? overlaps.map(issue => `Overlaps: #${issue.number} ${issue.title}`).join('\n') : 'Overlaps: none');
     }
     if (check) return;
+    if (!distinct) {
+      const all = gh(['issue', 'list', '--repo', repo, '--state', 'all', '--limit', '1000', '--json', 'number,title,body,state,closedAt']);
+      const match = findExistingMatch(all, { title, body });
+      if (match) {
+        gh(['api', `repos/${repo}/issues/${match.number}/comments`, '-f', `body=New evidence from a repeated \`issue create\` (${title}):\n\n${body}`]);
+        if (match.state === 'CLOSED') {
+          gh(['api', '-X', 'PATCH', `repos/${repo}/issues/${match.number}`, '-f', 'state=open']);
+          console.log(`Reopened: #${match.number}`);
+        }
+        console.log(`Exists: #${match.number}`); return;
+      }
+    }
     const milestone = structure.milestone ? milestoneNumber(repo, structure.milestone) : null;
     const created = gh(['api', `repos/${repo}/issues`, '-f', `title=${title}`, '-f', `body=${body}`, ...(milestone ? ['-F', `milestone=${milestone}`] : []), ...labels.flatMap(label => ['-f', `labels[]=${label}`])]);
     if (!Number.isSafeInteger(created.number)) throw new Error(`GitHub did not confirm the issue in ${repo}`);

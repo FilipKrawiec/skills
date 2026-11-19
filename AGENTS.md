@@ -41,6 +41,10 @@ build_tools:
 - In PRs, logs and agent-to-agent output, give the commands run, their exit codes and the decisions left.
 - Add an interface only once two implementations exist (a test fake counts, and so does each case of a repeated conditional). Verify state, not mock calls.
 
+## Issues
+
+- `issue create` is the only path to a new issue: it first matches every open issue and those closed in the last 30 days (shared scope path and the same failing behaviour or outcome), comments on and prints `Exists: #N` for a match instead of creating, and takes `--distinct-from N --reason "<one line>"` for a truly separate one. Never use raw `gh` or GitHub tools to create an issue. This binds every agent and every cloud or chat session.
+
 ## Diagrams
 
 Use ASCII or Unicode box drawings and Markdown tables in portable skills and docs. GitHub issue bodies, plan comments and PR descriptions may use fenced `mermaid` diagrams when a flow or relationship needs explanation; include a text explanation. Literal GitHub output examples inside fenced code blocks may show that syntax.

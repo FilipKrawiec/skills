@@ -22,3 +22,5 @@ Backlogs have two levels: an epic with `type:story` or `type:bug` children, one 
 Split only for an independent outcome, a meaningful dependency, an authority boundary or a delivery constraint, never by size, estimate or layer. Never merge a started issue, an issue with an open PR, issues in different epics without a shared outcome, or anything under `lane:owner`. Never write code, never edit project files, never start another agent and never print a token.
 
 Return the brief's hand-back, at most 5 lines.
+
+`issue create` is the only path to a new issue, never raw `gh` or GitHub tools; `--distinct-from N --reason "..."` marks a separate one.
