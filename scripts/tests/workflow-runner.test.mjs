@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { driveHeadlessArgs, driveSession, maxRuns } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { BASE_RED_MARKER, driveHeadlessArgs, driveSession, maxRuns, nextTargets } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { runnerDefaults, runnerInstall, runnerJob, runnerPoll, runnerStatus, runnerUninstall } from '../../plugins/common/workflow/scripts/lib/runner.mjs';
 
 const lanes = { repo: 'acme/app', owner: 'owner' };
@@ -256,4 +256,19 @@ test('the poll asks which issues already wait on the owner so ready ones rank fi
   const t = setup({ issues: [{ number: 3, labels: [{ name: 'state:started' }], body: '', author: { login: 'owner' } }, { number: 4, labels: [], body: '', author: { login: 'owner' } }], ownerWaiting: issue => { asked.push(issue.number); return issue.number === 3; } });
   assert.equal(t.poll().started.length, 1);
   assert.deepEqual(asked.sort(), [3, 4]);
+});
+
+test('the poll takes the same first issue as drive --next for the same input', () => {
+  const owned = (number, labels, body = '') => ({ number, labels, body, author: { login: 'owner' } });
+  const mixed = [owned(3, []), owned(4, [{ name: 'type:bug' }]), owned(5, [], BASE_RED_MARKER)];
+  const asked = [];
+  const t = setup({ issues: mixed });
+  const first = nextTargets(mixed).next().value;
+  const root = mkdtempSync(join(tmpdir(), 'runner-'));
+  mkdirSync(join(root, 'claims'));
+  const io = { now: () => T0, sleep: () => {}, random: () => 0.5, probeQuota: () => quotaOk, openIssues: () => mixed, dependencies: issue => { asked.push(issue.number); return []; }, ownerApproved: () => false, ownerWaiting: () => false, start: ({ id, now }) => ({ id, pid: 1, startedAt: now, log: join(root, 'log') }), alive: () => true, terminate: () => {} };
+  assert.equal(runnerPoll(lanes, { io, logDirectory: join(root, 'logs'), claims: join(root, 'claims'), cwd: root }).started.length, 1);
+  assert.equal(first, 5);
+  assert.equal(asked[0], first, 'the runner reads the dependencies of drive --next\'s first pick first');
+  assert.equal(t.world.issues.length, 3);
 });
