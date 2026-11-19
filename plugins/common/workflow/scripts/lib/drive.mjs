@@ -1055,7 +1055,8 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     if (step.do === 'start') {
       // Unstarted issues that overlap this one go to the planner first; drive starts nothing until they are consolidated.
       // An issue with an open PR is never merged, so the planner would only hand back `distinct`.
-      const overlaps = pr?.state === 'OPEN' ? [] : io.overlaps?.(issue) || [];
+      // An existing `N-` worktree with commits ahead of the base (one `pair` built with the owner) is delivered, never merged away.
+      const overlaps = pr?.state === 'OPEN' || tree?.commits > 0 ? [] : io.overlaps?.(issue) || [];
       if (overlaps.length) {
         if (['consolidated', 'distinct'].includes(handBack.status)) return { blocked: { issue: n, reason: `the planner handed back ${handBack.status}, yet ${overlaps.map(o => `#${o}`).join(', ')} still overlap${overlaps.length === 1 ? 's' : ''} it` } };
         return finish(instruction(io, facts, agent('planner', 'consolidate', { reason: `${overlaps.map(o => `#${o}`).join(', ')} overlap${overlaps.length === 1 ? 's' : ''} the scope and epic of #${n}`, overlaps }), lanes));
