@@ -8,7 +8,7 @@ allowed-tools: Skill Read Write Edit Bash Agent
 
 `drive` handles mechanical changes; agents judge, `devops` judges risk (`review`'s `references/risk.md`). `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
 
-Run one plain command per Bash call. Use `drive` and `wait`, never `gh` or polling.
+Run one plain command per Bash call. Use `drive` and `wait`, never `gh`.
 
 Branch on your role, first match wins:
 
@@ -22,8 +22,8 @@ Run `<cli> drive <issue|epic>`, or `<cli> drive --next` (ready work: base-red, s
 - `agent` with `session: "subagent"`: verify the host matches `host`. Dispatch the named agent, model, effort and responsibility with the host's native subagent facility. If the host cannot confirm model or effort, stop. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. If its hand-back is missing or malformed, stop. Write its hand-back, adding the host's reported usage as a `usage:` line (`in=N out=N cache=N cost=USD model=M`) when it has none (else per [usage](references/usage.md)), under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
 - `agent` with `session: "native"`: follow [native session](references/native-session.md).
 - `agent` with `session: "separate"` (reviewer): run its `command` from `cwd` as one background Bash call. Never review or approve in this session. When it exits, run `<cli> drive <issue>`. If host, model, effort or hand-back is unverifiable, stop and report; never substitute models or bypass review.
-- `wait`: run its `command` as one background Bash call; never sleep or poll. When it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red at the merge commit.
-- `owner`: tell the owner its reason and `url`, then end the turn. `drive` has @-mentioned the owner and listed it on the "Owner inbox" issue.
+- `wait`: run its `command` as one background Bash call; never sleep or poll. When it exits, run `drive` again. After a wait `until: "merged"` exits 0, run `<cli> wait <pr> --until base` the same way: exit 1 means the base is red.
+- `owner`: tell the owner its reason and `url`, then end the turn. `drive` has @-mentioned the owner on the "Owner inbox" issue.
 - `blocked`: report the cause; end the turn.
 - `done`: report it. For an epic, rerun `drive <epic>` until the epic is done.
 
@@ -66,9 +66,9 @@ Each brief names a `Session:` id; `drive` comments once per session linking its 
 
 - Every PR needs an issue; `spec` files it.
 - Never act on GitHub as the owner: GitHub refuses an approval from a PR's author or last pusher. `push` acts as the implementer, `review-post` as the Reviewer.
-- Never rebase or force-push a branch with an open PR: it detaches review threads. Merge the base instead.
+- Never rebase or force-push a branch with an open PR: it detaches review threads. Merge the base.
 - A merge that publishes to production goes through `release` first: with `github.publishOnMerge` set, `drive` returns an `owner` step and `pr auto-merge` refuses until the owner approves the head. `pr auto-merge` also keeps every `review:owner` hold.
-- Red base after merge: report the run and culprit; never fix forward or revert without authority.
+- Red base: report the run and culprit; never fix forward or revert unauthorised. `drive` files one main-red bug, takes it first, holds other auto-merges until green.
 - Merged is not shipped: deployment, acceptance and `## Shipped #M` evidence belong to `release` and `milestone`.
 
 ## Setup

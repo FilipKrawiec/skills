@@ -168,6 +168,29 @@ const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...ext
 // The planner appends this to the issue it was briefed on for each other issue it judged a distinct outcome, so drive asks once.
 // An issue body carrying this marker keeps main or the base red; `--next` takes it before everything else.
 export const BASE_RED_MARKER = '<!-- workflow:base-red -->';
+const baseRedEvidence = (red, base) => `Required check \`${red.check}\` fails on \`${base}\`: ${red.url}`;
+// One main-red bug per red base: an open issue carrying the marker is reused (the new run is commented once), else
+// `issue create --labels type:bug` files it. `ops` is the GitHub side: openIssues, comments, comment, create.
+export function fileBaseRed(ops, red, lanes) {
+  const marked = () => ops.openIssues().filter(issue => (issue.body || '').includes(BASE_RED_MARKER)).sort((a, b) => a.number - b.number)[0];
+  const evidence = baseRedEvidence(red, lanes.base);
+  const existing = marked();
+  if (existing) {
+    if (!(existing.body || '').includes(red.url) && !ops.comments(existing.number).some(text => text.includes(red.url))) ops.comment(existing.number, `Still red: ${evidence}`);
+    return existing.number;
+  }
+  ops.create(`fix(drive): ${lanes.base} is red, ${red.check} fails`, `## Why\n${lanes.base} is red, so drive merges no other PR until its required check passes again.\n\n## Evidence\n${evidence}\n\n### Acceptance criteria\n- [ ] The required check \`${red.check}\` passes on \`${lanes.base}\`.\n\n${BASE_RED_MARKER}\n`);
+  const created = marked();
+  if (!created) throw new Error(`issue create did not file the ${lanes.base}-red bug`);
+  return created.number;
+}
+// The main-red issue number while the base's required check fails, else null; a read or filing failure never blocks drive.
+function baseRedIssue(io, lanes) {
+  try {
+    const red = io.baseRed?.();
+    return red ? io.fileBaseRed(red, lanes) : null;
+  } catch (error) { console.error(`drive: base check skipped: ${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}`); return null; }
+}
 export const distinctMarker = n => `<!-- workflow:distinct ${n} -->`;
 const trimPath = path => path.replace(/^\.\//, '').replace(/\/+$/, '');
 const pathsOverlap = (a, b) => a.some(p => b.some(q => { const x = trimPath(p); const y = trimPath(q); return x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`); }));
@@ -868,6 +891,22 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const policy = effectiveBranchPolicy(read(`branches/${encodeURIComponent(lanes.base)}/protection`), read(`rules/branches/${encodeURIComponent(lanes.base)}?per_page=100`));
       return !!lanes.requiredChecks?.length && lanes.requiredChecks.every(name => policy?.strictChecks?.includes(name));
     },
+    // The base's newest failing required check run, else null.
+    baseRed: () => {
+      const runs = gh(['api', `repos/${repo}/commits/${encodeURIComponent(lanes.base)}/check-runs?per_page=100`]).check_runs || [];
+      const failed = runs.filter(item => (lanes.requiredChecks || []).includes(item.name) && failedStates.includes(checkState({ conclusion: item.conclusion })));
+      return failed.length ? { check: failed[0].name, url: failed[0].html_url } : null;
+    },
+    fileBaseRed: (red, lanes) => fileBaseRed({
+      openIssues,
+      comments: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().map(comment => String(comment.body || '')),
+      comment: (n, body) => run('gh', ['issue', 'comment', String(n), '--repo', repo, '--body', body]),
+      create: (title, body) => {
+        const file = join(workflowScratch(process.cwd()), 'drive-base-red.md');
+        writeFileSync(file, body);
+        self(['issue', 'create', '--title', title, '--body-file', file, '--labels', 'type:bug'], process.cwd());
+      },
+    }, red, lanes),
     autoMerge: (pr, tree) => self(['pr', 'auto-merge', '--pr', String(pr.number)], tree?.path || process.cwd()),
     noChangeEvidence: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().some(comment => String(comment.body || '').startsWith(noChangeMarker)),
     closeNoChange: (issue, tree, hb) => {
@@ -1080,7 +1119,17 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     else if (step.do === 'approve') {
       try { io.approve(pr, step.round); } catch (error) { console.error(`drive: could not post the approval on #${pr.number} (${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}); the Reviewer will`); return finish(instruction(io, facts, agent('reviewer', 'approve', { reason: 'drive could not post the approval', round: step.round }), lanes)); }
     }
-    else if (step.do === 'auto-merge') { if (!io.strictPolicy()) return { owner: `${lanes.base} must require configured checks on an up-to-date branch`, url: `https://github.com/${lanes.repo}/settings/rules` }; io.autoMerge(pr, tree); }
+    else if (step.do === 'auto-merge') {
+      // A red base takes no other merge: the PR waits on the main-red bug, whose own PR still merges.
+      const red = baseRedIssue(io, lanes);
+      if (red && red !== n) {
+        const reason = `${lanes.base} is red; #${red} fixes it and no other PR merges until the required check is green`;
+        const redPr = io.pr(red);
+        // Nothing blocks until the fix has a PR to wait on; a wait on this green PR would return at once and loop.
+        return redPr ? finish({ wait: { pr: redPr.number, until: 'merged', issue: red }, reason }) : { blocked: { issue: n, reason: `${reason}; #${red} has no PR yet, so run drive ${red} first` } };
+      }
+      if (!io.strictPolicy()) return { owner: `${lanes.base} must require configured checks on an up-to-date branch`, url: `https://github.com/${lanes.repo}/settings/rules` }; io.autoMerge(pr, tree);
+    }
     // GitHub reports the merge state late, so drive waits on the new head's CI instead of reading BEHIND again.
     else if (step.do === 'update-branch') { if (pr.autoMergeRequest) io.disableAutoMerge(pr); io.updateBranch(pr); return finish({ wait: { pr: pr.number, until: 'ci' }, reason: 'merged the base into the head' }); }
     else if (step.do === 'close') {
@@ -1438,6 +1487,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   if (swept.length) console.error(`drive: moved ${swept.length} closed issue card${swept.length === 1 ? '' : 's'} to Done: ${swept.map(n => `#${n}`).join(', ')}`);
   let n;
   if (args[0] === '--next') {
+    baseRedIssue(io, lanes);
     const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false, issue => io.ownerWaiting?.(issue) ?? false);
     if (liveRuns({ directory: lockDirectory, repo: lanes.repo, now, session }) >= maxRuns) { console.log(JSON.stringify(slotsFull(null, lanes))); return; }
     const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
