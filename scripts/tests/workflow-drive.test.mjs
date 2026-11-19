@@ -9,9 +9,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
-  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
+  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
   driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
 
@@ -148,6 +149,64 @@ test('an approved owner-held draft becomes ready before owner approval and merge
   repo.s.prs[0].reviews.push({ author: { login: 'owner' }, state: 'APPROVED', commit: { oid: head }, body: '' });
   assert.deepEqual(drive(repo.io, 3, lanes, {}).wait, { pr: 5, until: 'merged' });
   assert.deepEqual(repo.calls.filter(call => call[0] === 'auto-merge'), [['auto-merge']]);
+});
+
+// The GitHub side of the main-red bug, in memory: `create` files an issue the way `issue create` does.
+function redOps(issues = []) {
+  const created = []; const commented = []; const all = [...issues];
+  return {
+    created, commented,
+    openIssues: () => all,
+    comments: n => commented.filter(c => c.n === n).map(c => c.body),
+    comment: (n, body) => commented.push({ n, body }),
+    create: (title, body) => { created.push({ title, body }); all.push({ number: 40, title, body }); },
+  };
+}
+const red = { check: 'verify', url: 'https://github.com/acme/app/actions/runs/9' };
+
+test('a red base files one main-red bug with the marker, the check name and the run URL', () => {
+  const ops = redOps();
+  assert.equal(fileBaseRed(ops, red, lanes), 40);
+  assert.equal(ops.created.length, 1);
+  assert.ok(ops.created[0].body.includes(BASE_RED_MARKER));
+  assert.ok(baseRedBody(ops.created[0].body), '`issue create` asks the parent-less main-red bug for no epic parent');
+  assert.ok(ops.created[0].body.includes('`verify`') && ops.created[0].body.includes(red.url));
+  assert.deepEqual(ops.commented, []);
+});
+
+test('a second call while the base is still red reuses the main-red bug and comments each new run once', () => {
+  const ops = redOps();
+  fileBaseRed(ops, red, lanes);
+  assert.equal(fileBaseRed(ops, red, lanes), 40, 'the same run adds nothing');
+  assert.deepEqual(ops.commented, []);
+  const next = { check: 'verify', url: 'https://github.com/acme/app/actions/runs/10' };
+  assert.equal(fileBaseRed(ops, next, lanes), 40);
+  assert.equal(fileBaseRed(ops, next, lanes), 40);
+  assert.equal(ops.created.length, 1, 'no second issue');
+  assert.equal(ops.commented.length, 1);
+  assert.ok(ops.commented[0].body.includes(next.url));
+});
+
+test('a red base holds every other merge with a wait naming the main-red issue; its own PR still merges', () => {
+  const ready = pr({ issue: 3, isDraft: false, reviews: [review('ready', 'APPROVED')], assessment: assessed('R1') });
+  const own = pr({ issue: 40, number: 90, isDraft: false, reviews: [review('ready', 'APPROVED')], assessment: assessed('R1') });
+  const repo = fakeRepo({ issues: { 3: started, 40: { ...started, number: 40, body: BASE_RED_MARKER } }, trees: { 3: tree({ commits: 1 }), 40: tree({ commits: 1 }) }, prs: [ready, own] });
+  let isRed = true;
+  const ops = redOps([{ number: 40, body: BASE_RED_MARKER }]);
+  repo.io.baseRed = () => (isRed ? red : null);
+  repo.io.fileBaseRed = (found, l) => fileBaseRed(ops, found, l);
+  const held = drive(repo.io, 3, lanes, {});
+  assert.equal(held.wait.issue, 40);
+  assert.ok(held.reason.includes('#40'));
+  assert.deepEqual(repo.calls.filter(call => call[0] === 'auto-merge'), [], 'no auto-merge while red');
+  assert.deepEqual(drive(repo.io, 40, lanes, {}).wait, { pr: 90, until: 'merged' }, 'the main-red issue merges');
+  assert.deepEqual(repo.calls.filter(call => call[0] === 'auto-merge'), [['auto-merge']]);
+  repo.s.prs.splice(1, 1);
+  assert.match(drive(repo.io, 3, lanes, {}).blocked.reason, /#40 has no PR yet/, 'no PR on the main-red issue: blocked, never a wait that returns at once');
+  repo.s.prs.push(own);
+  isRed = false;
+  assert.deepEqual(drive(repo.io, 3, lanes, {}).wait, { pr: 5, until: 'merged' }, 'green again: the same PR proceeds');
+  assert.equal(repo.calls.filter(call => call[0] === 'auto-merge').length, 2);
 });
 
 test('from the third blocking verdict a fresh implementer on the strongest model fixes the whole open set', () => {
