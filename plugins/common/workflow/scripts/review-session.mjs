@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { config, jsonCommand } from './lib/core.mjs';
+import { collectSession } from './lib/session-log.mjs';
 import { pluginVersion } from './lib/plugin.mjs';
 import { commandEffort, commandModel, parseUsage, recordUsage, usageEntry, usageHost, visibleResult } from './lib/usage.mjs';
 import { acquireReviewRef, createReviewClaim, localClaimIsDead, releaseSessionClaim, sessionClaim, withReviewTransport } from './lib/review-ref.mjs';
@@ -22,6 +23,9 @@ if (!epicMode) mkdirSync(join(root, '.wf'), { recursive: true });
 const path = join(root, '.wf', `review-session-${nonce}.json`);
 // A host that offers machine-readable output is asked for it: the session's usage is recorded and its visible result printed unchanged.
 const usageOf = usageHost(command);
+// The session id drive issued sits beside the brief the command names.
+let sessionId = null;
+try { sessionId = readFileSync(`${/brief at (\S+?)(?:\.md)?\. Return/.exec(command.at(-1))?.[1]}.session`, 'utf8').trim() || null; } catch { /* no session issued */ }
 let output = '';
 const child = spawn(command[0], command.slice(1), { cwd: root, stdio: ['inherit', usageOf ? 'pipe' : 'inherit', 'inherit'], detached: true, env: { ...process.env, WORKFLOW_REVIEW_NONCE: nonce } });
 if (usageOf) child.stdout?.on('data', chunk => { output += chunk; });
@@ -51,10 +55,16 @@ try {
   child.kill(); console.error(error.message); process.exitCode = 1;
 }
 child.on('exit', (code, signal) => { if (!process.exitCode) process.exitCode = code ?? (signal ? 1 : 0); });
-child.on('close', () => {
+child.on('close', code => {
   if (usageOf) process.stdout.write(output ? `${visibleResult(usageOf, output).replace(/\n?$/, '\n')}` : '');
   // A parse failure or a missing field records "unreported"; it never changes the exit code.
   try {
-    recordUsage({ repo: lanes.repo, pr, author: lanes.implementer, entry: usageEntry({ role: 'reviewer', host: usageOf, model: commandModel(command), plugin: pluginVersion(), effort: commandEffort(command), usage: usageOf ? parseUsage(usageOf, output) : null }) });
+    recordUsage({ repo: lanes.repo, pr, author: lanes.implementer, entry: usageEntry({ role: 'reviewer', host: usageOf, model: commandModel(command), plugin: pluginVersion(), effort: commandEffort(command), usage: usageOf ? parseUsage(usageOf, output) : null, key: sessionId ? `session-${sessionId}` : undefined }) });
   } catch { /* usage is optional */ }
+  // The transcript is collected, redacted and linked from one PR comment; a failure is logged and never changes the exit code.
+  if (sessionId) {
+    const answer = usageOf ? visibleResult(usageOf, output) : '';
+    const verdict = /verdict[:=]\s*([\w-]+)/i.exec(answer)?.[1];
+    collectSession({ repo: lanes.repo, pr, author: lanes.implementer, session: { id: sessionId, role: 'reviewer', outcome: verdict ? `verdict: ${verdict}` : `exit ${code ?? 'signal'}`, model: commandModel(command), effort: commandEffort(command) } });
+  }
 });

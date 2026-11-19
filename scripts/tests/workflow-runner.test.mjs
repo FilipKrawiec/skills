@@ -37,6 +37,13 @@ test('the headless command takes its model and effort from drive and starts /del
   assert.deepEqual(driveHeadlessArgs(), ['-p', '--model', driveSession.model, '--effort', driveSession.effort, '--permission-mode', 'auto', '/deliver drive --next']);
 });
 
+test('a runner session id is a UUID that also names the Claude session, so its transcript can be found', () => {
+  const t = setup();
+  const [id] = t.poll().started;
+  assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  assert.deepEqual(driveHeadlessArgs(id).slice(0, 3), ['-p', '--session-id', id]);
+});
+
 test('idle: no ready work starts nothing and logs one line', () => {
   const t = setup({ issues: [] });
   const result = t.poll();

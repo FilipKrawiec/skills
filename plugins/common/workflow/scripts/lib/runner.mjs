@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -46,7 +47,7 @@ function startSession({ id, cwd, logDirectory, now }) {
   const log = join(logDirectory, `session-${id}.log`);
   const fd = openSync(log, 'a');
   try {
-    const child = nodeSpawn('claude', driveHeadlessArgs(), { cwd, detached: true, stdio: ['ignore', fd, fd], env: { ...process.env, WORKFLOW_DRIVE_SESSION: id } });
+    const child = nodeSpawn('claude', driveHeadlessArgs(id), { cwd, detached: true, stdio: ['ignore', fd, fd], env: { ...process.env, WORKFLOW_DRIVE_SESSION: id } });
     child.unref();
     return { id, pid: child.pid, startedAt: now, log };
   } finally { closeSync(fd); }
@@ -113,7 +114,8 @@ function pollLocked(lanes, { io, logDirectory, claims, cwd, options }) {
     if (!taken.has(String(number))) { ready.push(number); break; }
   }
   for (const index of ready.keys()) {
-    const session = io.start({ id: `runner-${at}-${index}`, cwd, logDirectory, now: at });
+    // One UUID is both Claude's `--session-id` (naming its transcript) and WORKFLOW_DRIVE_SESSION, so drive can find that transcript.
+    const session = io.start({ id: randomUUID(), cwd, logDirectory, now: at });
     result.started.push(session.id);
     keep(session, false);
   }
