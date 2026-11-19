@@ -6,8 +6,23 @@ permissions:
   contents: read
 
 jobs:
+  # Branch protection requires a check named exactly `verify`: the aggregate job below passes only when every OS passed.
   verify:
+    name: verify
+    needs: [verify-os]
+    if: always()
     runs-on: ubuntu-latest
+    steps:
+      - name: Require every OS to pass
+        run: test "${{ needs.verify-os.result }}" = success
+
+  verify-os:
+    name: verify-os (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
