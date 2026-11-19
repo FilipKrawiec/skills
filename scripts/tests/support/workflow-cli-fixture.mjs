@@ -9,6 +9,10 @@ const root = fileURLToPath(new URL('../../..', import.meta.url));
 const cli = join(root, 'plugins/common/workflow/scripts/workflow.mjs');
 const configPath = '.agents/config.json';
 const json = value => JSON.stringify(value);
+const acceptedProcessTable = '{owner} 1 node {script} issue\n{parent} {owner} lockf -t 300 issue.lock node {script} issue\n{self} {parent} node {script} issue\n';
+// A table where the lock owner is not a workflow.mjs process and the child hangs off init: the child's ancestry does not reach its owner,
+// whether the lock command sits between them (macOS lockf) or not (Linux flock -F execs in place, so the parent is the owner).
+const orphanedProcessTable = '{owner} 1 node unrelated-tool.mjs\n{self} 1 node {script} issue\n';
 const config = values => ({
   version: 1,
   identities: Object.fromEntries(['implementer', 'reviewer', 'owner'].filter(key => ({ owner: 'owner', ...values })[key] != null).map(key => [key, ({ owner: 'owner', ...values })[key]])),
@@ -166,6 +170,9 @@ function fixture(t) {
     GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
     GIT_CONFIG_NOSYSTEM: '1',
   };
+  // The fake process table the locked child reads in place of `ps`: its lock owner, then a lock command, then itself.
+  env.WORKFLOW_TEST_PROCESS_TABLE = join(directory, 'process-table.txt');
+  writeFileSync(env.WORKFLOW_TEST_PROCESS_TABLE, acceptedProcessTable);
   env.REMOTE_BASE_SHA = git('rev-parse', 'HEAD').stdout.trim();
   // A trailing options object (such as { input }) passes through to the spawn.
   const cliRun = (...args) => { const extra = typeof args.at(-1) === 'object' ? args.pop() : {}; return run(process.execPath, [cli, ...args], { cwd: linked, env, ...extra }); };
@@ -194,4 +201,4 @@ function hookPath(f) {
 }
 function assertNoPush(f) { assert.equal(existsSync(f.env.PUSH_RECORD), false); }
 
-export { cli, configPath, json, config, run, runCliAsync, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, hookPath, assertNoPush };
+export { orphanedProcessTable, cli, configPath, json, config, run, runCliAsync, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, hookPath, assertNoPush };

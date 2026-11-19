@@ -1,3 +1,4 @@
+import './support/host-stubs.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -7,7 +8,7 @@ import {
   codeownersRolesFrom,
   gitFailureLine,
 } from '../../plugins/common/workflow/scripts/lib/core.mjs';
-import { cli, configPath, json, config, run, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, assertNoPush } from './support/workflow-cli-fixture.mjs';
+import { orphanedProcessTable, cli, configPath, json, config, run, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, assertNoPush } from './support/workflow-cli-fixture.mjs';
 
 test('the Owner comes from identities.owner, else the repository owner; CODEOWNERS never names it', () => {
   assert.deepEqual(codeownersRolesFrom('* @reviewer\n', 'acme/app', 'boss'), { owner: 'boss', defaultReviewer: 'reviewer', contents: '* @reviewer\n' });
@@ -527,6 +528,37 @@ test('a locked issue command completes from a path ps cannot show literally', as
   assert.equal(result.timedOut, false, 'the command waited on its own lock or kept re-executing');
   assert.equal(result.status, 0, result.stderr);
   assert.match(readFileSync(f.env.TEST_CALLS, 'utf8'), /repos\/acme\/app\/issues\/7\/comments -f body=Run evidence/);
+});
+
+test('issue edit runs under its lock when the fake process table shows the lock owner as its ancestor', async t => {
+  if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
+  const f = structureFixture(t);
+  const result = await runScriptAsync(f, cli, ['issue', 'edit', '--number', '4', '--milestone', 'v1'], 30000);
+  assert.equal(result.timedOut, false, 'the accepted ancestry still waited on its own lock');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(calls(f), /-X PATCH repos\/acme\/app\/issues\/4 -F milestone=3/);
+});
+
+test('issue edit refuses an inherited lock when the fake process table lacks the owner ancestry', async t => {
+  if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
+  const f = structureFixture(t);
+  writeFileSync(f.env.WORKFLOW_TEST_PROCESS_TABLE, orphanedProcessTable);
+  const result = await runScriptAsync(f, cli, ['issue', 'edit', '--number', '4', '--milestone', 'v1'], 5000);
+  // A refused context queues for the lock its owner still holds, so the command never runs.
+  assert.equal(result.timedOut, true, 'the rejected ancestry was accepted');
+  assert.doesNotMatch(existsSync(f.env.TEST_CALLS) ? calls(f) : '', /-X PATCH/);
+});
+
+test('without the fake process table issue edit reads the real process table through ps', async t => {
+  if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
+  const f = structureFixture(t);
+  delete f.env.WORKFLOW_TEST_PROCESS_TABLE;
+  const record = join(f.root, 'ps-calls.log');
+  const ps = join(f.root, 'bin', 'ps');
+  writeFileSync(ps, `#!/bin/sh\necho "$@" >> '${record}'\nexit 1\n`);
+  chmodSync(ps, 0o755);
+  await runScriptAsync(f, cli, ['issue', 'edit', '--number', '4', '--milestone', 'v1'], 5000);
+  assert.match(readFileSync(record, 'utf8'), /^-axo pid=,ppid=,command=$/m);
 });
 
 test('a usage error on a locked command reports only the usage message', t => {

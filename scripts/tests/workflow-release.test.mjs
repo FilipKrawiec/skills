@@ -1,3 +1,4 @@
+import './support/host-stubs.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
