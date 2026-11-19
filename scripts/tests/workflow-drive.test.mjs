@@ -2429,6 +2429,45 @@ test('owner approval stops counting when the body was edited after the label', (
   assert.equal(ownerApproved([labeled], 'owner', 'garbage'), false, 'an unreadable edit time fails closed');
 });
 
+test('--next posts an owner step once and moves on to the next ready issue; it returns the owner step only when none is left', () => {
+  const ready = issue({ number: 4, labels: [label('risk:R1')], assessment: assessed() });
+  const repo = fakeRepo({ issues: { 3: started, 4: ready }, trees: { 3: tree({ commits: 1 }) } });
+  const posted = [];
+  repo.io.notifyOwner = (n, step) => posted.push([n, step.owner]);
+  const result = driveNext(repo.io, [3, 4], lanes, { status: 'blocked', note: 'needs a credential' });
+  assert.deepEqual([result.agent, result.issue], ['implementer', 4], 'the ready issue behind the owner step is taken');
+  assert.deepEqual(posted, [[3, '#3: needs a credential']], 'the owner step is posted for the skipped issue');
+  const alone = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+  alone.io.notifyOwner = () => {};
+  assert.match(driveNext(alone.io, [3], lanes, { status: 'blocked', note: 'needs a credential' }).owner, /credential/, 'with no ready issue left the owner step returns');
+});
+
+test('an issue whose owner step is already posted sorts after issues that need no owner', () => {
+  const issues = [{ number: 3, labels: [label('state:started')] }, { number: 4, labels: [] }, { number: 5, labels: [label('state:started')] }];
+  assert.deepEqual([...nextTargets(issues, undefined, undefined, undefined, i => i.number === 3)], [5, 4, 3]);
+});
+
+test('--next polls post an owner step once, even when a later poll words the step differently', async () => {
+  const { notifyOwner } = await import('../../plugins/common/workflow/scripts/lib/inbox.mjs');
+  const github = { comments: [], inbox: null };
+  const api = {
+    comments: () => github.comments, comment: (n, body) => github.comments.push({ body }), isOpen: () => true,
+    findInbox: () => github.inbox, createInbox: body => { github.inbox = { number: 100, body }; return 100; }, pin: () => {},
+    updateBody: (n, body) => { github.inbox = { number: n, body }; },
+  };
+  const poll = handBack => {
+    const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+    repo.io.notifyOwner = (n, step) => notifyOwner(api, 'owner', n, step);
+    return driveNext(repo.io, [3], lanes, handBack);
+  };
+  assert.match(poll({ status: 'blocked', note: 'needs a credential' }).owner, /credential/);
+  assert.equal(github.comments.length, 1, 'the first poll posts the owner step');
+  poll({ status: 'blocked', note: 'needs a credential' });
+  assert.equal(github.comments.length, 1, 'an identical second poll posts nothing');
+  poll({});
+  assert.equal(github.comments.length, 1, 'a poll without the hand-back note posts no second comment');
+});
+
 test('drive start adopts a worktree already on the issue branch instead of creating another', t => {
   const dir = mkdtempSync(join(tmpdir(), 'pair-adopt-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
   const sh = (cwd, ...args) => { const r = spawnSync('git', args, { cwd, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); };
