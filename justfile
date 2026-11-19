@@ -10,6 +10,14 @@ unit:
 review-bench *args:
     node plugins/common/workflow/scripts/workflow.mjs bench {{args}}
 
+# Install the headless workflow runner's launchd job for this repo (idempotent)
+runner-install:
+    node plugins/common/workflow/scripts/workflow.mjs runner install
+
+# Remove the workflow runner's launchd job for this repo
+runner-uninstall:
+    node plugins/common/workflow/scripts/workflow.mjs runner uninstall
+
 # Validate plugin definitions and package manifests
 verify: unit
     node plugins/common/workflow/scripts/workflow.mjs manifests verify

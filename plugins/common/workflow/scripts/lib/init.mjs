@@ -180,7 +180,7 @@ export function initCommand(args, io = {}) {
   if (!dry) {
     const installed = env.runCli(root, ['runner', 'install']);
     said(installed.ok ? `runner install: ${installed.text}` : `runner install failed: ${installed.text}`);
-    if (!installed.ok) unable.push(`runner: the launchd job needs macOS and the owner's session (auto mode blocks agents from installing LaunchAgents); run \`${runnerInstallCommand}\` from this repository`);
+    if (!installed.ok) unable.push(`runner: the launchd job needs macOS and the owner's session (auto mode blocks agents from installing LaunchAgents); run \`just runner-install\` (or \`${runnerInstallCommand}\`) from this repository`);
   }
   if (todo.length && !dry) unable.push(`commit and merge the new files (${todo.join(', ')}) to the default branch; the first PR for them needs your approval`);
   said(unable.length ? `could not do:\n${unable.map(line => `- ${line}`).join('\n')}` : 'could not do: nothing');
