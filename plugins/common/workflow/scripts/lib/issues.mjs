@@ -99,6 +99,7 @@ function structureOptions(o) {
   if (blockers.some(value => !positive(value))) throw new Error('--blocked-by expects issue numbers such as 12 or 12,13');
   return { milestone: o['--milestone'] || null, parent, blockers };
 }
+export const NIT_SWEEP_MARKER = '<!-- workflow:nit-sweep -->';
 const labelNames = labels => (labels || []).map(label => label.name ?? label);
 // Backlogs have two levels: an epic whose children are stories or bugs. Null when the structure holds, else why it does not.
 export function backlogViolation({ number, labels, parent, parentLabels }) {
@@ -158,6 +159,7 @@ export function issueCreate(args) {
   const repo = issueWriteRepo(cfg, o['--repo'], [title, body]);
   requireImplementer(cfg);
   const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
+  if (!check && body.includes(NIT_SWEEP_MARKER) && labels.includes('type:bug')) throw new Error('a Nit sweep is never a type:bug: file it as type:story');
   if (!check) requireBacklogStructure(repo, { labels, parent: structure.parent });
   // List without --search: the search index lags new issues and would hide a concurrent duplicate.
   const open = () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body']);

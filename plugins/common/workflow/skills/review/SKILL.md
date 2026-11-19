@@ -56,13 +56,13 @@ Tag each candidate:
 - **Pre-existing:** a defect already on the base branch.
 - **Follow-up:** a real gap outside the acceptance criteria.
 
-Only Blocker and Important block. Verify each candidate: read the line, trace the failure, drop unconfirmed ones. Never report lint, taste or repeats.
+Only Blocker and Important block. Verify each candidate: read the line, trace the failure, drop unconfirmed ones. Never report lint or taste.
 
 **Exit gate:** each kept finding has a tag, a read `file:line`, a failure scenario and a remedy.
 
 ## 5. Post
 
-For a clean review, approve the exact head after green CI: use `APPROVE` with `verdict=owner` only for an owner-reserved effect (`AGENTS.md`), `review:owner` or a named Owner decision; otherwise `verdict=ready`, which merges at every risk. Approve only as neither PR author nor latest pusher. For blocking findings or a split use `COMMENT`. Write the body and the inline findings (`[{"path","line","body","criterion","failure"}]`, each body starting with its tag, as in `**Nit** rename x`; add `criterion` and `failure` so a retry skips posted threads) under the path `<cli> scratch` prints, then run `<cli> review-post --pr <N> --sha <40-hex HEAD> --event COMMENT|APPROVE --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. Pass each of your threads the delta fixes as `--resolve-thread`. On exit 1, stop and report. The body carries `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|fixes|split|owner> -->`. Verdict, first match wins:
+For a clean review, approve the exact head after green CI: use `APPROVE` with `verdict=owner` only for an owner-reserved effect (`AGENTS.md`), `review:owner` or a named Owner decision; otherwise `verdict=ready`, which merges at every risk. For blocking findings or a split use `COMMENT`. Write the body and the inline findings (`[{"path","line","body","criterion","failure"}]`, each body starting with its tag, as in `**Nit** rename x`; add `criterion` and `failure` so a retry skips posted threads) under the path `<cli> scratch` prints, then run `<cli> review-post --pr <N> --sha <40-hex HEAD> --event COMMENT|APPROVE --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. Pass each of your threads the delta fixes as `--resolve-thread`. On exit 1, stop and report. The body carries `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|fixes|split|owner> -->`. Verdict, first match wins:
 
 - a Blocker or Important finding: `verdict=fixes`; from round 3, list each open one. If all open blockers are base conflicts, add `finding=base-conflict` to the marker.
 - a scope no fix cures: `verdict=split` naming the cut.
@@ -70,7 +70,7 @@ For a clean review, approve the exact head after green CI: use `APPROVE` with `v
 
 Record owner-only questions under `Owner decision`.
 
-Nits never block and never earn another round; leave them inline for `<cli> nits`. List Pre-existing and Follow-up findings in the body.
+Nits never block and never earn another round; leave them inline for `<cli> nits`. List Pre-existing and Follow-up findings in the body. One follow-up issue per PR; overlap becomes a comment ([approval](references/approval.md)).
 
 Return at most 5 lines: verdict, PR, head, round, tag counts.
 
