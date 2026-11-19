@@ -493,6 +493,16 @@ test('issue create and edit enforce the epic -> story|bug backlog', t => {
   assert.match(f.cliRun('issue', 'edit', '--number', '6', '--parent', '4').stderr, /#4 is not a type:epic/);
   assert.equal(f.cliRun('issue', 'edit', '--number', '4', '--parent', '1').status, 0);
 });
+test('issue create refuses type:bug for a Nit-sweep body and names type:story', t => {
+  const f = structureFixture(t);
+  writeFileSync(join(f.repo, 'nits.md'), '<!-- workflow:nit-sweep -->\n\nNits from #1.\n');
+  const create = (...extra) => f.cliRun('issue', 'create', '--title', 'Sweep nits', '--body-file', 'nits.md', '--parent', '1', ...extra);
+  const refused = create('--labels', 'type:bug');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /type:story/);
+  assert.doesNotMatch(calls(f), /issues -f title/, 'nothing was created');
+  assert.equal(create('--labels', 'type:story').status, 0);
+});
 test('a locked issue command run by a relative path does not wait on its own lock', async t => {
   if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
   const f = lockedIssueFixture(t);
