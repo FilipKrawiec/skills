@@ -149,6 +149,7 @@ test('status reports health, sessions with their claimed issue, and the log path
   assert.deepEqual(status.quota, quotaOk);
   assert.equal(status.sessions[0].issue, '3');
   assert.equal(status.sessions[0].ageSeconds, 5);
+  assert.equal(status.sessions[0].logFile, join(t.logDirectory, `session-${id}.log`));
   assert.equal(status.log, join(t.logDirectory, 'runner.log'));
 });
 
