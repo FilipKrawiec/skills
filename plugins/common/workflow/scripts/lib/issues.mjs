@@ -160,7 +160,8 @@ export function issueCreate(args) {
   requireImplementer(cfg);
   const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
   if (!check && body.includes(NIT_SWEEP_MARKER) && labels.includes('type:bug')) throw new Error('a Nit sweep is never a type:bug: file it as type:story');
-  if (!check) requireBacklogStructure(repo, { labels, parent: structure.parent });
+  // The main-red bug belongs to no epic: it is about the base, not a slice of one.
+  if (!check && !body.includes('<!-- workflow:base-red -->')) requireBacklogStructure(repo, { labels, parent: structure.parent });
   // List without --search: the search index lags new issues and would hide a concurrent duplicate.
   const open = () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body']);
   return withRepoLock('issue-create', () => {

@@ -493,6 +493,13 @@ test('issue create and edit enforce the epic -> story|bug backlog', t => {
   assert.match(f.cliRun('issue', 'edit', '--number', '6', '--parent', '4').stderr, /#4 is not a type:epic/);
   assert.equal(f.cliRun('issue', 'edit', '--number', '4', '--parent', '1').status, 0);
 });
+test('issue create files a type:bug carrying the base-red marker with no parent epic', t => {
+  const f = structureFixture(t);
+  writeFileSync(join(f.repo, 'red.md'), '## Evidence\nRequired check `verify` fails\n\n<!-- workflow:base-red -->\n');
+  const result = f.cliRun('issue', 'create', '--title', 'main is red', '--body-file', 'red.md', '--labels', 'type:bug');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Created: #9/);
+});
 test('issue create refuses type:bug for a Nit-sweep body and names type:story', t => {
   const f = structureFixture(t);
   writeFileSync(join(f.repo, 'nits.md'), '<!-- workflow:nit-sweep -->\n\nNits from #1.\n');

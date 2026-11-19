@@ -1122,7 +1122,12 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     else if (step.do === 'auto-merge') {
       // A red base takes no other merge: the PR waits on the main-red bug, whose own PR still merges.
       const red = baseRedIssue(io, lanes);
-      if (red && red !== n) { const redPr = io.pr(red); return finish({ wait: { pr: redPr?.number ?? pr.number, until: redPr ? 'merged' : 'ci', issue: red }, reason: `${lanes.base} is red; #${red} fixes it and no other PR merges until the required check is green` }); }
+      if (red && red !== n) {
+        const reason = `${lanes.base} is red; #${red} fixes it and no other PR merges until the required check is green`;
+        const redPr = io.pr(red);
+        // Nothing blocks until the fix has a PR to wait on; a wait on this green PR would return at once and loop.
+        return redPr ? finish({ wait: { pr: redPr.number, until: 'merged', issue: red }, reason }) : { blocked: { issue: n, reason: `${reason}; #${red} has no PR yet, so run drive ${red} first` } };
+      }
       if (!io.strictPolicy()) return { owner: `${lanes.base} must require configured checks on an up-to-date branch`, url: `https://github.com/${lanes.repo}/settings/rules` }; io.autoMerge(pr, tree);
     }
     // GitHub reports the merge state late, so drive waits on the new head's CI instead of reading BEHIND again.
