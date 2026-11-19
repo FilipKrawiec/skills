@@ -1,6 +1,6 @@
 # Session logs
 
-Each brief carries `Session: <id>`, issued by `drive` (derived from the state the brief describes, so a rerun repeats it); a runner-started orchestrator uses `WORKFLOW_DRIVE_SESSION`.
+Each brief carries `Session: <id>`, issued by `drive` (derived from the state the brief describes, so a rerun repeats it); a runner-started orchestrator uses `WORKFLOW_DRIVE_SESSION`, a UUID the runner also passes as the agent's `--session-id`, so the transcript is named by it.
 
 When `drive` gets a hand-back (`drive N --hand-back`), `review-session.mjs` ends, or a runner-started orchestrator returns `done`, `owner` or `blocked`:
 

@@ -18,7 +18,7 @@ import { prState } from './state.mjs';
 import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
 import { exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
-import { collectSession } from './session-log.mjs';
+import { collectOrchestrator, collectSession } from './session-log.mjs';
 import { pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
 import { approveReady, previousReviewedHead } from './vcs.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
@@ -52,7 +52,7 @@ export function sessionFor(agent, risk, { round = 0, fresh = false } = {}) {
 }
 // The owner's session only routes drive's JSON, so it starts on Sonnet at low effort; the owner starts it with this command.
 export const driveSession = { model: 'sonnet', effort: 'low' };
-export const driveHeadlessArgs = () => ['-p', '--model', driveSession.model, '--effort', driveSession.effort, '--permission-mode', 'auto', '/deliver drive --next'];
+export const driveHeadlessArgs = sessionId => ['-p', ...(sessionId ? ['--session-id', sessionId] : []), '--model', driveSession.model, '--effort', driveSession.effort, '--permission-mode', 'auto', '/deliver drive --next'];
 export const driveSessionCommand = target => `claude --model ${driveSession.model} --effort ${driveSession.effort} "/deliver drive ${target}"`;
 export const modelFor = risk => sessionFor('implementer', risk).model;
 export const modelForStep = (step, risk, round = 0) => sessionFor(step.agent, risk, { round, fresh: Boolean(step.fresh) }).model;
@@ -816,14 +816,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       recordUsage({ repo, pr: pr.number, author: lanes.implementer, entry: usageEntry({ role, host: parsed?.host, model: parsed?.model, effort: parsed?.effort, plugin: parsed?.plugin, usage: parsed?.usage, key }) }, { gh });
       if (sessionId) collectSession({ repo, pr: pr.number, author: lanes.implementer, session: { id: sessionId, role, status: hb.status || hb.risk, usage: hb.usage } });
     },
-    // A runner-started orchestrator names its session in the environment; its transcript is linked from the PR it finished (else the issue).
-    orchestratorLog: (n, outcome) => {
-      const id = process.env.WORKFLOW_DRIVE_SESSION;
-      if (!id) return;
-      let target = n;
-      try { target = io.pr(n)?.number ?? n; } catch { /* comment on the issue */ }
-      collectSession({ repo, pr: target, author: lanes.implementer, session: { id, role: 'orchestrator', outcome } });
-    },
+    orchestratorLog: (n, outcome) => collectOrchestrator({ repo, number: n, findPr: number => io.pr(number), author: lanes.implementer, outcome }),
     packetFacts(context) { return gatherPacketFacts({ repo, lanes, gh, threads: pr => this.reviewThreads(pr), ...context }); },
     reviewSession: (pr, tree) => {
       const root = tree?.path || git('rev-parse', '--show-toplevel');

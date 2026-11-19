@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectSession, githubApi, locateTranscript, parseSessionLogs, redact, sessionLogEntries, survivingSecret } from '../../plugins/common/workflow/scripts/lib/session-log.mjs';
+import { collectOrchestrator, collectSession, githubApi, locateTranscript, parseSessionLogs, redact, sessionLogEntries, survivingSecret } from '../../plugins/common/workflow/scripts/lib/session-log.mjs';
 import { statusCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 
 const ghToken = `ghp_${'a1B2c3D4e5F6g7H8i9J0'}`;
@@ -48,6 +48,30 @@ test('redaction replaces tokens, keys, Authorization values, private keys and se
   assert.match(out, /DB_PASSWORD=\[REDACTED\]/);
   assert.ok(out.includes('/home/x'));
   assert.equal(survivingSecret(out, env), null);
+});
+
+test('a token right after an escaped newline, tab or unicode escape in a JSONL line is redacted', () => {
+  const lines = [
+    JSON.stringify({ c: `user: bot\n${ghToken}` }), JSON.stringify({ c: `key\tsk-ant-api03-${'k'.repeat(20)}` }),
+    JSON.stringify({ c: `pat\r\ngithub_pat_${'x'.repeat(30)}` }), JSON.stringify({ c: `"Bearer\nabcdefgh12345678` }), `{"c":"\\u0027${ghToken}"}`,
+  ];
+  for (const raw of lines) {
+    assert.ok(survivingSecret(raw, {}), `detected in ${raw}`);
+    const out = redact(raw, {});
+    assert.equal(survivingSecret(out, {}), null, out);
+    for (const secret of [ghToken, 'sk-ant-api03', 'github_pat_xxx', 'abcdefgh12345678']) assert.ok(!out.includes(secret), out);
+  }
+  // A word that merely contains a token prefix is left alone.
+  assert.equal(redact(`task-${'a'.repeat(24)}`, {}), `task-${'a'.repeat(24)}`);
+});
+
+test('a runner-started orchestrator is collected from the transcript named by its session id', () => {
+  const id = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const github = fakeGithub();
+  const result = collectOrchestrator({ repo: 'o/r', number: 5, findPr: n => ({ number: n + 4 }), author: 'bot', outcome: 'done', github, store: store({ [`/p/${id}.jsonl`]: transcript('ok'), '/p/other.jsonl': 'x' }), logDirectory: logs(), env: { WORKFLOW_DRIVE_SESSION: id } });
+  assert.deepEqual(result, { collected: `orchestrator-1-${id}.jsonl` });
+  assert.match(github.state.comments[0].body, /\| orchestrator \| claude-sonnet-5-5 \|.*\| done \|/);
+  assert.equal(collectOrchestrator({ repo: 'o/r', number: 5, findPr: () => null, github, store: store({}), env: {} }), null);
 });
 
 test('a surviving secret refuses the upload, logs it, and comments the session as missing once', () => {

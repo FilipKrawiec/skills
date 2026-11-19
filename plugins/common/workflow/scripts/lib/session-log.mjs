@@ -12,17 +12,20 @@ export const redacted = '[REDACTED]';
 const marker = /<!-- workflow:session-log (\{.*?\}) -->/s;
 const maxBytes = 4 * 1024 * 1024;
 
-// Token shapes that are secrets wherever they appear.
+// Token shapes that are secrets wherever they appear. A JSONL transcript stores a newline or tab as the characters `\n` or `\t`, so a
+// token may follow a letter of an escape: the start boundary is a non-word character or a JSON escape, never `\b`.
+const start = String.raw`(?:(?<![A-Za-z0-9_])|(?<=\\[nrtbf])|(?<=\\u[0-9A-Fa-f]{4}))`;
+const space = String.raw`(?:\s|\\[nrt])+`;
 const tokenPatterns = [
-  /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
-  /\bsk-ant-[A-Za-z0-9_-]{10,}/g,
-  /\bsk-[A-Za-z0-9_-]{20,}/g,
-  /\bAKIA[0-9A-Z]{16}\b/g,
-  /\bAIza[0-9A-Za-z_-]{30,}/g,
-  /\bxox[abprs]-[A-Za-z0-9-]{10,}/g,
-  /\bBearer\s+(?!\[REDACTED\])[A-Za-z0-9._~+/=-]{8,}/gi,
-];
+  [String.raw`gh[pousr]_[A-Za-z0-9]{20,}`, 'g'],
+  [String.raw`github_pat_[A-Za-z0-9_]{20,}`, 'g'],
+  [String.raw`sk-ant-[A-Za-z0-9_-]{10,}`, 'g'],
+  [String.raw`sk-[A-Za-z0-9_-]{20,}`, 'g'],
+  [String.raw`AKIA[0-9A-Z]{16}\b`, 'g'],
+  [String.raw`AIza[0-9A-Za-z_-]{30,}`, 'g'],
+  [String.raw`xox[abprs]-[A-Za-z0-9-]{10,}`, 'g'],
+  [String.raw`Bearer${space}(?!\[REDACTED\])[A-Za-z0-9._~+/=-]{8,}`, 'gi'],
+].map(([source, flags]) => new RegExp(start + source, flags));
 const privateKeyBlock = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
 const privateKeyHeader = /-----BEGIN [A-Z ]*PRIVATE KEY-----[^"]*/g;
 const authorization = /(authorization["'\\]*\s*[:=]\s*["'\\]*)(?:(bearer|basic|token)\s+)?(?!\[REDACTED\])[^\s"'\\,]+/gi;
@@ -187,4 +190,13 @@ export function collectSession({ repo, pr, author, session, github = githubApi(r
     noteFailure(logDirectory, `#${pr} ${role} ${id}: ${String(error.message).replace(/\s+/g, ' ').slice(0, 160)}`);
     return { failed: String(error.message) };
   }
+}
+// A runner-started orchestrator: the runner passes one UUID as both `--session-id` and WORKFLOW_DRIVE_SESSION, so Claude names its
+// transcript by it. Linked from the PR drive finished (else the issue). Null outside a runner session.
+export function collectOrchestrator({ number, findPr, outcome, env = process.env, ...rest }) {
+  const id = env.WORKFLOW_DRIVE_SESSION;
+  if (!id) return null;
+  let pr = number;
+  try { pr = findPr(number)?.number ?? number; } catch { /* comment on the issue */ }
+  return collectSession({ ...rest, pr, env, session: { id, role: 'orchestrator', outcome } });
 }
