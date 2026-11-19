@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
-  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, holdBaseUpdates, latestAssessment,
+  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, trustedLogins, holdBaseUpdates, latestAssessment,
   driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -2392,4 +2392,18 @@ test('epic closure counts a child closed as not planned as resolved but holds a 
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
   repo.s.merged = [99]; repo.s.issues[9].state = 'OPEN';
   assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #11$/, 'a completed child without a PR still holds the epic');
+});
+
+test('only issues from the trusted role accounts are taken: --next skips outsiders and drive N hands them to the owner', () => {
+  const trusted = trustedLogins(lanes);
+  const mine = { number: 4, labels: [], body: '', author: { login: 'Builder' } };
+  const outsider = { number: 2, labels: [], body: '', author: { login: 'mallory' } };
+  assert.deepEqual([...nextTargets([outsider, mine], undefined, trusted)], [4], 'a trusted issue is taken, the outsider skipped');
+  assert.equal(nextTarget([outsider], undefined, trusted), null);
+  const repo = fakeRepo({ issues: { 2: issue({ number: 2, author: { login: 'mallory' } }) } });
+  const step = drive(repo.io, 2, lanes, {});
+  assert.match(step.owner, /#2 is from an untrusted author \(mallory\); re-file it from your own account/);
+  assert.equal(step.do, undefined, 'nothing is claimed, labeled or built');
+  const trustedRepo = fakeRepo({ issues: { 3: issue({ author: { login: 'owner' } }) } });
+  assert.equal(drive(trustedRepo.io, 3, lanes, {}).owner, undefined);
 });

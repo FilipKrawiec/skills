@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { driveHeadlessArgs, driveSession, maxRuns } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { runnerDefaults, runnerInstall, runnerJob, runnerPoll, runnerStatus, runnerUninstall } from '../../plugins/common/workflow/scripts/lib/runner.mjs';
 
-const lanes = { repo: 'acme/app' };
+const lanes = { repo: 'acme/app', owner: 'owner' };
 const T0 = Date.parse('2026-11-18T10:00:00Z');
 const quotaOk = { remaining: 4000, limit: 5000, resetAt: '2026-11-18T11:00:00.000Z' };
 const issues = [3, 4, 5, 6, 7, 8, 9, 10].map(number => ({ number, labels: [], body: '' }));
