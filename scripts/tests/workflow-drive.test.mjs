@@ -2467,3 +2467,21 @@ test('--next polls post an owner step once, even when a later poll words the ste
   poll({});
   assert.equal(github.comments.length, 1, 'a poll without the hand-back note posts no second comment');
 });
+
+test('drive start adopts a worktree already on the issue branch instead of creating another', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'pair-adopt-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const sh = (cwd, ...args) => { const r = spawnSync('git', args, { cwd, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); };
+  const origin = join(dir, 'origin.git'); const root = join(dir, 'app'); const bin = join(dir, 'bin');
+  sh(dir, 'init', '-q', '--bare', '-b', 'main', origin);
+  sh(dir, 'init', '-q', '-b', 'main', root);
+  sh(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init');
+  sh(root, 'remote', 'add', 'origin', origin); sh(root, 'push', '-q', 'origin', 'main');
+  sh(root, 'worktree', 'add', '-q', '-b', '7-paired-work', join(root, '.worktrees', '7-paired-work'), 'origin/main');
+  spawnSync('mkdir', [bin]); writeFileSync(join(bin, 'gh'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const module = new URL('../../plugins/common/workflow/scripts/lib/drive.mjs', import.meta.url).href;
+  const code = `import { githubIo } from ${JSON.stringify(module)}; githubIo({ repo: 'acme/app', base: 'main' }, () => ({})).start({ number: 7, title: 'feat(pair): a different title' });`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], { cwd: root, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  assert.equal(result.status, 0, result.stderr);
+  const branches = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' }).stdout.match(/branch refs\/heads\/\S+/g);
+  assert.deepEqual(branches, ['branch refs/heads/main', 'branch refs/heads/7-paired-work']);
+});
