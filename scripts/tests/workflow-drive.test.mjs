@@ -1721,6 +1721,16 @@ test('drive sends an overlapping unstarted issue to the planner, starting nothin
   assert.doesNotMatch(brief, /Agree each slice with the owner/);
 });
 
+test('drive claims an overlapping issue whose N- worktree already has commits, with no planner step', () => {
+  const repo = fakeRepo({ issues: { 3: scoped(3, ['src/']), 4: scoped(4, ['src/a.js']) }, trees: { 3: tree({ commits: 2 }) } });
+  let asked = 0;
+  repo.io.overlaps = i => { asked++; return findOverlaps(i, repo.io.openIssues(), facts()); };
+  const step = drive(repo.io, 3, lanes, {});
+  assert.equal(asked, 0, 'the overlap check is skipped');
+  assert.notEqual(step.agent, 'planner');
+  assert.deepEqual(repo.calls, [['start', 3]], 'the issue is claimed');
+});
+
 test('drive never asks the planner about an issue whose PR is open, even without state:started', () => {
   const repo = fakeRepo({ issues: { 3: scoped(3, ['src/']), 4: scoped(4, ['src/a.js']) }, prs: [pr({ issue: 3, reviews: [review('fixes')] })] });
   let asked = 0;
