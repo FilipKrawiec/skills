@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ciState, nextCommand, prState, statusCommand, waitCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
+import { bugStats, bugsCommand, bugsLine } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 
 const head = 'a'.repeat(40);
 const lanes = { repo: 'acme/app', base: 'main', implementer: 'builder', reviewer: 'reviewer', owner: 'owner' };
@@ -238,4 +239,67 @@ test('a PR touching a path whose code owner is not the Reviewer goes to the owne
   const ownerApproved = { author: { login: 'owner' }, state: 'APPROVED', body: '', commit: { oid: head } };
   assert.equal(owned(['.github/CODEOWNERS'], { reviews: [...approved, ownerApproved] }).action, 'merge');
   assert.equal(prState(pr({ files: [{ path: '.github/CODEOWNERS' }], reviews: approved }), lanes).next.action, 'merge', 'without CODEOWNERS rules nothing is held');
+});
+
+// Bug inflow: a stubbed search keyed by the qualifiers in the query.
+const day = 86_400_000;
+const now = Date.parse('2026-11-19T12:00:00Z');
+const bug = (created, closed, extra = {}) => ({ created_at: created, closed_at: closed, state_reason: closed ? 'completed' : null, body: '', ...extra });
+function fakeSearch(repoSeen = []) {
+  const opened = [bug('2026-11-10T00:00:00Z', null), bug('2026-11-11T00:00:00Z', '2026-11-12T00:00:00Z'), bug('2026-11-12T00:00:00Z', '2026-11-12T12:00:00Z')];
+  const closed = [
+    bug('2026-11-01T00:00:00Z', '2026-11-12T00:00:00Z'),
+    bug('2026-11-12T00:00:00Z', '2026-11-12T12:00:00Z'),
+    bug('2026-11-05T00:00:00Z', '2026-11-06T00:00:00Z', { state_reason: 'not_planned', body: '<!-- workflow:consolidated-into 9 -->' }),
+    bug('2026-11-05T00:00:00Z', '2026-11-06T00:00:00Z', { state_reason: 'duplicate' }),
+    bug('2026-11-05T00:00:00Z', '2026-11-06T00:00:00Z', { state_reason: 'not_planned' }),
+  ];
+  return args => {
+    const q = args.find(arg => arg.startsWith('q='));
+    repoSeen.push(q);
+    assert.match(q, /label:"type:bug"/);
+    if (q.includes('is:open')) { assert.ok(args.includes('per_page=1')); return { total_count: 4, items: [] }; }
+    assert.ok(args.includes('--paginate'));
+    if (q.includes('created:>=2026-11-05')) return [{ total_count: 3, items: opened }];
+    if (q.includes('closed:>=2026-11-05')) return [{ total_count: 5, items: closed.slice(0, 3) }, { total_count: 5, items: closed.slice(3) }];
+    throw new Error(`unexpected search ${q}`);
+  };
+}
+
+test('bugStats counts opened, closed, open, median time to close and duplicates in the window', () => {
+  const stats = bugStats('acme/app', 14, fakeSearch(), now);
+  // Closed durations: 11d, 12h, 1d, 1d, 1d: the median is 1d.
+  assert.deepEqual(stats, { repo: 'acme/app', days: 14, opened: 3, closed: 5, open: 4, medianMs: day, duplicates: 2 });
+});
+
+test('bugs prints one line per repo, and the status line carries the same numbers', () => {
+  const lines = [];
+  const log = console.log; console.log = text => lines.push(text);
+  try { bugsCommand(['--days', '14'], { repo: 'acme/app' }, fakeSearch(), now); } finally { console.log = log; }
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0], 'acme/app (14d): opened 3, closed 5, open 4, median time to close 1d, duplicates 2 (target 0)');
+  assert.equal(bugsLine(bugStats('acme/app', 14, fakeSearch(), now)), 'Bugs (14d): opened 3, closed 5, open 4, median time to close 1d, duplicates 2 (target 0)');
+});
+
+test('bugs --repo reports that repo and --days rejects a non-positive value', () => {
+  const seen = [];
+  const lines = [];
+  const log = console.log; console.log = text => lines.push(text);
+  try { bugsCommand(['--repo', 'other/lib'], { repo: 'acme/app' }, fakeSearch(seen), now); } finally { console.log = log; }
+  assert.match(lines[0], /^other\/lib \(14d\):/);
+  assert.ok(seen.every(q => q.includes('repo:other/lib')));
+  for (const bad of [['--days', '0'], ['--days', '-3'], ['--days', 'x'], ['--repo', 'nope'], ['--days']]) {
+    assert.throws(() => bugsCommand(bad, { repo: 'acme/app' }, fakeSearch(), now), /Usage: bugs/);
+  }
+});
+
+test('status of an issue also prints one Bugs (14d) line', () => {
+  const issues = { 3: { state: 'open' } };
+  const base = fakeGh(issues);
+  const search = fakeSearch();
+  const lines = [];
+  const log = console.log, error = console.error; console.log = text => lines.push(text); console.error = text => lines.push(text);
+  try { statusCommand(['3'], lanes, args => (args.find(arg => String(arg).startsWith('q=')) ? search(args) : base(args)), undefined, now); } finally { console.log = log; console.error = error; }
+  assert.equal(lines.filter(line => line.startsWith('Bugs (14d):')).length, 1);
+  assert.equal(JSON.parse(lines.find(line => line.startsWith('{'))).number, 3);
 });

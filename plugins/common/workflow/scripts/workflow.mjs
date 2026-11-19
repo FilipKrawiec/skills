@@ -26,6 +26,7 @@ import {
   issueReopen,
   issueStatus,
   issueSweepBoard,
+  bugsCommand,
   labelsCommand,
 } from './lib/issues.mjs';
 import {
@@ -53,6 +54,7 @@ const help = `Usage:
   node workflow.mjs scratch
   node workflow.mjs usage-line TRANSCRIPT [--rates IN,OUT,CACHE_READ,CACHE_WRITE]
   node workflow.mjs status NUMBER
+  node workflow.mjs bugs [--days N] [--repo OWNER/NAME]
   node workflow.mjs wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]
   node workflow.mjs wait slot
   node workflow.mjs next [--owner]
@@ -87,6 +89,7 @@ A PR reviewer runs through review-session.mjs, which records the session's usage
 drive fetches origin first, reads .agents/config.json from the remote default branch and names that commit as configCommit; it advances an issue or epic from GitHub state: it performs every mechanical step (claim, worktree, commit and push from a hand-back, draft PR, risk, ready, auto-merge, close, worktree removal) and prints one JSON instruction: an agent to start with its model and brief, a wait command to run in the background, an owner step, or done. Re-running it on unchanged state repeats the instruction.
 bench replays the pinned known-defect and known-clean PRs of docs/review-benchmark.json through the Reviewer with a drive-built packet and reports catches, false positives and cost per setting and per risk; --settings model:effort,... replays the snapshot once per setting; without --run it only validates the snapshot and lists what it would run, spending nothing; --out saves the JSON result and --compare shows the delta against a saved one.
 check runs steps.test under a machine-wide lock with two slots, so at most two gates run at once.
+bugs prints per repo (default: the configured one, 14 days) the type:bug issues opened and closed in the window, the open count, the median time to close and the closed-as-duplicate count, target 0; status NUMBER also prints one Bugs (14d): line with the same numbers on stderr.
 A body or comments file is - (stdin) or a path inside the worktree; scratch creates the git-ignored .wf/ directory for such files and prints its path.`;
 export function hasLockfAncestor(commands) {
   return commands.some(command => basename(command.trim().split(/\s+/, 1)[0]) === 'lockf');
@@ -179,6 +182,7 @@ async function execute(command, args) {
   else if (command === 'issue' && args[0] === 'close') { config(); issueClose(args.slice(1)); }
   else if (command === 'issue' && args[0] === 'reopen') { config(); issueReopen(args.slice(1)); }
   else if (command === 'status') { const { lanes } = config(); statusCommand(args, lanes); }
+  else if (command === 'bugs') { const { lanes } = config(); bugsCommand(args, lanes); }
   else if (command === 'wait') { const { lanes } = config(); process.exitCode = args[0] === 'slot' ? waitSlotCommand(args.slice(1), lanes) : waitCommand(args, lanes); }
   else if (command === 'next') { const { lanes } = config(); nextCommand(args, lanes); }
   else if (command === 'responsibility') { if (args.length !== 2) throw new Error('Usage: responsibility NAME BRIEF'); const { lanes } = config(); process.stdout.write(runResponsibility(lanes.delivery, args[0], args[1])); }

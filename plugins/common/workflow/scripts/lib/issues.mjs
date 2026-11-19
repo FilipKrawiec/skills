@@ -251,3 +251,39 @@ export function labelsCommand(args) {
   if (!lanes.repo) throw new Error('Cannot infer a GitHub repository from origin');
   for (const name of ensureWorkflowLabels(lanes.repo)) console.log(`Created: ${name}`);
 }
+
+// Bug inflow for one repo over the last `days`: `type:bug` issues opened and closed in the window, the open count now,
+// the median time to close of those closed in the window, and the closed-as-duplicate count (target 0).
+const searchBugs = (read, repo, qualifiers, paginate = true) => read(['api', '--method', 'GET', ...(paginate ? ['--paginate', '--slurp'] : []), 'search/issues', '-f', `q=repo:${repo} is:issue label:"type:bug" ${qualifiers}`, '-f', `per_page=${paginate ? 100 : 1}`]);
+const isDuplicate = issue => issue.state_reason === 'duplicate' || (issue.state_reason === 'not_planned' && consolidatedInto(issue.body || '') !== null);
+const median = values => { const sorted = [...values].sort((a, b) => a - b); const mid = sorted.length >> 1; return sorted.length ? (sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2) : null; };
+export function bugStats(repo, days, read = args => gh(args), now = Date.now()) {
+  const since = new Date(now - days * 86_400_000).toISOString().slice(0, 10);
+  const items = qualifiers => searchBugs(read, repo, qualifiers).flatMap(page => page.items || []);
+  const opened = items(`created:>=${since}`);
+  const closed = items(`is:closed closed:>=${since}`);
+  const open = searchBugs(read, repo, 'is:open', false).total_count;
+  return {
+    repo, days, opened: opened.length, closed: closed.length, open,
+    medianMs: median(closed.map(issue => Date.parse(issue.closed_at) - Date.parse(issue.created_at))),
+    duplicates: closed.filter(isDuplicate).length,
+  };
+}
+const duration = ms => {
+  if (ms === null) return 'n/a';
+  const hours = ms / 3_600_000;
+  const [value, unit] = hours < 24 ? [hours, 'h'] : [hours / 24, 'd'];
+  return `${Number(value.toFixed(1))}${unit}`;
+};
+const bugNumbers = stats => `opened ${stats.opened}, closed ${stats.closed}, open ${stats.open}, median time to close ${duration(stats.medianMs)}, duplicates ${stats.duplicates} (target 0)`;
+export const bugsLine = stats => `Bugs (${stats.days}d): ${bugNumbers(stats)}`;
+export function bugsCommand(args, lanes, read, now) {
+  const usage = 'Usage: bugs [--days N] [--repo OWNER/NAME]';
+  let o;
+  try { o = flags(args, ['--days', '--repo']); } catch { throw new Error(usage); }
+  const days = o['--days'] === undefined ? 14 : Number(o['--days']);
+  const repo = o['--repo'] ?? lanes.repo;
+  if (!Number.isInteger(days) || days < 1 || !/^[\w.-]+\/[\w.-]+$/.test(repo || '')) throw new Error(usage);
+  const stats = bugStats(repo, days, read, now);
+  console.log(`${repo} (${days}d): ${bugNumbers(stats)}`);
+}
