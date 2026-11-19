@@ -285,6 +285,9 @@ export function decideIssue(facts, lanes) {
   // The owner's issue label is a floor; drive raises a PR label to it and never lowers one someone raised.
   const risk = maxRisk(state.risk, riskLabel(issue.labels || []), facts.prAssessment?.risk);
   if (risks.indexOf(risk) > risks.indexOf(state.risk)) return { do: 'risk', risk };
+  // Closing the issue must not strand gate baseline entries tagged with it: the gate rejects an entry whose issue is closed.
+  const closesIssue = new RegExp(`\\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\\s*:?\\s+#${issue.number}\\b`, 'i').test(pr.body || '');
+  if (closesIssue && facts.baselineRefs?.length) return { do: 'retag-baselines', paths: facts.baselineRefs };
   const next = state.next;
   if (next.action === 'fix' && staleConflict) return staleReview;
   // A narrowed issue changes what the head is judged against: the Reviewer judges the same head again, no new build.
@@ -883,6 +886,30 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     sweepBoard: () => { try { return sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, { windowed: true }); } catch (error) { console.error(`drive: board sweep skipped: ${error.message}`); return []; } },
     // A repository with no board skips the step (boardStatus returns false and says so); any other failure throws.
     requiredBoard: (n, value) => { boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, n, value, false); },
+    // Gate baseline files (any tracked path with `baseline` in its name) holding an entry tagged `#N`.
+    baselineRefs: (issue, tree) => (gitIn(tree.path, ['grep', '-lIE', `#${issue.number}([^0-9]|$)`, '--', ':(glob,icase)**/*baseline*']) || '').split('\n').filter(Boolean),
+    // The entries move to one open follow-up under the same epic (reused by its marker, else created), committed on the PR's branch.
+    retagBaselines: (issue, pr, tree) => {
+      const epicNumber = gh(['api', `repos/${repo}/issues/${issue.number}/parent`]).number;
+      const marker = `<!-- workflow:baseline-follow-up ${epicNumber} -->`;
+      const siblings = gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${epicNumber}/sub_issues?per_page=100`]).flat();
+      let target = siblings.find(sub => sub.state === 'open' && (sub.body || '').includes(marker));
+      if (!target) {
+        const [owner, name] = repo.split('/');
+        const lookup = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){id issue(number:$number){id milestone{id}}}}';
+        const data = gh(['api', 'graphql', '-f', `query=${lookup}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${epicNumber}`]).data.repository;
+        const mutation = 'mutation($repository:ID!,$parent:ID!,$title:String!,$body:String!,$milestone:ID){createIssue(input:{repositoryId:$repository,parentIssueId:$parent,title:$title,body:$body,milestoneId:$milestone}){issue{number}}}';
+        const outcome = 'Remove the gate baseline entries retagged to this issue when their work closed; baselines shrink with no new entries.';
+        const body = `${marker}\n\n## Outcome\n${outcome}\n\n### Acceptance criteria\n- [ ] ${outcome}`;
+        target = { number: gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=chore: remove baseline entries left by epic #${epicNumber}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]).data.createIssue.issue.number };
+      }
+      const paths = (gitIn(tree.path, ['grep', '-lIE', `#${issue.number}([^0-9]|$)`, '--', ':(glob,icase)**/*baseline*']) || '').split('\n').filter(Boolean);
+      for (const path of paths) {
+        const file = join(tree.path, path);
+        writeFileSync(file, readFileSync(file, 'utf8').replace(new RegExp(`#${issue.number}(?![0-9])`, 'g'), `#${target.number}`));
+      }
+      self(['commit', '--message', `chore(baseline): retag entries from #${issue.number} to #${target.number}`, '--', ...paths], tree.path);
+    },
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
     removeTree: tree => {
       const all = trees(); const root = all[0].path;
@@ -934,7 +961,8 @@ function readIssueFacts(io, n, handBack) {
   // Only the assessment of the current phase is read: the issue's before a draft exists, then the PR's.
   const assessment = io.assessment(issue, pr?.state === 'OPEN' ? pr : null);
   const assessments = pr?.state === 'OPEN' ? { prAssessment: assessment } : { issueAssessment: assessment };
-  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, ...assessments, reviewingSince, reviewSession, postFailed, reviewThreads, now: io.now?.() ?? Date.now() };
+  const baselineRefs = pr?.state === 'OPEN' && tree ? io.baselineRefs?.(issue, tree) || [] : [];
+  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, baselineRefs, ...assessments, reviewingSince, reviewSession, postFailed, reviewThreads, now: io.now?.() ?? Date.now() };
 }
 // The risk that picks the models: the PR's label once a draft exists, else the issue assessment; never below the floor.
 function currentRisk(facts, step) {
@@ -1065,6 +1093,7 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
       io.assess(issue, pr?.state === 'OPEN' ? pr : null, { risk: maxRisk(floor, step.risk), assessed: step.risk, floor, head: pr?.headRefOid ?? null, paths: pr ? facts.diffPaths : [], reason: step.reason });
     }
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
+    else if (step.do === 'retag-baselines') { if (pr?.autoMergeRequest) io.disableAutoMerge(pr); io.retagBaselines(issue, pr, tree); io.push(tree); }
     else if (step.do === 'push') { if (pr?.autoMergeRequest) io.disableAutoMerge(pr); io.push(tree); }
     else if (step.do === 'open') { io.open(issue, tree, maxRisk(riskLabel(issue.labels || []), facts.issueAssessment?.risk || 'R1'), handBack); bodyUpdated = true; }
     else if (step.do === 'release-review') io.releaseReview(pr, tree, step.claim);

@@ -350,6 +350,29 @@ test('drive pushes a real commit once and opens its PR in the same call', t => {
   assert.equal(result.agent, 'devops', 'the new draft is assessed before review');
 });
 
+test('a PR that closes an issue gate baselines still tag retags them before review, with no owner step', () => {
+  const open = { issue: started, tree: tree({ commits: 1 }), pr: pr(), baselineRefs: ['tool/unused_symbols_baseline.txt'] };
+  assert.deepEqual(decide(open), { do: 'retag-baselines', paths: ['tool/unused_symbols_baseline.txt'] });
+  assert.notEqual(decide({ ...open, baselineRefs: [] }).do, 'retag-baselines');
+  assert.notEqual(decide({ ...open, pr: pr({ body: 'Part of #3', closingIssuesReferences: [] }) }).do, 'retag-baselines', 'an issue the PR leaves open keeps its entries');
+});
+
+test('closing an issue a baseline references leaves the gate green: entries move to one follow-up first', () => {
+  const repo = fakeRepo({ issues: { 3: started }, prs: [pr({ issue: 3, isDraft: false, reviews: [review('ready', 'APPROVED')] })], trees: { 3: tree({ commits: 1 }) }, baselines: { 'tool/unused_symbols_baseline.txt': ['foo # #3', 'bar # #3', 'baz # #9'] } });
+  repo.io.baselineRefs = () => Object.entries(repo.s.baselines).filter(([, lines]) => lines.some(line => line.endsWith('# #3'))).map(([path]) => path);
+  repo.io.retagBaselines = (i, p, t) => {
+    const followUp = repo.s.issues[77] ||= issue({ number: 77, title: 'remove baseline entries left by #3' });
+    repo.calls.push(['retag', i.number, followUp.number]);
+    for (const lines of Object.values(repo.s.baselines)) lines.forEach((line, k) => { if (line.endsWith('# #3')) lines[k] = line.replace('# #3', `# #${followUp.number}`); });
+    t.unpushed = true;
+  };
+  const result = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(repo.calls.slice(0, 2), [['retag', 3, 77], ['push']]);
+  assert.deepEqual(repo.s.baselines['tool/unused_symbols_baseline.txt'], ['foo # #77', 'bar # #77', 'baz # #9']);
+  assert.equal(repo.s.issues[77].state, 'OPEN');
+  assert.equal(result.owner, undefined);
+});
+
 test('drive performs the mechanical steps and stops at one instruction; re-running repeats it', () => {
   const repo = fakeRepo({ issues: { 3: issue({ body: '```scope\n{"paths":["docs/a.md"]}\n```', assessment: assessed('R0') }) } });
   const first = drive(repo.io, 3, lanes, {});

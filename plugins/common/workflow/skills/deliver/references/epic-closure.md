@@ -21,3 +21,7 @@ A refinement slice (`workflow:epic-refinement`) whose review finds nothing to ch
 Every `drive` run first moves each closed issue's board card not yet in Done to Done, and `wait <pr> --until merged` does so when the PR merges, so a merged issue never waits for a rerun. `<cli> issue sweep-board` does the same alone and prints the count; open issues stay.
 
 A child closed as completed without its own PR needs a `<!-- workflow:consolidated-into N -->` marker or the statement "Make no repository changes."; `issue close` refuses otherwise (spec's `split.md`).
+
+## Gate baseline entries
+
+Before a PR that closes an issue goes to review, `drive` retags every gate baseline entry (a tracked `*baseline*` file line tagged `#N`) to one open follow-up under the same epic, filing it when none exists; the gate rejects entries whose issue is closed. The retag is covered by the standing approval, so the owner never picks the target.
