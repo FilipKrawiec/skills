@@ -537,7 +537,7 @@ const file=process.env.TEST_ISSUES, db=JSON.parse(fs.readFileSync(file,'utf8')),
 const path=a.find(x=>x.startsWith('repos/'))||'', field=k=>{const x=a.find(v=>v.startsWith(k+'='));return x&&x.slice(k.length+1);};
 if(a[0]==='auth'){console.log('SECRET_TOKEN');process.exit(0);}
 if(a.includes('user')){out({login:'builder'});process.exit(0);}
-if(a[0]==='issue'&&a[1]==='list'){out(db.issues);process.exit(0);}
+if(a[0]==='issue'&&a[1]==='list'){const st=a[a.indexOf('--state')+1];db.lists.push(a.join(' '));save();out(db.issues.filter(x=>st==='open'?x.state!=='CLOSED':st==='closed'?x.state==='CLOSED':true));process.exit(0);}
 const comment=path.match(/issues\\/(\\d+)\\/comments$/);
 if(comment){db.comments.push({number:Number(comment[1]),body:field('body')});save();out({id:1});process.exit(0);}
 const sub=path.match(/issues\\/(\\d+)\\/sub_issues/);
@@ -556,7 +556,7 @@ out({});
   commitFixture(f);
   writeFileSync(join(f.env.HOME, '.config', 'gh-agents', 'workflow-env.json'), JSON.stringify({ env: { GH_TOKEN: 'SECRET_TOKEN' } }));
   f.env.TEST_ISSUES = join(f.root, 'issues.json');
-  writeFileSync(f.env.TEST_ISSUES, JSON.stringify({ issues: existing, creates: [], comments: [], patches: [], sub: [] }));
+  writeFileSync(f.env.TEST_ISSUES, JSON.stringify({ issues: existing, creates: [], comments: [], patches: [], sub: [], lists: [] }));
   return f;
 }
 const packet = paths => `\u0060\u0060\u0060scope\n${JSON.stringify({ paths })}\n\u0060\u0060\u0060`;
@@ -638,4 +638,14 @@ test('--distinct-from with a reason creates the issue and records it; without a 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Created: #100/);
   assert.match(dupState(f).creates[0].body, /Distinct from #40: Different host, same symptom/);
+});
+
+test('the duplicate search lists open issues and recently closed ones separately, never one capped all-state page', t => {
+  const f = duplicateFixture(t, [{ number: 40, title: FAULT, body: faultBody, state: 'CLOSED', closedAt: daysAgo(2) }]);
+  const result = filed(f, FAULT, faultBody, '--labels', 'type:bug');
+  assert.match(result.stdout, /Exists: #40/);
+  const lists = dupState(f).lists.join('\n');
+  assert.match(lists, /--state open /);
+  assert.match(lists, /--state closed --search closed:>=\d{4}-\d{2}-\d{2}/);
+  assert.doesNotMatch(lists, /--state all/);
 });

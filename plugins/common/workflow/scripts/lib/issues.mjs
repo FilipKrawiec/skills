@@ -172,7 +172,13 @@ export function issueCreate(args) {
     }
     if (check) return;
     if (!distinct) {
-      const all = gh(['issue', 'list', '--repo', repo, '--state', 'all', '--limit', '1000', '--json', 'number,title,body,state,closedAt']);
+      // Two lists, never one `--state all` page: that returns only the newest N by creation date and hides an older open issue or one closed lately.
+      const since = new Date(Date.now() - DUPLICATE_WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
+      const fields = 'number,title,body,state,closedAt';
+      const all = [
+        ...gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '5000', '--json', fields]),
+        ...gh(['issue', 'list', '--repo', repo, '--state', 'closed', '--search', `closed:>=${since}`, '--limit', '5000', '--json', fields]),
+      ];
       const match = findExistingMatch(all, { title, body });
       if (match) {
         gh(['api', `repos/${repo}/issues/${match.number}/comments`, '-f', `body=New evidence from a repeated \`issue create\` (${title}):\n\n${body}`]);
