@@ -14,6 +14,17 @@ import {
   worktreeVerdict,
 } from '../../plugins/common/workflow/scripts/lib/worktrees.mjs';
 
+// A PATH holding only real git (not macOS's xcrun shim, which needs /usr/bin) and a silent lsof stub.
+function hermeticBin(bin) {
+  mkdirSync(bin);
+  const execPath = spawnSync('git', ['--exec-path'], { encoding: 'utf8' }).stdout.trim();
+  const real = join(execPath, '..', '..', 'bin', 'git');
+  const found = existsSync(real) ? real : spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+  symlinkSync(realpathSync(found), join(bin, 'git'));
+  writeFileSync(join(bin, 'lsof'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  return bin;
+}
+
 const now = Date.UTC(2026, 10, 7);
 const day = 86_400_000;
 const hour = 3_600_000;
@@ -156,12 +167,7 @@ test('worktree tidy keeps a tree whose lock names a live pid and treats a dead p
 
 test('worktree tidy command rejects a bad --idle-days and keeps idle trees without gh', t => {
   const { repo, git, add } = fixture(t);
-  const bin = join(repo, '..', 'bin');
-  mkdirSync(bin);
-  for (const tool of ['git', 'lsof']) {
-    const found = spawnSync('which', [tool], { encoding: 'utf8' }).stdout.trim();
-    if (found) symlinkSync(found, join(bin, tool));
-  }
+  const bin = hermeticBin(join(repo, '..', 'bin'));
   assert.equal(git(repo, 'remote', 'add', 'origin', 'https://github.com/example/repo.git').status, 0);
   const idleTree = add('idle');
   assert.equal(git(idleTree, 'commit', '-q', '--allow-empty', '-m', 'x').status, 0);
@@ -179,12 +185,7 @@ test('worktree tidy command rejects a bad --idle-days and keeps idle trees witho
 
 test('worktree tidy command without gh keeps a clean pushed tree but still removes one already in the base', t => {
   const { repo, git, add } = fixture(t);
-  const bin = join(repo, '..', 'bin');
-  mkdirSync(bin);
-  for (const tool of ['git', 'lsof']) {
-    const found = spawnSync('which', [tool], { encoding: 'utf8' }).stdout.trim();
-    if (found) symlinkSync(found, join(bin, tool));
-  }
+  const bin = hermeticBin(join(repo, '..', 'bin'));
   assert.equal(git(repo, 'remote', 'add', 'origin', 'https://github.com/example/repo.git').status, 0);
   const pushed = add('pushed');
   assert.equal(git(pushed, 'commit', '-q', '--allow-empty', '-m', 'on the remote').status, 0);
