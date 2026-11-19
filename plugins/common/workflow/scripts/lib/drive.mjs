@@ -674,6 +674,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   const io = {
     issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,stateReason,title,body,labels,assignees,milestone,author']),
     dependencies: issue => readDependencies(repo, issue, gh),
+    // Fails closed: an unreadable timeline is no approval.
+    ownerApproved: issue => { try { return ownerApproved(gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${issue.number}/timeline?per_page=100`]).flat(), lanes.owner); } catch { return false; } },
     allBlockers: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/dependencies/blocked_by?per_page=100`]).flat().map(dep => dep.number),
     addBlocker: (n, blocker) => {
       const id = gh(['api', `repos/${repo}/issues/${blocker}`]).id;
@@ -1229,7 +1231,7 @@ export function drive(io, n, lanes, handBack = {}) {
 }
 function driveTarget(io, n, lanes, handBack = {}) {
   const issue = io.issue(n);
-  if (issue.state === 'OPEN' && untrustedAuthor(issue, trustedLogins(lanes))) return { owner: `#${n} is from an untrusted author (${issue.author.login}); re-file it from your own account`, url: issue.url };
+  if (issue.state === 'OPEN' && untrustedAuthor(issue, trustedLogins(lanes)) && !io.ownerApproved?.(issue)) return { owner: `#${n} is from an untrusted author (${issue.author?.login ?? 'unknown'}); label it owner:approved as ${lanes.owner} to have drive take it`, url: issue.url };
   // An epic advances from GitHub state alone: the planner's hand-back changes nothing drive reads.
   if (isEpic(issue)) {
     // A hand-back for an epic records one usage row on the epic (improver unless it names its agent); a failure never blocks.
@@ -1249,17 +1251,24 @@ function driveTarget(io, n, lanes, handBack = {}) {
 }
 // --next: ready items in order, started issues first, then approved epics and standalone issues by number.
 // An item with an unmet or dropped dependency never qualifies; `depsOf` reads them lazily, in that order.
-// Only issues written by the trusted role accounts qualify (`trusted`: their logins); a public repo takes issues from anyone.
+// An issue from an account other than the trusted role logins (or with no readable author) qualifies only when `approved(issue)` says the
+// owner labeled it `owner:approved`; a public repo takes issues from anyone.
 export const trustedLogins = lanes => [lanes.owner, lanes.implementer, lanes.reviewer].filter(Boolean).map(login => login.toLowerCase());
-export const untrustedAuthor = (issue, trusted) => !!trusted && !!issue.author && !trusted.includes(String(issue.author.login ?? '').toLowerCase());
-export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] }), trusted) {
+export const untrustedAuthor = (issue, trusted) => !!trusted && !trusted.includes(String(issue.author?.login ?? '').toLowerCase());
+// The newest `owner:approved` label event in the timeline must be a `labeled` one by the owner login.
+export const ownerApproved = (timeline, owner) => {
+  if (!Array.isArray(timeline) || !owner) return false;
+  const event = timeline.filter(e => ['labeled', 'unlabeled'].includes(e.event) && e.label?.name === 'owner:approved').at(-1);
+  return event?.event === 'labeled' && String(event.actor?.login ?? '').toLowerCase() === owner.toLowerCase();
+};
+export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] }), trusted, approved = () => false) {
   const names = issue => issue.labels.map(label => label.name ?? label);
-  const candidates = issues.filter(issue => !untrustedAuthor(issue, trusted) && !names(issue).includes('lane:owner') && !(issue.body || '').includes(INBOX_MARKER));
+  const candidates = issues.filter(issue => (!untrustedAuthor(issue, trusted) || approved(issue)) && !names(issue).includes('lane:owner') && !(issue.body || '').includes(INBOX_MARKER));
   const rank = issue => Number(!names(issue).includes('state:started'));
   const ordered = [...candidates].sort((a, b) => rank(a) - rank(b) || a.number - b.number);
   for (const issue of ordered) { const { blockers, dropped } = depsOf(issue); if (!blockers.length && !dropped.length) yield issue.number; }
 }
-export const nextTarget = (issues, depsOf, trusted) => nextTargets(issues, depsOf, trusted).next().value ?? null;
+export const nextTarget = (issues, depsOf, trusted, approved) => nextTargets(issues, depsOf, trusted, approved).next().value ?? null;
 
 // A PR waiting on CI or its merge lets the next ready issue run; a later approved PR never merges before an earlier one.
 const overlaps = (step, earlierWaiting) => (step.wait && ['ci', 'merged'].includes(step.wait.until)) || (earlierWaiting && step.do === 'auto-merge');
@@ -1388,7 +1397,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   if (swept.length) console.error(`drive: moved ${swept.length} closed issue card${swept.length === 1 ? '' : 's'} to Done: ${swept.map(n => `#${n}`).join(', ')}`);
   let n;
   if (args[0] === '--next') {
-    const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes));
+    const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false);
     if (liveRuns({ directory: lockDirectory, repo: lanes.repo, now, session }) >= maxRuns) { console.log(JSON.stringify(slotsFull(null, lanes))); return; }
     const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
     if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(null, lock, now))); return; }

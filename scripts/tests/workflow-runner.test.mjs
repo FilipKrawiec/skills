@@ -9,7 +9,7 @@ import { runnerDefaults, runnerInstall, runnerJob, runnerPoll, runnerStatus, run
 const lanes = { repo: 'acme/app', owner: 'owner' };
 const T0 = Date.parse('2026-11-18T10:00:00Z');
 const quotaOk = { remaining: 4000, limit: 5000, resetAt: '2026-11-18T11:00:00.000Z' };
-const issues = [3, 4, 5, 6, 7, 8, 9, 10].map(number => ({ number, labels: [], body: '' }));
+const issues = [3, 4, 5, 6, 7, 8, 9, 10].map(number => ({ number, labels: [], body: '', author: { login: 'owner' } }));
 
 function setup(extra = {}) {
   const root = mkdtempSync(join(tmpdir(), 'runner-'));
@@ -22,6 +22,7 @@ function setup(extra = {}) {
     probeQuota: () => world.quota,
     openIssues: () => { world.reads++; return world.issues; },
     dependencies: () => [],
+    ownerApproved: () => !!world.ownerApproved,
     start: ({ id, now }) => { const pid = 1000 + world.started.length; world.started.push(id); world.living.add(pid); return { id, pid, startedAt: now, log: join(logDirectory, `session-${id}.log`) }; },
     alive: pid => world.living.has(pid),
     terminate: pid => world.terminated.push(pid),
@@ -63,6 +64,19 @@ test('ready work starts one session per poll, since drive --next admits one at a
   t.claim(first.started[0], 'next');
   t.advance(runnerDefaults.minIntervalMs);
   assert.deepEqual(t.poll().started, [], 'a session holding only the next claim counts and blocks another');
+});
+
+test('an outsider issue is not ready work: only the trusted issue starts', () => {
+  const t = setup({ issues: [{ number: 2, labels: [], body: '', author: { login: 'stranger' } }, { number: 3, labels: [], body: '', author: { login: 'owner' } }] });
+  t.poll();
+  assert.equal(t.world.started.length, 1);
+  assert.match(lines(t.logDirectory)[0], /ready=1 /);
+  const approved = setup({ issues: [{ number: 2, labels: [], body: '', author: { login: 'stranger' } }], ownerApproved: true });
+  approved.poll();
+  assert.equal(approved.world.started.length, 1, 'an owner-approved outsider issue is ready');
+  const only = setup({ issues: [{ number: 2, labels: [], body: '', author: { login: 'stranger' } }] });
+  assert.deepEqual(only.poll().started, []);
+  assert.match(lines(only.logDirectory)[0], /ready=0 live=0 started=0 recovered=0 idle/);
 });
 
 test('every slot taken starts nothing and exits without reading issues', () => {

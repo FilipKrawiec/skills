@@ -110,7 +110,7 @@ function pollLocked(lanes, { io, logDirectory, claims, cwd, options }) {
   if (pending || fresh.some(claim => claim.issue === 'next')) return finish('next claim held', { live, ready: 0 });
   const taken = new Set(fresh.map(claim => claim.issue));
   const ready = [];
-  for (const number of nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes))) {
+  for (const number of nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false)) {
     if (!taken.has(String(number))) { ready.push(number); break; }
   }
   for (const index of ready.keys()) {

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
-  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, trustedLogins, holdBaseUpdates, latestAssessment,
+  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
   driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -19,7 +19,7 @@ const lanes = { repo: 'acme/app', base: 'main', implementer: 'builder', reviewer
 const label = name => ({ name });
 const review = (verdict, state = 'COMMENTED') => ({ author: { login: 'reviewer' }, state, body: `<!-- agent-review sha=${head} round=1 verdict=${verdict} -->`, commit: { oid: head } });
 const green = [{ name: 'verify', conclusion: 'SUCCESS' }];
-const issue = (extra = {}) => ({ number: 3, url: 'https://github.com/acme/app/issues/3', state: 'OPEN', title: 'feat(app): add a thing', body: '', labels: [], ...extra });
+const issue = (extra = {}) => ({ number: 3, url: 'https://github.com/acme/app/issues/3', state: 'OPEN', title: 'feat(app): add a thing', body: '', labels: [], author: { login: 'owner' }, ...extra });
 const assessed = (risk = 'R1', paths = []) => ({ risk, assessed: risk, head, paths, reason: 'a local change' });
 const pr = (extra = {}) => ({ assessment: assessed(), number: 5, url: 'https://github.com/acme/app/pull/5', state: 'OPEN', isDraft: true, headRefOid: head, headRefName: '3-add-a-thing', labels: [label('risk:R1')], mergeable: 'MERGEABLE', statusCheckRollup: green, reviews: [], body: 'Closes #3', closingIssuesReferences: [{ number: 3, repository: { owner: { login: 'acme' }, name: 'app' } }], files: [], ...extra });
 const tree = (extra = {}) => ({ path: '/repo/.worktrees/3-add-a-thing', branch: '3-add-a-thing', dirty: false, commits: 0, unpushed: false, diffPaths: [], subjects: [], ...extra });
@@ -2394,16 +2394,29 @@ test('epic closure counts a child closed as not planned as resolved but holds a 
   assert.match(drive(repo.io, 9, lanes, {}).owner, /missing closing PR merged into main for #11$/, 'a completed child without a PR still holds the epic');
 });
 
-test('only issues from the trusted role accounts are taken: --next skips outsiders and drive N hands them to the owner', () => {
+test('an outsider issue is taken only with owner:approved applied by the owner: --next skips it, drive N hands it to the owner', () => {
   const trusted = trustedLogins(lanes);
   const mine = { number: 4, labels: [], body: '', author: { login: 'Builder' } };
   const outsider = { number: 2, labels: [], body: '', author: { login: 'mallory' } };
-  assert.deepEqual([...nextTargets([outsider, mine], undefined, trusted)], [4], 'a trusted issue is taken, the outsider skipped');
-  assert.equal(nextTarget([outsider], undefined, trusted), null);
+  const nameless = { number: 1, labels: [], body: '' };
+  assert.deepEqual([...nextTargets([nameless, outsider, mine], undefined, trusted)], [4], 'a trusted issue is taken; the outsider and a missing author fail closed');
+  assert.deepEqual([...nextTargets([outsider, mine], undefined, trusted, issue => issue.number === 2)], [2, 4], 'an approved outsider issue is taken');
   const repo = fakeRepo({ issues: { 2: issue({ number: 2, author: { login: 'mallory' } }) } });
   const step = drive(repo.io, 2, lanes, {});
-  assert.match(step.owner, /#2 is from an untrusted author \(mallory\); re-file it from your own account/);
+  assert.match(step.owner, /#2 is from an untrusted author \(mallory\); label it owner:approved as owner/);
   assert.equal(step.do, undefined, 'nothing is claimed, labeled or built');
-  const trustedRepo = fakeRepo({ issues: { 3: issue({ author: { login: 'owner' } }) } });
-  assert.equal(drive(trustedRepo.io, 3, lanes, {}).owner, undefined);
+  assert.equal(drive(fakeRepo({ issues: { 3: issue({ author: { login: 'owner' } }) } }).io, 3, lanes, {}).owner, undefined);
+  const approved = fakeRepo({ issues: { 2: issue({ number: 2, author: { login: 'mallory' } }) } });
+  approved.io.ownerApproved = () => true;
+  assert.equal(drive(approved.io, 2, lanes, {}).owner, undefined, 'an approved outsider issue is driven');
+});
+
+test('owner approval needs the newest owner:approved label event to be a labeled event by the owner login', () => {
+  const ev = (event, login, name = 'owner:approved') => ({ event, actor: { login }, label: { name } });
+  assert.equal(ownerApproved([ev('labeled', 'Owner')], 'owner'), true);
+  assert.equal(ownerApproved([ev('labeled', 'mallory')], 'owner'), false, 'applied by someone else');
+  assert.equal(ownerApproved([ev('labeled', 'owner'), ev('unlabeled', 'owner')], 'owner'), false, 'withdrawn');
+  assert.equal(ownerApproved([ev('labeled', 'owner'), ev('labeled', 'mallory')], 'owner'), false, 'the newest event decides');
+  assert.equal(ownerApproved([ev('labeled', 'owner', 'lane:owner')], 'owner'), false, 'another label');
+  assert.equal(ownerApproved(undefined, 'owner'), false, 'an unreadable timeline fails closed');
 });

@@ -112,7 +112,7 @@ test('status shows per-PR usage totals, "unreported" with none, and survives a f
 });
 test('drive records a hand-back usage line once, and a failure to record never blocks the step', () => {
   const recorded = []; const writes = {};
-  const issue = { number: 3, url: 'https://github.com/acme/app/issues/3', state: 'OPEN', title: 'feat: a', body: '', labels: [{ name: 'state:started' }, { name: 'risk:R1' }] };
+  const issue = { number: 3, url: 'https://github.com/acme/app/issues/3', state: 'OPEN', title: 'feat: a', body: '', author: { login: 'owner' }, labels: [{ name: 'state:started' }, { name: 'risk:R1' }] };
   const pr = { number: 5, url: 'u', state: 'OPEN', isDraft: true, headRefOid: 'a'.repeat(40), headRefName: '3-a', labels: [{ name: 'risk:R1' }], mergeable: 'MERGEABLE', statusCheckRollup: [{ name: 'verify', conclusion: 'SUCCESS' }], reviews: [], body: 'Closes #3', closingIssuesReferences: [{ number: 3, repository: { owner: { login: 'acme' }, name: 'app' } }], files: [] };
   const assessment = { risk: 'R1', assessed: 'R1', head: pr.headRefOid, paths: [], reason: 'local' };
   const io = {
@@ -132,7 +132,7 @@ test('drive records a hand-back usage line once, and a failure to record never b
 
 test('a host that prints no figures still records an unreported row per role, on the PR or else the issue', () => {
   const recorded = [];
-  const issue = { number: 3, url: 'https://github.com/acme/app/issues/3', state: 'OPEN', title: 'feat: a', body: '', labels: [{ name: 'state:started' }, { name: 'risk:R1' }] };
+  const issue = { number: 3, url: 'https://github.com/acme/app/issues/3', state: 'OPEN', title: 'feat: a', body: '', author: { login: 'owner' }, labels: [{ name: 'state:started' }, { name: 'risk:R1' }] };
   const pr = { number: 5, url: 'u', state: 'OPEN', isDraft: true, headRefOid: 'a'.repeat(40), headRefName: '3-a', labels: [{ name: 'risk:R1' }], mergeable: 'MERGEABLE', statusCheckRollup: [{ name: 'verify', conclusion: 'SUCCESS' }], reviews: [], body: 'Closes #3', closingIssuesReferences: [{ number: 3, repository: { owner: { login: 'acme' }, name: 'app' } }], files: [] };
   const io = (current, writes = {}) => ({
     issue: () => issue, dependencies: () => [], pr: () => current, tree: () => ({ path: '/w/3', branch: '3-a', dirty: false, commits: 1, unpushed: false, diffPaths: [], subjects: [] }),

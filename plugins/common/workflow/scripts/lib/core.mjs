@@ -311,6 +311,7 @@ export function withRepoLock(name, action) {
 }
 export const workflowLabels = {
   'lane:owner': ['d93f0b', 'Requires owner participation to decide or implement'],
+  'owner:approved': ['0e8a16', 'The owner approved an issue from an untrusted author for drive'],
   'state:started': ['fef2c0', 'An attended session is working on this'],
   'state:reviewing': ['0e8a16', 'The Reviewer is reviewing this PR'],
   'review:owner': ['e99695', 'PR is waiting for owner approval'],
