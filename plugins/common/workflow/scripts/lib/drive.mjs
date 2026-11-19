@@ -1,7 +1,7 @@
 import { localClaimIsDead, releaseSessionClaim, sessionClaim } from './review-ref.mjs';
 import { verifyConsolidatedDelivery } from './consolidated-delivery.mjs';
 import { createHash } from 'node:crypto';
-import { INBOX_MARKER, INBOX_TITLE, notifyOwner as notifyOwnerStep, resolveOwner as resolveOwnerStep } from './inbox.mjs';
+import { INBOX_MARKER, INBOX_TITLE, notifyOwner as notifyOwnerStep, parseInbox, resolveOwner as resolveOwnerStep } from './inbox.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -671,6 +671,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     pin: number => run('gh', ['issue', 'pin', String(number), '--repo', repo]),
     updateBody: (number, body) => run('gh', ['issue', 'edit', String(number), '--repo', repo, '--body', body]),
   });
+  let listed;
   const io = {
     issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,stateReason,title,body,labels,assignees,milestone,author']),
     dependencies: issue => readDependencies(repo, issue, gh),
@@ -896,6 +897,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     openIssues,
     notifyOwner: (n, step) => notifyOwnerStep(inboxApi(), lanes.owner || repo.split('/')[0], n, step),
     resolveOwner: n => resolveOwnerStep(inboxApi(), n),
+    // The inbox is read once per process: ranking asks about every open issue.
+    ownerWaiting: issue => (listed ??= parseInbox(inboxApi().findInbox()?.body)).has(issue.number),
     // The unstarted issues `issue` overlaps; GitHub is read only for those whose scope paths overlap.
     overlaps: issue => findOverlaps(issue, openIssues(), {
       parentOf: n => { try { return gh(['api', `repos/${repo}/issues/${n}/parent`]).number ?? null; } catch { return null; } },
@@ -1272,10 +1275,11 @@ export const ownerApproved = (timeline, owner, editedAt = null) => {
   if (event?.event !== 'labeled' || String(event.actor?.login ?? '').toLowerCase() !== owner.toLowerCase()) return false;
   return editedAt == null || Date.parse(editedAt) <= Date.parse(event.created_at);
 };
-export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] }), trusted, approved = () => false) {
+export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] }), trusted, approved = () => false, ownerWaiting = () => false) {
   const names = issue => issue.labels.map(label => label.name ?? label);
   const candidates = issues.filter(issue => (!untrustedAuthor(issue, trusted) || approved(issue)) && !names(issue).includes('lane:owner') && !(issue.body || '').includes(INBOX_MARKER));
-  const rank = issue => Number(!names(issue).includes('state:started'));
+  // An issue whose owner step is already posted (listed on the Owner inbox) waits behind every issue that needs no owner.
+  const rank = issue => ownerWaiting(issue) ? 2 : Number(!names(issue).includes('state:started'));
   const ordered = [...candidates].sort((a, b) => rank(a) - rank(b) || a.number - b.number);
   for (const issue of ordered) { const { blockers, dropped } = depsOf(issue); if (!blockers.length && !dropped.length) yield issue.number; }
 }
@@ -1285,6 +1289,7 @@ export const nextTarget = (issues, depsOf, trusted, approved) => nextTargets(iss
 const overlaps = (step, earlierWaiting) => (step.wait && ['ci', 'merged'].includes(step.wait.until)) || (earlierWaiting && step.do === 'auto-merge');
 export function driveNext(io, numbers, lanes, handBack = {}) {
   const waiting = [];
+  const heldOwner = [];
   let chosen = null; let first = null;
   for (const number of numbers) {
     const index = first === null ? 0 : 1;
@@ -1292,10 +1297,18 @@ export function driveNext(io, numbers, lanes, handBack = {}) {
     const item = io.issue(number);
     if (isEpic(item)) { chosen = number; break; }
     const step = decideIssue(readIssueFacts(io, number, index === 0 ? handBack : {}), lanes);
+    // An issue waiting on the owner is taken care of once its step is posted: record it, then try the next ready issue.
+    if (step.owner) { heldOwner.push({ number, handBack: index === 0 ? handBack : {} }); continue; }
     if (overlaps(step, waiting.length)) { if (step.wait) waiting.push({ issue: number, step }); continue; }
     chosen = number; break;
   }
   if (first === null) return { done: { reason: 'no started issue, approved epic or standalone issue is ready' } };
+  // Each held owner step is posted once (drive's fingerprint); an owner result returns only when no ready issue is left.
+  const ownerResults = heldOwner.map(held => drive(io, held.number, lanes, held.handBack));
+  if (chosen === null && ownerResults.length) {
+    const also = waiting.map(entry => ({ issue: entry.issue, ...finish(entry.step) }));
+    return also.length ? { ...ownerResults[0], alsoWaiting: also } : ownerResults[0];
+  }
   if (chosen === null) chosen = first;
   const result = drive(io, chosen, lanes, chosen === first ? handBack : {});
   const also = waiting.filter(entry => entry.issue !== chosen).map(entry => ({ issue: entry.issue, ...finish(entry.step) }));
@@ -1408,7 +1421,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   if (swept.length) console.error(`drive: moved ${swept.length} closed issue card${swept.length === 1 ? '' : 's'} to Done: ${swept.map(n => `#${n}`).join(', ')}`);
   let n;
   if (args[0] === '--next') {
-    const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false);
+    const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false, issue => io.ownerWaiting?.(issue) ?? false);
     if (liveRuns({ directory: lockDirectory, repo: lanes.repo, now, session }) >= maxRuns) { console.log(JSON.stringify(slotsFull(null, lanes))); return; }
     const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
     if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(null, lock, now))); return; }

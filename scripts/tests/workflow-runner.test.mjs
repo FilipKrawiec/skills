@@ -23,6 +23,7 @@ function setup(extra = {}) {
     openIssues: () => { world.reads++; return world.issues; },
     dependencies: () => [],
     ownerApproved: () => !!world.ownerApproved,
+    ownerWaiting: issue => world.ownerWaiting?.(issue) ?? false,
     start: ({ id, now }) => { const pid = 1000 + world.started.length; world.started.push(id); world.living.add(pid); return { id, pid, startedAt: now, log: join(logDirectory, `session-${id}.log`) }; },
     alive: pid => world.living.has(pid),
     terminate: pid => world.terminated.push(pid),
@@ -247,4 +248,11 @@ test('two simultaneous polls: the second finds the lock and does nothing', t => 
   writeFileSync(join(x.logDirectory, 'poll.lock'), '999999999');
   assert.equal(x.poll().locked, undefined, 'a lock held by a dead process is taken over');
   assert.equal(existsSync(join(x.logDirectory, 'poll.lock')), false, 'released after the poll');
+});
+
+test('the poll asks which issues already wait on the owner so ready ones rank first', () => {
+  const asked = [];
+  const t = setup({ issues: [{ number: 3, labels: [{ name: 'state:started' }], body: '', author: { login: 'owner' } }, { number: 4, labels: [], body: '', author: { login: 'owner' } }], ownerWaiting: issue => { asked.push(issue.number); return issue.number === 3; } });
+  assert.equal(t.poll().started.length, 1);
+  assert.deepEqual(asked.sort(), [3, 4]);
 });

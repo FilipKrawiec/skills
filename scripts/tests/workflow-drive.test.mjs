@@ -2428,3 +2428,21 @@ test('owner approval stops counting when the body was edited after the label', (
   assert.equal(ownerApproved([labeled], 'owner', '2026-11-19T10:00:01Z'), false, 'edited after the label');
   assert.equal(ownerApproved([labeled], 'owner', 'garbage'), false, 'an unreadable edit time fails closed');
 });
+
+test('--next posts an owner step once and moves on to the next ready issue; it returns the owner step only when none is left', () => {
+  const ready = issue({ number: 4, labels: [label('risk:R1')], assessment: assessed() });
+  const repo = fakeRepo({ issues: { 3: started, 4: ready }, trees: { 3: tree({ commits: 1 }) } });
+  const posted = [];
+  repo.io.notifyOwner = (n, step) => posted.push([n, step.owner]);
+  const result = driveNext(repo.io, [3, 4], lanes, { status: 'blocked', note: 'needs a credential' });
+  assert.deepEqual([result.agent, result.issue], ['implementer', 4], 'the ready issue behind the owner step is taken');
+  assert.deepEqual(posted, [[3, '#3: needs a credential']], 'the owner step is posted for the skipped issue');
+  const alone = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+  alone.io.notifyOwner = () => {};
+  assert.match(driveNext(alone.io, [3], lanes, { status: 'blocked', note: 'needs a credential' }).owner, /credential/, 'with no ready issue left the owner step returns');
+});
+
+test('an issue whose owner step is already posted sorts after issues that need no owner', () => {
+  const issues = [{ number: 3, labels: [label('state:started')] }, { number: 4, labels: [] }, { number: 5, labels: [label('state:started')] }];
+  assert.deepEqual([...nextTargets(issues, undefined, undefined, undefined, i => i.number === 3)], [5, 4, 3]);
+});
