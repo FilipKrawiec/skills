@@ -1003,6 +1003,11 @@ export function driveIssue(io, n, lanes, handBack = {}) {
   }
   return result;
 }
+// The cause of a blocked hand-back, whatever its wording: the failing test names or files it quotes, else its note without digits.
+export function blockCause(note = '') {
+  const named = [...String(note).matchAll(/`([^`]+)`|'([^']+)'|"([^"]+)"|([\w./-]+\.test\.\w+)/g)].map(m => (m[1] || m[2] || m[3] || m[4]).trim().toLowerCase());
+  return named.length ? [...new Set(named)].sort().join('|') : String(note).toLowerCase().replace(/[\d\s]+/g, ' ').trim();
+}
 function driveIssueSteps(io, n, lanes, handBack, state) {
   let bodyUpdated = false;
   // A conflict-resolver that failed the gate (or blocked) hands the merge in progress to the implementer.
@@ -1010,6 +1015,13 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
   for (let i = 0; i < 12; i++) {
     const facts = readIssueFacts(io, n, resolverFailed ? {} : handBack);
     state.tree = facts.tree;
+    // A role that hands back the same blocking cause twice is not run again: the issue blocks and drive moves on.
+    if (i === 0 && handBack.status === 'blocked' && facts.tree && io.read && io.write) {
+      const causeFile = join(io.scratch(facts.tree), `drive-${n}-cause`);
+      const cause = blockCause(handBack.note);
+      if (io.read(causeFile) === cause) return { blocked: { issue: n, reason: `${handBack.agent || 'the implementer'} handed back the same blocking cause twice: ${String(handBack.note || cause).replace(/\s+/g, ' ').slice(0, 200)}` } };
+      io.write(causeFile, cause);
+    }
     // A failure never blocks a step.
     if (!state.recorded && (handBack.status || handBack.risk || handBack.usage) && facts.pr?.state === 'OPEN') {
       state.recorded = true;
