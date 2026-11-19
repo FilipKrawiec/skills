@@ -2420,3 +2420,11 @@ test('owner approval needs the newest owner:approved label event to be a labeled
   assert.equal(ownerApproved([ev('labeled', 'owner', 'lane:owner')], 'owner'), false, 'another label');
   assert.equal(ownerApproved(undefined, 'owner'), false, 'an unreadable timeline fails closed');
 });
+
+test('owner approval stops counting when the body was edited after the label', () => {
+  const labeled = { event: 'labeled', actor: { login: 'owner' }, label: { name: 'owner:approved' }, created_at: '2026-11-19T10:00:00Z' };
+  assert.equal(ownerApproved([labeled], 'owner', null), true, 'never edited');
+  assert.equal(ownerApproved([labeled], 'owner', '2026-11-19T09:59:00Z'), true, 'edited before the label');
+  assert.equal(ownerApproved([labeled], 'owner', '2026-11-19T10:00:01Z'), false, 'edited after the label');
+  assert.equal(ownerApproved([labeled], 'owner', 'garbage'), false, 'an unreadable edit time fails closed');
+});

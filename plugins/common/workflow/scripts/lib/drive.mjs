@@ -675,7 +675,16 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     issue: n => gh(['issue', 'view', String(n), '--repo', repo, '--json', 'number,url,state,stateReason,title,body,labels,assignees,milestone,author']),
     dependencies: issue => readDependencies(repo, issue, gh),
     // Fails closed: an unreadable timeline is no approval.
-    ownerApproved: issue => { try { return ownerApproved(gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${issue.number}/timeline?per_page=100`]).flat(), lanes.owner); } catch { return false; } },
+    ownerApproved: issue => {
+      try {
+        const timeline = gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${issue.number}/timeline?per_page=100`]).flat();
+        if (!ownerApproved(timeline, lanes.owner)) return false;
+        const [owner, name] = repo.split('/');
+        const query = `query($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { issue(number:$number) { lastEditedAt } } }`;
+        const edited = gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${issue.number}`]);
+        return ownerApproved(timeline, lanes.owner, edited.data.repository.issue.lastEditedAt);
+      } catch { return false; }
+    },
     allBlockers: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/dependencies/blocked_by?per_page=100`]).flat().map(dep => dep.number),
     addBlocker: (n, blocker) => {
       const id = gh(['api', `repos/${repo}/issues/${blocker}`]).id;
@@ -1256,10 +1265,12 @@ function driveTarget(io, n, lanes, handBack = {}) {
 export const trustedLogins = lanes => [lanes.owner, lanes.implementer, lanes.reviewer].filter(Boolean).map(login => login.toLowerCase());
 export const untrustedAuthor = (issue, trusted) => !!trusted && !trusted.includes(String(issue.author?.login ?? '').toLowerCase());
 // The newest `owner:approved` label event in the timeline must be a `labeled` one by the owner login.
-export const ownerApproved = (timeline, owner) => {
+// A body edited after that label (`editedAt`, GraphQL `lastEditedAt`; null when never edited) withdraws it; an unreadable time fails closed.
+export const ownerApproved = (timeline, owner, editedAt = null) => {
   if (!Array.isArray(timeline) || !owner) return false;
   const event = timeline.filter(e => ['labeled', 'unlabeled'].includes(e.event) && e.label?.name === 'owner:approved').at(-1);
-  return event?.event === 'labeled' && String(event.actor?.login ?? '').toLowerCase() === owner.toLowerCase();
+  if (event?.event !== 'labeled' || String(event.actor?.login ?? '').toLowerCase() !== owner.toLowerCase()) return false;
+  return editedAt == null || Date.parse(editedAt) <= Date.parse(event.created_at);
 };
 export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] }), trusted, approved = () => false) {
   const names = issue => issue.labels.map(label => label.name ?? label);
