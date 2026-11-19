@@ -17,7 +17,7 @@ Branch on your role, first match wins:
 
 ## 1. Dispatch
 
-Run `<cli> drive <issue|epic>`, or `<cli> drive --next` for the next ready one. Act on its JSON instruction, first match wins:
+Run `<cli> drive <issue|epic>`, or `<cli> drive --next` (ready work: base-red, started, `type:bug`, rest). Act on its JSON instruction, first match wins:
 
 - `agent` with `session: "subagent"`: verify the host matches `host`. Dispatch the named agent, model, effort and responsibility with the host's native subagent facility. If the host cannot confirm model or effort, stop. Start it with the prompt `Follow your brief at <brief> and return its hand-back.`; with `resume`, resume the implementer. If its hand-back is missing or malformed, stop. Write its hand-back, adding the host's reported usage as a `usage:` line (`in=N out=N cache=N cost=USD model=M`) when it has none (else per [usage](references/usage.md)), under `<cli> scratch`, then run `<cli> drive <issue> --hand-back <file>`.
 - `agent` with `session: "native"`: follow [native session](references/native-session.md).
