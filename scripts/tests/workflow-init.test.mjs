@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { hasStandingApproval, initCommand, mergeAutoMode } from '../../plugins/common/workflow/scripts/lib/init.mjs';
 
 function fixture(t) {
@@ -138,6 +139,21 @@ test('init runs runner install, and names the exact command when it cannot', t =
   g.io.runCli = (_root, a) => ({ ok: a[0] !== 'runner', text: 'no launchctl' });
   const { unable } = initCommand(args, g.io);
   assert.ok(unable.some(line => line.includes('node ') && line.includes('workflow.mjs runner install')));
+});
+
+test('the justfile runner recipes run existing CLI scripts, and init and runner.md name them', t => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const justfile = readFileSync(join(root, 'justfile'), 'utf8');
+  for (const verb of ['install', 'uninstall']) {
+    const m = justfile.match(new RegExp(`^runner-${verb}:\\n\\s+node (\\S+) runner ${verb}$`, 'm'));
+    assert.ok(m, `justfile has a runner-${verb} recipe`);
+    assert.ok(existsSync(join(root, m[1])), `${m[1]} exists`);
+  }
+  const doc = readFileSync(join(root, 'plugins/common/workflow/skills/deliver/references/runner.md'), 'utf8');
+  assert.ok(doc.includes('just runner-install') && doc.includes('just runner-uninstall'));
+  const g = fixture(t);
+  g.io.runCli = (_root, a) => ({ ok: a[0] !== 'runner', text: 'no launchctl' });
+  assert.ok(initCommand(args, g.io).unable.some(line => line.includes('just runner-install')));
 });
 
 test('the standing owner approval check finds the entry and lists it when missing', t => {
