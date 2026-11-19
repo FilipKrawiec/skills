@@ -1,3 +1,4 @@
+import './support/host-stubs.mjs';
 import { addCriterionIds, verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
 import { pluginVersion } from '../../plugins/common/workflow/scripts/lib/plugin.mjs';
 import test from 'node:test';
@@ -2249,21 +2250,13 @@ test('a blocked hand-back returns the owner step even with uncommitted or unpush
 });
 
 test('the session id is stable across one agent session\'s separate Bash calls and differs between sessions', () => {
-  const drivePath = new URL('../../plugins/common/workflow/scripts/lib/drive.mjs', import.meta.url).href;
-  const env = { ...process.env }; for (const key of ['WORKFLOW_DRIVE_SESSION', 'CLAUDE_SESSION_ID', 'CODEX_SESSION_ID']) delete env[key];
-  const dir = mkdtempSync(join(tmpdir(), 'drive-session-'));
-  try {
-    writeFileSync(join(dir, 'id.mjs'), `import { driveSessionId } from ${JSON.stringify(drivePath)}; console.log(driveSessionId());`);
-    // A long-lived "agent" node process runs two Bash calls; each is a fresh shell around a fresh drive process.
-    writeFileSync(join(dir, 'agent.mjs'), `import { spawnSync } from 'node:child_process';
-const call = () => spawnSync('sh', ['-c', 'node ' + ${JSON.stringify(join(dir, 'id.mjs'))}], { encoding: 'utf8' }).stdout.trim();
-console.log(JSON.stringify([call(), call()]));`);
-    const session = () => JSON.parse(spawnSync(process.execPath, [join(dir, 'agent.mjs')], { env, encoding: 'utf8' }).stdout);
-  const [first, second] = session();
-  assert.match(first, /^proc-/);
-  assert.equal(first, second, 'two Bash calls of one session share its claim key');
-  assert.notEqual(session()[0], first, 'another session is a different claim holder');
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const env = {};
+  // A fake process table: each Bash call is a fresh shell (this process's parent) under the long-lived agent process.
+  const table = (shell, agent, started) => pid => ({ [process.ppid]: { ppid: shell, started: 'Thu Nov 19 10:00:01 2026', name: 'sh' }, [shell]: { ppid: agent, started: 'Thu Nov 19 10:00:02 2026', name: 'bash' }, [agent]: { ppid: 1, started, name: 'node' } })[pid] ?? null;
+  const first = driveSessionId(env, table(7001, 7000, 'Thu Nov 19 09:00:00 2026'));
+  assert.match(first, /^proc-7000-/);
+  assert.equal(driveSessionId(env, table(7002, 7000, 'Thu Nov 19 09:00:00 2026')), first, 'two Bash calls of one session share its claim key');
+  assert.notEqual(driveSessionId(env, table(7001, 7100, 'Thu Nov 19 09:05:00 2026')), first, 'another session is a different claim holder');
   assert.equal(driveSessionId({ WORKFLOW_DRIVE_SESSION: 'x' }), 'x');
 });
 

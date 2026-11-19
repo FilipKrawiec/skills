@@ -1,3 +1,4 @@
+import { writeHostStubs } from './support/host-stubs.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
@@ -14,14 +15,14 @@ import {
   worktreeVerdict,
 } from '../../plugins/common/workflow/scripts/lib/worktrees.mjs';
 
-// A PATH holding only real git (not macOS's xcrun shim, which needs /usr/bin) and a silent lsof stub.
+// A PATH holding only real git (not macOS's xcrun shim, which needs /usr/bin) and the suite's host-binary stubs.
 function hermeticBin(bin) {
   mkdirSync(bin);
   const execPath = spawnSync('git', ['--exec-path'], { encoding: 'utf8' }).stdout.trim();
   const real = join(execPath, '..', '..', 'bin', 'git');
   const found = existsSync(real) ? real : spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
   symlinkSync(realpathSync(found), join(bin, 'git'));
-  writeFileSync(join(bin, 'lsof'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  writeHostStubs(bin);
   return bin;
 }
 
