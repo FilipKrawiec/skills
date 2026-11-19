@@ -13,6 +13,7 @@ active_skills:
   - milestone
   - release
   - health
+  - pair
 
 build_tools:
   just:

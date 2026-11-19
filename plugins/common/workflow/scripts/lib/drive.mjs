@@ -778,6 +778,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       run('gh', ['issue', 'edit', String(issue.number), '--repo', repo, '--add-label', 'state:started', ...(lanes.implementer ? ['--add-assignee', lanes.implementer] : [])]);
       const root = trees()[0].path; const branch = prBranch || slugBranch(issue); const path = join(root, '.worktrees', branch);
       git('fetch', '--quiet', 'origin');
+      // A worktree already on an `N-` branch (one `pair` built with the owner) is delivered as it is, never duplicated.
+      if (!prBranch && trees().some(tree => tree.branch?.startsWith(`${issue.number}-`))) return;
       if (!existsSync(path)) {
         const exists = gitIn(root, ['rev-parse', '--verify', '-q', `refs/heads/${branch}`]);
         if (exists || prBranch) git('-C', root, 'worktree', 'add', path, branch);
