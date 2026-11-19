@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
-  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
+  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
   driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -2503,4 +2503,17 @@ test('drive start adopts a worktree already on the issue branch instead of creat
   assert.equal(result.status, 0, result.stderr);
   const branches = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8' }).stdout.match(/branch refs\/heads\/\S+/g);
   assert.deepEqual(branches, ['branch refs/heads/main', 'branch refs/heads/7-paired-work']);
+});
+
+test('--next ranks base-red, then started, then bug, then the rest by number; owner work stays out or last', () => {
+  const bug = number => ({ number, labels: [label('type:bug')], body: '' });
+  assert.deepEqual([...nextTargets([{ number: 10, labels: [], body: '' }, bug(20)])], [20, 10], 'a ready bug comes before an older story');
+  const red = { number: 30, labels: [], body: `broken main\n${BASE_RED_MARKER}` };
+  const started = { number: 15, labels: [label('state:started')], body: '' };
+  assert.deepEqual([...nextTargets([bug(5), started, red, { number: 1, labels: [], body: '' }])], [30, 15, 5, 1], 'base-red, started, bug, rest');
+  const owner = { number: 2, labels: [label('lane:owner'), label('type:bug')], body: '' };
+  assert.deepEqual([...nextTargets([owner, bug(9)])], [9], 'lane:owner is never yielded');
+  assert.deepEqual([...nextTargets([red, bug(9)], undefined, undefined, undefined, i => i.number === 30)], [9, 30], 'an owner-waiting issue stays last, even base-red');
+  const deps = { 30: { blockers: [4], dropped: [] } };
+  assert.deepEqual([...nextTargets([red, bug(9)], i => deps[i.number] ?? { blockers: [], dropped: [] })], [9], 'blocked issues are skipped');
 });
