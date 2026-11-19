@@ -138,7 +138,27 @@ test('init runs runner install, and names the exact command when it cannot', t =
   const g = fixture(t);
   g.io.runCli = (_root, a) => ({ ok: a[0] !== 'runner', text: 'no launchctl' });
   const { unable } = initCommand(args, g.io);
-  assert.ok(unable.some(line => line.includes('node ') && line.includes('workflow.mjs runner install')));
+  const line = unable.find(item => item.startsWith('runner:'));
+  assert.ok(line.includes('just runner-install'));
+  assert.ok(!line.includes('workflow.mjs'), 'the owner step never names the raw node command');
+});
+
+test('init adds the runner recipes to a justfile, creates one, leaves recipes alone and is idempotent', t => {
+  const f = fixture(t);
+  initCommand(args, f.io);
+  const created = readFileSync(join(f.root, 'justfile'), 'utf8');
+  assert.match(created, /^runner-install:\n    node \S+workflow\.mjs runner install$/m);
+  assert.match(created, /^runner-uninstall:\n    node \S+workflow\.mjs runner uninstall$/m);
+  initCommand(args, f.io);
+  assert.equal(readFileSync(join(f.root, 'justfile'), 'utf8'), created);
+  const g = fixture(t);
+  const own = 'verify:\n    make check\n\nrunner-install:\n    echo mine\n';
+  writeFileSync(join(g.root, 'justfile'), own);
+  initCommand(args, g.io);
+  const merged = readFileSync(join(g.root, 'justfile'), 'utf8');
+  assert.ok(merged.startsWith(own));
+  assert.equal(merged.match(/^runner-install:/gm).length, 1);
+  assert.match(merged, /^runner-uninstall:\n    node \S+ runner uninstall$/m);
 });
 
 test('the justfile runner recipes run existing CLI scripts, and init and runner.md name them', t => {
