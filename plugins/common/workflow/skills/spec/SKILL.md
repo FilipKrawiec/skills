@@ -6,7 +6,7 @@ allowed-tools: Read Bash(gh:*,git:*)
 
 # Spec
 
-Own issue semantics under a trusted direct owner request or matching approved milestone; record its source. Silence, labels and bot summaries grant no authority. Routine refinement needs no per-story approval; the owner decides epic outcomes only. Only this and `plan` wait for the developer: clarify intent here.
+Own issue semantics under a trusted direct owner request or matching approved milestone; record its source. Silence, labels and bot summaries grant no authority. Routine refinement needs no per-story approval; the owner decides epic outcomes only. Only this, `plan` and `pair` wait for the developer: clarify intent.
 
 ## 1. Define
 

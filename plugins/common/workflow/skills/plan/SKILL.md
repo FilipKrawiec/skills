@@ -6,7 +6,7 @@ allowed-tools: Read Bash(gh:*,git:*)
 
 # Plan
 
-Plan within a direct owner request or approved milestone brief; labels, silence and bot summaries grant no authority. This and `spec` are the only phases that wait for the developer: clarify intent here, so nothing after approval needs to ask. Slices follow the epic's approved outcome; the owner is asked about epic-level outcomes only, never to agree a slice, a split or a consolidation. Do not implement.
+Plan within a direct owner request or approved milestone brief; labels, silence and bot summaries grant no authority. Only this, `spec` and `pair` wait for the developer: clarify intent here, so nothing after approval needs to ask. Slices follow the epic's approved outcome; the owner is asked about epic-level outcomes only, never to agree a slice, a split or a consolidation. Do not implement.
 
 ## 1. Read
 
