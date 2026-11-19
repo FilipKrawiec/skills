@@ -130,7 +130,7 @@ export function runnerStatus(lanes, { logDirectory = runnerLogDirectory(lanes.re
     lastResult: state.lastResult ?? null,
     nextPollAt: state.nextPollAt ? new Date(state.nextPollAt).toISOString() : null,
     quota: state.quota ?? null,
-    sessions: (state.sessions ?? []).map(session => ({ id: session.id, pid: session.pid, alive: isAlive(session.pid), issue: held.filter(claim => claim.session === session.id).map(claim => claim.issue).join(',') || null, ageSeconds: Math.round((now - session.startedAt) / 1000) })),
+    sessions: (state.sessions ?? []).map(session => ({ id: session.id, logFile: join(logDirectory, `session-${session.id}.log`), pid: session.pid, alive: isAlive(session.pid), issue: held.filter(claim => claim.session === session.id).map(claim => claim.issue).join(',') || null, ageSeconds: Math.round((now - session.startedAt) / 1000) })),
     log: join(logDirectory, 'runner.log'),
   };
 }
