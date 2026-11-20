@@ -23,6 +23,7 @@ function setup(extra = {}) {
     probeQuota: () => world.quota,
     openIssues: () => { world.reads++; return world.issues; },
     dependencies: () => [],
+    subIssues: n => (world.subs?.[n] ?? []).map(number => ({ number, state: 'OPEN' })),
     ownerApproved: () => !!world.ownerApproved,
     ownerWaiting: issue => world.ownerWaiting?.(issue) ?? false,
     start: ({ id, now }) => { const pid = 1000 + world.started.length; world.started.push(id); world.living.add(pid); return { id, pid, startedAt: now, log: join(logDirectory, `session-${id}.log`) }; },
@@ -272,4 +273,18 @@ test('the poll takes the same first issue as drive --next for the same input', (
   assert.equal(first, 5);
   assert.equal(asked[0], first, 'the runner reads the dependencies of drive --next\'s first pick first');
   assert.equal(t.world.issues.length, 3);
+});
+
+test('the poll takes an epic, not its slices, and starts nothing while a live session holds the epic or any of its slices', () => {
+  const owned = (number, labels = []) => ({ number, labels: labels.map(name => ({ name })), body: '', author: { login: 'owner' } });
+  const setupEpic = () => setup({ issues: [owned(3, ['type:epic']), owned(4)], subs: { 3: [4] } });
+  const free = setupEpic();
+  assert.equal(free.poll().started.length, 1, 'the epic is ready, so a session starts');
+  for (const held of [3, 4]) {
+    const t = setupEpic();
+    t.claim('other-session', held);
+    const result = t.poll();
+    assert.equal(result.started.length, 0, `a live claim on #${held} starts no second session for the epic`);
+    assert.equal(t.world.started.length, 0);
+  }
 });

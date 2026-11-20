@@ -2569,3 +2569,31 @@ test('--next ranks base-red, then started, then bug, then the rest by number; ow
   const deps = { 30: { blockers: [4], dropped: [] } };
   assert.deepEqual([...nextTargets([red, bug(9)], i => deps[i.number] ?? { blockers: [], dropped: [] })], [9], 'blocked issues are skipped');
 });
+
+test('--next takes an epic, not its slices: the epic ranks by its best child, orphans stay, base-red goes first alone', () => {
+  const story = (number, labels = [], body = '') => ({ number, labels: labels.map(label), body });
+  const epic = story(5, ['type:epic']);
+  const s1 = story(6);
+  const s2 = story(7, ['type:bug']);
+  const orphan = story(20, ['type:bug']);
+  const children = n => (n === 5 ? [6, 7, 99] : []);
+  const targets = issues => [...nextTargets(issues, undefined, undefined, undefined, undefined, children)];
+  assert.deepEqual(targets([s1, s2, orphan, epic]), [5, 20], 'the epic ranks as a bug and ties by number; neither slice is yielded');
+  assert.deepEqual(targets([orphan, story(2), s1, epic]), [20, 2, 5], 'an orphan bug outranks an epic whose best child is a story; ties by number')
+  const red = story(6, [], `broken\n${BASE_RED_MARKER}`);
+  assert.deepEqual(targets([red, s2, orphan, epic]), [6, 5, 20], 'a base-red slice is yielded first, by itself, before its epic');
+  assert.deepEqual(targets([s1, { ...epic, labels: [label('type:epic'), label('lane:owner')] }]), [], 'a draft epic is untaken and its slices never run alone');
+  assert.deepEqual(targets([s1]), [6], 'a slice whose parent is not open is an orphan');
+});
+
+test('drive <epic> answers a finished slice with a continue naming drive <epic>, then serves the next step', () => {
+  const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }) }, subs: { 9: [10] }, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
+  // The slice closes between drive's reads of the epic and of the slice, as when its PR merges meanwhile.
+  const read = repo.io.issue; let reads = 0;
+  repo.io.issue = n => (n === 10 && ++reads > 2 ? { ...read(n), state: 'CLOSED' } : read(n));
+  const first = drive(repo.io, 9, lanes, {});
+  assert.deepEqual([first.done, first.epic, first.continue], [{ issue: 10 }, 9, 'drive 9'], 'a slice done keeps the session on the epic');
+  const next = drive(repo.io, 9, lanes, {});
+  assert.equal(next.continue, undefined, 'the epic itself returns no continue');
+});

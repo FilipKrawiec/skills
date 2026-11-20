@@ -110,8 +110,12 @@ function pollLocked(lanes, { io, logDirectory, claims, cwd, options }) {
   if (pending || fresh.some(claim => claim.issue === 'next')) return finish('next claim held', { live, ready: 0 });
   const taken = new Set(fresh.map(claim => claim.issue));
   const ready = [];
-  for (const number of nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false, issue => io.ownerWaiting?.(issue) ?? false)) {
-    if (!taken.has(String(number))) { ready.push(number); break; }
+  // The unit of an automatic run is an epic: a live claim on the epic or on any of its slices keeps a second session off it.
+  const childrenOf = epic => io.subIssues?.(epic).map(sub => sub.number) ?? [];
+  const open = io.openIssues();
+  const isEpic = number => (open.find(issue => issue.number === number)?.labels ?? []).some(label => (label.name ?? label) === 'type:epic');
+  for (const number of nextTargets(open, issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false, issue => io.ownerWaiting?.(issue) ?? false, childrenOf)) {
+    if (!taken.has(String(number)) && !(isEpic(number) && childrenOf(number).some(child => taken.has(String(child))))) { ready.push(number); break; }
   }
   for (const index of ready.keys()) {
     // One UUID is both Claude's `--session-id` (naming its transcript) and WORKFLOW_DRIVE_SESSION, so drive can find that transcript.
