@@ -2587,14 +2587,30 @@ test('--next takes an epic, not its slices: the epic ranks by its best child, or
   assert.deepEqual(targets([s1]), [6], 'a slice whose parent is not open is an orphan');
 });
 
-test('drive <slice> answers its own done with a continue naming the open parent epic, then drive <epic> serves the next step', () => {
-  const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
-  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }), 11: issue({ number: 11 }) }, subs: { 9: [10, 11] }, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
-  const first = drive(repo.io, 10, lanes, {});
-  assert.deepEqual([first.done, first.epic, first.continue], [{ issue: 10 }, 9, 'drive 9'], 'a slice done keeps the session on the epic');
-  const next = drive(repo.io, 9, lanes, {});
-  assert.ok(next.agent || next.do || next.wait, 'the next drive <epic> serves the next ready slice');
-  assert.equal(next.done, undefined);
-  const orphan = fakeRepo({ issues: { 10: issue({ number: 10, state: 'CLOSED' }) }, subs: {}, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
-  assert.deepEqual(drive(orphan.io, 10, lanes, {}), { done: { issue: 10 } }, 'an issue with no open parent epic just ends');
+test('a slice driven by number ends at its own done; only a session that took its epic continues on the epic', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  let said = '';
+  const log = console.log; console.log = text => { said = JSON.parse(text); };
+  try {
+    const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
+    const setup = () => fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }), 11: issue({ number: 11 }) }, subs: { 9: [10, 11] }, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
+    // The owner runs `drive 10`: no session took the epic, so the run ends at the slice.
+    driveCommand(['10'], lanes, setup().io, { lockDirectory: directory, session: 'manual', now: 1000 });
+    assert.deepEqual(said, { done: { issue: 10 } }, 'drive <slice> never grows into the whole epic');
+    // A `drive --next` session takes the epic (its first step is the epic's own), then its slice's done continues on the epic.
+    const repo = setup();
+    driveCommand(['--next'], lanes, repo.io, { lockDirectory: directory, session: 'auto', now: 2000 });
+    assert.equal(said.epic, 9, 'drive --next took the epic');
+    driveCommand(['10'], lanes, repo.io, { lockDirectory: directory, session: 'auto', now: 3000 });
+    assert.deepEqual([said.done, said.epic, said.continue], [{ issue: 10 }, 9, 'drive 9'], 'a slice done keeps the epic session going');
+    driveCommand(['9'], lanes, repo.io, { lockDirectory: directory, session: 'auto', now: 4000 });
+    assert.ok(said.agent || said.do || said.wait, 'the next drive <epic> serves the next ready slice');
+    assert.equal(said.done, undefined);
+    // Another session's slice done does not borrow the epic claim.
+    driveCommand(['10'], lanes, repo.io, { lockDirectory: directory, session: 'other', now: 5000 });
+    assert.deepEqual(said, { done: { issue: 10 } });
+    const orphan = fakeRepo({ issues: { 10: issue({ number: 10, state: 'CLOSED' }) }, subs: {}, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
+    driveCommand(['10'], lanes, orphan.io, { lockDirectory: directory, session: 'auto', now: 6000 });
+    assert.deepEqual(said, { done: { issue: 10 } }, 'an issue with no open parent epic just ends');
+  } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
 });

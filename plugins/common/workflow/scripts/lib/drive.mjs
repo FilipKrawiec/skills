@@ -1301,13 +1301,7 @@ export function driveEpic(io, epic, lanes) {
 // An owner step is also recorded where the owner will see it, on the issue or epic that drive was asked to drive.
 // Drive repeats an unchanged step silently; a failure never changes the step.
 export function drive(io, n, lanes, handBack = {}) {
-  let result = driveTarget(io, n, lanes, handBack);
-  // A slice driven by number ends at its own `done`; its open parent epic keeps the session going.
-  if (result.done?.issue === n && !result.continue) {
-    let epic = null;
-    try { epic = io.parentEpic?.(n) ?? null; } catch { /* a failed parent read only ends the session */ }
-    if (epic) result = { ...result, epic, continue: `drive ${epic}` };
-  }
+  const result = driveTarget(io, n, lanes, handBack);
   if (result.owner) {
     try { io.notifyOwner?.(n, result); } catch (error) { console.error(`drive: could not record the owner step on #${n}: ${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}`); }
     if (result.alsoReady?.length) return { ...result, continue: `report the owner step, then drive each alsoReady slice alone (${result.alsoReady.map(m => `#${m}`).join(', ')}); the owner step holds only one slice` };
@@ -1523,6 +1517,8 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     if (!lock.record(fingerprintOf(result), now)) { console.log(JSON.stringify(lostClaim(null))); return; }
     if (notice) console.error(notice);
     if ((result.done && !result.continue) || result.owner || result.blocked) lock.release();
+    // A session that takes an epic holds the epic's claim, so its slices' `done` continue on the epic; a claim another session holds stays theirs.
+    else if (Number.isInteger(result.epic)) acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${result.epic}`, session, now });
     console.log(JSON.stringify(withConfigCommit(result, lanes)));
     return;
   } else if (/^[1-9]\d*$/.test(args[0])) n = Number(args[0]);
@@ -1534,7 +1530,16 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${n}`, session, now });
   if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(n, lock, now))); return; }
   if (lock.tookOver) io.noteTakeover?.(n, lock.tookOver, now);
-  const result = drive(io, n, lanes, handBack);
+  let result = drive(io, n, lanes, handBack);
+  // A slice's own `done` continues on its open parent epic only inside a session that holds that epic's claim (one that took the epic);
+  // `drive <slice>` on its own ends at the slice.
+  if (result.done?.issue === n && !result.continue) {
+    let epic = null;
+    try { epic = io.parentEpic?.(n) ?? null; } catch { /* a failed parent read only ends the session */ }
+    let held = false;
+    try { held = !!epic && JSON.parse(readFileSync(join(lockDirectory, claimKey(`${lanes.repo}-${epic}`)), 'utf8')).session === session; } catch { /* no claim */ }
+    if (held) result = { ...result, epic, continue: `drive ${epic}` };
+  }
   if (!lock.record(fingerprintOf(result), now)) { console.log(JSON.stringify(lostClaim(n))); return; }
   if (notice) console.error(notice);
   if ((result.done && (!result.continue || (result.done.issue === n && result.epic !== n))) || result.owner || result.blocked) {
