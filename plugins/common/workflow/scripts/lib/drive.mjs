@@ -759,6 +759,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const result = gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=Follow up: ${criterion.text}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]);
       return gh(['issue', 'view', String(result.data.createIssue.issue.number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
     },
+    // The open parent epic of a story or bug, or null; a failed read means no parent.
+    parentEpic: n => { try { const parent = gh(['api', `repos/${repo}/issues/${n}/parent`]); return parent?.number && parent.state === 'open' && isEpic(parent) ? parent.number : null; } catch { return null; } },
     subIssues: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).flat().map(sub => ({ number: sub.number, state: sub.state.toUpperCase() })),
     verifyEpic: (epic, slices, base, merged) => verifyEpicClosure({ epic, slices, base, repo }, { merged }),
     pr: n => {
@@ -1299,7 +1301,13 @@ export function driveEpic(io, epic, lanes) {
 // An owner step is also recorded where the owner will see it, on the issue or epic that drive was asked to drive.
 // Drive repeats an unchanged step silently; a failure never changes the step.
 export function drive(io, n, lanes, handBack = {}) {
-  const result = driveTarget(io, n, lanes, handBack);
+  let result = driveTarget(io, n, lanes, handBack);
+  // A slice driven by number ends at its own `done`; its open parent epic keeps the session going.
+  if (result.done?.issue === n && !result.continue) {
+    let epic = null;
+    try { epic = io.parentEpic?.(n) ?? null; } catch { /* a failed parent read only ends the session */ }
+    if (epic) result = { ...result, epic, continue: `drive ${epic}` };
+  }
   if (result.owner) {
     try { io.notifyOwner?.(n, result); } catch (error) { console.error(`drive: could not record the owner step on #${n}: ${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}`); }
     if (result.alsoReady?.length) return { ...result, continue: `report the owner step, then drive each alsoReady slice alone (${result.alsoReady.map(m => `#${m}`).join(', ')}); the owner step holds only one slice` };
@@ -1529,7 +1537,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   const result = drive(io, n, lanes, handBack);
   if (!lock.record(fingerprintOf(result), now)) { console.log(JSON.stringify(lostClaim(n))); return; }
   if (notice) console.error(notice);
-  if ((result.done && !result.continue) || result.owner || result.blocked) {
+  if ((result.done && (!result.continue || (result.done.issue === n && result.epic !== n))) || result.owner || result.blocked) {
     lock.release();
     try { io.orchestratorLog?.(n, Object.keys(result).find(key => ['done', 'owner', 'blocked'].includes(key))); } catch { /* a session log never blocks delivery */ }
   }

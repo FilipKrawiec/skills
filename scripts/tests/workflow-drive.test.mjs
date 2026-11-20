@@ -349,6 +349,7 @@ function fakeRepo(initial) {
   const io = {
     // A blocked-by link to a closed issue counts as met, like a completed issue whose closing PR merged.
     issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: s.issues[m]?.state || 'OPEN', reason: 'completed', merged: true })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state })),
+    parentEpic: n => { const epic = Object.keys(s.subs || {}).map(Number).find(e => s.subs[e].includes(n) && s.issues[e]?.state === 'OPEN' && (s.issues[e].labels || []).some(l => (l.name ?? l) === 'type:epic')); return epic ?? null; },
     allBlockers: n => s.blockers?.[n] || [],
     addBlocker: (n, blocker) => { calls.push(['blocker', n, blocker]); ((s.blockers ||= {})[n] ||= []).push(blocker); },
     mergedClosingPr: n => (s.merged || []).includes(n),
@@ -2586,14 +2587,14 @@ test('--next takes an epic, not its slices: the epic ranks by its best child, or
   assert.deepEqual(targets([s1]), [6], 'a slice whose parent is not open is an orphan');
 });
 
-test('drive <epic> answers a finished slice with a continue naming drive <epic>, then serves the next step', () => {
+test('drive <slice> answers its own done with a continue naming the open parent epic, then drive <epic> serves the next step', () => {
   const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
-  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }) }, subs: { 9: [10] }, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
-  // The slice closes between drive's reads of the epic and of the slice, as when its PR merges meanwhile.
-  const read = repo.io.issue; let reads = 0;
-  repo.io.issue = n => (n === 10 && ++reads > 2 ? { ...read(n), state: 'CLOSED' } : read(n));
-  const first = drive(repo.io, 9, lanes, {});
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }), 11: issue({ number: 11 }) }, subs: { 9: [10, 11] }, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
+  const first = drive(repo.io, 10, lanes, {});
   assert.deepEqual([first.done, first.epic, first.continue], [{ issue: 10 }, 9, 'drive 9'], 'a slice done keeps the session on the epic');
   const next = drive(repo.io, 9, lanes, {});
-  assert.equal(next.continue, undefined, 'the epic itself returns no continue');
+  assert.ok(next.agent || next.do || next.wait, 'the next drive <epic> serves the next ready slice');
+  assert.equal(next.done, undefined);
+  const orphan = fakeRepo({ issues: { 10: issue({ number: 10, state: 'CLOSED' }) }, subs: {}, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
+  assert.deepEqual(drive(orphan.io, 10, lanes, {}), { done: { issue: 10 } }, 'an issue with no open parent epic just ends');
 });
