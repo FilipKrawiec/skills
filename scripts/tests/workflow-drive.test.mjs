@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
-  driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand, retagBaselines,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -137,6 +137,50 @@ test('the owner is asked only on an approved PR; the round cap and line count ne
   assert.equal(decide({ ...base, pr: pr({ reviews: [review('fixes'), review('fixes'), review('fixes')] }) }).owner, undefined);
   const huge = Array.from({ length: 5000 }, (_, i) => `src/file${i}.js`);
   assert.equal(decide({ ...base, diffPaths: huge, pr: pr({ isDraft: false, reviews: approved, assessment: assessed('R1', huge) }) }).do, 'auto-merge');
+});
+
+test('drive retags baseline entries of the closing issue before merging, then waits for the new head', () => {
+  const approved = pr({ issue: 3, isDraft: false, reviews: [review('ready', 'APPROVED')] });
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [approved] });
+  let pending = true;
+  repo.io.retagBaselines = i => { if (!pending) return false; pending = false; repo.calls.push(['retag-baselines', i.number]); return true; };
+  const first = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(first.wait, { pr: 5, until: 'ci' });
+  assert.deepEqual(repo.calls.filter(call => ['retag-baselines', 'auto-merge'].includes(call[0])), [['retag-baselines', 3]], 'nothing merges until the retag is reviewed');
+  repo.s.prs[0].reviews = [review('ready', 'APPROVED')];
+  assert.deepEqual(drive(repo.io, 3, lanes, {}).wait, { pr: 5, until: 'merged' });
+  assert.deepEqual(repo.calls.filter(call => ['retag-baselines', 'auto-merge'].includes(call[0])), [['retag-baselines', 3], ['auto-merge']]);
+});
+
+test('the real retag moves baseline entries off the closing issue and leaves other tags', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'retag-'));
+  try {
+    const git = (...args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+    git('init', '-q'); git('config', 'user.email', 'a@b.c'); git('config', 'user.name', 'a');
+    writeFileSync(join(dir, 'unused_symbols_baseline.txt'), 'a  # #727\nb  # #7270\nc  # #727\n');
+    writeFileSync(join(dir, 'notes.txt'), '# #727\n');
+    git('add', '.'); git('commit', '-qm', 'x');
+    const seen = [];
+    const changed = retagBaselines({
+      n: 727, cwd: dir, scratch: join(dir, '.wf'), parent: () => 700,
+      create: (title, file, parent) => { seen.push(['create', parent]); return 'Created: #800\n'; },
+      commit: (message, files) => seen.push(['commit', message, files]), push: () => seen.push(['push']),
+    });
+    assert.equal(changed, true);
+    assert.equal(readFileSync(join(dir, 'unused_symbols_baseline.txt'), 'utf8'), 'a  # #800\nb  # #7270\nc  # #800\n');
+    assert.equal(readFileSync(join(dir, 'notes.txt'), 'utf8'), '# #727\n', 'only baseline files change');
+    assert.deepEqual(seen, [['create', 700], ['commit', 'chore: retag baseline entries of #727 to #800', ['unused_symbols_baseline.txt']], ['push']]);
+    assert.equal(retagBaselines({ n: 727, cwd: dir, scratch: dir, parent: () => 700, create: () => '', commit() {}, push() {} }), false, 'a second pass finds nothing');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('an epic still tagged in a gate baseline is not closed', () => {
+  const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
+  const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }) }, subs: { 9: [10] }, merged: [10] });
+  repo.io.baselineRefs = () => ['x_baseline.txt'];
+  const result = drive(repo.io, 9, lanes, {});
+  assert.equal(repo.s.issues[9].state, 'OPEN');
+  assert.ok(!result.done);
 });
 
 test('an approved owner-held draft becomes ready before owner approval and merge', () => {
