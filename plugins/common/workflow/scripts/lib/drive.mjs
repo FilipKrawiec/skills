@@ -640,6 +640,28 @@ export function mergeBaseIntoHead({ path, base, git = args => spawnSync('git', a
   syncManifests(); git(['add', '-u']); commit();
   return { conflicts, committed: true, manifest: true };
 }
+const baselineTag = n => `#${n}([^0-9]|$)`;
+// Files named *baseline* that tag issue n, in the working tree or at `ref`.
+export function baselineFiles(cwd, n, ref) {
+  const hit = spawnSync('git', ['grep', '-lE', baselineTag(n), ...(ref ? [ref] : []), '--', '*baseline*'], { cwd, encoding: 'utf8' });
+  return hit.status === 0 ? hit.stdout.split('\n').filter(Boolean).map(line => ref ? line.slice(ref.length + 1) : line) : [];
+}
+// Moves every baseline entry tagged `#n` to one open follow-up story under n's epic, then commits and pushes it. Returns whether it changed anything.
+export function retagBaselines({ n, cwd, parent, create, scratch, commit, push }) {
+  const files = baselineFiles(cwd, n);
+  if (!files.length) return false;
+  const epic = parent(n);
+  if (!epic) throw new Error(`#${n} has baseline entries but no parent epic to hold their follow-up`);
+  mkdirSync(scratch, { recursive: true });
+  const file = join(scratch, `drive-${n}-baseline-follow-up.md`);
+  writeFileSync(file, `## Outcome\nRemove the gate baseline entries left tagged by #${n}.\n\n### Acceptance criteria\n- [ ] No baseline entry is tagged with this issue; the entries are fixed or removed.\n\n\`\`\`scope\n${JSON.stringify({ paths: files })}\n\`\`\`\n`);
+  const target = Number(String(create(`Clear baseline entries left by #${n}`, file, epic)).match(/(?:Created|Exists|Reopened): #(\d+)/)?.[1]);
+  if (!target) throw new Error(`could not file the baseline follow-up for #${n}`);
+  for (const path of files) writeFileSync(join(cwd, path), readFileSync(join(cwd, path), 'utf8').replace(new RegExp(baselineTag(n), 'g'), `#${target}$1`));
+  commit(`chore: retag baseline entries of #${n} to #${target}`, files);
+  push();
+  return true;
+}
 function self(args, cwd) {
   const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: ['ignore', 2, 2], env: process.env });
   if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
@@ -908,23 +930,16 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       },
     }, red, lanes),
     // Baseline entries tagged `#N` move to one open follow-up story under N's epic; the commit lands on the PR branch.
-    retagBaselines: (issue, tree) => {
-      const n = issue.number; const tag = `#${n}([^0-9]|$)`;
-      const hit = spawnSync('git', ['grep', '-lE', tag, '--', '*baseline*'], { cwd: tree.path, encoding: 'utf8' });
-      const files = hit.status === 0 ? hit.stdout.split('\n').filter(Boolean) : [];
-      if (!files.length) return false;
-      const parent = gh(['api', `repos/${repo}/issues/${n}/parent`])?.number;
-      if (!parent) throw new Error(`#${n} has baseline entries but no parent epic to hold their follow-up`);
-      const file = join(workflowScratch(tree.path), `drive-${n}-baseline-follow-up.md`);
-      writeFileSync(file, `## Outcome\nRemove the gate baseline entries left tagged by #${n}.\n\n### Acceptance criteria\n- [ ] No baseline entry is tagged with this issue; the entries are fixed or removed.\n\n\`\`\`scope\n${JSON.stringify({ paths: files })}\n\`\`\`\n`);
-      const out = run(process.execPath, [cli, 'issue', 'create', '--title', `Clear baseline entries left by #${n}`, '--body-file', file, '--labels', 'type:story', '--parent', String(parent), '--repo', repo], { cwd: tree.path });
-      const target = Number(String(out).match(/(?:Created|Exists|Reopened): #(\d+)/)?.[1]);
-      if (!target) throw new Error(`could not file the baseline follow-up for #${n}`);
-      for (const path of files) writeFileSync(join(tree.path, path), readFileSync(join(tree.path, path), 'utf8').replace(new RegExp(tag, 'g'), `#${target}$1`));
-      self(['commit', '--message', `chore: retag baseline entries of #${n} to #${target}`, '--', ...files], tree.path);
-      self(['push'], tree.path);
-      return true;
-    },
+    retagBaselines: (issue, tree) => retagBaselines({
+      n: issue.number, cwd: tree.path,
+      parent: n => gh(['api', `repos/${repo}/issues/${n}/parent`])?.number,
+      create: (title, file, parent) => run(process.execPath, [cli, 'issue', 'create', '--title', title, '--body-file', file, '--labels', 'type:story', '--parent', String(parent), '--repo', repo], { cwd: tree.path }),
+      scratch: workflowScratch(tree.path),
+      commit: (message, files) => self(['commit', '--message', message, '--', ...files], tree.path),
+      push: () => self(['push'], tree.path),
+    }),
+    // Gate baseline files on the base that still tag the issue; an epic closes through no PR, so these hold its closure.
+    baselineRefs: n => baselineFiles(process.cwd(), n, `origin/${lanes.base}`),
     autoMerge: (pr, tree) => self(['pr', 'auto-merge', '--pr', String(pr.number)], tree?.path || process.cwd()),
     noChangeEvidence: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().some(comment => String(comment.body || '').startsWith(noChangeMarker)),
     closeNoChange: (issue, tree, hb) => {
@@ -1299,6 +1314,8 @@ export function driveEpic(io, epic, lanes) {
       if (step.do === 'close-epic') {
         const second = read();
         if (!second.result.complete || JSON.stringify(first) !== JSON.stringify(second)) return { owner: `epic #${epic.number}: evidence or issue state changed before closure`, url: epic.url };
+        const tagged = io.baselineRefs?.(epic.number) || [];
+        if (tagged.length) return { owner: `epic #${epic.number} is still tagged in gate baselines (${tagged.join(', ')}); closing it would fail every PR, so retag them to an open follow-up first`, url: epic.url };
         io.closeEpic(second.current);
         return { done: { epic: epic.number } };
       }
