@@ -139,6 +139,19 @@ test('the owner is asked only on an approved PR; the round cap and line count ne
   assert.equal(decide({ ...base, diffPaths: huge, pr: pr({ isDraft: false, reviews: approved, assessment: assessed('R1', huge) }) }).do, 'auto-merge');
 });
 
+test('drive retags baseline entries of the closing issue before merging, then waits for the new head', () => {
+  const approved = pr({ issue: 3, isDraft: false, reviews: [review('ready', 'APPROVED')] });
+  const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [approved] });
+  let pending = true;
+  repo.io.retagBaselines = i => { if (!pending) return false; pending = false; repo.calls.push(['retag-baselines', i.number]); return true; };
+  const first = drive(repo.io, 3, lanes, {});
+  assert.deepEqual(first.wait, { pr: 5, until: 'ci' });
+  assert.deepEqual(repo.calls.filter(call => ['retag-baselines', 'auto-merge'].includes(call[0])), [['retag-baselines', 3]], 'nothing merges until the retag is reviewed');
+  repo.s.prs[0].reviews = [review('ready', 'APPROVED')];
+  assert.deepEqual(drive(repo.io, 3, lanes, {}).wait, { pr: 5, until: 'merged' });
+  assert.deepEqual(repo.calls.filter(call => ['retag-baselines', 'auto-merge'].includes(call[0])), [['retag-baselines', 3], ['auto-merge']]);
+});
+
 test('an approved owner-held draft becomes ready before owner approval and merge', () => {
   const held = pr({ issue: 3, labels: [label('risk:R2'), label('review:owner')], reviews: [review('owner', 'APPROVED')], assessment: assessed('R2') });
   const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [held] });
