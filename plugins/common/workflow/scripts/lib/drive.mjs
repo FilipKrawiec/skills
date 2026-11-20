@@ -759,6 +759,8 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const result = gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=Follow up: ${criterion.text}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]);
       return gh(['issue', 'view', String(result.data.createIssue.issue.number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
     },
+    // The open parent epic of a story or bug, or null; a failed read means no parent.
+    parentEpic: n => { try { const parent = gh(['api', `repos/${repo}/issues/${n}/parent`]); return parent?.number && parent.state === 'open' && isEpic(parent) ? parent.number : null; } catch { return null; } },
     subIssues: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/sub_issues?per_page=100`]).flat().map(sub => ({ number: sub.number, state: sub.state.toUpperCase() })),
     verifyEpic: (epic, slices, base, merged) => verifyEpicClosure({ epic, slices, base, repo }, { merged }),
     pr: n => {
@@ -1293,7 +1295,8 @@ export function driveEpic(io, epic, lanes) {
   }
   const result = driveIssue(io, chosen.number, lanes);
   const alsoReady = step.slices.filter(number => number !== chosen.number);
-  return { ...result, epic: epic.number, ...(alsoReady.length ? { alsoReady } : {}) };
+  // A finished slice keeps the session on its epic: the next `drive <epic>` serves the next slice or the closure step.
+  return { ...result, epic: epic.number, ...(result.done ? { continue: `drive ${epic.number}` } : {}), ...(alsoReady.length ? { alsoReady } : {}) };
 }
 // An owner step is also recorded where the owner will see it, on the issue or epic that drive was asked to drive.
 // Drive repeats an unchanged step silently; a failure never changes the step.
@@ -1341,12 +1344,29 @@ export const ownerApproved = (timeline, owner, editedAt = null) => {
   if (event?.event !== 'labeled' || String(event.actor?.login ?? '').toLowerCase() !== owner.toLowerCase()) return false;
   return editedAt == null || Date.parse(editedAt) <= Date.parse(event.created_at);
 };
-export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] }), trusted, approved = () => false, ownerWaiting = () => false) {
+// An open story or bug under an open parent epic is never a target on its own: its epic is, ranked by the best rank of itself and its open children.
+// Fast lane: a base-red issue is still yielded first, by itself, even under an epic. An issue with no open parent epic (an orphan) is taken on its own.
+// `childrenOf(epicNumber)` returns the numbers of the epic's sub-issues; it is read once per open epic.
+export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] }), trusted, approved = () => false, ownerWaiting = () => false, childrenOf = () => []) {
   const names = issue => issue.labels.map(label => label.name ?? label);
+  const isBaseRed = issue => (issue.body || '').includes(BASE_RED_MARKER);
   const candidates = issues.filter(issue => (!untrustedAuthor(issue, trusted) || approved(issue)) && !names(issue).includes('lane:owner') && !(issue.body || '').includes(INBOX_MARKER));
   // An issue whose owner step is already posted (listed on the Owner inbox) waits behind every issue that needs no owner.
-  const rank = issue => ownerWaiting(issue) ? 4 : [(issue.body || '').includes(BASE_RED_MARKER), names(issue).includes('state:started'), names(issue).includes('type:bug'), true].indexOf(true);
-  const ordered = [...candidates].sort((a, b) => rank(a) - rank(b) || a.number - b.number);
+  const rank = issue => ownerWaiting(issue) ? 4 : [isBaseRed(issue), names(issue).includes('state:started'), names(issue).includes('type:bug'), true].indexOf(true);
+  const byNumber = new Map(issues.map(issue => [issue.number, issue]));
+  const parent = new Map();
+  const epicRank = new Map();
+  for (const epic of issues.filter(issue => names(issue).includes('type:epic'))) {
+    for (const number of childrenOf(epic.number) ?? []) if (byNumber.has(number) && !parent.has(number)) parent.set(number, epic.number);
+  }
+  for (const [child, epicNumber] of parent) {
+    const issue = byNumber.get(child);
+    // A base-red child is yielded by itself; it does not lift its epic's rank.
+    if (!isBaseRed(issue)) epicRank.set(epicNumber, Math.min(epicRank.get(epicNumber) ?? 4, rank(issue)));
+  }
+  const yielded = candidates.filter(issue => isBaseRed(issue) || !parent.has(issue.number));
+  const rankOf = issue => Math.min(rank(issue), epicRank.get(issue.number) ?? 4);
+  const ordered = [...yielded].sort((a, b) => rankOf(a) - rankOf(b) || a.number - b.number);
   for (const issue of ordered) { const { blockers, dropped } = depsOf(issue); if (!blockers.length && !dropped.length) yield issue.number; }
 }
 export const nextTarget = (issues, depsOf, trusted, approved) => nextTargets(issues, depsOf, trusted, approved).next().value ?? null;
@@ -1488,7 +1508,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   let n;
   if (args[0] === '--next') {
     baseRedIssue(io, lanes);
-    const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false, issue => io.ownerWaiting?.(issue) ?? false);
+    const numbers = nextTargets(io.openIssues(), issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false, issue => io.ownerWaiting?.(issue) ?? false, epic => io.subIssues?.(epic).map(sub => sub.number) ?? []);
     if (liveRuns({ directory: lockDirectory, repo: lanes.repo, now, session }) >= maxRuns) { console.log(JSON.stringify(slotsFull(null, lanes))); return; }
     const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
     if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(null, lock, now))); return; }
@@ -1496,7 +1516,9 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     const result = driveNext(io, numbers, lanes, handBack);
     if (!lock.record(fingerprintOf(result), now)) { console.log(JSON.stringify(lostClaim(null))); return; }
     if (notice) console.error(notice);
-    if (result.done || result.owner || result.blocked) lock.release();
+    if ((result.done && !result.continue) || result.owner || result.blocked) lock.release();
+    // A session that takes an epic holds the epic's claim, so its slices' `done` continue on the epic; a claim another session holds stays theirs.
+    else if (Number.isInteger(result.epic)) acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${result.epic}`, session, now });
     console.log(JSON.stringify(withConfigCommit(result, lanes)));
     return;
   } else if (/^[1-9]\d*$/.test(args[0])) n = Number(args[0]);
@@ -1508,10 +1530,19 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${n}`, session, now });
   if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(n, lock, now))); return; }
   if (lock.tookOver) io.noteTakeover?.(n, lock.tookOver, now);
-  const result = drive(io, n, lanes, handBack);
+  let result = drive(io, n, lanes, handBack);
+  // A slice's own `done` continues on its open parent epic only inside a session that holds that epic's claim (one that took the epic);
+  // `drive <slice>` on its own ends at the slice.
+  if (result.done?.issue === n && !result.continue) {
+    let epic = null;
+    try { epic = io.parentEpic?.(n) ?? null; } catch { /* a failed parent read only ends the session */ }
+    let held = false;
+    try { held = !!epic && JSON.parse(readFileSync(join(lockDirectory, claimKey(`${lanes.repo}-${epic}`)), 'utf8')).session === session; } catch { /* no claim */ }
+    if (held) result = { ...result, epic, continue: `drive ${epic}` };
+  }
   if (!lock.record(fingerprintOf(result), now)) { console.log(JSON.stringify(lostClaim(n))); return; }
   if (notice) console.error(notice);
-  if (result.done || result.owner || result.blocked) {
+  if ((result.done && (!result.continue || (result.done.issue === n && result.epic !== n))) || result.owner || result.blocked) {
     lock.release();
     try { io.orchestratorLog?.(n, Object.keys(result).find(key => ['done', 'owner', 'blocked'].includes(key))); } catch { /* a session log never blocks delivery */ }
   }

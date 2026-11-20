@@ -349,6 +349,7 @@ function fakeRepo(initial) {
   const io = {
     // A blocked-by link to a closed issue counts as met, like a completed issue whose closing PR merged.
     issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: s.issues[m]?.state || 'OPEN', reason: 'completed', merged: true })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state })),
+    parentEpic: n => { const epic = Object.keys(s.subs || {}).map(Number).find(e => s.subs[e].includes(n) && s.issues[e]?.state === 'OPEN' && (s.issues[e].labels || []).some(l => (l.name ?? l) === 'type:epic')); return epic ?? null; },
     allBlockers: n => s.blockers?.[n] || [],
     addBlocker: (n, blocker) => { calls.push(['blocker', n, blocker]); ((s.blockers ||= {})[n] ||= []).push(blocker); },
     mergedClosingPr: n => (s.merged || []).includes(n),
@@ -2568,4 +2569,48 @@ test('--next ranks base-red, then started, then bug, then the rest by number; ow
   assert.deepEqual([...nextTargets([red, bug(9)], undefined, undefined, undefined, i => i.number === 30)], [9, 30], 'an owner-waiting issue stays last, even base-red');
   const deps = { 30: { blockers: [4], dropped: [] } };
   assert.deepEqual([...nextTargets([red, bug(9)], i => deps[i.number] ?? { blockers: [], dropped: [] })], [9], 'blocked issues are skipped');
+});
+
+test('--next takes an epic, not its slices: the epic ranks by its best child, orphans stay, base-red goes first alone', () => {
+  const story = (number, labels = [], body = '') => ({ number, labels: labels.map(label), body });
+  const epic = story(5, ['type:epic']);
+  const s1 = story(6);
+  const s2 = story(7, ['type:bug']);
+  const orphan = story(20, ['type:bug']);
+  const children = n => (n === 5 ? [6, 7, 99] : []);
+  const targets = issues => [...nextTargets(issues, undefined, undefined, undefined, undefined, children)];
+  assert.deepEqual(targets([s1, s2, orphan, epic]), [5, 20], 'the epic ranks as a bug and ties by number; neither slice is yielded');
+  assert.deepEqual(targets([orphan, story(2), s1, epic]), [20, 2, 5], 'an orphan bug outranks an epic whose best child is a story; ties by number')
+  const red = story(6, [], `broken\n${BASE_RED_MARKER}`);
+  assert.deepEqual(targets([red, s2, orphan, epic]), [6, 5, 20], 'a base-red slice is yielded first, by itself, before its epic');
+  assert.deepEqual(targets([s1, { ...epic, labels: [label('type:epic'), label('lane:owner')] }]), [], 'a draft epic is untaken and its slices never run alone');
+  assert.deepEqual(targets([s1]), [6], 'a slice whose parent is not open is an orphan');
+});
+
+test('a slice driven by number ends at its own done; only a session that took its epic continues on the epic', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  let said = '';
+  const log = console.log; console.log = text => { said = JSON.parse(text); };
+  try {
+    const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
+    const setup = () => fakeRepo({ issues: { 9: epic, 10: issue({ number: 10, state: 'CLOSED' }), 11: issue({ number: 11 }) }, subs: { 9: [10, 11] }, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
+    // The owner runs `drive 10`: no session took the epic, so the run ends at the slice.
+    driveCommand(['10'], lanes, setup().io, { lockDirectory: directory, session: 'manual', now: 1000 });
+    assert.deepEqual(said, { done: { issue: 10 } }, 'drive <slice> never grows into the whole epic');
+    // A `drive --next` session takes the epic (its first step is the epic's own), then its slice's done continues on the epic.
+    const repo = setup();
+    driveCommand(['--next'], lanes, repo.io, { lockDirectory: directory, session: 'auto', now: 2000 });
+    assert.equal(said.epic, 9, 'drive --next took the epic');
+    driveCommand(['10'], lanes, repo.io, { lockDirectory: directory, session: 'auto', now: 3000 });
+    assert.deepEqual([said.done, said.epic, said.continue], [{ issue: 10 }, 9, 'drive 9'], 'a slice done keeps the epic session going');
+    driveCommand(['9'], lanes, repo.io, { lockDirectory: directory, session: 'auto', now: 4000 });
+    assert.ok(said.agent || said.do || said.wait, 'the next drive <epic> serves the next ready slice');
+    assert.equal(said.done, undefined);
+    // Another session's slice done does not borrow the epic claim.
+    driveCommand(['10'], lanes, repo.io, { lockDirectory: directory, session: 'other', now: 5000 });
+    assert.deepEqual(said, { done: { issue: 10 } });
+    const orphan = fakeRepo({ issues: { 10: issue({ number: 10, state: 'CLOSED' }) }, subs: {}, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
+    driveCommand(['10'], lanes, orphan.io, { lockDirectory: directory, session: 'auto', now: 6000 });
+    assert.deepEqual(said, { done: { issue: 10 } }, 'an issue with no open parent epic just ends');
+  } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
 });
