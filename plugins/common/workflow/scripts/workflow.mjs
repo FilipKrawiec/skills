@@ -105,6 +105,16 @@ function requiredLocks(command, args) {
   }
   return [];
 }
+// The `ps` rows the ancestry check reads. Tests name a fixture file in WORKFLOW_TEST_PROCESS_TABLE instead, whose
+// {owner}, {parent} and {self} stand for the lock owner's, this process's parent's and this process's pid, and {script} for this script's path.
+function processTable(ownerPid) {
+  const fixture = process.env.WORKFLOW_TEST_PROCESS_TABLE;
+  if (fixture) {
+    return readFileSync(fixture, 'utf8').replaceAll('{owner}', String(ownerPid)).replaceAll('{parent}', String(process.ppid)).replaceAll('{self}', String(process.pid)).replaceAll('{script}', fileURLToPath(import.meta.url));
+  }
+  const table = spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' });
+  return table.error || table.status !== 0 ? null : table.stdout;
+}
 function validInheritedLockContext(names) {
   const token = process.env.WORKFLOW_LOCK_TOKEN || '';
   const proofPath = process.env.WORKFLOW_LOCK_PROOF || '';
@@ -120,10 +130,10 @@ function validInheritedLockContext(names) {
     const inherited = [...new Set((process.env.WORKFLOW_LOCK_NAMES || '').split(',').filter(Boolean))].sort();
     const ownerPid = Number(process.env.WORKFLOW_LOCK_OWNER_PID);
     if (data.token !== token || JSON.stringify(data.names) !== JSON.stringify(inherited) || !names.every(name => inherited.includes(name)) || !Number.isSafeInteger(ownerPid)) return false;
-    const table = spawnSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' });
-    if (table.error || table.status !== 0) return false;
+    const table = processTable(ownerPid);
+    if (table === null) return false;
     const processes = new Map();
-    for (const line of table.stdout.split('\n')) {
+    for (const line of table.split('\n')) {
       const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
       if (match) processes.set(Number(match[1]), { parent: Number(match[2]), command: match[3] });
     }
