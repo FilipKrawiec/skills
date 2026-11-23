@@ -62,16 +62,22 @@ Only Blocker and Important block. Verify each: read the line, trace the failure;
 
 ## 5. Post
 
-For a clean review, approve the exact head after green CI: use `APPROVE` with `verdict=owner` only for an owner-reserved effect (`AGENTS.md`), `review:owner` or a named Owner decision; otherwise `verdict=ready`, which merges at every risk. For blocking findings or a split use `COMMENT`. Write the body and the inline findings (`[{"path","line","body","criterion","failure"}]`, each body starting with its tag, as in `**Nit** rename x`; add `criterion` and `failure` so a retry skips posted threads) under the path `<cli> scratch` prints, then run `<cli> review-post --pr <N> --sha <40-hex HEAD> --event COMMENT|APPROVE --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`. Pass each of your threads the delta fixes as `--resolve-thread`. On exit 1, stop and report. The body carries `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|fixes|split|owner> -->`. Verdict, first match wins:
+The verdict and its event, first match wins:
 
-- a Blocker or Important finding: `verdict=fixes`; from round 3, list each open one. If all open blockers are base conflicts, add `finding=base-conflict` to the marker.
-- a scope no fix cures: `verdict=split` naming the cut.
-- otherwise: `verdict=ready`, or `verdict=owner` as above.
+- a Blocker or Important finding: `COMMENT` with `verdict=fixes`; from round 3, list each open one. If all open blockers are base conflicts, add `finding=base-conflict` to the marker;
+- a scope no fix cures: `COMMENT` with `verdict=split`, naming the cut;
+- otherwise, after green CI: `APPROVE` the exact head with `verdict=ready`, which merges at every risk, or `verdict=owner` only for an owner-reserved effect (`AGENTS.md`), `review:owner` or a named Owner decision.
+
+Write the body and the inline findings under the path `<cli> scratch` prints, each finding an object like this one, so a retry skips posted ones:
+
+```json
+{"path": "src/auth/session.mjs", "line": 42, "body": "**Important** an expired session still reads as signed in; check `expiresAt` first", "criterion": "An expired session returns 401", "failure": "a token past `expiresAt` gets 200"}
+```
+
+Run `<cli> review-post --pr <N> --sha <40-hex HEAD> --event COMMENT|APPROVE --body-file <F> [--comments-file <C>] [--resolve-thread <id>]...`, passing each of your threads the delta fixes as `--resolve-thread`. On exit 1, stop. The body carries `<!-- agent-review sha=<HEAD> round=<N> verdict=<ready|fixes|split|owner> -->`.
 
 Record owner-only questions under `Owner decision`.
 
-Nits never block and never earn another round; leave them inline for `<cli> nits`. List Pre-existing and Follow-up findings in the body. One follow-up issue per PR; overlap becomes a comment ([approval](references/approval.md)).
+Nits never block and never earn another round; leave them inline for `<cli> nits`. List Pre-existing and Follow-up findings in the body.
 
-Return at most 5 lines: verdict, PR, head, round, tag counts.
-
-**Exit gate:** one exact-head review with its marker, or a reported `review-post` failure.
+**Exit gate:** one exact-head review with its marker, returned in at most 5 lines (verdict, PR, head, round, tag counts), or a reported `review-post` failure.

@@ -133,14 +133,30 @@ test('no doctrine: no skill or agent rule mandates a skill by path or by a rule 
 test('delivery skills keep one plain command per Bash call, inline plan scoring, epic-wide improve and a single tdd gate', () => {
   for (const name of ['deliver', 'review']) assert.match(skillText(name), /one plain command per Bash call/, name);
   const plan = skillText('plan');
-  assert.match(plan, /start no scorer subagent/);
-  assert.doesNotMatch(plan, /fresh subagents|2 scorers/);
+  const approval = readFileSync(join(commonRoot, 'workflow/skills/plan/references/approval.md'), 'utf8');
+  assert.match(approval, /start no scorer subagent/);
+  assert.doesNotMatch(plan + approval, /fresh subagents|2 scorers/);
+  assert.doesNotMatch(plan, /Score reproducibility|Approve and record|Reproducibility: 100%/);
+  assert.match(plan, /\[approval\.md\]\(references\/approval\.md\)/);
+  assert.match(approval, /Reproducibility: 100% \(<n> steps\)/);
   const improve = skillText('improve');
   assert.match(improve, /once per delivered epic/);
   assert.match(improve, /<cli> nits --done/);
   const tdd = skillText('tdd');
   assert.match(tdd, /full gate once through `[^`]*workflow\.mjs check --worktree <worktree-path>`/);
   assert.match(tdd, /without a fake clock/);
+});
+
+test('no skill or agent uses a coined term: Orchestrator, Product partner, execution label or a bare lane', () => {
+  for (const file of instructionFiles()) assert.doesNotMatch(readFileSync(file, 'utf8').replaceAll('lane:owner', '').replaceAll('(the lane label)', ''), /Orchestrator|Product partner|execution label|\blane\b/, relative(root, file));
+  assert.match(skillText('spec'), /The `lane:owner` label \(the lane label\) marks an issue the owner must take part in/);
+});
+
+test('the implementer preloads no dispatch steps and the planner no plan scoring or approval', () => {
+  const agent = name => readFileSync(join(commonRoot, 'workflow/agents', `${name}.md`), 'utf8');
+  assert.doesNotMatch(agent('implementer'), /^  - deliver$/m);
+  assert.match(agent('planner'), /^skills:\n  - spec\n  - plan$/m);
+  assert.doesNotMatch(skillText('plan'), /Reproducibility|scorer/);
 });
 
 test('workflow role definitions leave model selection to the host', () => {
