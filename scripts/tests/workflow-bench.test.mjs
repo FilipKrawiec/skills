@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { benchCommand, compareResults, parseSettings, parseVerdict, renderResults, scoreEntry, summarize, summarizeByRisk, validateSnapshot } from '../../plugins/common/workflow/scripts/lib/bench.mjs';
+import { benchCommand, checkGate, checkLayerImports, checkRawPrimitives, checkRedRun, compareResults, parseSettings, parseVerdict, renderResults, scoreEntry, summarize, summarizeByRisk, validateImplementerSnapshot, validateSnapshot } from '../../plugins/common/workflow/scripts/lib/bench.mjs';
 
 const sha = char => char.repeat(40);
 const defect = { pr: 1, issue: 11, title: 'feat: a', kind: 'defect', risk: 'R1', base: sha('a'), head: sha('b'), defect: { name: 'reverses delta-only rounds', keywords: ['delta', 'whole diff'] } };
@@ -182,5 +182,194 @@ test('--run without --settings uses the single configured setting', async () => 
     const { out } = await capture({ args: ['--snapshot', file, '--run', '--json'], io });
     assert.deepEqual(seen, ['opus:medium', 'opus:medium']);
     assert.equal(JSON.parse(out).runs.length, 1);
+  });
+});
+
+// The implementer bench.
+const tree = entries => new Map(Object.entries(entries));
+test('layer check: a domain file importing an app, api or infra path fails, in four languages', () => {
+  const cases = {
+    typescript: [{ 'src/users/domain/users.ts': "import { x } from '../domain/other.ts';\nexport const a = 1;" }, { 'src/users/domain/users.ts': "import { save } from '../infra/memory-users.ts';" }, '../infra/memory-users.ts'],
+    java: [{ 'src/main/java/com/example/users/domain/User.java': 'import java.util.List;\nimport com.example.users.domain.Email;' }, { 'src/main/java/com/example/users/domain/User.java': 'import com.example.users.infrastructure.UserEntity;' }, 'com.example.users.infrastructure.UserEntity'],
+    kotlin: [{ 'src/main/kotlin/users/domain/User.kt': 'import kotlin.math.max' }, { 'src/main/kotlin/users/domain/User.kt': 'import users.application.RegisterUser' }, 'users.application.RegisterUser'],
+    dart: [{ 'lib/users/domain/user.dart': "import 'package:meta/meta.dart';\nimport 'email.dart';" }, { 'lib/users/domain/user.dart': "import '../api/user_dto.dart';" }, '../api/user_dto.dart'],
+  };
+  for (const [language, [good, bad, target]] of Object.entries(cases)) {
+    assert.deepEqual(checkLayerImports(tree(good), language), { pass: true, violations: [] }, language);
+    const failed = checkLayerImports(tree(bad), language);
+    assert.equal(failed.pass, false, language);
+    assert.match(failed.violations[0], new RegExp(target.replaceAll('.', '\\.')), language);
+  }
+  assert.equal(checkLayerImports(tree({ 'src/users/app/use.ts': "import { x } from '../infra/y.ts';" }), 'typescript').pass, true, 'only domain files are checked');
+  assert.equal(checkLayerImports(tree({ 'src/users/domain/users.test.ts': "import { x } from '../infra/y.ts';" }), 'typescript').pass, true, 'a domain test may wire an adapter');
+});
+test('primitive check: a raw primitive on a public domain signature fails, in four languages', () => {
+  const cases = {
+    typescript: ['export function rename(user: User, name: Name): User {', 'export function rename(user: User, name: string): User {', 'rename uses string'],
+    java: ['    public Order cancel(Reason reason) {', '    public Order cancel(String reason) {', 'cancel uses String'],
+    kotlin: ['    fun cancel(reason: Reason): Order {', '    fun cancel(reason: String): Order {', 'cancel uses String'],
+    dart: ['  Order cancel(Reason reason) {', '  Order cancel(String reason) {', 'cancel uses String'],
+  };
+  const paths = { typescript: 'src/o/domain/o.ts', java: 'src/o/domain/Order.java', kotlin: 'src/o/domain/Order.kt', dart: 'lib/o/domain/order.dart' };
+  for (const [language, [good, bad, message]] of Object.entries(cases)) {
+    const path = paths[language];
+    assert.deepEqual(checkRawPrimitives(tree({ [path]: good }), language), { pass: true, violations: [] }, language);
+    const failed = checkRawPrimitives(tree({ [path]: bad }), language);
+    assert.equal(failed.pass, false, language);
+    assert.match(failed.violations[0], new RegExp(message), language);
+  }
+});
+test('primitive check: return types count, factories and non-public members do not, and only domain files are read', () => {
+  const ts = body => checkRawPrimitives(tree({ 'src/u/domain/u.ts': body }), 'typescript');
+  assert.equal(ts('export function nameOf(user: User): string {').pass, false);
+  assert.equal(ts('export const age = (user: User): number => 1;').pass, false);
+  assert.equal(ts('export async function load(id: UserId): Promise<boolean> {').pass, false);
+  assert.equal(ts('  find(id: UserId): Promise<User | undefined>;').pass, true);
+  assert.equal(ts('export function email(raw: string): Email {').pass, true, 'the parser named after its type');
+  assert.equal(ts('  private helper(raw: string): string {').pass, true);
+  assert.equal(checkRawPrimitives(tree({ 'src/u/app/u.ts': 'export function f(a: string): string {' }), 'typescript').pass, true);
+  const java = body => checkRawPrimitives(tree({ 'src/u/domain/E.java': body }), 'java');
+  assert.equal(java('    public static Email of(String raw) {').pass, true);
+  assert.equal(java('    String helper(String raw) {').pass, true, 'package-private');
+  assert.equal(java('    public int count() {').pass, false);
+  const kotlin = body => checkRawPrimitives(tree({ 'src/u/domain/E.kt': body }), 'kotlin');
+  assert.equal(kotlin('    private fun helper(raw: String): String {').pass, true);
+  assert.equal(kotlin('    fun count(): Int {').pass, false);
+  const dart = body => checkRawPrimitives(tree({ 'lib/u/domain/e.dart': body }), 'dart');
+  assert.equal(dart('  int _count(String raw) {').pass, true, 'a private member');
+  assert.equal(dart('  int count(String raw) {').pass, false);
+});
+test('red check: the new test must fail on the pre-fix tree', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'bench-red-'));
+  try {
+    const start = tree({ 'src/a.ts': 'old', 'test/a.test.ts': 'one' });
+    const run = (gate, dir) => ({ status: existsSync(join(dir, 'src', 'fix.ts')) ? 0 : 1 });
+    const fixed = tree({ ...Object.fromEntries(start), 'src/fix.ts': 'new', 'test/b.test.ts': 'two' });
+    assert.deepEqual(checkRedRun({ start, final: fixed, gate: ['x'], run, scratch }), { pass: true, violations: [] });
+    assert.match(checkRedRun({ start, final: tree({ ...Object.fromEntries(start), 'src/fix.ts': 'new' }), gate: ['x'], run, scratch }).violations[0], /no new or changed test file/);
+    const alreadyGreen = checkRedRun({ start, final: fixed, gate: ['x'], run: () => ({ status: 0 }), scratch });
+    assert.equal(alreadyGreen.pass, false);
+    assert.match(alreadyGreen.violations[0], /passed on the pre-fix tree/);
+    assert.equal(checkRedRun({ start, final: tree({ ...Object.fromEntries(start), 'test/a.test.ts': 'edited' }), gate: ['x'], run: () => ({ status: 2 }), scratch }).pass, true, 'a changed test counts');
+    assert.deepEqual(checkGate({ dir: scratch, gate: ['x'], run: () => ({ status: 0 }) }), { pass: true, violations: [] });
+    assert.equal(checkGate({ dir: scratch, gate: ['x'], run: () => ({ status: 1 }) }).pass, false);
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
+});
+
+const implementerTask = { id: 'ts-a', language: 'typescript', fixture: 'fixtures/a', issue: { title: 'feat: a', body: 'Do a.' }, gate: ['node', '--test'], checks: ['layers', 'primitives', 'red', 'gate'] };
+const withImplementerSnapshot = async (tasks, action) => {
+  const dir = mkdtempSync(join(tmpdir(), 'bench-impl-'));
+  try {
+    for (const name of ['a', 'b', 'c']) {
+      mkdirSync(join(dir, 'fixtures', name, 'src', 'domain'), { recursive: true });
+      writeFileSync(join(dir, 'fixtures', name, 'AGENTS.md'), '---\nactive_skills:\n  - ddd\n  - hexagonal-architecture\n---\n# Fixture\n');
+      writeFileSync(join(dir, 'fixtures', name, 'src', 'domain', 'a.ts'), 'export const a = 1;\n');
+    }
+    const file = join(dir, 'snapshot.json');
+    writeFileSync(file, JSON.stringify({ version: 1, repo: 'o/r', tasks }));
+    return await action(dir, file);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+};
+test('implementer snapshot validation accepts a complete task and names each problem', async () => {
+  await withImplementerSnapshot([implementerTask], async (dir) => {
+    assert.deepEqual(validateImplementerSnapshot({ version: 1, repo: 'o/r', tasks: [implementerTask] }, dir), []);
+    mkdirSync(join(dir, 'fixtures', 'plain'));
+    writeFileSync(join(dir, 'fixtures', 'plain', 'AGENTS.md'), '---\nactive_skills:\n  - tdd\n---\n');
+    const problems = validateImplementerSnapshot({ version: 1, repo: 'o/r', tasks: [
+      { ...implementerTask, id: 'ts-b', fixture: 'fixtures/missing' },
+      { ...implementerTask, id: 'ts-c', fixture: 'fixtures/plain' },
+      { ...implementerTask, id: 'ts-d', issue: { title: 'x' }, gate: [], checks: ['layers', 'vibes'], language: 'cobol' },
+      { ...implementerTask, id: 'ts-a' }, { ...implementerTask },
+    ] }, dir).join('\n');
+    assert.match(problems, /ts-b: fixture must name an existing project directory/);
+    assert.match(problems, /ts-c: the fixture's AGENTS.md lists ddd and hexagonal-architecture under active_skills/);
+    assert.match(problems, /ts-d: issue names its title and body/);
+    assert.match(problems, /ts-d: gate must be a non-empty argv array/);
+    assert.match(problems, /ts-d: checks must be a non-empty subset of layers, primitives, red, gate/);
+    assert.match(problems, /ts-d: language must be one of/);
+    assert.match(problems, /ts-a: duplicate task/);
+    assert.match(validateImplementerSnapshot({ version: 1, repo: 'o/r', tasks: [] }, dir).join('\n'), /no tasks/);
+    assert.match(validateImplementerSnapshot({ version: 2 }, dir).join('\n'), /version 1/);
+  });
+});
+test('the committed implementer snapshot validates', () => {
+  const committed = JSON.parse(readFileSync(fileURLToPath(new URL('../../docs/implementer-benchmark.json', import.meta.url)), 'utf8'));
+  assert.deepEqual(validateImplementerSnapshot(committed), []);
+  assert.ok(committed.tasks.length >= 2);
+});
+test('without --run the implementer bench validates its snapshot and lists what it would run, spending nothing', async () => {
+  await withImplementerSnapshot([implementerTask], async (dir, file) => {
+    const boom = () => { throw new Error('must not run'); };
+    const { code, out } = await capture({ args: ['--implementer', '--snapshot', file, '--baseline', 'abc123', '--json'], io: { arms: boom, implement: boom, run: boom } });
+    assert.equal(code, 0);
+    const printed = JSON.parse(out);
+    assert.deepEqual([printed.run, printed.cost, printed.spendCap, printed.baseline, printed.setting], [false, 0, 10, 'abc123', { model: 'sonnet', effort: 'low' }]);
+    assert.deepEqual(printed.would.map(task => task.id), ['ts-a']);
+    assert.match((await capture({ args: ['--implementer', '--snapshot', file], io: {} })).out, /Dry listing; nothing run, nothing spent. Snapshot holds 1 seeded implementer tasks/);
+    await assert.rejects(() => benchCommand(['--implementer', '--model', 'opus'], {}), /cheapest delivery setting/);
+    await assert.rejects(() => benchCommand(['--baseline', 'abc'], {}), /--implementer/);
+  });
+  await withImplementerSnapshot([{ ...implementerTask, fixture: 'fixtures/nope' }], async (dir, file) => {
+    await assert.rejects(() => benchCommand(['--implementer', '--snapshot', file, '--run'], { arms: () => { throw new Error('must not run'); } }), /Invalid implementer benchmark snapshot: ts-a: fixture/);
+  });
+});
+// A stubbed session: the current arm adds a failing-first test and a fix; the baseline arm adds a fix with no test and an infra import.
+const stubSession = (scratch, costs, seen = []) => ({
+  scratch,
+  arms: baseline => [{ name: 'current', ref: 'working tree', plugin: join(scratch, 'now') }, { name: 'baseline', ref: baseline ?? 'merge-base', plugin: join(scratch, 'then') }],
+  implement: ({ arm, task, tree: dir, brief, model, effort }) => {
+    seen.push({ arm: arm.name, task: task.id, model, effort, brief: readFileSync(brief, 'utf8') });
+    mkdirSync(join(dir, 'src', 'domain'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'domain', 'fix.ts'), arm.name === 'current' ? 'export const fix = 1;\n' : "import { db } from '../infra/db.ts';\n");
+    if (arm.name === 'current') { mkdirSync(join(dir, 'test')); writeFileSync(join(dir, 'test', 'fix.test.ts'), 'test'); }
+    return { usage: { cost: costs.shift() ?? 1 } };
+  },
+  run: (argv, dir) => ({ status: existsSync(join(dir, 'src', 'domain', 'fix.ts')) ? 0 : 1 }),
+});
+test('--run reports per arm the pass rate per check and overall and the cost per task, with --out and --compare', async () => {
+  await withImplementerSnapshot([implementerTask, { ...implementerTask, id: 'ts-b', fixture: 'fixtures/b' }], async (dir, file) => {
+    const seen = [];
+    const io = stubSession(dir, [0.4, 0.2, 0.4, 0.2], seen);
+    const out = join(dir, 'result.json');
+    const { out: printed } = await capture({ args: ['--implementer', '--snapshot', file, '--run', '--baseline', 'abc123', '--json', '--out', out], io });
+    const result = JSON.parse(printed);
+    assert.deepEqual(result.arms.map(arm => [arm.arm, arm.ref]), [['current', 'working tree'], ['baseline', 'abc123']]);
+    const [current, baseline] = result.arms;
+    assert.deepEqual(current.summary.checks.layers, { passed: 2, total: 2, rate: 1 });
+    assert.deepEqual(current.summary.overall, { passed: 8, total: 8, rate: 1 });
+    assert.deepEqual(current.summary.cost, { total: 0.8, perTask: 0.4, reported: 2, unreported: 0 });
+    assert.deepEqual([baseline.summary.checks.layers.rate, baseline.summary.checks.primitives.rate, baseline.summary.checks.red.rate, baseline.summary.checks.gate.rate], [0, 1, 0, 1]);
+    assert.deepEqual(baseline.summary.overall, { passed: 4, total: 8, rate: 0.5 });
+    assert.equal(baseline.summary.tasksPassed, 0);
+    assert.deepEqual(baseline.rows[0].violations.red, ['no new or changed test file']);
+    assert.equal(result.totalCost, 1.2);
+    assert.deepEqual(result.skipped, []);
+    assert.deepEqual(result.setting, { model: 'sonnet', effort: 'low' });
+    assert.deepEqual(seen.map(item => `${item.arm}:${item.task}:${item.model}:${item.effort}`), ['current:ts-a:sonnet:low', 'baseline:ts-a:sonnet:low', 'current:ts-b:sonnet:low', 'baseline:ts-b:sonnet:low']);
+    assert.match(seen[0].brief, /# Implementer brief: #1 feat: a/);
+    assert.match(seen[0].brief, /Risk R0\. Model sonnet\. Effort low\./);
+    assert.match(seen[0].brief, /Do a\./);
+    assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')).arms.map(arm => arm.summary.overall.rate), [1, 0.5]);
+    const text = (await capture({ args: ['--implementer', '--snapshot', file, '--run', '--compare', out], io: stubSession(dir, [0.4, 0.2, 0.4, 0.2]) })).out;
+    assert.match(text, /== current \(working tree\)/);
+    assert.match(text, /pass rate: layers 2\/2; primitives 2\/2; red 2\/2; gate 2\/2; overall 8\/8 \(1\); cost per task \$0\.40/);
+    assert.match(text, /vs saved: pass rate \+0, cost per task \+\$0\.00/);
+    const replay = await capture({ args: ['--implementer', '--snapshot', file, '--from', out, '--compare', out], io: {} });
+    assert.match(replay.out, /overall 4\/8 \(0\.5\)/);
+  });
+});
+test('the implementer bench starts no task once reported cost reaches 10 USD and lists the skipped ones', async () => {
+  const tasks = ['a', 'b', 'c'].map(name => ({ ...implementerTask, id: `ts-${name}`, fixture: `fixtures/${name}` }));
+  await withImplementerSnapshot(tasks, async (dir, file) => {
+    const seen = [];
+    const { out } = await capture({ args: ['--implementer', '--snapshot', file, '--run', '--json'], io: stubSession(dir, [6, 4, 1, 1], seen) });
+    const result = JSON.parse(out);
+    assert.deepEqual(seen.map(item => `${item.arm}:${item.task}`), ['current:ts-a', 'baseline:ts-a']);
+    assert.deepEqual(result.skipped, [{ task: 'ts-b', arm: 'current' }, { task: 'ts-b', arm: 'baseline' }, { task: 'ts-c', arm: 'current' }, { task: 'ts-c', arm: 'baseline' }]);
+    assert.equal(result.totalCost, 10);
+    assert.match((await capture({ args: ['--implementer', '--snapshot', file, '--run'], io: stubSession(dir, [10, 1, 1, 1]) })).out, /Skipped at the spend cap: ts-a \(baseline\), ts-b \(current\), ts-b \(baseline\), ts-c \(current\), ts-c \(baseline\)/);
+    const under = [];
+    await capture({ args: ['--implementer', '--snapshot', file, '--run', '--json'], io: stubSession(dir, [4.9, 4.9, 0.05, 0.05, 0.05, 0.05], under) });
+    assert.equal(under.length, 6, 'a total just under the cap starts every task');
   });
 });

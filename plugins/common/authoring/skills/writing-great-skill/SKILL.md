@@ -12,9 +12,10 @@ A skill is a system-prompt fragment: direct orders to an agent that already know
 
 1. Name the failure the change prevents: an observed run, a review comment or an owner correction. No failure, no rule.
 2. Place the rule in the skill whose phase acts on it (Placement below).
-3. Write it as plain imperative sentences an agent new to this repository can follow cold: "Run X.", "Never Y; do Z instead." Give the reason in one clause where the agent must judge a case the rule does not name, or where a capable agent would otherwise override the rule ("never rebase: it detaches review threads").
+3. Write it as plain imperative sentences an agent new to this repository can follow cold: "Run X.", "Never Y; do Z instead." Give the reason in one clause where the agent must judge an unnamed case or would otherwise override the rule ("never rebase: it detaches review threads").
 4. Cut every line the agent would follow untold: general best practice, background paragraphs, history, restatements of a tooling gate.
 5. After each trim, run `node plugins/common/workflow/scripts/workflow.mjs manifests verify`; run `just verify` once when the change is done. Word budgets are a ceiling, not a target.
+6. A change to `ddd`, `hexagonal-architecture` or `tdd` also requires `workflow bench --implementer --run`, which must show the changed skills at least match the baseline's pass rate at no higher cost per task; commit its record under `docs/records/` (see evaluating.md).
 
 ## Placement
 
@@ -30,7 +31,7 @@ A skill is a system-prompt fragment: direct orders to an agent that already know
 - **Frontmatter:** a model-invoked description starts "Use when" and names user intents, not mechanics; a user-invoked skill sets `disable-model-invocation: true` and a one-line label. A skill a scheduled task or another session starts stays model-invoked: a brief can't type a slash command, so the run stalls. `allowed-tools` is a space-delimited string, with `Skill` when it invokes another skill.
 - **Steps:** number the phases. End each with an **Exit gate** the agent can check: a command's exit code, a file, a label, a PR or CI state.
 - **Conditions:** data the agent can read ("the issue has a scope packet"), never another skill's history ("after `spec` ran"). Write a branch of three or more cases as a list, one case per line, first match wins.
-- **Emphasis:** CAPS or "IMPORTANT" only on the rule runs keep breaking; emphasis everywhere weights nothing.
+- **Emphasis:** CAPS only on the rule runs keep breaking.
 - **Hedges:** delete "consider", "should generally", "where appropriate". State the default, then the exception.
 - **Examples:** one good/bad pair beats a paragraph.
 - **Output:** every phase that talks to a human or agent gets an envelope, written out in that skill: its fields and a line limit. A fixed format (PR body, report) shows one filled instance in a code block; a step that spawns a worker shows the worker's whole brief, since that brief is all the worker knows.

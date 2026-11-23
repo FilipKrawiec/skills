@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "repo": "FilipKrawiec/skills",
+  "note": "Seeded implementer tasks replayed by `workflow bench --implementer`. Each fixture is a small project whose AGENTS.md lists ddd and hexagonal-architecture under active_skills; the gate is its argv. Checks are deterministic: layers (no domain import of an app, api or infra path), primitives (no raw string, number or boolean on a public domain signature), red (the new test fails on the starting tree) and gate.",
+  "tasks": [
+    {
+      "id": "ts-users-change-email",
+      "language": "typescript",
+      "fixture": "docs/implementer-benchmark/ts-users",
+      "issue": {
+        "title": "feat(users): change a user's email address",
+        "body": "## Summary\n\nA registered user can change their email address.\n\n### Acceptance criteria\n\n- [ ] Changing a user's email to a different address returns the changed user and a `UserEmailChanged` event.\n- [ ] Changing it to the address the user already has reports no change and records no event.\n- [ ] A use case `changeUserEmail` takes a user id and a new address as text, loads the user, and reports `UserNotFound` when there is none.\n- [ ] Each criterion has a test, and the project gate passes."
+      },
+      "gate": ["node", "--test"],
+      "checks": ["layers", "primitives", "red", "gate"]
+    },
+    {
+      "id": "ts-orders-cancel",
+      "language": "typescript",
+      "fixture": "docs/implementer-benchmark/ts-orders",
+      "issue": {
+        "title": "feat(orders): cancel an order before it ships",
+        "body": "## Summary\n\nA placed order can be cancelled until it ships.\n\n### Acceptance criteria\n\n- [ ] Cancelling a placed order returns the cancelled order and an `OrderCancelled` event.\n- [ ] Cancelling a shipped order is refused and the order is unchanged.\n- [ ] A use case `cancelOrder` takes an order id as text, loads the order, and reports `OrderNotFound` when there is none.\n- [ ] Each criterion has a test, and the project gate passes."
+      },
+      "gate": ["node", "--test"],
+      "checks": ["layers", "primitives", "red", "gate"]
+    }
+  ]
+}
