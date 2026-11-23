@@ -18,7 +18,11 @@ When an existing test already demonstrates the failure, use its failing run as t
 
 ## 2. Refactor and verify
 
-Improve structure while preserving behavior. Tests stub host binaries and devices (`lsof`, `ps`, `ioreg`, `xcrun`, `adb`); a real one passes on one OS and fails on another. Keep tests observable: avoid private-state access, test-only production APIs, backdoor setters, mere existence assertions or tests of a fake alone. Use injected dependencies. Never assert on elapsed time, sleeps or timeouts without a fake clock: real timing flakes under load. For an adapter, check each implementation against its contract; for a gate, cover allowed and rejected cases and exemption boundaries.
+Improve structure while preserving behavior. Tests stub host binaries and devices (`lsof`, `ps`, `ioreg`, `xcrun`, `adb`); a real one passes on one OS and fails on another.
+
+Doubles, one rule: an outbound port gets a hand-written fake (an in-memory implementation of the port), and the test asserts the resulting state, never which calls were made. A mock library only stubs a third-party type the project cannot fake, and never verifies calls.
+
+Keep tests observable: avoid private-state access, test-only production APIs, backdoor setters, mere existence assertions or tests of a fake alone. Use injected dependencies. Never assert on elapsed time, sleeps or timeouts without a fake clock: real timing flakes under load. For an adapter, check each implementation against its contract; for a gate, cover allowed and rejected cases and exemption boundaries.
 
 Run only focused tests while you work, never the full suite. When the change is complete, run the full gate once through `node <this-skill-directory>/../../scripts/workflow.mjs check --worktree <worktree-path>`, which runs the project's `steps.test` under a machine-wide lock; rerun it only after fixing a failure, never on unchanged code. When the project assigns its full verification or coverage gate to hosted CI, consume that result as the full gate. A pending hosted check is pending evidence, not a pass. Preserve all configured reproducible confidence evidence; timeouts and skipped checks are not passes.
 
@@ -26,8 +30,30 @@ Run only focused tests while you work, never the full suite. When the change is 
 
 ## 3. Report
 
-Return at most 8 lines: changed behavior and paths, `done` with each behavior step's red run (failing command and failure line, one line per step) captured before its fix, or `stuck: <step, evidence>` when a step's test was never seen failing. A fix written with its test leaves no red run: reverse-apply the fix, capture red, restore it; report `stuck` only when red still does not appear. Then name green evidence or why red does not apply, checks and exits, configured confidence evidence, pending checks or failures, and the next action. For a plan that moved or renamed files, re-run its old-path search before reporting `done`. Start no agent.
+Return at most 8 lines: changed behavior and paths, then one of:
+
+- `done`, with each behavior step's red run (failing command, failing test name, failure line, and why that is the intended failure) captured before its fix, one line per step.
+- `stuck: <step, evidence>` when a step's test was never seen failing.
+- `replan: <step, evidence, recommendation>` when the plan contradicts the code.
+- A named blocker with the next action.
+
+A fix written with its test leaves no red run: reverse-apply the fix, capture red, restore it; report `stuck` only when red still does not appear. Then name green evidence or why red does not apply, checks and exits, configured confidence evidence, pending checks or failures, and the next action. For a plan that moved or renamed files, re-run its old-path search before reporting `done`. Start no agent.
+
+Filled example:
+
+```text
+Changed: `Users.changeEmail` rejects an address already taken; src/users/users.ts, src/users/users.test.ts.
+done
+red: `node --test src/users/users.test.ts` -> "rejects an email already taken": expected EmailTaken, got no error (the check is missing, not a typo)
+green: same command, 1 test passes; check exit 0; no mutation tool configured
+next: open the PR
+```
 
 **Exit gate:** `done` with a red run per behavior step and evidence for the final revision, or `stuck`, `replan` or a named blocker with the next action.
 
-Read [test-levels.md](references/test-levels.md) when choosing a test level, [mutation-testing.md](references/mutation-testing.md) when auditing a suite, [bug-fixes.md](references/bug-fixes.md) for a regression, and `references/languages/<language>.md` for the relevant supported language.
+Read:
+
+- [test-levels.md](references/test-levels.md) when choosing a test level.
+- [mutation-testing.md](references/mutation-testing.md) when auditing a suite.
+- [bug-fixes.md](references/bug-fixes.md) for a regression.
+- `references/languages/<language>.md` for the relevant supported language.

@@ -3,10 +3,10 @@
 ## Stack
 
 - Pure Dart packages run `dart test`; every test in a Flutter package runs `flutter test`. Prefer the project's wrapper command.
-- Fakes: in-memory port implementations (`MemoryUsers implements Users`) over mock packages. Mutation: `mutation_test`.
+- Doubles: in-memory port implementations (`MemoryUsers implements Users`). Mutation: the project's configured tool, else `mutation_test`.
 - Backend SDK and database adapters are tested only in the integration suite (local emulator or database); unit and widget suites use in-memory adapters of the same port.
 - Use the state-management and router packages' own override hooks; stub use cases at the presentation boundary.
-- Production code reads `clock.now()` (`package:clock`), never `DateTime.now()`, so `testWidgets` fake time controls it. Plain `test` cases use `fakeAsync`, never a real `Future.delayed`.
+- Production code reads `clock.now()` (the project's configured clock, else `package:clock`), never `DateTime.now()`, so `testWidgets` fake time controls it. Plain `test` cases use `fakeAsync`, never a real `Future.delayed`.
 
 ## Shape and layout
 
