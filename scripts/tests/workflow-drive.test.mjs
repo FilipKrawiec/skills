@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
-  driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -1345,6 +1345,31 @@ test('every implementer brief names the implementer reference as the first thing
     assert.ok(brief.includes(`Read ${reference} first`), step.mode);
     assert.ok(brief.indexOf(reference) < brief.indexOf('## Task'), 'named before the task');
   }
+});
+
+test('the implementer brief lists evidence criteria beside code criteria', () => {
+  const body = '## Problem\nx\n\n## Acceptance\n- [ ] The parser rejects an empty name.\n- [ ] The body links before and after captures per device class.\n- [ ] The closing PR records timings and the delivery-flow assessment.\n\n## Notes\n- A capture of the notes is not a criterion.\n';
+  assert.deepEqual(evidenceCriteria(body), ['The body links before and after captures per device class.', 'The closing PR records timings and the delivery-flow assessment.']);
+  const brief = implementerBrief({ issue: issue({ body }), tree: tree(), step: { mode: 'build' }, base: 'main' });
+  assert.match(brief, /## Criteria[\s\S]*Code criteria:\n- The parser rejects an empty name\.[\s\S]*Evidence criteria[\s\S]*- The body links before and after captures/);
+  assert.match(brief, /local path[\s\S]*refused/i);
+  assert.doesNotMatch(implementerBrief({ issue: issue({ body: '## Acceptance\n- [ ] It parses.\n' }), tree: tree(), step: { mode: 'build' }, base: 'main' }), /Evidence criteria/);
+});
+
+test('evidence naming only a local path is found, a reachable link is not', () => {
+  assert.deepEqual(localEvidencePaths('Before: /Users/me/scratch/before.png\nAfter: ~/shots/after.png\nfile:///tmp/a.png'), ['/Users/me/scratch/before.png', '~/shots/after.png', 'file:///tmp/a.png']);
+  assert.deepEqual(localEvidencePaths('![before](/private/tmp/x/before.png) and C:\\caps\\a.png'), ['/private/tmp/x/before.png', 'C:\\caps\\a.png']);
+  assert.deepEqual(localEvidencePaths('[before](https://github.com/acme/app/assets/1/before.png) at https://example.com/a/b.png, see `src/a.mjs` and docs/x.md'), []);
+});
+
+test('drive refuses a done hand-back whose evidence body names a local path, before the PR is ready', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+  try {
+    const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+    const bad = join(directory, 'bad.md'); writeFileSync(bad, '## Evidence\nBefore: /Users/me/scratch/before.png\n');
+    const hb = join(directory, 'hb.txt'); writeFileSync(hb, `status: done\ncheck: pass\nnote: ok\nbody: ${bad}\n`);
+    assert.throws(() => driveCommand(['3', '--hand-back', hb], lanes, repo.io, { lockDirectory: directory, session: 'A', now: 1000 }), /local path.*\/Users\/me\/scratch\/before\.png/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('a fix-mode brief offers disputed and the Reviewer brief carries the dispute evidence', () => {

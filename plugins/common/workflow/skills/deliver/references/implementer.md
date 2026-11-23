@@ -8,6 +8,7 @@ Work only in your brief's worktree.
 - Fix only failing checks and Blocker and Important findings from `review-context`. Nits never block. Dispute one with `status: disputed` and `note`; `done` without a commit reruns the fix. Only the Reviewer handles threads.
 - Resolve conflicts with `git merge --no-ff --no-commit origin/<base>`, then the brief's `commit` command.
 - Use the project's documented capture command; no native build is needed unless documented. Capture after the UI settles.
+- When the brief lists evidence criteria (captures per device class, timings, flow assessment), put each in the `body` file as a reachable link or the figures themselves, and check the file against every one before `done`. A local path is refused.
 - Add no capability, option or refactor the issue did not ask for.
 - Never push, open, label, ready or merge a PR, never start an agent and never print a token.
 
