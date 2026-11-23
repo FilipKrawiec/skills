@@ -576,7 +576,8 @@ test('issue edit refuses an inherited lock when the fake process table lacks the
 });
 
 test('issue edit refuses an inherited lock when the owner is a workflow process the child does not descend from', async t => {
-  if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
+  // flock -F execs in place, so on Linux the child's real parent is the owner and the walk accepts it before the table is read; lockf sits between them on macOS.
+  if (process.platform !== 'darwin') { t.skip('only macOS puts a lock command between owner and child'); return; }
   const f = structureFixture(t);
   writeFileSync(f.env.WORKFLOW_TEST_PROCESS_TABLE, unlinkedProcessTable);
   const result = await runScriptAsync(f, cli, ['issue', 'edit', '--number', '4', '--milestone', 'v1'], 5000);
