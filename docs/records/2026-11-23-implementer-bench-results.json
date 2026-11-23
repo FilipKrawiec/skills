@@ -1,0 +1,152 @@
+{
+  "snapshot": "FilipKrawiec/skills",
+  "kind": "implementer",
+  "setting": {
+    "model": "sonnet",
+    "effort": "low"
+  },
+  "spendCap": 10,
+  "baseline": "2155f801c0a0a247767d1ec773b9537b4fa075ce",
+  "totalCost": 0.718074,
+  "arms": [
+    {
+      "arm": "current",
+      "ref": "working tree",
+      "rows": [
+        {
+          "task": "ts-users-change-email",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.23708230000000002
+        },
+        {
+          "task": "ts-orders-cancel",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.15366950000000001
+        }
+      ],
+      "summary": {
+        "tasks": 2,
+        "tasksPassed": 2,
+        "checks": {
+          "layers": {
+            "passed": 2,
+            "total": 2,
+            "rate": 1
+          },
+          "primitives": {
+            "passed": 2,
+            "total": 2,
+            "rate": 1
+          },
+          "red": {
+            "passed": 2,
+            "total": 2,
+            "rate": 1
+          },
+          "gate": {
+            "passed": 2,
+            "total": 2,
+            "rate": 1
+          }
+        },
+        "overall": {
+          "passed": 8,
+          "total": 8,
+          "rate": 1
+        },
+        "cost": {
+          "total": 0.390752,
+          "perTask": 0.195376,
+          "reported": 2,
+          "unreported": 0
+        }
+      }
+    },
+    {
+      "arm": "baseline",
+      "ref": "2155f801c0a0a247767d1ec773b9537b4fa075ce",
+      "rows": [
+        {
+          "task": "ts-users-change-email",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.15305770000000002
+        },
+        {
+          "task": "ts-orders-cancel",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.174264
+        }
+      ],
+      "summary": {
+        "tasks": 2,
+        "tasksPassed": 2,
+        "checks": {
+          "layers": {
+            "passed": 2,
+            "total": 2,
+            "rate": 1
+          },
+          "primitives": {
+            "passed": 2,
+            "total": 2,
+            "rate": 1
+          },
+          "red": {
+            "passed": 2,
+            "total": 2,
+            "rate": 1
+          },
+          "gate": {
+            "passed": 2,
+            "total": 2,
+            "rate": 1
+          }
+        },
+        "overall": {
+          "passed": 8,
+          "total": 8,
+          "rate": 1
+        },
+        "cost": {
+          "total": 0.327322,
+          "perTask": 0.163661,
+          "reported": 2,
+          "unreported": 0
+        }
+      }
+    }
+  ],
+  "skipped": []
+}

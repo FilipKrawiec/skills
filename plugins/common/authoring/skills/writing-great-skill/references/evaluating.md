@@ -15,6 +15,14 @@ Source: https://agentskills.io/skill-creation/evaluating-skills
 - Grade each expected outcome PASS or FAIL with evidence from the trace. No evidence is FAIL.
 - Keep a change only when the run with it beats the run without it.
 
+## Implementer bench
+
+Required for a change to `ddd`, `hexagonal-architecture` or `tdd`; a hand-picked run is not enough.
+
+- Run `node plugins/common/workflow/scripts/workflow.mjs bench --implementer` first: it validates `docs/implementer-benchmark.json` and lists the seeded tasks, spending nothing.
+- Then run it with `--run --out RESULT.json`. It replays each task on the cheapest delivery setting (`sessionFor('implementer', 'R0')`) once with the skills at the working tree and once at `--baseline REF` (default the merge base with the default branch), and grades by deterministic checks only: layer imports, raw primitives on public domain signatures, a red run before the fix, the project gate. It starts no task once reported cost reaches 10 USD and lists the skipped ones.
+- Keep the change only when the working-tree arm's overall pass rate is above the baseline's at no higher cost per task. Save the Markdown record and the result JSON under `docs/records/` (the arms, setting, task set and cost), and use `--compare` against an earlier result.
+
 ## Cutting
 
 For each line ask: would the run go wrong without it? Delete it unless the answer is yes and a run shows it.

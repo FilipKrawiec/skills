@@ -1,9 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { activeSkills } from '../project-verify.mjs';
 import { cleanEnvironment, jsonCommand, workflowScratch } from './core.mjs';
-import { changedExportSites, reviewerCommand } from './drive.mjs';
-import { reviewPacket } from './packet.mjs';
+import { changedExportSites, implementerBrief, reviewerCommand, sessionFor } from './drive.mjs';
+import { architectureNote, reviewPacket } from './packet.mjs';
 import { commandModel, parseUsage, unreported, usageHost, visibleResult } from './usage.mjs';
 
 // The reviewer benchmark: replays pinned known-defect and known-clean PRs through the Reviewer and reports catches,
@@ -99,11 +102,11 @@ export function renderResults(result, comparisons = []) {
 
 function parseArgs(args) {
   const options = {};
-  const valued = ['--snapshot', '--out', '--compare', '--from', '--model', '--effort', '--settings', '--host'];
+  const valued = ['--snapshot', '--out', '--compare', '--from', '--model', '--effort', '--settings', '--host', '--baseline'];
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--run' || args[i] === '--json') options[args[i].slice(2)] = true;
+    if (args[i] === '--run' || args[i] === '--json' || args[i] === '--implementer') options[args[i].slice(2)] = true;
     else if (valued.includes(args[i]) && args[i + 1] && !args[i + 1].startsWith('--')) options[args[i].slice(2)] = args[++i];
-    else throw new Error('Usage: bench [--snapshot FILE] [--run] [--model M] [--effort E] [--settings model:effort,...] [--host claude|codex] [--json] [--out FILE] [--compare FILE] [--from FILE]');
+    else throw new Error('Usage: bench [--snapshot FILE] [--run] [--model M] [--effort E] [--settings model:effort,...] [--host claude|codex] [--json] [--out FILE] [--compare FILE] [--from FILE] [--implementer [--baseline REF]]');
   }
   return options;
 }
@@ -113,6 +116,8 @@ const readResult = file => { const value = readJson(file); return !value.runs &&
 
 export async function benchCommand(args, io) {
   const options = parseArgs(args);
+  if (options.implementer) return implementerBenchCommand(options, io);
+  if (options.baseline) throw new Error('--baseline belongs to the implementer bench; pass --implementer');
   const snapshot = readJson(options.snapshot || defaultSnapshot);
   const problems = validateSnapshot(snapshot);
   if (problems.length) throw new Error(`Invalid benchmark snapshot: ${problems.join('; ')}`);
@@ -180,5 +185,282 @@ export function reviewerIo(lanes, root, options = {}) {
         return { verdict: parseVerdict(text), text, usage: usageOf ? parseUsage(usageOf, run.stdout) : null, model: commandModel(command) };
       } finally { git('worktree', 'remove', '--force', tree); }
     },
+  };
+}
+
+// The implementer benchmark: replays seeded implementer tasks on the cheapest delivery setting, once with the skills at the
+// working tree and once with the skills at a baseline ref, and grades each run by deterministic checks only (no model grades).
+export const spendCap = 10;
+export const implementerChecks = ['layers', 'primitives', 'red', 'gate'];
+const implementerLanguages = ['typescript', 'java', 'kotlin', 'dart'];
+const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
+const defaultImplementerSnapshot = join(repoRoot, 'docs', 'implementer-benchmark.json');
+const requiredSkills = ['ddd', 'hexagonal-architecture'];
+
+export function validateImplementerSnapshot(snapshot, root = repoRoot) {
+  if (!snapshot || snapshot.version !== 1) return ['snapshot must be version 1'];
+  const problems = [];
+  if (typeof snapshot.repo !== 'string' || !snapshot.repo) problems.push('snapshot names its repo');
+  const tasks = Array.isArray(snapshot.tasks) ? snapshot.tasks : [];
+  if (!tasks.length) problems.push('snapshot has no tasks');
+  const seen = new Set();
+  for (const task of tasks) {
+    if (typeof task?.id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(task.id)) { problems.push('a task id must be lowercase kebab-case'); continue; }
+    const label = task.id;
+    if (seen.has(label)) problems.push(`${label}: duplicate task`);
+    seen.add(label);
+    if (!implementerLanguages.includes(task.language)) problems.push(`${label}: language must be one of ${implementerLanguages.join(', ')}`);
+    const fixture = typeof task.fixture === 'string' && task.fixture ? join(root, task.fixture) : null;
+    if (!fixture || !existsSync(fixture) || !statSync(fixture).isDirectory()) problems.push(`${label}: fixture must name an existing project directory`);
+    else if (!existsSync(join(fixture, 'AGENTS.md')) || requiredSkills.some(skill => !activeSkills(fixture).includes(skill))) problems.push(`${label}: the fixture's AGENTS.md lists ${requiredSkills.join(' and ')} under active_skills`);
+    if (typeof task.issue?.title !== 'string' || !task.issue.title || typeof task.issue?.body !== 'string' || !task.issue.body) problems.push(`${label}: issue names its title and body`);
+    if (!Array.isArray(task.gate) || !task.gate.length || task.gate.some(part => typeof part !== 'string' || !part)) problems.push(`${label}: gate must be a non-empty argv array`);
+    const checks = Array.isArray(task.checks) ? task.checks : [];
+    if (!checks.length || checks.some(check => !implementerChecks.includes(check)) || new Set(checks).size !== checks.length) problems.push(`${label}: checks must be a non-empty subset of ${implementerChecks.join(', ')}`);
+  }
+  return problems;
+}
+
+// A tree is a Map of relative path to text; the checks read only that.
+const skippedDirectory = /^(\.git|node_modules)$/;
+export function readTree(dir) {
+  const files = new Map();
+  const walk = (relative) => {
+    for (const entry of readdirSync(join(dir, relative), { withFileTypes: true })) {
+      if (skippedDirectory.test(entry.name)) continue;
+      const path = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile()) files.set(path, readFileSync(join(dir, path), 'utf8'));
+    }
+  };
+  walk('');
+  return files;
+}
+export const isTestFile = path => /(^|\/)(tests?|__tests__)\//.test(path) || /\.(test|spec)\.[a-z]+$/.test(path) || /Tests?\.(java|kt)$/.test(path) || /_test\.dart$/.test(path);
+const domainFiles = files => [...files].filter(([path]) => /(^|\/)domain\//.test(path) && !isTestFile(path));
+
+// Check 1: no domain file imports an application, API or infrastructure path or package.
+const outerLayer = /^(app|application|api|infra|infrastructure)$/i;
+const importTargets = (content, language) => (language === 'java' || language === 'kotlin'
+  ? [...content.matchAll(/^\s*import\s+(?:static\s+)?([\w.*]+)/gm)].map(match => match[1])
+  : [...content.matchAll(/(?:\bfrom\s+|\bimport\s+|\brequire\(\s*)['"]([^'"]+)['"]/g)].map(match => match[1]));
+export function checkLayerImports(files, language) {
+  const violations = [];
+  for (const [path, content] of domainFiles(files)) for (const target of importTargets(content, language)) if (target.split(/[/.:-]+/).some(segment => outerLayer.test(segment))) violations.push(`${path} imports ${target}`);
+  return { pass: violations.length === 0, violations };
+}
+
+// Check 2: no raw primitive in a public domain signature, parameters and return type. Single-line signatures only. Factories
+// that parse raw input into a value (`of`, `parse`, `from*`, and in TypeScript the parser named after its type, `email(): Email`)
+// are the one place raw values enter, so they are exempt.
+const primitiveType = {
+  typescript: /^(string|number|boolean|bigint)(\[\])?$/,
+  java: /^(String|int|long|short|byte|double|float|boolean|char|Integer|Long|Short|Byte|Double|Float|Boolean|Character)$/,
+  kotlin: /^(String|Int|Long|Short|Byte|Double|Float|Boolean|Char)\??$/,
+  dart: /^(String|int|double|num|bool)\??$/,
+};
+const splitTop = text => {
+  const parts = []; let depth = 0; let current = '';
+  for (const char of text) {
+    if ('<([{'.includes(char)) depth++;
+    else if ('>)]}'.includes(char)) depth--;
+    if (char === ',' && depth === 0) { parts.push(current); current = ''; } else current += char;
+  }
+  return [...parts, current].map(part => part.trim()).filter(Boolean);
+};
+const unwrapAsync = type => type.replace(/^(?:Promise|Future|FutureOr)<(.*)>$/, '$1');
+const paramTypes = (text, style) => splitTop(text).map(param => {
+  const bare = param.replace(/@\w+(\([^)]*\))?\s*/g, '').replace(/^(?:final|required|readonly|public|private|protected|vararg)\s+/g, '').replace(/^[{[]|[}\]]$/g, '').trim();
+  if (style === 'ts' || style === 'kotlin') return bare.replace(/\s*=.*$/, '').split(/\s*\??:\s*/)[1] ?? null;
+  const tokens = bare.replace(/\s*=.*$/, '').split(/\s+/);
+  return tokens.length > 1 && !bare.includes('this.') ? tokens.slice(0, -1).join(' ') : null;
+}).filter(Boolean);
+const signatureReaders = {
+  typescript: line => {
+    const patterns = [
+      /^\s*export\s+(?:async\s+)?function\s+(\w+)\s*(?:<[^>(]*>)?\(([^)]*)\)\s*(?::\s*([^{=;]+?))?\s*[{;]?\s*$/,
+      /^\s*export\s+const\s+(\w+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*(?::\s*([^=]+?))?\s*=>/,
+      /^\s{2,}(?!private|protected|constructor|return|if|for|while|switch|catch|#)(?:public\s+)?(?:static\s+)?(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*:\s*([^{;=]+?)\s*[{;]/,
+    ];
+    const match = patterns.map(pattern => pattern.exec(line)).find(Boolean);
+    return match && { name: match[1], types: [...paramTypes(match[2], 'ts'), match[3]?.trim()].filter(Boolean) };
+  },
+  java: line => {
+    const match = /^\s*public\s+(?:static\s+)?(?:final\s+)?(?:<[^>]+>\s+)?([\w<>[\],.? ]+?)\s+(\w+)\s*\(([^)]*)\)\s*(?:throws [\w., ]+)?\s*[{;]/.exec(line);
+    return match && { name: match[2], types: [...paramTypes(match[3], 'c'), match[1].trim()] };
+  },
+  kotlin: line => {
+    const match = /^\s*((?:\w+\s+)*)fun\s+(?:<[^>]+>\s*)?(?:[\w.]+\.)?(\w+)\s*\(([^)]*)\)\s*(?::\s*([^{=]+?))?\s*[{=]/.exec(line);
+    return match && !/\b(private|internal|protected)\b/.test(match[1]) && { name: match[2], types: [...paramTypes(match[3], 'kotlin'), match[4]?.trim()].filter(Boolean) };
+  },
+  dart: line => {
+    const match = /^\s*(?:static\s+)?([\w<>?,]+(?:\s+[\w<>?,]+)*?)\s+([a-zA-Z]\w*)\s*\(([^)]*)\)\s*(?:async\s*)?(?:\{|=>|;)/.exec(line);
+    return match && !/^(return|if|else|for|while|switch|new|await|throw|assert)$/.test(match[1]) && { name: match[2], types: [...paramTypes(match[3], 'c'), match[1].trim()] };
+  },
+};
+const parsingFactory = (name, types, language) => /^(of|parse|valueOf|from\w*|toString|equals|hashCode|main)$/.test(name) || (language === 'typescript' && types.at(-1)?.toLowerCase() === name.toLowerCase());
+export function checkRawPrimitives(files, language) {
+  const violations = [];
+  for (const [path, content] of domainFiles(files)) {
+    for (const line of content.split('\n')) {
+      const signature = signatureReaders[language]?.(line);
+      if (!signature || parsingFactory(signature.name, signature.types, language)) continue;
+      const raw = signature.types.filter(type => unwrapAsync(type.replace(/^readonly\s+/, '')).split('|').some(part => primitiveType[language].test(part.trim())));
+      if (raw.length) violations.push(`${path}: ${signature.name} uses ${[...new Set(raw)].join(', ')}`);
+    }
+  }
+  return { pass: violations.length === 0, violations };
+}
+
+// Check 3: the tests the run added or changed fail on the pre-fix tree, the starting tree plus only those test files.
+export function checkRedRun({ start, final, gate, run, scratch }) {
+  const added = [...final].filter(([path, content]) => isTestFile(path) && start.get(path) !== content);
+  if (!added.length) return { pass: false, violations: ['no new or changed test file'] };
+  const dir = mkdtempSync(join(scratch, 'pre-fix-'));
+  try {
+    for (const [path, content] of [...start, ...added]) { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), content); }
+    const { status } = run(gate, dir);
+    return typeof status === 'number' && status !== 0 ? { pass: true, violations: [] } : { pass: false, violations: [`the new test passed on the pre-fix tree (exit ${status ?? 'none'})`] };
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+// Check 4: the project gate passes on the final tree.
+export function checkGate({ dir, gate, run }) {
+  const { status } = run(gate, dir);
+  return { pass: status === 0, violations: status === 0 ? [] : [`gate exited ${status ?? 'none'}`] };
+}
+
+export function gradeTask({ task, start, final, dir, run, scratch }) {
+  const results = {
+    layers: () => checkLayerImports(final, task.language),
+    primitives: () => checkRawPrimitives(final, task.language),
+    red: () => checkRedRun({ start, final, gate: task.gate, run, scratch }),
+    gate: () => checkGate({ dir, gate: task.gate, run }),
+  };
+  const graded = Object.fromEntries(task.checks.map(name => [name, results[name]()]));
+  return { checks: Object.fromEntries(implementerChecks.map(name => [name, graded[name] ? graded[name].pass : null])), violations: Object.fromEntries(Object.entries(graded).filter(([, result]) => !result.pass).map(([name, result]) => [name, result.violations])) };
+}
+
+const rate = (passed, total) => ({ passed, total, rate: total ? round(passed / total) : null });
+export function summarizeImplementer(rows) {
+  const checks = Object.fromEntries(implementerChecks.map(name => { const graded = rows.filter(row => typeof row.checks[name] === 'boolean'); return [name, rate(graded.filter(row => row.checks[name]).length, graded.length)]; }));
+  const all = Object.values(checks);
+  const costs = rows.map(row => row.cost).filter(cost => Number.isFinite(cost));
+  const total = costs.reduce((sum, cost) => sum + cost, 0);
+  return {
+    tasks: rows.length, tasksPassed: rows.filter(row => row.passed).length, checks,
+    overall: rate(all.reduce((sum, item) => sum + item.passed, 0), all.reduce((sum, item) => sum + item.total, 0)),
+    cost: { total: costs.length ? round(total) : unreported, perTask: costs.length ? round(total / costs.length) : unreported, reported: costs.length, unreported: rows.length - costs.length },
+  };
+}
+export function compareImplementerResults(before, after) {
+  const delta = (x, y) => (typeof x === 'number' && typeof y === 'number' ? round(y - x) : unreported);
+  return after.arms.map(arm => {
+    const saved = before.arms?.find(other => other.arm === arm.arm);
+    return saved && { arm: arm.arm, passRate: delta(saved.summary.overall.rate, arm.summary.overall.rate), costPerTask: delta(saved.summary.cost.perTask, arm.summary.cost.perTask) };
+  });
+}
+const percent = item => (item.total ? `${item.passed}/${item.total}` : 'n/a');
+export function renderImplementerResults(result, comparisons = []) {
+  const lines = [`Setting ${result.setting.model} ${result.setting.effort}; spend cap ${money(result.spendCap)}; total cost ${money(result.totalCost)}`];
+  result.arms.forEach(arm => {
+    lines.push('', `== ${arm.arm} (${arm.ref})`);
+    for (const row of arm.rows) lines.push(`${row.task} ${implementerChecks.filter(name => typeof row.checks[name] === 'boolean').map(name => `${name} ${row.checks[name] ? 'pass' : 'FAIL'}`).join(', ')} ${money(row.cost)}`);
+    const { checks, overall, cost } = arm.summary;
+    lines.push(`pass rate: ${implementerChecks.map(name => `${name} ${percent(checks[name])}`).join('; ')}; overall ${percent(overall)}${overall.total ? ` (${overall.rate})` : ''}; cost per task ${money(cost.perTask)}, total ${money(cost.total)} (${cost.unreported} unreported)`);
+    const comparison = comparisons.find(item => item?.arm === arm.arm);
+    if (comparison) lines.push(`vs saved: pass rate ${signed(comparison.passRate)}, cost per task ${signed(comparison.costPerTask, true)}`);
+  });
+  if (result.skipped.length) lines.push('', `Skipped at the spend cap: ${result.skipped.map(item => `${item.task} (${item.arm})`).join(', ')}`);
+  return lines.join('\n');
+}
+
+// Replays every task through both arms, task by task so the cap cuts both arms evenly, and stops starting sessions once the reported cost reaches the cap.
+export async function runImplementerBench({ snapshot, arms, io, root = repoRoot, scratch = tmpdir(), cap = spendCap, setting = sessionFor('implementer', 'R0') }) {
+  const results = arms.map(arm => ({ arm: arm.name, ref: arm.ref, rows: [] }));
+  const skipped = [];
+  let spent = 0;
+  for (const [index, task] of snapshot.tasks.entries()) {
+    for (const [at, arm] of arms.entries()) {
+      if (spent >= cap) { skipped.push({ task: task.id, arm: arm.name }); continue; }
+      const tree = mkdtempSync(join(scratch, `implementer-${task.id}-`));
+      try {
+        cpSync(join(root, task.fixture), tree, { recursive: true, filter: source => !skippedDirectory.test(source.split('/').at(-1)) });
+        mkdirSync(join(tree, '.agents'), { recursive: true });
+        writeFileSync(join(tree, '.agents', 'config.json'), `${JSON.stringify({ version: 1, steps: { test: task.gate } }, null, 2)}\n`);
+        const start = readTree(tree);
+        const brief = join(scratch, `${basenameOf(tree)}-brief.md`);
+        const roots = [join(arm.plugin, '..', 'core', 'skills'), join(arm.plugin, 'skills')];
+        writeFileSync(brief, implementerBrief({
+          step: { agent: 'implementer', mode: 'build' }, risk: 'R0', round: 0, model: setting.model, effort: setting.effort, base: 'main', pr: null,
+          issue: { number: index + 1, title: task.issue.title, url: `bench://${snapshot.repo}/${task.id}`, body: task.issue.body },
+          tree: { path: tree, branch: `bench-${task.id}` },
+          architecture: architectureNote({ root: tree, files: [...start.keys()], roots }),
+        }));
+        const session = await io.implement({ task, arm, tree, brief, model: setting.model, effort: setting.effort });
+        const graded = gradeTask({ task, start, final: readTree(tree), dir: tree, run: io.run, scratch });
+        const cost = costOf(session?.usage);
+        if (cost) spent += cost;
+        const required = Object.values(graded.checks).filter(value => typeof value === 'boolean');
+        results[at].rows.push({ task: task.id, language: task.language, checks: graded.checks, violations: graded.violations, passed: required.every(Boolean), cost });
+      } finally { rmSync(tree, { recursive: true, force: true }); rmSync(join(scratch, `${basenameOf(tree)}-brief.md`), { force: true }); }
+    }
+  }
+  return { snapshot: snapshot.repo, kind: 'implementer', setting, spendCap: cap, baseline: arms.at(-1)?.ref ?? null, totalCost: round(spent), arms: results.map(item => ({ ...item, summary: summarizeImplementer(item.rows) })), skipped };
+}
+const basenameOf = path => path.split('/').at(-1);
+
+async function implementerBenchCommand(options, io) {
+  for (const flag of ['model', 'effort', 'settings']) if (options[flag]) throw new Error(`--${flag} does not apply to the implementer bench: it runs the cheapest delivery setting, sessionFor('implementer', 'R0')`);
+  const snapshot = readJson(options.snapshot || defaultImplementerSnapshot);
+  const problems = validateImplementerSnapshot(snapshot, options.snapshot ? dirname(options.snapshot) : repoRoot);
+  if (problems.length) throw new Error(`Invalid implementer benchmark snapshot: ${problems.join('; ')}`);
+  const root = options.snapshot ? dirname(options.snapshot) : repoRoot;
+  const emit = (value, text) => console.log(options.json ? JSON.stringify(value, null, 2) : text);
+  const setting = sessionFor('implementer', 'R0');
+  let result;
+  if (options.from) result = readJson(options.from);
+  else if (!options.run) {
+    const baseline = options.baseline || 'the merge base with the default branch';
+    const would = snapshot.tasks.map(({ id, language, fixture, gate, checks }) => ({ id, language, fixture, gate, checks }));
+    emit({ run: false, cost: 0, setting, spendCap, baseline, arms: ['current', 'baseline'], would }, [`Dry listing; nothing run, nothing spent. Snapshot holds ${would.length} seeded implementer tasks, each replayed on ${setting.model} ${setting.effort} with the skills at the working tree and at ${baseline}, no new session started once reported cost reaches ${money(spendCap)}. Pass --run to replay them (real model spend).`, ...would.map(task => `${task.id} ${task.language} ${task.fixture} gate: ${task.gate.join(' ')} checks: ${task.checks.join(', ')}`)].join('\n'));
+    return 0;
+  } else {
+    const arms = await io.arms(options.baseline);
+    try { result = await runImplementerBench({ snapshot, arms, io, root, scratch: io.scratch ?? tmpdir(), setting }); } finally { await io.release?.(); }
+  }
+  const comparisons = options.compare ? compareImplementerResults(readJson(options.compare), result) : [];
+  if (options.out) writeFileSync(options.out, `${JSON.stringify(result, null, 2)}\n`);
+  emit(options.compare ? { ...result, comparisons } : result, renderImplementerResults(result, comparisons));
+  return 0;
+}
+
+// The real implementer session: the arm's own plugin directory, a git-initialised copy of the fixture, usage from the host's output.
+export function implementerIo(lanes, root, options = {}) {
+  const host = options.host || lanes.delivery?.roles?.implementer?.host || 'claude';
+  if (host !== 'claude') throw new Error('The implementer bench supports the claude host only');
+  const executable = lanes.delivery?.executables?.claude || 'claude';
+  const scratch = join(workflowScratch(root), 'bench-implementer');
+  mkdirSync(scratch, { recursive: true });
+  const gitRun = (...args) => spawnSync('git', args, { cwd: root, encoding: 'utf8', env: cleanEnvironment() });
+  let baselineTree = null;
+  return {
+    scratch,
+    arms(ref) {
+      const at = ref || gitRun('merge-base', 'HEAD', `origin/${lanes.base}`).stdout.trim() || lanes.base;
+      baselineTree = join(scratch, 'baseline-skills');
+      rmSync(baselineTree, { recursive: true, force: true });
+      if (gitRun('worktree', 'add', '--detach', baselineTree, at).status !== 0) throw new Error(`Cannot check out baseline ${at}`);
+      return [{ name: 'current', ref: 'working tree', plugin: join(root, 'plugins', 'common', 'workflow') }, { name: 'baseline', ref: at, plugin: join(baselineTree, 'plugins', 'common', 'workflow') }];
+    },
+    release() { if (baselineTree) gitRun('worktree', 'remove', '--force', baselineTree); },
+    implement({ arm, task, tree, brief, model, effort }) {
+      for (const args of [['init', '-q'], ['add', '-A'], ['-c', 'user.name=bench', '-c', 'user.email=bench@example.invalid', 'commit', '-q', '-m', 'chore: seed']]) spawnSync('git', args, { cwd: tree, env: cleanEnvironment() });
+      const command = [executable, '--print', '--output-format', 'json', '--agent', 'filipkrawiec-workflow:implementer', '--model', model, '--effort', effort, '--plugin-dir', arm.plugin, '--permission-mode', 'auto', '--name', `bench-${arm.name}-${task.id}`, `Follow your brief at ${brief}. Return at most 5 lines.`];
+      const run = spawnSync(command[0], command.slice(1), { cwd: tree, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: process.env });
+      const usageOf = usageHost(command);
+      return { usage: usageOf ? parseUsage(usageOf, run.stdout) : null };
+    },
+    run: (argv, cwd) => ({ status: spawnSync(argv[0], argv.slice(1), { cwd, encoding: 'utf8', env: cleanEnvironment(), timeout: 600_000 }).status }),
   };
 }
