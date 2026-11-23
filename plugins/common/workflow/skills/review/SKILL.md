@@ -68,7 +68,7 @@ The verdict and its event, first match wins:
 - a scope no fix cures: `COMMENT` with `verdict=split`, naming the cut;
 - otherwise, after green CI: `APPROVE` the exact head in this session with `verdict=ready`, which merges at every risk, or `verdict=owner` only for an owner-reserved effect (`AGENTS.md`), `review:owner` or a named Owner decision. Approve only as neither PR author nor latest pusher.
 
-Write the body and the inline findings under the path `<cli> scratch` prints, each an object like this, so a retry skips posted ones:
+Write the body and inline findings under the path `<cli> scratch` prints, each an object like this, so a retry skips posted ones:
 
 ```json
 {"path": "src/auth/session.mjs", "line": 42, "body": "**Important** an expired session still reads as signed in; check `expiresAt` first", "criterion": "An expired session returns 401", "failure": "a token past `expiresAt` gets 200"}

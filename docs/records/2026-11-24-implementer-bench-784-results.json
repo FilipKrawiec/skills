@@ -1,0 +1,186 @@
+{
+  "snapshot": "FilipKrawiec/skills",
+  "kind": "implementer",
+  "setting": {
+    "model": "sonnet",
+    "effort": "low"
+  },
+  "spendCap": 10,
+  "baseline": "origin/main",
+  "totalCost": 1.039929,
+  "arms": [
+    {
+      "arm": "current",
+      "ref": "working tree",
+      "rows": [
+        {
+          "task": "ts-users-change-email",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.24166230000000005
+        },
+        {
+          "task": "ts-orders-cancel",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.1471918
+        },
+        {
+          "task": "ts-stock-reserve",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": false,
+            "red": true,
+            "gate": true
+          },
+          "violations": {
+            "primitives": [
+              "src/stock/domain/stock.ts: save uses Promise<boolean>"
+            ]
+          },
+          "passed": false,
+          "cost": 0.1671435
+        }
+      ],
+      "summary": {
+        "tasks": 3,
+        "tasksPassed": 2,
+        "checks": {
+          "layers": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          },
+          "primitives": {
+            "passed": 2,
+            "total": 3,
+            "rate": 0.666667
+          },
+          "red": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          },
+          "gate": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          }
+        },
+        "overall": {
+          "passed": 11,
+          "total": 12,
+          "rate": 0.916667
+        },
+        "cost": {
+          "total": 0.555998,
+          "perTask": 0.185333,
+          "reported": 3,
+          "unreported": 0
+        }
+      }
+    },
+    {
+      "arm": "baseline",
+      "ref": "origin/main",
+      "rows": [
+        {
+          "task": "ts-users-change-email",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.14832120000000001
+        },
+        {
+          "task": "ts-orders-cancel",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.1731418
+        },
+        {
+          "task": "ts-stock-reserve",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": false,
+            "red": true,
+            "gate": true
+          },
+          "violations": {
+            "primitives": [
+              "src/stock/domain/stock.ts: save uses Promise<boolean>"
+            ]
+          },
+          "passed": false,
+          "cost": 0.1624685
+        }
+      ],
+      "summary": {
+        "tasks": 3,
+        "tasksPassed": 2,
+        "checks": {
+          "layers": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          },
+          "primitives": {
+            "passed": 2,
+            "total": 3,
+            "rate": 0.666667
+          },
+          "red": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          },
+          "gate": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          }
+        },
+        "overall": {
+          "passed": 11,
+          "total": 12,
+          "rate": 0.916667
+        },
+        "cost": {
+          "total": 0.483932,
+          "perTask": 0.161311,
+          "reported": 3,
+          "unreported": 0
+        }
+      }
+    }
+  ],
+  "skipped": []
+}
