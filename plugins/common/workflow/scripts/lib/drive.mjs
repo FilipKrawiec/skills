@@ -18,7 +18,7 @@ import { prState } from './state.mjs';
 import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
 import { exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
-import { collectRunnerSession, collectSession } from './session-log.mjs';
+import { collectOrchestrator, collectSession } from './session-log.mjs';
 import { pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
 import { approveReady, previousReviewedHead } from './vcs.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
@@ -860,7 +860,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       recordUsage({ repo, pr: pr.number, author: lanes.implementer, entry: usageEntry({ role, host: parsed?.host, model: parsed?.model, effort: parsed?.effort, plugin: parsed?.plugin, usage: parsed?.usage, key }) }, { gh });
       if (sessionId) collectSession({ repo, pr: pr.number, author: lanes.implementer, session: { id: sessionId, role, status: hb.status || hb.risk, usage: hb.usage } });
     },
-    orchestratorLog: (n, outcome) => collectRunnerSession({ repo, number: n, findPr: number => io.pr(number), author: lanes.implementer, outcome }),
+    orchestratorLog: (n, outcome) => collectOrchestrator({ repo, number: n, findPr: number => io.pr(number), author: lanes.implementer, outcome }),
     packetFacts(context) { return gatherPacketFacts({ repo, lanes, gh, threads: pr => this.reviewThreads(pr), ...context }); },
     reviewSession: (pr, tree) => {
       const root = tree?.path || git('rev-parse', '--show-toplevel');

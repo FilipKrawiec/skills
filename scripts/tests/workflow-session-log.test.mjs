@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectRunnerSession, collectSession, githubApi, locateTranscript, parseSessionLogs, redact, sessionLogEntries, survivingSecret } from '../../plugins/common/workflow/scripts/lib/session-log.mjs';
+import { collectOrchestrator, collectSession, githubApi, locateTranscript, parseSessionLogs, redact, sessionLogEntries, survivingSecret } from '../../plugins/common/workflow/scripts/lib/session-log.mjs';
 import { statusCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 
 const ghToken = `ghp_${'a1B2c3D4e5F6g7H8i9J0'}`;
@@ -68,10 +68,10 @@ test('a token right after an escaped newline, tab or unicode escape in a JSONL l
 test('a runner-started orchestrator is collected from the transcript named by its session id', () => {
   const id = '0f8fad5b-d9cb-469f-a165-70867728950e';
   const github = fakeGithub();
-  const result = collectRunnerSession({ repo: 'o/r', number: 5, findPr: n => ({ number: n + 4 }), author: 'bot', outcome: 'done', github, store: store({ [`/p/${id}.jsonl`]: transcript('ok'), '/p/other.jsonl': 'x' }), logDirectory: logs(), env: { WORKFLOW_DRIVE_SESSION: id } });
+  const result = collectOrchestrator({ repo: 'o/r', number: 5, findPr: n => ({ number: n + 4 }), author: 'bot', outcome: 'done', github, store: store({ [`/p/${id}.jsonl`]: transcript('ok'), '/p/other.jsonl': 'x' }), logDirectory: logs(), env: { WORKFLOW_DRIVE_SESSION: id } });
   assert.deepEqual(result, { collected: `orchestrator-1-${id}.jsonl` });
   assert.match(github.state.comments[0].body, /\| orchestrator \| claude-sonnet-5-5 \|.*\| done \|/);
-  assert.equal(collectRunnerSession({ repo: 'o/r', number: 5, findPr: () => null, github, store: store({}), env: {} }), null);
+  assert.equal(collectOrchestrator({ repo: 'o/r', number: 5, findPr: () => null, github, store: store({}), env: {} }), null);
 });
 
 test('a surviving secret refuses the upload, logs it, and comments the session as missing once', () => {
