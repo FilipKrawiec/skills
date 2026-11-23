@@ -8,7 +8,7 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 
 Review at head. Never start a subagent, finder or verifier. Never implement, commit or push; refuse a head this session committed or pushed. Post only with `review-post`: it acts as the configured Reviewer and never prints the token. Run one plain command per Bash call. `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
 
-Outside drive, run `node <this-skill-directory>/../../scripts/review-session.mjs <PR> <HEAD> <reviewer-command>...`.
+Outside drive: `node <this-skill-directory>/../../scripts/review-session.mjs <PR> <HEAD> <reviewer-command>...`.
 
 Branch on the assignment, first match wins:
 
@@ -18,7 +18,7 @@ Branch on the assignment, first match wins:
 - an area, diff or branch with no PR: read [area-audit.md](references/area-audit.md) for a whole area, do steps 3 and 4 and return the step 5 envelope without posting;
 - a PR: steps 1 to 5.
 
-Read [hot-paths.md](references/hot-paths.md) for hot paths, [risk.md](references/risk.md) for risk.
+Read [hot-paths.md](references/hot-paths.md) and [risk.md](references/risk.md) as needed.
 
 ## 1. Shape and claim
 
@@ -34,7 +34,7 @@ Run `<cli> wait <N> --until ci`. Record a red required check as an **Important**
 
 ## 3. Read the evidence
 
-Round is `<cli> status <N>`'s round plus one; a new head never resets it. Agent rules and `REVIEW.md` define fit. [packet.md](references/packet.md) covers the packet and large diffs.
+Round is `<cli> status <N>`'s round plus one; a new head never resets it. Fit is agent rules, `REVIEW.md`, and skills and profiles the packet names. [packet.md](references/packet.md) covers the packet and large diffs.
 
 - **Whole diff** when no earlier verdict of yours reviewed it: round 1, or after a red-CI or shape-only verdict. Respect owner grouping; split only with owner authorization or a real authority boundary (`round=0 verdict=split`, naming the seam).
 - **Later rounds:** judge only `review-context`'s `comparison.changedFiles` against open threads and criteria.
@@ -45,7 +45,7 @@ Round is `<cli> status <N>`'s round plus one; a new head never resets it. Agent 
 
 - **Acceptance outcome:** derive closing intent from current issue criteria and the diff, never stale PR text. Trace each criterion to an observable outcome and a production call site; code reached only from tests proves nothing. Run the manual steps CI cannot. Flag hollow tests, weakened thresholds and scope creep.
 - **Correctness:** edge cases, failure paths, security, concurrency, cleanup and data loss in the changed code.
-- **Fit:** breaches of the repository's own rules, each citing the rule's `file:line`; a PR linking no issue is Important.
+- **Fit:** breaches of the repository's own rules, each citing the rule's `file:line`; a PR with no linked issue is Important.
 - **Blast radius:** callers, contracts, migrations and configuration outside the diff that it breaks; a surviving reference to a removed or renamed name, or a doc or install instruction still stating the changed behaviour (search its user-facing terms), is Important.
 
 Tag each candidate:
@@ -56,7 +56,7 @@ Tag each candidate:
 - **Pre-existing:** a defect already on the base branch.
 - **Follow-up:** a real gap outside the acceptance criteria.
 
-Only Blocker and Important block. Verify each candidate: read the line, trace the failure, drop unconfirmed ones. Never report lint or taste.
+Only Blocker and Important block. Verify each: read the line, trace the failure; drop unconfirmed. Never report taste.
 
 **Exit gate:** each kept finding has a tag, a read `file:line`, a failure scenario and a remedy.
 
