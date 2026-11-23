@@ -407,7 +407,36 @@ export function holdBaseUpdates(entries) {
   return entries.map(entry => (behind.includes(entry) && entry !== first ? { ...entry, step: { blocked: { issue: entry.number, reason } } } : entry));
 }
 
+// Evidence a reviewer cannot open: a path on the implementer's machine stands in for a link.
+const localPathPattern = /(?<![\w:/.~-])(?:file:\/\/[^\s)>\]`'"]+|~\/[^\s)>\]`'"]+|\/(?:Users|home|tmp|private|var|Volumes|mnt|root|opt)\/[^\s)>\]`'"]+|[A-Za-z]:\\[^\s)>\]`'"]+)/g;
+export const localEvidencePaths = text => [...new Set([...String(text || '').matchAll(localPathPattern)].map(match => match[0].replace(/[.,;:]+$/, '')))];
+const evidenceWords = /\b(captures?|screenshots?|screen recordings?|recordings?|timings?|times|flow assessment|before and after|evidence)\b/i;
+// The issue's acceptance bullets, split into those naming evidence (artifacts the PR body must carry) and code criteria.
+export function acceptanceCriteria(body) {
+  const lines = String(body || '').split('\n');
+  const start = lines.findIndex(line => /^#{2,4}\s+acceptance\b/i.test(line));
+  if (start < 0) return { code: [], evidence: [] };
+  const level = /^#+/.exec(lines[start])[0].length;
+  const end = lines.findIndex((line, index) => index > start && /^#{1,6}\s/.test(line) && /^#+/.exec(line)[0].length <= level);
+  const items = lines.slice(start + 1, end < 0 ? undefined : end).map(line => /^\s*(?:[-*]|\d+\.)\s+(?:\[[ xX]\]\s+)?(.+?)\s*$/.exec(line)?.[1]).filter(Boolean);
+  return { code: items.filter(item => !evidenceWords.test(item)), evidence: items.filter(item => evidenceWords.test(item)) };
+}
+export const evidenceCriteria = body => acceptanceCriteria(body).evidence;
 const shellQuote = value => '\'' + value.replaceAll('\'', '\'\\\'\'') + '\'';
+function criteriaSection(body) {
+  const { code, evidence } = acceptanceCriteria(body);
+  if (!evidence.length) return '';
+  return `## Criteria
+
+Code criteria:
+${code.length ? code.map(item => `- ${item}`).join('\n') : '- (none beyond the evidence below)'}
+
+Evidence criteria (the PR body must carry each, as a reachable link or the figures themselves; before \`done\`, check your \`body\` file against every one):
+${evidence.map(item => `- ${item}`).join('\n')}
+
+An artifact named only by a local path is refused: drive rejects the hand-back before the PR is ready. Link it (an uploaded asset or a committed file's URL).
+`;
+}
 export function implementerBrief(f) {
   const fix = f.step.mode === 'fix';
   return `# Implementer brief: #${f.issue.number} ${f.issue.title}
@@ -432,6 +461,7 @@ ${f.step.handoff ? `Handoff: a fresh session takes over this PR because the risk
 ${fix ? `- \`node ${cli} status ${f.pr.number}\` and \`node ${cli} review-context --pr ${f.pr.number}\`\n` : ''}
 Never push, open, label, ready or merge a PR, and never start an agent: drive does that.
 
+${criteriaSection(f.issue.body)}
 ## Hand-back, at most 5 lines
 
 \`\`\`text
@@ -1506,6 +1536,10 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     if (!args[at + 1]) throw new Error(usage);
     handBack = parseHandBack(args[at + 1] === '-' ? readFileSync(0, 'utf8') : readFileSync(args[at + 1], 'utf8'));
     args = args.filter((_, index) => index !== at && index !== at + 1);
+    if (handBack.status === 'done' && handBack.body) {
+      const local = localEvidencePaths(readFileSync(handBack.body, 'utf8'));
+      if (local.length) throw new Error(`The hand-back's evidence body names a local path, not a reachable link: ${local.join(', ')}. Link each artifact and hand back again.`);
+    }
   }
   if (args.length !== 1) throw new Error(usage);
   const swept = io.sweepBoard?.() ?? [];
