@@ -1,3 +1,8 @@
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { extname, join } from 'node:path';
+import { activeSkills } from '../project-verify.mjs';
+import { pluginRoot } from './plugin.mjs';
 import { reviewAreas } from './vcs.mjs';
 
 // The review packet: the facts drive already knows, in the order a Reviewer reads them. It carries no PR description,
@@ -79,6 +84,7 @@ export function reviewPacket(raw) {
   const parts = [
     `# Review packet: PR #${raw.pr.number} at ${head}, round ${raw.round}`,
     'Facts drive gathered. It leaves out the PR description, implementer notes and hand-back on purpose; check blast radius outside it yourself with `git grep` and Read.',
+    ...(raw.architecture ? [raw.architecture] : []),
     `## 1. Issue ${raw.issue?.url || ''}\n\n${criteria}\n\n${scope}`,
     `## 2. CI\n\n${ciSection(raw.checks || [], raw.requiredChecks || [])}`,
     `## 3. Project gate\n\n${gateSection(raw.gate, head)}`,
@@ -88,6 +94,36 @@ export function reviewPacket(raw) {
   if (delta) parts.push(`## 5. Delta since the last verdict\n\n${delta}`, `## 6. Open threads\n\n${threadSection(raw.threads)}`);
   parts.push(`## ${delta ? 7 : 5}. Call sites of changed exports\n\n${siteSection(raw.callSites)}`);
   return `${parts.join('\n\n')}\n`;
+}
+// The architecture skills a project opts into, and the language profiles for the files a change touches, as lines drive puts in
+// the implementer brief and the review packet. Empty when the project lists neither skill or no installed copy has it.
+const architectureSkills = ['ddd', 'hexagonal-architecture'];
+const architectureLanguages = { '.java': 'java', '.kt': 'kotlin', '.kts': 'kotlin', '.dart': 'dart', '.ts': 'typescript', '.tsx': 'typescript', '.js': 'typescript', '.mjs': 'typescript' };
+const testingLanguages = { '.java': 'java', '.kt': 'kotlin', '.kts': 'kotlin', '.dart': 'dart', '.ts': 'javascript', '.tsx': 'javascript', '.js': 'javascript', '.mjs': 'javascript', '.rs': 'rust' };
+function skillRoots(home = homedir()) {
+  const roots = [join(pluginRoot, '..', 'core', 'skills'), join(pluginRoot, 'skills')];
+  try {
+    const plugins = JSON.parse(readFileSync(join(home, '.claude', 'plugins', 'installed_plugins.json'), 'utf8')).plugins || {};
+    for (const [key, installs] of Object.entries(plugins)) if (key.startsWith('filipkrawiec-core@')) for (const install of installs) if (install?.installPath) roots.push(join(install.installPath, 'skills'));
+  } catch { /* no installed copy known */ }
+  return roots;
+}
+const expandFiles = (root, paths) => paths.flatMap(path => {
+  try {
+    if (!statSync(join(root, path)).isDirectory()) return [path];
+    return readdirSync(join(root, path), { recursive: true }).map(name => join(path, String(name))).filter(name => !/(^|\/)(\.git|node_modules)\//.test(name)).slice(0, 500);
+  } catch { return [path]; }
+});
+export function architectureNote({ root, files, roots = skillRoots() }) {
+  const wanted = activeSkills(root).filter(skill => architectureSkills.includes(skill));
+  if (!wanted.length) return '';
+  const find = relative => roots.map(base => join(base, relative)).find(path => existsSync(path));
+  const skills = wanted.map(skill => find(join(skill, 'SKILL.md'))).filter(Boolean);
+  if (!skills.length) return '';
+  const extensions = [...new Set(expandFiles(root, files || []).map(file => extname(file)))];
+  const profile = (skill, map) => [...new Set(extensions.map(ext => map[ext]).filter(Boolean))].map(lang => find(join(skill, 'references', 'languages', `${lang}.md`))).filter(Boolean);
+  const profiles = [...profile('hexagonal-architecture', architectureLanguages), ...profile('tdd', testingLanguages)];
+  return `Architecture skills the project's agent rules list under active_skills; read each and judge fit against them:\n${skills.map(path => `- ${path}`).join('\n')}${profiles.length ? `\nLanguage profiles for the changed files:\n${profiles.map(path => `- ${path}`).join('\n')}` : ''}`;
 }
 // The exported names a diff adds, for the call-site search.
 export function exportedSymbols(diff) {

@@ -16,7 +16,7 @@ import { checkState, failedStates, prFields } from './pr.mjs';
 import { addCriterionIds, tickCriteria, verifyEpicClosure } from './epic-closure.mjs';
 import { prState } from './state.mjs';
 import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
-import { exportedSymbols, reviewPacket } from './packet.mjs';
+import { architectureNote, exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
 import { collectOrchestrator, collectSession } from './session-log.mjs';
 import { pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
@@ -440,7 +440,7 @@ note: <one line: what changed, or why replan or blocked>
 body: <optional absolute path to a Markdown evidence file>
 usage: <optional, when the host reports it: in=N out=N cache=N cost=USD model=M effort=E host=H plugin=V>
 \`\`\`
-
+${f.architecture ? `\n## Project architecture\n\n${f.architecture}\n` : ''}
 ## Issue
 
 ${f.issue.body || '(no body)'}
@@ -681,7 +681,7 @@ function gatherPacketFacts({ repo, lanes, gh, threads, issue, pr, tree, round })
   let found = [];
   try { found = threads(pr).nodes.map(thread => ({ path: thread.path, line: thread.line, isResolved: thread.isResolved, isOutdated: thread.isOutdated, body: thread.comments?.nodes?.[0]?.body })); } catch { /* threads unavailable */ }
   const callSites = changedExportSites({ files, diffs, head, git });
-  return { issue: { url: issue.url, body: issue.body }, pr: { number: pr.number, url: pr.url, head, base }, round, requiredChecks: lanes.requiredChecks || [], checks, gate, files, diffs, range, previous, threads: found, callSites };
+  return { issue: { url: issue.url, body: issue.body }, pr: { number: pr.number, url: pr.url, head, base }, round, requiredChecks: lanes.requiredChecks || [], checks, gate, files, diffs, range, previous, threads: found, callSites, architecture: architectureNote({ root: tree.path, files: files.map(file => file.path) }) };
 }
 export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   const repo = lanes.repo;
@@ -986,6 +986,8 @@ function currentRisk(facts, step) {
   const floor = riskLabel(issue.labels || []);
   return pr ? maxRisk(riskLabel(pr.labels || []), floor) : maxRisk('R1', floor, facts.issueAssessment?.risk);
 }
+// The branch diff when one exists, else the paths the issue's scope packet names.
+const changedFiles = facts => (facts.diffPaths?.length ? facts.diffPaths : pathsFromIssueBody(facts.issue?.body) || []).map(path => path.replace(/\/$/, ''));
 const briefs = { 'conflict-resolver': conflictResolverBrief, implementer: implementerBrief, reviewer: reviewerBrief, improver: improverBrief, devops: devopsBrief, planner: plannerBrief };
 function instruction(io, facts, step, lanes) {
   const { issue, pr, tree } = facts;
@@ -1003,7 +1005,7 @@ function instruction(io, facts, step, lanes) {
   }
   const { model, effort, host, session } = assignment;
   const packet = step.agent === 'reviewer' && pr ? join(io.scratch(tree), 'review-packet.md') : null;
-  const context = { issue, pr, tree, step, risk, model, effort, round, handBack: facts.handBack, packet, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
+  const context = { issue, pr, tree, step, risk, model, effort, round, handBack: facts.handBack, packet, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], architecture: step.agent === 'implementer' ? architectureNote({ root: tree?.path, files: changedFiles(facts) }) : '', prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
   if (packet) writePacket(io, packet, { issue, pr, tree, round, lanes });
   // Drive issues the session id: the brief names it, and the agent's transcript (which holds the brief it read) is found by it.
   // It is derived from the state the brief describes, so rerunning drive on an unchanged state repeats the same brief and session.
