@@ -14,15 +14,13 @@ Issue #771, epic #769. `workflow bench --implementer` replays the seeded impleme
 
 ## Result
 
-Pending. The run spends model budget, so an implementer session does not start it. Run it from the owner's or drive's session at the commit that merges this record's PR, then add the result JSON beside this file and fill the table:
-
-```text
-node plugins/common/workflow/scripts/workflow.mjs bench --implementer --run --baseline <ref> --out docs/records/2026-11-23-implementer-bench-results.json
-```
+Run with `bench --implementer --run --out docs/records/2026-11-23-implementer-bench-results.json` ([result JSON](2026-11-23-implementer-bench-results.json)); exit 0, no task skipped, total cost $0.72 of the 10 USD cap. Both arms ran the same skills (the baseline ref is `2155f801`, before this PR), so this is the baseline every later skill change compares against with `--compare`.
 
 | Arm | Ref | layers | primitives | red | gate | Overall | Cost per task | Total cost |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| current | working tree | | | | | | | |
-| baseline | | | | | | | | |
+| current | working tree | 2/2 | 2/2 | 2/2 | 2/2 | 8/8 (1) | $0.20 | $0.39 |
+| baseline | 2155f801 | 2/2 | 2/2 | 2/2 | 2/2 | 8/8 (1) | $0.16 | $0.33 |
+
+Both arms pass every check, so the two seeded tasks do not yet separate skill wordings (a ceiling effect); the cost difference is run-to-run noise at two tasks per arm. A later change to `ddd`, `hexagonal-architecture` or `tdd` needs harder seeded tasks before it can show a higher pass rate.
 
 The dry listing (`bench --implementer`, no `--run`) validates the snapshot and spends nothing; the checks are covered by `scripts/tests/workflow-bench.test.mjs`.
