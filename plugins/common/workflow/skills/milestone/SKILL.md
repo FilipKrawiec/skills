@@ -28,7 +28,7 @@ own work, promote or expose credentials. Return paths, head, commands/exits,
 findings, exit gate and decisions in at most 8 lines.
 ```
 
-Reconcile each result against GitHub. After two evidence-led failed repairs, replan or seek adjudication for an unresolved conflict; preserve the lane, attempts and retry condition. Reserve changed intent, new paid services, budget increases, authority or quality-gate weakening for the owner. Continue independent authorized work during a wait.
+Reconcile each result against GitHub. After two evidence-led failed repairs, replan or seek adjudication for an unresolved conflict; preserve the `lane:owner` label, attempts and retry condition. Reserve changed intent, new paid services, budget increases, authority or quality-gate weakening for the owner. Continue independent authorized work during a wait.
 
 **Exit gate:** reviewed delivery or a named actor, blocker and retry condition.
 
