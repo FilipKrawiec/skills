@@ -35,7 +35,7 @@ else { console.error('unexpected gh call: ' + text); process.exit(1); }
 `, { mode: 0o755 });
   return bin;
 }
-function sweepTwice(t) {
+function sweepTwice() {
   const root = mkdtempSync(join(tmpdir(), 'sweep-'));
   const bin = fakeGithub(root);
   const repo = join(root, 'repo'); mkdirSync(repo);
@@ -49,8 +49,8 @@ console.log(JSON.stringify([sweepBoard(cfg, { windowed: true }), sweepBoard(cfg,
   return { moved: JSON.parse(result.stdout.trim()), calls, root };
 }
 
-test('a sweep of a 500-card board reads one filtered query, never lists the project or the closed issues, and a second sweep inside its window makes no call', t => {
-  const { moved, calls } = sweepTwice(t);
+test('a sweep of a 500-card board reads one filtered query, never lists the project or the closed issues, and a second sweep inside its window makes no call', () => {
+  const { moved, calls } = sweepTwice();
   assert.deepEqual(moved[0], [1, 2, 3], 'the three closed cards outside Done move');
   assert.deepEqual(moved[1], [], 'the sweep inside its window moves nothing');
   const reads = calls.filter(line => line.includes('projectV2(number'));

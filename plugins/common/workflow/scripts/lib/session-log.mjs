@@ -80,6 +80,23 @@ export function locateTranscript(id, store = fsStore()) {
   if (named) return named;
   return files.find(path => { try { return store.read(path).includes(id); } catch { return false; } }) || null;
 }
+// What a hand-back's `usage:` line states, completed from the session's own transcript: the host returns a subagent's answer
+// without usage or cost. `rates` maps a model-id fragment to USD per million tokens [input, output, cache read, cache write];
+// without a matching rate the tokens still count and cost stays unreported. Null when there is neither a line nor a transcript.
+export function sessionUsage(parsed, sessionId, { store = fsStore(), rates = {} } = {}) {
+  try {
+    const path = locateTranscript(sessionId, store);
+    if (!path) return parsed;
+    const raw = store.read(path);
+    const model = parsed?.model || transcriptUsage(raw)?.model || '';
+    const rate = Object.entries(rates || {}).find(([fragment]) => model.includes(fragment))?.[1];
+    const found = transcriptUsage(raw, rate);
+    if (!found) return parsed;
+    const stated = parsed?.usage || {};
+    const usage = Object.fromEntries(Object.entries(found.usage).map(([field, value]) => [field, stated[field] ?? value]));
+    return { effort: null, host: 'claude', plugin: null, ...parsed, usage, model: parsed?.model || found.model };
+  } catch { return parsed; }
+}
 function timeSpan(text) {
   const times = String(text).split('\n').map(line => { try { return Date.parse(JSON.parse(line).timestamp); } catch { return NaN; } }).filter(Number.isFinite);
   return times.length > 1 ? Math.max(...times) - Math.min(...times) : null;

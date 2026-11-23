@@ -56,3 +56,13 @@ test('a resolved step drops off the list', () => {
   resolveOwner(g.api, 4);
   assert.equal(g.writes, writes, 'resolving an absent step writes nothing');
 });
+
+test('an entry whose issue can no longer be read (deleted or transferred) is dropped, never stalling the sync', () => {
+  const g = fakeGithub();
+  notifyOwner(g.api, 'alice', 3, step(3, 'https://x/3'));
+  notifyOwner(g.api, 'alice', 4, step(4, 'https://x/4'));
+  g.api.isOpen = n => { if (n === 3) throw new Error('Could not resolve to an issue'); return true; };
+  notifyOwner(g.api, 'alice', 4, step(4, 'https://x/4b'));
+  assert.doesNotMatch(g.inbox.body, /#3 needs a decision/);
+  assert.match(g.inbox.body, /#4 needs a decision https:\/\/x\/4b/);
+});

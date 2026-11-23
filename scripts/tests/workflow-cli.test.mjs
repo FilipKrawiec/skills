@@ -8,7 +8,7 @@ import {
   codeownersRolesFrom,
   gitFailureLine,
 } from '../../plugins/common/workflow/scripts/lib/core.mjs';
-import { orphanedProcessTable, cli, configPath, json, config, run, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, assertNoPush } from './support/workflow-cli-fixture.mjs';
+import { orphanedProcessTable, unlinkedProcessTable, cli, configPath, json, config, run, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, assertNoPush } from './support/workflow-cli-fixture.mjs';
 
 test('the Owner comes from identities.owner, else the repository owner; CODEOWNERS never names it', () => {
   assert.deepEqual(codeownersRolesFrom('* @reviewer\n', 'acme/app', 'boss'), { owner: 'boss', defaultReviewer: 'reviewer', contents: '* @reviewer\n' });
@@ -169,6 +169,32 @@ test('commit refuses existing staged changes', t => {
   const result = f.cliRun('commit', '--message', 'fix: protect actor', '--', 'assigned.txt');
   assert.notEqual(result.status, 0);
   assert.deepEqual(f.linkedGit('diff', '--cached', '--name-only').stdout.trim().split('\\n'), ['previous.txt']);
+});
+
+test('commit takes staged deletions that lie within the listed paths and refuses staged paths outside them', t => {
+  const f = fixture(t);
+  const g = (...args) => run(f.env.REAL_GIT, ['-c', 'user.name=Test', '-c', 'user.email=test@example.test', ...args], { cwd: f.repo });
+  writeFileSync(join(f.repo, 'old.txt'), 'old'); writeFileSync(join(f.repo, 'keep.txt'), 'keep');
+  assert.equal(g('add', 'old.txt', 'keep.txt').status, 0); assert.equal(g('commit', '-qm', 'seed').status, 0);
+  assert.equal(g('rm', '-q', 'old.txt').status, 0);
+  writeFileSync(join(f.repo, 'assigned.txt'), 'assigned');
+  const result = f.cliRun('commit', '--message', 'fix: drop the old file', '--', 'old.txt', 'assigned.txt');
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(f.linkedGit('show', '--name-status', '--format=', 'HEAD').stdout.trim().split('\n').sort(), ['A\tassigned.txt', 'D\told.txt']);
+  assert.equal(g('rm', '-q', 'keep.txt').status, 0);
+  writeFileSync(join(f.repo, 'more.txt'), 'more');
+  const outside = f.cliRun('commit', '--message', 'fix: more', '--', 'more.txt');
+  assert.notEqual(outside.status, 0);
+  assert.match(outside.stderr, /keep\.txt/, 'names the staged path outside the list');
+  assert.deepEqual(f.linkedGit('diff', '--cached', '--name-only').stdout.trim().split('\n'), ['keep.txt']);
+});
+
+test('commit names a brace-shorthand path it cannot stage', t => {
+  const f = fixture(t); writeFileSync(join(f.repo, 'a.txt'), 'a');
+  const result = f.cliRun('commit', '--message', 'fix: braces', '--', 'src/{a,b}.txt');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /src\/\{a,b\}\.txt/);
+  assert.match(result.stderr, /brace/i);
 });
 
 test('commit rejects invalid messages and parent paths', t => {
@@ -546,6 +572,15 @@ test('issue edit refuses an inherited lock when the fake process table lacks the
   const result = await runScriptAsync(f, cli, ['issue', 'edit', '--number', '4', '--milestone', 'v1'], 5000);
   // A refused context queues for the lock its owner still holds, so the command never runs.
   assert.equal(result.timedOut, true, 'the rejected ancestry was accepted');
+  assert.doesNotMatch(existsSync(f.env.TEST_CALLS) ? calls(f) : '', /-X PATCH/);
+});
+
+test('issue edit refuses an inherited lock when the owner is a workflow process the child does not descend from', async t => {
+  if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
+  const f = structureFixture(t);
+  writeFileSync(f.env.WORKFLOW_TEST_PROCESS_TABLE, unlinkedProcessTable);
+  const result = await runScriptAsync(f, cli, ['issue', 'edit', '--number', '4', '--milestone', 'v1'], 5000);
+  assert.equal(result.timedOut, true, 'an owner that is a workflow process does not vouch for an unrelated child');
   assert.doesNotMatch(existsSync(f.env.TEST_CALLS) ? calls(f) : '', /-X PATCH/);
 });
 

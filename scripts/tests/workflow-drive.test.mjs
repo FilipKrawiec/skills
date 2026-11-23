@@ -4,7 +4,7 @@ import { pluginVersion } from '../../plugins/common/workflow/scripts/lib/plugin.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
@@ -329,6 +329,8 @@ test('drive: an owner floor wins over a lower assessment', () => {
 test('hand-backs are at most 6 lines of key: value', () => {
   assert.deepEqual(parseHandBack('status: done\ncommit: feat(a): b\npaths: a.js b.js\ncheck: pass\nnote: ok\nbody: evidence.md\nextra: dropped'), { status: 'done', commit: 'feat(a): b', paths: ['a.js', 'b.js'], check: 'pass', note: 'ok', body: 'evidence.md' });
   assert.equal(parseHandBack('DONE all good').status, 'done');
+  assert.deepEqual(parseHandBack('status: done\npaths: src/{a,b}.mjs test/{x,y/z}.test.mjs docs/c.md').paths, ['src/a.mjs', 'src/b.mjs', 'test/x.test.mjs', 'test/y/z.test.mjs', 'docs/c.md'], 'brace shorthand expands to full paths');
+  assert.deepEqual(parseHandBack('status: done\npaths: a.mjs, b.mjs').paths, ['a.mjs', 'b.mjs']);
 });
 
 test('epics: slice when empty, deliver slices in dependency order, close when all are closed', () => {
@@ -823,6 +825,7 @@ test('a refinement candidate closed as not planned or consolidated is retired, n
     assert.notEqual(result.mode, 'refinement');
     assert.notEqual(result.agent, 'planner', 'a retired candidate is no rival');
     if (retired.stateReason === 'NOT_PLANNED') assert.deepEqual([result.owner, result.agent, result.issue, result.mode], [undefined, 'implementer', 11, 'build'], '#11 is the refinement');
+    else assert.match(result.owner, /missing closing PR merged into main for #11$/, 'a consolidated candidate hands its delivery to #11, which has no merged PR yet');
   }
 });
 
@@ -1349,6 +1352,7 @@ test('every implementer brief names the implementer reference as the first thing
 
 test('the implementer brief lists evidence criteria beside code criteria', () => {
   const body = '## Problem\nx\n\n## Acceptance\n- [ ] The parser rejects an empty name.\n- [ ] The body links before and after captures per device class.\n- [ ] The closing PR records timings and the delivery-flow assessment.\n\n## Notes\n- A capture of the notes is not a criterion.\n';
+  assert.deepEqual(evidenceCriteria('## Acceptance criteria\n\n- [ ] A failed call retries at most 3 times.\n'), [], 'a retry count is not evidence');
   assert.deepEqual(evidenceCriteria(body), ['The body links before and after captures per device class.', 'The closing PR records timings and the delivery-flow assessment.']);
   const brief = implementerBrief({ issue: issue({ body }), tree: tree(), step: { mode: 'build' }, base: 'main' });
   assert.match(brief, /## Criteria[\s\S]*Code criteria:\n- The parser rejects an empty name\.[\s\S]*Evidence criteria[\s\S]*- The body links before and after captures/);
@@ -2135,6 +2139,23 @@ test('--next never picks the Owner inbox issue', () => {
   assert.equal(nextTarget([inbox]), null);
 });
 
+test('drive clears the Owner inbox entry on every result but a wait', () => {
+  const waiting = pr({ issue: 3, number: 53, isDraft: false, reviews: [review('ready', 'APPROVED')], autoMergeRequest: {} });
+  const resolved = repo => { const calls = []; repo.io.resolveOwner = n => calls.push(n); return calls; };
+  const merging = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) }, prs: [waiting] });
+  const none = resolved(merging);
+  assert.deepEqual(drive(merging.io, 3, lanes, {}).wait, { pr: 53, until: 'merged' });
+  assert.deepEqual(none, [], 'a wait leaves the inbox as it is');
+  const fresh = fakeRepo({ issues: { 4: issue({ number: 4, labels: [label('risk:R1')], assessment: assessed() }) } });
+  const agent = resolved(fresh);
+  assert.equal(drive(fresh.io, 4, lanes, {}).agent, 'implementer');
+  assert.deepEqual(agent, [4], 'an agent step resolves the entry');
+  const blocked = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
+  const owner = resolved(blocked);
+  assert.ok(drive(blocked.io, 3, lanes, { status: 'blocked', note: 'needs a credential' }).owner);
+  assert.deepEqual(owner, [], 'an owner step is recorded, not resolved');
+});
+
 test('an owner step is recorded on the issue and an owner step beside ready slices says to drive them', () => {
   const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ commits: 1 }) } });
   const recorded = [];
@@ -2320,7 +2341,7 @@ test('a claim held by a proc session is free at once when that process is gone o
   const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
   try {
     const holder = 'proc-4506-Wed_Nov_18_10:00:00_2026';
-    const live = pid => ({ ppid: 1, started: 'Wed Nov 18 10:00:00 2026', name: 'claude' });
+    const live = () => ({ ppid: 1, started: 'Wed Nov 18 10:00:00 2026', name: 'claude' });
     const gone = () => null;
     const reused = () => ({ ppid: 1, started: 'Wed Nov 18 11:30:00 2026', name: 'claude' });
     const key = 'owner-repo-7';
@@ -2505,6 +2526,10 @@ test('an outsider issue is taken only with owner:approved applied by the owner: 
   const mine = { number: 4, labels: [], body: '', author: { login: 'Builder' } };
   const outsider = { number: 2, labels: [], body: '', author: { login: 'mallory' } };
   const nameless = { number: 1, labels: [], body: '' };
+  const asked = [];
+  const outsiderOnOwnerLane = { number: 7, author: { login: 'stranger' }, labels: [{ name: 'lane:owner' }], body: '' };
+  assert.deepEqual([...nextTargets([outsiderOnOwnerLane, { number: 8, author: { login: 'stranger' }, labels: [], body: '<!-- workflow:owner-inbox -->' }], undefined, trusted, issue => { asked.push(issue.number); return true; })], []);
+  assert.deepEqual(asked, [], 'the approval lookup runs only for an issue the cheap lane and inbox checks keep');
   assert.deepEqual([...nextTargets([nameless, outsider, mine], undefined, trusted)], [4], 'a trusted issue is taken; the outsider and a missing author fail closed');
   assert.deepEqual([...nextTargets([outsider, mine], undefined, trusted, issue => issue.number === 2)], [2, 4], 'an approved outsider issue is taken');
   const repo = fakeRepo({ issues: { 2: issue({ number: 2, author: { login: 'mallory' } }) } });
@@ -2570,8 +2595,9 @@ test('--next polls post an owner step once, even when a later poll words the ste
   assert.equal(github.comments.length, 1, 'the first poll posts the owner step');
   poll({ status: 'blocked', note: 'needs a credential' });
   assert.equal(github.comments.length, 1, 'an identical second poll posts nothing');
-  poll({});
+  const third = poll({});
   assert.equal(github.comments.length, 1, 'a poll without the hand-back note posts no second comment');
+  assert.equal(third.owner, undefined, 'with no hand-back the issue is not blocked, so its step is not repeated either');
 });
 
 test('drive start adopts a worktree already on the issue branch instead of creating another', t => {
@@ -2643,6 +2669,16 @@ test('a slice driven by number ends at its own done; only a session that took it
     // Another session's slice done does not borrow the epic claim.
     driveCommand(['10'], lanes, repo.io, { lockDirectory: directory, session: 'other', now: 5000 });
     assert.deepEqual(said, { done: { issue: 10 } });
+    // A slice that ends on an owner or blocked step lets go of the epic claim its own session holds, not another session's.
+    const claims = () => readdirSync(directory).filter(name => name.includes('-9'));
+    const handBackFile = text => { const file = join(directory, 'blocked.txt'); writeFileSync(file, text); return file; };
+    assert.equal(claims().length, 1, 'the auto session still holds the epic claim');
+    const blockedSlice = fakeRepo({ issues: { 9: epic, 11: issue({ number: 11, labels: [label('state:started')] }) }, subs: { 9: [11] }, trees: { 11: tree({ commits: 1 }) } });
+    driveCommand(['11', '--hand-back', handBackFile('status: blocked\nnote: needs a credential')], lanes, blockedSlice.io, { lockDirectory: directory, session: 'other', now: 5500 });
+    assert.equal(claims().length, 1, 'another session never releases the epic claim');
+    driveCommand(['11', '--hand-back', handBackFile('status: blocked\nnote: needs a credential')], lanes, blockedSlice.io, { lockDirectory: directory, session: 'auto', now: 5600 });
+    assert.ok(said.owner || said.blocked, 'the slice ended on a hand-off step');
+    assert.equal(claims().length, 0, 'the owning session released the epic claim with the slice');
     const orphan = fakeRepo({ issues: { 10: issue({ number: 10, state: 'CLOSED' }) }, subs: {}, merged: [10], trees: { 10: tree({ path: '/w/10', branch: '10-x' }) } });
     driveCommand(['10'], lanes, orphan.io, { lockDirectory: directory, session: 'auto', now: 6000 });
     assert.deepEqual(said, { done: { issue: 10 } }, 'an issue with no open parent epic just ends');

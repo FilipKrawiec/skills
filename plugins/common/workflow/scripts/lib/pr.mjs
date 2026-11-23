@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { effectiveBranchPolicy } from '../safety.mjs';
 import { prLinkedIssues, prRecord, reviewerApproved } from './board.mjs';
-import { jsonCommand, run } from './core.mjs';
+import { clearReadMemo, jsonCommand, run } from './core.mjs';
 
 export const failedStates = ['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'];
 export const passedStates = ['SUCCESS', 'NEUTRAL', 'SKIPPED'];
@@ -82,6 +82,7 @@ export function prCommand(args, lanes) {
   const refusal = prAutoMergeRefusal(pr, lanes, readPolicy(repo, lanes.base));
   if (refusal) throw new Error(`pr auto-merge refused: ${refusal}`);
   const merge = spawnSync('gh', ['pr', 'merge', number, '--repo', repo, '--squash', '--auto', '--match-head-commit', pr.headRefOid], { encoding: 'utf8' });
+  clearReadMemo();
   const after = readPr(repo, number);
   if (after.state === 'MERGED') console.log(`PR #${number} merged at ${pr.headRefOid}`);
   else if (after.autoMergeRequest && after.headRefOid === pr.headRefOid) console.log(`PR #${number} auto-merge on at ${pr.headRefOid}`);

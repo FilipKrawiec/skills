@@ -38,15 +38,24 @@ export function commit(args) {
   if (!/^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9._/-]+\))?!?: [^\r\n]+$/.test(message.split('\n')[0].replace(/\r$/, ''))) throw new Error('Commit message subject (first line) must be a Conventional Commit');
   if (paths.some(path => !path || path === '.' || path.startsWith('/') || path.startsWith(':') || path.split('/').includes('..'))) throw new Error('Provide explicit repository-relative paths');
   const root = requireLinkedWorktree();
+  const shorthand = paths.find(path => /\{[^{}]*,[^{}]*\}/.test(path) && !existsSync(join(root, path)));
+  if (shorthand) throw new Error(`Brace shorthand is not expanded: list each file of ${shorthand} on its own`);
   if (realpathSync(process.cwd()) !== realpathSync(root)) throw new Error('Run commit from the repository root');
   const merging = spawnSync('git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], { cwd: root, env: cleanEnvironment() }).status === 0;
   if (!merging && !paths.length) throw new Error('Usage: commit --message MESSAGE [-- PATH...]; paths are optional only while a merge is in progress');
   const env = { ...cleanEnvironment(), ...implementerCommitIdentity(root) };
   // A merge commit records the whole merged index; the listed paths are the resolved conflicts.
-  const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--'], { cwd: root, env });
+  // Staged changes the listed paths cover (an implementer's `git rm`) commit with them; any other staged path is refused.
+  const staged = spawnSync('git', ['diff', '--cached', '--name-only', '-z', '--'], { cwd: root, env, encoding: 'utf8' });
   if (!merging && (staged.error || staged.status !== 0)) throw new Error('Existing staged changes or an unreadable index; preserve them and commit separately');
-  if (paths.length) {
-    const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...paths], { cwd: root, env, encoding: 'utf8' });
+  const covered = path => paths.some(listed => path === listed.replace(/^\.\//, '') || path.startsWith(`${listed.replace(/^\.\//, '').replace(/\/$/, '')}/`));
+  const outside = merging ? [] : staged.stdout.split('\0').filter(Boolean).filter(path => !covered(path));
+  if (outside.length) throw new Error(`Existing staged changes outside the listed paths: ${outside.join(', ')}; preserve them and commit separately`);
+  // A path whose deletion is already staged is in neither the index nor the tree, so `git add` would refuse it.
+  const stagedPaths = new Set(staged.stdout?.split('\0').filter(Boolean));
+  const toStage = paths.filter(path => !(stagedPaths.has(path.replace(/^\.\//, '')) && !existsSync(join(root, path))));
+  if (toStage.length) {
+    const add = spawnSync('git', ['--literal-pathspecs', 'add', '--', ...toStage], { cwd: root, env, encoding: 'utf8' });
     if (add.error || add.status !== 0) throw new Error('Could not stage selected paths; inspect repository status');
   }
   // Conflicts the listed paths did not stage stay unmerged; git would refuse them with a message this command hides.

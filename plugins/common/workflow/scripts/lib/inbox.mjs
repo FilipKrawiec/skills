@@ -40,7 +40,9 @@ export function syncInbox(api, change, { create = true } = {}) {
   const inbox = api.findInbox();
   const items = parseInbox(inbox?.body);
   change(items);
-  for (const n of [...items.keys()]) if (!api.isOpen(n)) items.delete(n);
+  // A lookup that fails (an issue deleted or transferred) counts as resolved, so one dead entry never stalls every later sync.
+  const open = n => { try { return api.isOpen(n); } catch { return false; } };
+  for (const n of [...items.keys()]) if (!open(n)) items.delete(n);
   const body = renderInbox(items);
   if (!inbox) {
     if (!create || !items.size) return;

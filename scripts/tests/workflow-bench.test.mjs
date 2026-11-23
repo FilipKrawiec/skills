@@ -295,7 +295,7 @@ test('implementer snapshot validation accepts a complete task and names each pro
 test('the committed implementer snapshot validates', () => {
   const committed = JSON.parse(readFileSync(fileURLToPath(new URL('../../docs/implementer-benchmark.json', import.meta.url)), 'utf8'));
   assert.deepEqual(validateImplementerSnapshot(committed), []);
-  assert.ok(committed.tasks.length >= 2);
+  assert.ok(committed.tasks.length >= 3);
 });
 test('without --run the implementer bench validates its snapshot and lists what it would run, spending nothing', async () => {
   await withImplementerSnapshot([implementerTask], async (dir, file) => {

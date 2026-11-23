@@ -13,6 +13,8 @@ const acceptedProcessTable = '{owner} 1 node {script} issue\n{parent} {owner} lo
 // A table where the lock owner is not a workflow.mjs process and the child hangs off init: the child's ancestry does not reach its owner,
 // whether the lock command sits between them (macOS lockf) or not (Linux flock -F execs in place, so the parent is the owner).
 const orphanedProcessTable = '{owner} 1 node unrelated-tool.mjs\n{self} 1 node {script} issue\n';
+// A table where the lock owner is a workflow.mjs process but the child hangs off init, not off it: only the ancestry walk rejects it.
+const unlinkedProcessTable = '{owner} 1 node {script} issue\n{self} 1 node {script} issue\n';
 const config = values => ({
   version: 1,
   identities: Object.fromEntries(['implementer', 'reviewer', 'owner'].filter(key => ({ owner: 'owner', ...values })[key] != null).map(key => [key, ({ owner: 'owner', ...values })[key]])),
@@ -201,4 +203,4 @@ function hookPath(f) {
 }
 function assertNoPush(f) { assert.equal(existsSync(f.env.PUSH_RECORD), false); }
 
-export { orphanedProcessTable, cli, configPath, json, config, run, runCliAsync, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, hookPath, assertNoPush };
+export { orphanedProcessTable, unlinkedProcessTable, cli, configPath, json, config, run, runCliAsync, fixture, commitFixture, changeConfig, pushRecord, nativeRemote, hookPath, assertNoPush };

@@ -1,6 +1,6 @@
 import { spawn as nodeSpawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { git } from './core.mjs';
@@ -62,8 +62,11 @@ export function runnerPoll(lanes, { io = realIo(lanes), logDirectory = runnerLog
   for (let attempt = 0; ; attempt++) {
     try { writeFileSync(lock, String(process.pid), { flag: 'wx' }); break; } catch (error) {
       if (error.code !== 'EEXIST') throw error;
-      const holder = Number(readFileSync(lock, 'utf8'));
-      if (attempt || (holder && alive(holder))) return { skipped: true, locked: true };
+      const text = readFileSync(lock, 'utf8').trim();
+      const holder = Number(text);
+      // A lock its holder created but has not written yet reads empty: held while young, stale only once it has sat that way.
+      const unwritten = !text && Date.now() - statSync(lock).mtimeMs < 60_000;
+      if (attempt || unwritten || (holder && alive(holder))) return { skipped: true, locked: true };
       rmSync(lock, { force: true });
     }
   }
@@ -111,7 +114,8 @@ function pollLocked(lanes, { io, logDirectory, claims, cwd, options }) {
   const taken = new Set(fresh.map(claim => claim.issue));
   const ready = [];
   // The unit of an automatic run is an epic: a live claim on the epic or on any of its slices keeps a second session off it.
-  const childrenOf = epic => io.subIssues?.(epic).map(sub => sub.number) ?? [];
+  const children = new Map();
+  const childrenOf = epic => { if (!children.has(epic)) children.set(epic, io.subIssues?.(epic).map(sub => sub.number) ?? []); return children.get(epic); };
   const open = io.openIssues();
   const isEpic = number => (open.find(issue => issue.number === number)?.labels ?? []).some(label => (label.name ?? label) === 'type:epic');
   for (const number of nextTargets(open, issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false, issue => io.ownerWaiting?.(issue) ?? false, childrenOf)) {

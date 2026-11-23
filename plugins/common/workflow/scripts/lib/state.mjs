@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { boardStatus, prLinkedIssues, prRecord, sweepBoard } from './board.mjs';
 import { cachedGithubMetadata, jsonCommand, quotaPolicy } from './core.mjs';
 import { pollSeconds, quotaStatus, sharedRead } from './quota.mjs';
@@ -59,7 +60,7 @@ export function prState(pr, lanes) {
     issues: record.issues, next: nextAction(pr, record, ci, verdict, owner),
   };
 }
-function readPr(repo, number) { return jsonCommand('gh', ['pr', 'view', String(number), '--repo', repo, '--json', `${prFields},files,mergeCommit`]); }
+function readPr(repo, number) { return jsonCommand('gh', ['pr', 'view', String(number), '--repo', repo, '--json', `${prFields},headRefName,files,mergeCommit`]); }
 // The check runs and commit statuses on one commit, in the shape `ciState` reads.
 function readChecksAt(repo, sha) {
   const runs = jsonCommand('gh', ['api', `repos/${repo}/commits/${sha}/check-runs?per_page=100`]).check_runs.map(run => ({ name: run.name, conclusion: run.conclusion, status: run.status }));
@@ -134,7 +135,11 @@ const moveClosingCards = (lanes, pr) => {
 };
 // One query per PR per interval for every `wait` on this machine.
 const sharedReadPr = (repo, n) => sharedRead(`pr:${repo}#${n}`, 55_000, () => readPr(repo, n));
-export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = sharedReadPr, random = Math.random, checksAt = readChecksAt, sweep = sweepClosedBoard, moveClosing = moveClosingCards } = {}) {
+// The tip of the local branch the PR was pushed from, or null when this checkout has no such branch.
+const localBranchHead = name => {
+  try { return name ? execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], { encoding: 'utf8' }).trim() || null : null; } catch { return null; }
+};
+export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = sharedReadPr, readFresh = readPr, localHead = localBranchHead, random = Math.random, checksAt = readChecksAt, sweep = sweepClosedBoard, moveClosing = moveClosingCards } = {}) {
   const usage = 'Usage: wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]';
   const [value, ...rest] = args;
   const o = {};
@@ -148,13 +153,18 @@ export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read =
   quotaPolicy.memo = false; quotaPolicy.waitWhenExhausted = true;
   let last = '';
   for (;;) {
-    const pr = read(lanes.repo, n);
+    let pr = read(lanes.repo, n);
+    // A cached read can predate a push or a base merge: bypass the cache once when it shows another head than the local tip.
+    const tip = ['ci', 'base'].includes(o['--until']) && pr.state === 'OPEN' ? localHead(pr.headRefName) : null;
+    if (tip && pr.headRefOid !== tip) pr = readFresh(lanes.repo, n);
     const state = prState(pr, lanes);
+    const stale = Boolean(tip) && pr.headRefOid !== tip;
+    if (stale) state.ci = 'pending';
     const merge = o['--until'] === 'base' && state.state === 'MERGED' ? pr.mergeCommit?.oid : null;
     if (merge) state.base = ciState(checksAt(lanes.repo, merge));
     const line = JSON.stringify({ number: n, state: state.state, ci: state.ci, verdict: state.verdict, head: state.head, ...(state.state === 'OPEN' && state.mergeState ? { merge_state: state.mergeState } : {}), ...(merge ? { merge, base: state.base } : {}) });
     if (line !== last) { console.log(line); last = line; }
-    const done = settled(o['--until'], state, lanes);
+    const done = stale ? null : settled(o['--until'], state, lanes);
     if (done === false && o['--until'] === 'merged' && state.state === 'OPEN') console.error(`workflow: #${n} is ${state.mergeState} against its base; run drive to bring the base in`);
     if (done !== null) {
       // The merge closes the issue; its card moves now, not on some later drive run (best effort).

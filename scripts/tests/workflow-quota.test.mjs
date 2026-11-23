@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gate, isMergeCritical, plan, pollSeconds, quotaStatus, readBudget, sharedRead, writeBudget } from '../../plugins/common/workflow/scripts/lib/quota.mjs';
+import { gate, isMergeCritical, tokenKey, plan, pollSeconds, quotaStatus, readBudget, sharedRead, writeBudget } from '../../plugins/common/workflow/scripts/lib/quota.mjs';
 
 const HOUR = 3_600_000;
 const dir = () => join(mkdtempSync(join(tmpdir(), 'quota-')), 'graphql-budget.json');
@@ -115,6 +115,7 @@ test('a secondary-limit response is parsed for Retry-After or x-ratelimit-reset 
   assert.equal(parseSecondaryLimit('HTTP 429: rate limit already exceeded\nx-ratelimit-reset: 90', 30_000).delayMs, 60_000);
   assert.equal(parseSecondaryLimit('HTTP 403: secondary rate limit', 0).delayMs, 60_000);
   assert.equal(parseSecondaryLimit('HTTP 404: Not Found', 0), null);
+  assert.equal(parseSecondaryLimit('gh: HTTP 403: API rate limit exceeded for user ID 1.', 0), null, 'the primary limit is the quota gate\'s, not a secondary backoff');
   assert.equal(parseSecondaryLimit('retry-after: 0\nHTTP 429', 0).delayMs, 1000, 'never a zero delay');
 });
 
@@ -156,4 +157,13 @@ test('a REST gh call that hits a secondary limit waits, retries once and records
     assert.equal(readFileSync(state, 'utf8').trim(), '2', 'one retry after the limit');
     assert.ok(Object.values(JSON.parse(readFileSync(join(root, 'graphql-backoff.json'), 'utf8')))[0].until > 0);
   } finally { process.env.PATH = saved.PATH; if (saved.dir === undefined) delete process.env.WORKFLOW_QUOTA_DIR; else process.env.WORKFLOW_QUOTA_DIR = saved.dir; }
+});
+
+test('the budget key follows the token a call passes through its own environment', () => {
+  assert.notEqual(tokenKey({ GH_TOKEN: 'reviewer-token' }), tokenKey({ GH_TOKEN: 'implementer-token' }));
+  assert.equal(tokenKey({ GH_TOKEN: 'a' }), tokenKey({ GITHUB_TOKEN: 'a' }));
+  const file = dir(); const probed = [];
+  const run = env => gate(['pr', 'view', '5'], { now: () => 0, env, file, fetchLimit: seen => { probed.push(seen.GH_TOKEN); return budget(4000); } });
+  run({ GH_TOKEN: 'reviewer-token' }); run({ GH_TOKEN: 'implementer-token' });
+  assert.deepEqual(probed, ['reviewer-token', 'implementer-token'], 'each token is probed under its own key and environment');
 });

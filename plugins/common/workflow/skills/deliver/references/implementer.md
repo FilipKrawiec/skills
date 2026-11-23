@@ -22,8 +22,8 @@ check: pass
 note: drive releases the claim only after the push succeeds
 ```
 
-`status: replan`: the issue contradicts the code or splits at a seam; `status: blocked`: a person must act.
+`paths` lists each changed file in full, separated by spaces: no directories. Drive expands brace shorthand such as `src/{a,b}.mjs`, but the commit command refuses it. A deletion you staged with `git rm` commits with its path listed; any other staged path blocks the commit.
 
-**Exit gate:** `check` passed and the hand-back returned, or `replan` or `blocked` with its reason.
+`status: replan`: the issue contradicts the code or splits at a seam; `status: blocked`: a person must act.
 
 **Exit gate:** `check` passed and the hand-back returned, or `replan` or `blocked` with its reason.

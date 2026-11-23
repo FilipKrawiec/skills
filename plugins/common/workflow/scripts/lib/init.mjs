@@ -170,7 +170,7 @@ export function initCommand(args, io = {}) {
   // Project: justfile runner recipes (existing recipes stay)
   const justPath = ['justfile', 'Justfile', '.justfile'].map(name => join(root, name)).find(path => existsSync(path)) ?? join(root, 'justfile');
   const justText = existsSync(justPath) ? readFileSync(justPath, 'utf8') : '';
-  const missing = runnerRecipes.filter(recipe => !new RegExp(`^${recipe.name}\\b[^\\n]*:`, 'm').test(justText));
+  const missing = runnerRecipes.filter(recipe => !new RegExp(`^${recipe.name}(?=[\\s:])[^\\n]*:`, 'm').test(justText));
   if (!missing.length) said(`left untouched: ${justPath} already has the runner recipes`);
   else {
     said(`${dry ? 'would add' : 'added'} to ${justPath}: ${missing.map(recipe => recipe.name).join(', ')}`);
@@ -191,7 +191,7 @@ export function initCommand(args, io = {}) {
   if (!dry) {
     const installed = env.runCli(root, ['runner', 'install']);
     said(installed.ok ? `runner install: ${installed.text}` : `runner install failed: ${installed.text}`);
-    if (!installed.ok) unable.push(`runner: the launchd job needs macOS and the owner's session (auto mode blocks agents from installing LaunchAgents); run \`just runner-install\` from this repository`);
+    if (!installed.ok) unable.push(`runner: the launchd job needs macOS and the owner's session (auto mode blocks agents from installing LaunchAgents); run \`just runner-install\` in ${root}`);
   }
   if (todo.length && !dry) unable.push(`commit and merge the new files (${todo.join(', ')}) to the default branch; the first PR for them needs your approval`);
   said(unable.length ? `could not do:\n${unable.map(line => `- ${line}`).join('\n')}` : 'could not do: nothing');

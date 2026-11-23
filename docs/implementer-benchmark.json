@@ -24,6 +24,17 @@
       },
       "gate": ["node", "--test"],
       "checks": ["layers", "primitives", "red", "gate"]
+    },
+    {
+      "id": "ts-stock-reserve",
+      "language": "typescript",
+      "fixture": "docs/implementer-benchmark/ts-stock",
+      "issue": {
+        "title": "feat(stock): reserve stock for an order",
+        "body": "## Summary\n\nStock that is on hand can be reserved, never beyond what is still available (on hand minus reserved). Another reservation may change the stored item between our read and our write.\n\n### Acceptance criteria\n\n- [ ] Reserving a quantity within the available stock returns the item with that quantity added to `reserved` and a `StockReserved` event.\n- [ ] Reserving more than the available stock reports `InsufficientStock` and stores nothing.\n- [ ] A use case `reserveStock` takes a sku and a quantity as numbers and text, loads the item, and reports `UnknownSku` when there is none.\n- [ ] When the item changed between the read and the write (the save is refused), the use case reports `Conflict` and the stored item keeps the other writer's reservation, so the reserved total never exceeds what is on hand.\n- [ ] Each criterion has a test, and the project gate passes."
+      },
+      "gate": ["node", "--test"],
+      "checks": ["layers", "primitives", "red", "gate"]
     }
   ]
 }
