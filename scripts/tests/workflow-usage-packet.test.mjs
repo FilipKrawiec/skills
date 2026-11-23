@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { commandEffort, commandModel, findUsageComment, parseUsage, transcriptUsage, transcriptUsageLine, parseUsageComment, parseUsageLine, recordUsage, usageComment, usageCost, usageEntry, usageHost, usageSummary, usageTotals, visibleResult } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
-import { exportedSymbols, issueCriteria, reviewPacket } from '../../plugins/common/workflow/scripts/lib/packet.mjs';
+import { architectureNote, exportedSymbols, issueCriteria, reviewPacket } from '../../plugins/common/workflow/scripts/lib/packet.mjs';
 import { drive, githubIo, handBackRole, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { statusCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 
@@ -291,4 +291,38 @@ test('a subagent transcript is summed once per message id into a usage line', ()
 test('a transcript with no usage is unreported, never an error', () => {
   assert.equal(transcriptUsage('not json\n'), null);
   assert.equal(transcriptUsageLine(''), '');
+});
+
+test('drive names the active architecture skills and matching language profiles in the implementer brief and the review packet', () => {
+  const project = (agents) => { const dir = mkdtempSync(join(tmpdir(), 'arch-')); if (agents !== null) writeFileSync(join(dir, 'AGENTS.md'), agents); return dir; };
+  const run = (agents, paths) => {
+    const dir = project(agents); const writes = {};
+    const issue = { number: 3, url: 'https://github.com/acme/app/issues/3', state: 'OPEN', title: 'feat: a', body: '', author: { login: 'owner' }, labels: [{ name: 'state:started' }, { name: 'risk:R1' }] };
+    const pr = { number: 5, url: 'u', state: 'OPEN', isDraft: true, headRefOid: 'a'.repeat(40), headRefName: '3-a', labels: [{ name: 'risk:R1' }], mergeable: 'MERGEABLE', statusCheckRollup: [{ name: 'verify', conclusion: 'SUCCESS' }], reviews: [], body: 'Closes #3', closingIssuesReferences: [{ number: 3, repository: { owner: { login: 'acme' }, name: 'app' } }], files: paths.map(path => ({ path })) };
+    const io = {
+      issue: () => issue, dependencies: () => [], pr: () => pr, tree: () => ({ path: dir, branch: '3-a', dirty: false, commits: 1, unpushed: false, diffPaths: paths, subjects: [] }),
+      assessment: () => ({ risk: 'R1', assessed: 'R1', head: pr.headRefOid, paths, reason: 'local' }), reviewingSince: () => null, syncTree: () => {}, scratch: () => '/w/3/.wf', write: (path, text) => { writes[path] = text; },
+      packetFacts: () => ({ ...raw(), architecture: architectureNote({ root: dir, files: paths }) }),
+    };
+    try {
+      drive(io, 3, lanes, {});
+      drive({ ...io, pr: () => null, tree: () => ({ ...io.tree(), commits: 0, diffPaths: [] }), assessment: () => null, issue: () => ({ ...issue, body: `\`\`\`scope\n${JSON.stringify({ paths })}\n\`\`\`` }) }, 3, lanes, {});
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+    const brief = writes['/w/3/.wf/drive-3-implementer.md'];
+    return { packet: writes['/w/3/.wf/review-packet.md'], brief };
+  };
+  const rules = '---\nactive_skills:\n  - ddd\n  - hexagonal-architecture\n---\n';
+  const { packet, brief } = run(rules, ['src/A.kt', 'src/B.kts']);
+  for (const text of [packet, brief]) {
+    assert.match(text, /skills\/ddd\/SKILL\.md/);
+    assert.match(text, /skills\/hexagonal-architecture\/SKILL\.md/);
+    assert.match(text, /hexagonal-architecture\/references\/languages\/kotlin\.md/);
+    assert.match(text, /tdd\/references\/languages\/kotlin\.md/);
+    assert.equal(text.match(/languages\/kotlin\.md/g).length, 2, 'one profile line per skill, deduplicated across .kt and .kts');
+  }
+  const bare = run('---\nactive_skills:\n  - tdd\n---\n', ['src/A.kt']);
+  const none = run(null, ['src/A.kt']);
+  for (const text of [bare.packet, bare.brief, none.packet, none.brief]) assert.doesNotMatch(text, /Architecture skills|SKILL\.md|languages\//);
+  const noProfile = run(rules, ['src/main.go']);
+  for (const text of [noProfile.packet, noProfile.brief]) { assert.match(text, /skills\/ddd\/SKILL\.md/); assert.doesNotMatch(text, /languages\//); }
 });

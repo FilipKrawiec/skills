@@ -24,6 +24,10 @@ function findAgents(start) {
   }
   throw new Error('Could not find valid AGENTS.md with frontmatter in hierarchy');
 }
+// The skills a project's AGENTS.md front matter lists under `active_skills`; none when no front matter is found.
+export function activeSkills(root) {
+  try { const list = findAgents(root).config.active_skills; return Array.isArray(list) ? list.filter(item => typeof item === 'string') : []; } catch { return []; }
+}
 function detectTool(root, config) {
   const tools = config.build_tools && typeof config.build_tools === 'object' ? config.build_tools : {};
   let fallback;
