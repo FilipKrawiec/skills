@@ -3,7 +3,7 @@
 ## Layout
 
 - Feature-first packages: `users.domain`, `users.app`, `users.api`, `users.infra`.
-- `internal` is module-wide, not package-private: in a single Gradle module enforce layer imports with the project's configured boundary tool, else Kotlin's `internal` plus module dependencies; with several modules, the domain module depends on no other layer or framework module.
+- `internal` is module-wide, not package-private: in a single Gradle module enforce layer imports with the project's configured boundary tool, else review; with several modules, the domain module depends on no other layer or framework module.
 - A `platform-domain` module may hold pure technical primitives; it is not a Shared Kernel.
 - Name the aggregate file after its port (`users/domain/Users.kt`), one root per file, with its creation, sealed outcomes, events, value types and port when they belong only to it.
 - `Users` never extends a generic `Repository<User>`.
@@ -13,7 +13,7 @@
 - Never use `data class` for entities or aggregate roots: `copy`, structural equality and destructuring bypass invariants.
 - Use `@JvmInline value class UserId(val value: String)` for IDs and small values.
 - Expected failures use the project's established form, else `sealed interface` outcomes.
-- Aggregate roots are classes with private mutable state changed only by their own named behaviours; the rebuild entry is an `internal` `restore(...)` on the companion object.
+- Aggregate roots are classes with private mutable state changed only by their own named behaviours; the rebuild entry is `restore(...)` on the companion object, `internal` in a single module, else public and used only by the persistence adapter.
 - Nullable types only where absence is domain language.
 - Domain functions are not `suspend`; `suspend` belongs to ports, adapters and use cases.
 - An optional pure `BaseEntity<ID>` is fine; never make it a universal base carrying policy.
