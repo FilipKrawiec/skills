@@ -31,3 +31,4 @@ Name records as `YYYY-MM-DD-short-topic.md`.
 - [Sonnet-low epic measured against #606](2026-11-17-sonnet-low-epic-measured.md): #615's verdict for epic #635: session and owner steps met, cost not shown below baseline, recall waiver cited.
 - [Approval-free setup delivery, epic #635](2026-11-17-approval-free-setup-delivery.md): the Sonnet-low drive session, owner steps, dispatch failures and reviewer cost per merged PR, measured for #615.
 - [Implementer bench baseline](2026-11-23-implementer-bench-baseline.md): seeded implementer tasks, setting, checks and spend cap of `bench --implementer`; both arms and the cost, from a $0.72 run.
+- [Implementer bench, one doubles rule](2026-11-23-tdd-doubles-bench.md): `tdd` with one doubles rule and tool-neutral profiles against the base commit; pass rate 8/8 in both arms, $0.16 against $0.17 per task, from a $0.67 run.
