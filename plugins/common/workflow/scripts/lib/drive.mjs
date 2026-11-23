@@ -412,7 +412,7 @@ const localPathPattern = /(?<![\w:/.~-])(?:file:\/\/[^\s)>\]`'"]+|~\/[^\s)>\]`'"
 export const localEvidencePaths = text => [...new Set([...String(text || '').matchAll(localPathPattern)].map(match => match[0].replace(/[.,;:]+$/, '')))];
 const evidenceWords = /\b(captures?|screenshots?|screen recordings?|recordings?|timings?|times|flow assessment|before and after|evidence)\b/i;
 // The issue's acceptance bullets, split into those naming evidence (artifacts the PR body must carry) and code criteria.
-export function acceptanceCriteria(body) {
+function acceptanceCriteria(body) {
   const lines = String(body || '').split('\n');
   const start = lines.findIndex(line => /^#{2,4}\s+acceptance\b/i.test(line));
   if (start < 0) return { code: [], evidence: [] };

@@ -33,3 +33,4 @@ Name records as `YYYY-MM-DD-short-topic.md`.
 - [Implementer bench baseline](2026-11-23-implementer-bench-baseline.md): seeded implementer tasks, setting, checks and spend cap of `bench --implementer`; both arms and the cost, from a $0.72 run.
 - [Implementer bench, one doubles rule](2026-11-23-tdd-doubles-bench.md): `tdd` with one doubles rule and tool-neutral profiles against the base commit; pass rate 8/8 in both arms, $0.16 against $0.17 per task, from a $0.67 run.
 - [Implementer bench for #772](2026-11-23-implementer-bench-772.md): pass rate and cost per task with the ddd and hexagonal-architecture rules folded into SKILL.md against origin/main, from a $0.63 run.
+- [Preferences-delivery epic refinement](2026-11-23-preferences-delivery-refinement.md): epic #769 assessment, dead exports dropped, CI timing, preloaded words per role before and after, final implementer bench (8/8 both arms, $0.16 against $0.18 per task), flow and two improvements.
