@@ -5,11 +5,6 @@
     "reviewer": "filipkrawiec-reviewer",
     "owner": "FilipKrawiec"
   },
-  "delivery": {
-    "rates": {
-      "claude-sonnet-5-5": [2, 10, 0.1, 2.5]
-    }
-  },
   "steps": {
     "process": null,
     "assemble": null,
