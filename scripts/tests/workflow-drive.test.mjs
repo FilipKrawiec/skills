@@ -1338,6 +1338,15 @@ test('a disputed fix-mode hand-back goes to the Reviewer instead of looping the 
   assert.equal(step.dispute, 'the finding misreads line 4');
 });
 
+test('every implementer brief names the implementer reference as the first thing to read', () => {
+  const reference = new URL('../../plugins/common/workflow/skills/deliver/references/implementer.md', import.meta.url).pathname;
+  for (const step of [{ mode: 'build' }, { mode: 'fix', reason: 'blocking review findings' }]) {
+    const brief = implementerBrief({ issue: started, tree: tree(), pr: pr(), step, base: 'main' });
+    assert.ok(brief.includes(`Read ${reference} first`), step.mode);
+    assert.ok(brief.indexOf(reference) < brief.indexOf('## Task'), 'named before the task');
+  }
+});
+
 test('a fix-mode brief offers disputed and the Reviewer brief carries the dispute evidence', () => {
   const fixBrief = implementerBrief({ issue: started, tree: tree(), pr: pr(), step: { mode: 'fix', reason: 'blocking review findings' }, base: 'main' });
   assert.match(fixBrief, /status: done \| disputed \| replan \| blocked/);

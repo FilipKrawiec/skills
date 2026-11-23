@@ -193,7 +193,7 @@ export function collectSession({ repo, pr, author, session, github = githubApi(r
 }
 // A runner-started orchestrator: the runner passes one UUID as both `--session-id` and WORKFLOW_DRIVE_SESSION, so Claude names its
 // transcript by it. Linked from the PR drive finished (else the issue). Null outside a runner session.
-export function collectOrchestrator({ number, findPr, outcome, env = process.env, ...rest }) {
+export function collectRunnerSession({ number, findPr, outcome, env = process.env, ...rest }) {
   const id = env.WORKFLOW_DRIVE_SESSION;
   if (!id) return null;
   let pr = number;

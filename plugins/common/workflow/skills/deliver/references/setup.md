@@ -30,7 +30,7 @@ Verify the host can dispatch and return an intact hand-back; the reviewer creden
 
 - Statuses Backlog, Todo, In progress, Blocked, Review, Done; single-select Priority (P0, P1, P2).
 - Milestones group production outcomes or their health work; agents prioritize them.
-- Workflow: auto-add → Backlog. Do not automate PR-linked, reopened or closed status changes; `drive` and the orchestrator apply readiness-aware transitions under `spec`.
+- Workflow: auto-add → Backlog. Do not automate PR-linked, reopened or closed status changes; `drive` and the owner's session apply readiness-aware transitions under `spec`.
 - Default view:
 
 | View | Layout | Filter | Fields |

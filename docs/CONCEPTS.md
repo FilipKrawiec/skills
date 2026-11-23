@@ -26,10 +26,10 @@ Production approval is separate: demonstrate a working test environment or insta
 
 | Dimension | Meaning |
 | --- | --- |
-| Lane | Whether implementation needs owner participation: `lane:owner` marks it; an issue without it is delivered through `drive` from the owner's session. |
+| Lane | Whether implementation needs owner participation: only the `lane:owner` label marks it, defined in `spec`; an issue without it is delivered through `drive` from the owner's session. |
 | Milestone | A production deliverable or its linked engineering health iteration, titled `v<MAJOR>`; each merge in it is an `rc/v<MAJOR>.<MINOR>.<PATCH>` release candidate deployed to test, the candidate test runs becomes the nightly `v<MAJOR>.<MINOR>.<PATCH>` test release, and an owner-published release on a test release promotes it to production. |
 | Type | Story, bug, chore, bounded investigation/task or epic. |
-| Waiting reason | A temporary missing condition, recorded separately from lane authorization. |
+| Waiting reason | A temporary missing condition, recorded separately from the `lane:owner` label. |
 
 The owner retains product/strategy reversals, new interaction direction, new paid services or budget increases, authority/credential/release-gate changes, quality-gate weakening and production approval. Existing services within explicit budgets are delegated. Independently review other technical choices and ADRs. Technical difficulty triggers bounded diagnosis/replanning, not automatic owner ownership. Fresh technical adjudication settles engineering disagreements without waiving acceptance or checks.
 

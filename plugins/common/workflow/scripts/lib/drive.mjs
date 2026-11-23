@@ -18,12 +18,13 @@ import { prState } from './state.mjs';
 import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
 import { exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
-import { collectOrchestrator, collectSession } from './session-log.mjs';
+import { collectRunnerSession, collectSession } from './session-log.mjs';
 import { pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
 import { approveReady, previousReviewedHead } from './vcs.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
 
 const cli = fileURLToPath(new URL('../workflow.mjs', import.meta.url));
+const implementerGuide = fileURLToPath(new URL('../../skills/deliver/references/implementer.md', import.meta.url));
 const riskGuide = fileURLToPath(new URL('../../skills/review/references/risk.md', import.meta.url));
 const risks = ['R0', 'R1', 'R2'];
 export const maxRisk = (...values) => risks[Math.max(...values.filter(Boolean).map(value => risks.indexOf(value)), 0)];
@@ -229,7 +230,7 @@ const isEpic = issue => (issue.labels || []).some(label => (label.name ?? label)
 // terminal `agent`, `wait`, `owner`, `blocked` or `done`. Pure, so re-running on unchanged state repeats it.
 export function decideIssue(facts, lanes) {
   const { issue, pr, tree, handBack: hb = {}, blockers = [], dropped = [] } = facts;
-  // A closed issue carries no execution label: drive drops a claim it left, whoever closed the issue.
+  // A closed issue carries no `state:started` claim: drive drops a claim it left, whoever closed the issue.
   if (issue.state !== 'OPEN' && stateLabels(issue).length) return { do: 'unclaim' };
   if (issue.state !== 'OPEN') return tree && pr?.state !== 'OPEN' ? { do: 'remove-worktree' } : { done: { issue: issue.number } };
   if (pr?.state === 'MERGED') return { do: 'close' };
@@ -244,7 +245,7 @@ export function decideIssue(facts, lanes) {
   if (hb.status === 'sliced') return { blocked: { issue: issue.number, reason: 'the planner handed back sliced, yet the issue is not an epic' } };
   const claimed = (issue.labels || []).some(label => (label.name ?? label) === 'state:started');
   if (!pr || pr.state !== 'OPEN') {
-    // An owner-lane issue is the owner's task: drive claims, labels and builds nothing for it.
+    // An issue under `lane:owner` is the owner's task: drive claims, labels and builds nothing for it.
     if (!claimed && (issue.labels || []).some(label => (label.name ?? label) === 'lane:owner')) return { owner: `#${issue.number} is an owner task (lane:owner)`, url: issue.url };
     if (!claimed || !tree) return { do: 'start' };
     if (hb.status !== 'done') return agent('implementer', 'build');
@@ -417,6 +418,8 @@ Issue: ${f.issue.url}
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 Worktree: ${f.tree.path} (branch ${f.tree.branch}, base origin/${f.base})
 PR: ${f.pr ? `${f.pr.url} at ${f.pr.headRefOid}, round ${f.round}` : 'none yet; drive opens it'}
+
+Read ${implementerGuide} first: it is the implementer's whole procedure.
 
 ## Task
 
@@ -857,7 +860,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       recordUsage({ repo, pr: pr.number, author: lanes.implementer, entry: usageEntry({ role, host: parsed?.host, model: parsed?.model, effort: parsed?.effort, plugin: parsed?.plugin, usage: parsed?.usage, key }) }, { gh });
       if (sessionId) collectSession({ repo, pr: pr.number, author: lanes.implementer, session: { id: sessionId, role, status: hb.status || hb.risk, usage: hb.usage } });
     },
-    orchestratorLog: (n, outcome) => collectOrchestrator({ repo, number: n, findPr: number => io.pr(number), author: lanes.implementer, outcome }),
+    orchestratorLog: (n, outcome) => collectRunnerSession({ repo, number: n, findPr: number => io.pr(number), author: lanes.implementer, outcome }),
     packetFacts(context) { return gatherPacketFacts({ repo, lanes, gh, threads: pr => this.reviewThreads(pr), ...context }); },
     reviewSession: (pr, tree) => {
       const root = tree?.path || git('rev-parse', '--show-toplevel');
@@ -1345,7 +1348,7 @@ export const ownerApproved = (timeline, owner, editedAt = null) => {
   return editedAt == null || Date.parse(editedAt) <= Date.parse(event.created_at);
 };
 // An open story or bug under an open parent epic is never a target on its own: its epic is, ranked by the best rank of itself and its open children.
-// Fast lane: a base-red issue is still yielded first, by itself, even under an epic. An issue with no open parent epic (an orphan) is taken on its own.
+// Fast path: a base-red issue is still yielded first, by itself, even under an epic. An issue with no open parent epic (an orphan) is taken on its own.
 // `childrenOf(epicNumber)` returns the numbers of the epic's sub-issues; it is read once per open epic.
 export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] }), trusted, approved = () => false, ownerWaiting = () => false, childrenOf = () => []) {
   const names = issue => issue.labels.map(label => label.name ?? label);

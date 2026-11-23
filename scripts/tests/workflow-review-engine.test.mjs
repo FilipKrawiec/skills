@@ -52,7 +52,6 @@ test('one review skill, one mode: one reviewer, no subagents, no round asks the 
   const skill = name => read(`skills/${name}/SKILL.md`);
   const deliver = skill('deliver');
   assert.match(deliver, /Never review or approve in this session/);
-  assert.match(deliver, /Nits never block/);
   // What `ship` covered: production publication goes through release, the base is checked at the merge commit, and
   // delivery evidence belongs to release and milestone.
   assert.match(deliver, /goes through `release` first: with `github\.publishOnMerge` set/);
@@ -73,10 +72,13 @@ test('one review skill, one mode: one reviewer, no subagents, no round asks the 
   assert.match(review, /Whole diff.*no earlier verdict of yours reviewed it: round 1, or after a red-CI or shape-only verdict/);
   assert.match(review, /Later rounds:\*\* judge only `review-context`'s `comparison.changedFiles`/);
   assert.match(review, /red required check.*Important.*continue the review/);
-  assert.match(deliver, /documented capture command.*native build.*Capture after the UI settles/);
+  const implementerGuide = read('skills/deliver/references/implementer.md');
+  assert.match(implementerGuide, /Nits never block/);
+  assert.match(implementerGuide, /documented capture command.*native build.*Capture after the UI settles/);
   assert.match(review, /Nits never block and never earn another round/);
   assert.match(review, /\*\*Follow-up:\*\*/);
-  assert.match(deliver, /Add no capability, option or refactor the issue did not ask for/);
+  assert.match(implementerGuide, /Add no capability, option or refactor the issue did not ask for/);
+  assert.doesNotMatch(deliver, /Add no capability, option or refactor/);
   const agent = read('agents/reviewer.md');
   assert.match(agent, /^name: reviewer$/m);
   assert.match(agent, /^skills:\n  - review$/m);
@@ -88,7 +90,8 @@ test('one review skill, one mode: one reviewer, no subagents, no round asks the 
   assert.match(implementer, /^name: implementer$/m);
   assert.doesNotMatch(implementer, /^model:/m);
   assert.doesNotMatch(implementer, /^effort:/m);
-  assert.match(implementer, /^skills:\n  - deliver\n  - tdd$/m);
+  assert.match(implementer, /^skills:\n  - tdd$/m);
+  assert.doesNotMatch(implementer, /^  - deliver$/m);
   assert.match(implementer, /^disallowedTools: Agent$/m);
   assert.match(implementer, /at most 5 lines/);
 });

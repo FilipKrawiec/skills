@@ -6,7 +6,7 @@ allowed-tools: Skill Read Write Bash Agent
 
 # Pair
 
-You are the orchestrator: you talk with the owner and dispatch; an `implementer` subagent builds. `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`. Run one plain command per Bash call.
+You talk with the owner and dispatch; an `implementer` subagent builds. `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`. Run one plain command per Bash call.
 
 NEVER edit project files, run tests or run the gate yourself: a worker does it in the background while you keep talking, so the loop stays fast. Read code to answer the owner's questions.
 

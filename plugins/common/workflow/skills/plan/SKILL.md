@@ -21,9 +21,19 @@ Write the plan for whoever executes it: the implementer agent or the developer b
 - **Why:** the criterion or decision it serves.
 - **How:** the paths, interfaces, the failing test to write first, and the command proving it.
 
+One filled step:
+
+```text
+3. Reject an expired token.
+   Why: criterion "an expired session returns 401, never the cached user".
+   How: in src/auth/session.mjs make `readSession` return null when `expiresAt` is past.
+   Failing test first: test/auth/session.test.mjs, "an expired session reads as signed out".
+   Command: node --test test/auth/session.test.mjs
+```
+
 Plan related fixes, implementation, tests and docs as one bounded, independently reviewable PR when they can ship together; account for repeated agent, review and coordination costs. Propose a split for a concrete independent outcome, meaningful dependency, authority boundary or delivery constraint, never by size, estimate or layer alone. Avoid process-only refinement tickets and nesting without an outcome. Add the risks, the decisions taken with their reasons, and the manual test steps CI cannot run. Preserve shared interface inputs, outputs, errors and compatibility. Reserve product intent, paid services, budgets, authority, credentials, release or quality gates for the owner; new interactions need owner prototype direction. Return a technical-adjudication question with options, evidence and a recommendation.
 
-When slicing an approved epic, create exactly one final refinement slice with native blocked-by links to every other slice (`issue create --parent <epic> --milestone <name> --blocked-by N,M`, or `issue edit`; never `gh api`). Include the exact body marker `<!-- workflow:epic-refinement -->`. Give it the epic's milestone, a scope packet and these criteria for its implementer brief and review expectations. When invoked only to create this slice, return to the caller after these criteria; skip steps 3–4:
+When slicing an approved epic, create exactly one final refinement slice with native blocked-by links to every other slice (`issue create --parent <epic> --milestone <name> --blocked-by N,M`, or `issue edit`; never `gh api`). Include the exact body marker `<!-- workflow:epic-refinement -->`. Give it the epic's milestone, a scope packet and these criteria for its implementer brief and review expectations. When invoked only to create this slice, return to the caller after these criteria:
 
 - Review the merged whole epic against its Outcome, Decisions and architecture rules. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. With nothing to change, hand back `status: done`, empty `paths` and `body: <file>`.
 - Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.
@@ -32,21 +42,7 @@ When slicing an approved epic, create exactly one final refinement slice with na
 
 **Exit gate:** every step has a why and a how; an epic has its final refinement slice and native blockers.
 
-## 3. Score reproducibility
-
-Score the plan yourself; start no scorer subagent. Reread it as an agent that has only the plan and the issue: for each step, answer why it exists and how you would do it (paths, test, command), and mark the step `guess` where the plan does not settle either. The score is the share of steps marked `ok`. Below 100%, sharpen each guessed step, asking the developer the why or how question it raised, and score again. A plan below 100% after two revisions goes to the owner with the guessed steps.
-
-**Exit gate:** 100% score, recorded with the plan.
-
-## 4. Approve and record
-
-Post one `## Plan` issue comment, or a compact in-chat plan for small direct work, with the steps, decisions, risks, manual test steps and `Reproducibility: 100% (<n> steps)`. Update that exact comment by ID; never use `--edit-last`.
-
-The developer approves the scored plan.
-
-After approval, delivery runs through `drive <issue>` in the owner's session: it starts the work in an isolated worktree, briefs the implementer with the issue and the plan link, opens the draft PR and runs review. Never edit project files from the planning session.
-
-**Exit gate:** approved plan linked, or the owner question it waits on.
+An interactive plan for the owner continues with [approval.md](references/approval.md): score, post and get it approved. A planner started by `drive` stops here.
 
 ## Output
 

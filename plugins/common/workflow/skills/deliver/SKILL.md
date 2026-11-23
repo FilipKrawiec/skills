@@ -12,7 +12,7 @@ Run one plain command per Bash call. Use `drive` and `wait`, never `gh`.
 
 Branch on your role, first match wins:
 
-- a drive brief started you as the implementer: step 2;
+- a drive brief started you as the implementer: step 2 (the implementer agent loads only the reference);
 - otherwise you dispatch in the owner's session: step 1.
 
 ## 1. Dispatch
@@ -33,28 +33,7 @@ Drive each `alsoReady` slice alone. Report a result's `consolidated` merge. Back
 
 ## 2. Implement
 
-Work only in your brief's worktree.
-
-- Work test-first through `tdd`: run the focused test you changed while you work, never the full suite.
-- When the change is complete, run the brief's `check` once. Rerun only after fixing a failure.
-- Commit only with the brief's `commit` command, or leave the changes and name `commit` and `paths` in the hand-back; drive commits and pushes.
-- Fix only failing checks and Blocker and Important findings from `review-context`. Nits never block. Dispute one with `status: disputed` and `note`; `done` without a commit reruns the fix. Only the Reviewer handles threads.
-- Resolve conflicts with `git merge --no-ff --no-commit origin/<base>`, then the brief's `commit` command.
-- Use the project's documented capture command; no native build is needed unless documented. Capture after the UI settles.
-- Add no capability, option or refactor the issue did not ask for.
-- Never push, open, label, ready or merge a PR, never start an agent and never print a token.
-
-Hand back the brief's format, 6 lines at most:
-
-```text
-status: done
-commit: fix(drive): keep the claim when the push fails
-paths: src/drive.mjs test/drive.test.mjs
-check: pass
-note: drive releases the claim only after the push succeeds
-```
-
-`status: replan`: the issue contradicts the code or splits at a seam; `status: blocked`: a person must act.
+Read [implementer.md](references/implementer.md); a drive brief names its absolute path first.
 
 **Exit gate:** `check` passed and the hand-back returned, or `replan` or `blocked` with its reason.
 
