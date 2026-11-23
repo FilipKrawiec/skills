@@ -139,7 +139,12 @@ const sharedReadPr = (repo, n) => sharedRead(`pr:${repo}#${n}`, 55_000, () => re
 const localBranchHead = name => {
   try { return name ? execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], { encoding: 'utf8' }).trim() || null : null; } catch { return null; }
 };
-export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = sharedReadPr, readFresh = readPr, localHead = localBranchHead, random = Math.random, checksAt = readChecksAt, sweep = sweepClosedBoard, moveClosing = moveClosingCards } = {}) {
+// True when the PR head is a commit this checkout lacks or one that descends from the local tip: GitHub is ahead (update-branch), not behind.
+const remoteIsAhead = (tip, remote) => {
+  const git = args => { try { execFileSync('git', args, { stdio: 'ignore' }); return true; } catch { return false; } };
+  return !git(['cat-file', '-e', `${remote}^{commit}`]) || git(['merge-base', '--is-ancestor', tip, remote]);
+};
+export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = sharedReadPr, readFresh = readPr, localHead = localBranchHead, remoteAhead = remoteIsAhead, random = Math.random, checksAt = readChecksAt, sweep = sweepClosedBoard, moveClosing = moveClosingCards } = {}) {
   const usage = 'Usage: wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]';
   const [value, ...rest] = args;
   const o = {};
@@ -158,7 +163,7 @@ export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read =
     const tip = ['ci', 'base'].includes(o['--until']) && pr.state === 'OPEN' ? localHead(pr.headRefName) : null;
     if (tip && pr.headRefOid !== tip) pr = readFresh(lanes.repo, n);
     const state = prState(pr, lanes);
-    const stale = Boolean(tip) && pr.headRefOid !== tip;
+    const stale = Boolean(tip) && pr.headRefOid !== tip && !remoteAhead(tip, pr.headRefOid);
     if (stale) state.ci = 'pending';
     const merge = o['--until'] === 'base' && state.state === 'MERGED' ? pr.mergeCommit?.oid : null;
     if (merge) state.base = ciState(checksAt(lanes.repo, merge));

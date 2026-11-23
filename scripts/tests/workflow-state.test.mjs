@@ -312,7 +312,7 @@ test('wait --until ci never settles on the previous head after a push', () => {
     const lines = []; const log = console.log; console.log = line => lines.push(JSON.parse(line));
     let index = 0; let clock = 0;
     try {
-      const code = waitCommand(['5', '--until', until, '--timeout', '3'], lanes, { read: () => cached[Math.min(index++, cached.length - 1)], readFresh: () => uncached, localHead: name => name === 'topic' ? pushed : null, pause: () => { clock += 60_000; }, now: () => clock });
+      const code = waitCommand(['5', '--until', until, '--timeout', '3'], lanes, { read: () => cached[Math.min(index++, cached.length - 1)], readFresh: () => uncached, localHead: name => name === 'topic' ? pushed : null, remoteAhead: () => false, pause: () => { clock += 60_000; }, now: () => clock });
       return { code, lines };
     } finally { console.log = log; }
   };
@@ -325,4 +325,16 @@ test('wait --until ci never settles on the previous head after a push', () => {
   const recovered = run([stale], caughtUp);
   assert.equal(recovered.code, 0, 'a fresh read of the pushed head settles');
   assert.equal(recovered.lines.at(-1).head, pushed);
+});
+
+test('wait --until ci settles when GitHub is ahead of the local branch, as after update-branch', () => {
+  const local = 'e'.repeat(40);
+  const merged = pr({ headRefName: 'topic', headRefOid: 'd'.repeat(40) }); // GitHub merged the base: green on a head the worktree lacks
+  const lines = []; const log = console.log; console.log = line => lines.push(JSON.parse(line));
+  let clock = 0;
+  try {
+    const code = waitCommand(['5', '--until', 'ci', '--timeout', '3'], lanes, { read: () => merged, readFresh: () => merged, localHead: () => local, remoteAhead: (tip, remote) => tip === local && remote === merged.headRefOid, pause: () => { clock += 60_000; }, now: () => clock });
+    assert.equal(code, 0, 'a remote head that descends from the local tip is not stale');
+    assert.equal(lines.at(-1).head, merged.headRefOid);
+  } finally { console.log = log; }
 });
