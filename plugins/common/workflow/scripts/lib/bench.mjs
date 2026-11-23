@@ -191,7 +191,7 @@ export function reviewerIo(lanes, root, options = {}) {
 // The implementer benchmark: replays seeded implementer tasks on the cheapest delivery setting, once with the skills at the
 // working tree and once with the skills at a baseline ref, and grades each run by deterministic checks only (no model grades).
 export const spendCap = 10;
-export const implementerChecks = ['layers', 'primitives', 'red', 'gate'];
+const implementerChecks = ['layers', 'primitives', 'red', 'gate'];
 const implementerLanguages = ['typescript', 'java', 'kotlin', 'dart'];
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const defaultImplementerSnapshot = join(repoRoot, 'docs', 'implementer-benchmark.json');
@@ -223,7 +223,7 @@ export function validateImplementerSnapshot(snapshot, root = repoRoot) {
 
 // A tree is a Map of relative path to text; the checks read only that.
 const skippedDirectory = /^(\.git|node_modules)$/;
-export function readTree(dir) {
+function readTree(dir) {
   const files = new Map();
   const walk = (relative) => {
     for (const entry of readdirSync(join(dir, relative), { withFileTypes: true })) {
@@ -236,7 +236,7 @@ export function readTree(dir) {
   walk('');
   return files;
 }
-export const isTestFile = path => /(^|\/)(tests?|__tests__)\//.test(path) || /\.(test|spec)\.[a-z]+$/.test(path) || /Tests?\.(java|kt)$/.test(path) || /_test\.dart$/.test(path);
+const isTestFile = path => /(^|\/)(tests?|__tests__)\//.test(path) || /\.(test|spec)\.[a-z]+$/.test(path) || /Tests?\.(java|kt)$/.test(path) || /_test\.dart$/.test(path);
 const domainFiles = files => [...files].filter(([path]) => /(^|\/)domain\//.test(path) && !isTestFile(path));
 
 // Check 1: no domain file imports an application, API or infrastructure path or package.
@@ -330,7 +330,7 @@ export function checkGate({ dir, gate, run }) {
   return { pass: status === 0, violations: status === 0 ? [] : [`gate exited ${status ?? 'none'}`] };
 }
 
-export function gradeTask({ task, start, final, dir, run, scratch }) {
+function gradeTask({ task, start, final, dir, run, scratch }) {
   const results = {
     layers: () => checkLayerImports(final, task.language),
     primitives: () => checkRawPrimitives(final, task.language),
@@ -342,7 +342,7 @@ export function gradeTask({ task, start, final, dir, run, scratch }) {
 }
 
 const rate = (passed, total) => ({ passed, total, rate: total ? round(passed / total) : null });
-export function summarizeImplementer(rows) {
+function summarizeImplementer(rows) {
   const checks = Object.fromEntries(implementerChecks.map(name => { const graded = rows.filter(row => typeof row.checks[name] === 'boolean'); return [name, rate(graded.filter(row => row.checks[name]).length, graded.length)]; }));
   const all = Object.values(checks);
   const costs = rows.map(row => row.cost).filter(cost => Number.isFinite(cost));
@@ -353,7 +353,7 @@ export function summarizeImplementer(rows) {
     cost: { total: costs.length ? round(total) : unreported, perTask: costs.length ? round(total / costs.length) : unreported, reported: costs.length, unreported: rows.length - costs.length },
   };
 }
-export function compareImplementerResults(before, after) {
+function compareImplementerResults(before, after) {
   const delta = (x, y) => (typeof x === 'number' && typeof y === 'number' ? round(y - x) : unreported);
   return after.arms.map(arm => {
     const saved = before.arms?.find(other => other.arm === arm.arm);
@@ -361,7 +361,7 @@ export function compareImplementerResults(before, after) {
   });
 }
 const percent = item => (item.total ? `${item.passed}/${item.total}` : 'n/a');
-export function renderImplementerResults(result, comparisons = []) {
+function renderImplementerResults(result, comparisons = []) {
   const lines = [`Setting ${result.setting.model} ${result.setting.effort}; spend cap ${money(result.spendCap)}; total cost ${money(result.totalCost)}`];
   result.arms.forEach(arm => {
     lines.push('', `== ${arm.arm} (${arm.ref})`);
@@ -376,7 +376,7 @@ export function renderImplementerResults(result, comparisons = []) {
 }
 
 // Replays every task through both arms, task by task so the cap cuts both arms evenly, and stops starting sessions once the reported cost reaches the cap.
-export async function runImplementerBench({ snapshot, arms, io, root = repoRoot, scratch = tmpdir(), cap = spendCap, setting = sessionFor('implementer', 'R0') }) {
+async function runImplementerBench({ snapshot, arms, io, root = repoRoot, scratch = tmpdir(), cap = spendCap, setting = sessionFor('implementer', 'R0') }) {
   const results = arms.map(arm => ({ arm: arm.name, ref: arm.ref, rows: [] }));
   const skipped = [];
   let spent = 0;
