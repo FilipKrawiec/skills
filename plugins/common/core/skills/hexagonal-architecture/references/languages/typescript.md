@@ -3,15 +3,16 @@
 ## Layout
 
 - `src/<context>/{domain,app,api,infra}/`; in a monorepo, `@project/<context>-domain` depends on no app, api, infra or framework package.
-- Enforce imports with dependency-cruiser or ESLint import-path rules.
-- Domain imports no ORM, web framework, or validation/serialization library (Zod included).
+- Enforce imports with the project's configured import-boundary tool, else ESLint import-path rules.
+- Domain imports no ORM, web framework, or validation/serialization library.
 - Name the aggregate file after its port (`src/users/domain/users.ts`), holding its creation function, union outcomes, events, value types and `interface Users` when they belong only to it.
 
 ## Domain idioms
 
 - No classes for entities or aggregates: `readonly` types plus pure functions that take state and return the new state and events.
 - Branded types for IDs and small values (`type UserId = string & { readonly __brand: unique symbol }`); one parser (`userId(raw)`) is the only place the brand is applied.
-- Expected failures are discriminated unions (`{ type: "Unchanged" } | { type: "Changed"; user: User; event: UserEmailChanged }`), never throws.
+- Expected failures use the project's established form, else discriminated unions (`{ type: "Unchanged" } | { type: "Changed"; user: User; event: UserEmailChanged }`).
+- The rebuild entry is one `restoreUser(...)` exported only to the persistence adapter; it runs no creation rules and returns no events.
 - Domain functions never return a `Promise`.
 - Creation is a pure `createUser(...)` in the aggregate file. Without `Clock`/`UserIds` ports, the use case passes `new Date()` and `crypto.randomUUID()` in.
 
