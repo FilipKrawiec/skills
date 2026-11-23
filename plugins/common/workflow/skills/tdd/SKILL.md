@@ -51,4 +51,9 @@ next: open the PR
 
 **Exit gate:** `done` with a red run per behavior step and evidence for the final revision, or `stuck`, `replan` or a named blocker with the next action.
 
-Read [test-levels.md](references/test-levels.md) when choosing a test level, [mutation-testing.md](references/mutation-testing.md) when auditing a suite, [bug-fixes.md](references/bug-fixes.md) for a regression, and `references/languages/<language>.md` for the relevant supported language.
+Read:
+
+- [test-levels.md](references/test-levels.md) when choosing a test level.
+- [mutation-testing.md](references/mutation-testing.md) when auditing a suite.
+- [bug-fixes.md](references/bug-fixes.md) for a regression.
+- `references/languages/<language>.md` for the relevant supported language.
