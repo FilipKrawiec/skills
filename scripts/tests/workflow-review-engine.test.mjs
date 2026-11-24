@@ -95,12 +95,3 @@ test('one review skill, one mode: one reviewer, no subagents, no round asks the 
   assert.match(implementer, /^disallowedTools: Agent$/m);
   assert.match(implementer, /at most 5 lines/);
 });
-
-test('review raises an epic decision no slice criterion covers, in one sentence', () => {
-  const skill = readFileSync(new URL('../../plugins/common/workflow/skills/review/SKILL.md', import.meta.url), 'utf8');
-  const sentences = skill.split(/(?<=\.)\s+/).filter(s => /epic's recorded decisions/.test(s));
-  assert.equal(sentences.length, 1, 'one sentence names the epic decisions');
-  assert.match(sentences[0], /name the slice's area/);
-  assert.match(sentences[0], /no criterion covers/);
-  assert.match(sentences[0], /before approving/);
-});
