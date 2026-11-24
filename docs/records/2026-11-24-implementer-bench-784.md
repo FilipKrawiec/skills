@@ -15,7 +15,7 @@ Issue #784, PR #785. `node plugins/common/workflow/scripts/workflow.mjs bench --
 
 ## Verdict
 
-**The criterion "a seeded task the pre-change skills fail" is not met.** The baseline arm passes `ts-stock-reserve`, and so does the current arm. Both arms score 12/12, so the bench is still at its ceiling.
+**Result against the wording then in force, "a seeded task the pre-change skills fail" (since superseded; see the current criteria of #784): not met.** The baseline arm passes `ts-stock-reserve`, and so does the current arm. Both arms score 12/12, so the bench is still at its ceiling.
 
 This is the second run. In the first run (cost $1.04), both arms failed `ts-stock-reserve` on `primitives`. That failure came from the fixture, not the agents: the fixture's own port `save(item, loaded): Promise<boolean>` in [`stock.ts`](../implementer-benchmark/ts-stock/src/stock/domain/stock.ts) failed the check before any agent touched the code. The fixture now returns a domain outcome type, `SaveOutcome` (`Saved | Refused`), so its starting tree passes `layers` and `primitives`. The check itself is unchanged. `scripts/tests/workflow-bench.test.mjs` ("each committed fixture starts clean on the static checks") now keeps every seeded fixture clean on those two checks. The task's issue text is unchanged.
 

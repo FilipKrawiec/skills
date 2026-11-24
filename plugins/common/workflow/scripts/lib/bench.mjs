@@ -191,7 +191,7 @@ export function reviewerIo(lanes, root, options = {}) {
 // The implementer benchmark: replays seeded implementer tasks on the cheapest delivery setting, once with the skills at the
 // working tree and once with the skills at a baseline ref, and grades each run by deterministic checks only (no model grades).
 export const spendCap = 10;
-const implementerChecks = ['layers', 'primitives', 'red', 'gate'];
+const implementerChecks = ['layers', 'primitives', 'red', 'gate', 'guard'];
 const implementerLanguages = ['typescript', 'java', 'kotlin', 'dart'];
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const defaultImplementerSnapshot = join(repoRoot, 'docs', 'implementer-benchmark.json');
@@ -217,6 +217,7 @@ export function validateImplementerSnapshot(snapshot, root = repoRoot) {
     if (!Array.isArray(task.gate) || !task.gate.length || task.gate.some(part => typeof part !== 'string' || !part)) problems.push(`${label}: gate must be a non-empty argv array`);
     const checks = Array.isArray(task.checks) ? task.checks : [];
     if (!checks.length || checks.some(check => !implementerChecks.includes(check)) || new Set(checks).size !== checks.length) problems.push(`${label}: checks must be a non-empty subset of ${implementerChecks.join(', ')}`);
+    if (checks.includes('guard') && ['path', 'find', 'replace'].some(key => typeof task.guard?.[key] !== 'string' || !task.guard[key])) problems.push(`${label}: guard must name path, find and replace`);
   }
   return problems;
 }
@@ -330,12 +331,26 @@ export function checkGate({ dir, gate, run }) {
   return { pass: status === 0, violations: status === 0 ? [] : [`gate exited ${status ?? 'none'}`] };
 }
 
+// Check 5: the run's tests fail once the task's guard is removed from the final tree. The task names the guard as one text
+// replacement in a file the run must leave in place; a tree where it cannot be applied fails, as does a test that still passes.
+export function checkGuardRemoval({ final, guard, gate, run, scratch }) {
+  const source = final.get(guard.path);
+  if (source === undefined || !source.includes(guard.find)) return { pass: false, violations: [`guard not found: ${guard.path} no longer contains \`${guard.find}\``] };
+  const dir = mkdtempSync(join(scratch, 'guard-removed-'));
+  try {
+    for (const [path, content] of final) { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), path === guard.path ? content.replace(guard.find, () => guard.replace) : content); }
+    const { status } = run(gate, dir);
+    return typeof status === 'number' && status !== 0 ? { pass: true, violations: [] } : { pass: false, violations: [`the tests passed with the guard removed (exit ${status ?? 'none'})`] };
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
 function gradeTask({ task, start, final, dir, run, scratch }) {
   const results = {
     layers: () => checkLayerImports(final, task.language),
     primitives: () => checkRawPrimitives(final, task.language),
     red: () => checkRedRun({ start, final, gate: task.gate, run, scratch }),
     gate: () => checkGate({ dir, gate: task.gate, run }),
+    guard: () => checkGuardRemoval({ final, guard: task.guard, gate: task.gate, run, scratch }),
   };
   const graded = Object.fromEntries(task.checks.map(name => [name, results[name]()]));
   return { checks: Object.fromEntries(implementerChecks.map(name => [name, graded[name] ? graded[name].pass : null])), violations: Object.fromEntries(Object.entries(graded).filter(([, result]) => !result.pass).map(([name, result]) => [name, result.violations])) };
@@ -367,7 +382,7 @@ function renderImplementerResults(result, comparisons = []) {
     lines.push('', `== ${arm.arm} (${arm.ref})`);
     for (const row of arm.rows) lines.push(`${row.task} ${implementerChecks.filter(name => typeof row.checks[name] === 'boolean').map(name => `${name} ${row.checks[name] ? 'pass' : 'FAIL'}`).join(', ')} ${money(row.cost)}`);
     const { checks, overall, cost } = arm.summary;
-    lines.push(`pass rate: ${implementerChecks.map(name => `${name} ${percent(checks[name])}`).join('; ')}; overall ${percent(overall)}${overall.total ? ` (${overall.rate})` : ''}; cost per task ${money(cost.perTask)}, total ${money(cost.total)} (${cost.unreported} unreported)`);
+    lines.push(`pass rate: ${implementerChecks.filter(name => checks[name].total).map(name => `${name} ${percent(checks[name])}`).join('; ')}; overall ${percent(overall)}${overall.total ? ` (${overall.rate})` : ''}; cost per task ${money(cost.perTask)}, total ${money(cost.total)} (${cost.unreported} unreported)`);
     const comparison = comparisons.find(item => item?.arm === arm.arm);
     if (comparison) lines.push(`vs saved: pass rate ${signed(comparison.passRate)}, cost per task ${signed(comparison.costPerTask, true)}`);
   });
