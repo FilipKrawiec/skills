@@ -121,3 +121,16 @@ test('the first fence tagged json is read even after an earlier non-JSON fence',
   const read = resolveNativeEpicEvidence({ repo: 'a/b', issue: 9 }, { trustedConfig: () => cfg, comments: () => [{ user: { login: 'reviewer' }, created_at: '2026-01-01T00:00:00Z', body }] });
   assert.equal(read.n, 7);
 });
+
+test('an outcome must copy the criterion text verbatim, Markdown included; stripped markup is stale and says how to fix it', () => {
+  const body = '### Acceptance criteria\n- [x] **Measured.** `bench` replays it <!-- workflow:criterion a -->\n';
+  const verbatim = fixture({ criterion: { id: 'a', text: '**Measured.** `bench` replays it' } });
+  verbatim.epic.body = body;
+  assert.equal(verbatim.check().complete, true);
+  const stripped = fixture({ criterion: { id: 'a', text: 'Measured. bench replays it' } });
+  stripped.epic.body = body;
+  const result = stripped.check();
+  assert.equal(result.complete, false);
+  assert.equal(result.needsReview, true);
+  assert.match(result.issues[0], /verbatim/);
+});
