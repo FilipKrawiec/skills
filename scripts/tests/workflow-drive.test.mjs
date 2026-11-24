@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
-  driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -2683,4 +2683,21 @@ test('a slice driven by number ends at its own done; only a session that took it
     driveCommand(['10'], lanes, orphan.io, { lockDirectory: directory, session: 'auto', now: 6000 });
     assert.deepEqual(said, { done: { issue: 10 } }, 'an issue with no open parent epic just ends');
   } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('drive blocks with the exact update command when the CLI is older than the fetched default branch', () => {
+  const lanes = { repo: 'o/r', base: 'main', configCommit: 'abc123', steps: {} };
+  const behind = staleCliStep('11.110.0', baseWorkflowVersion('main', () => '{"version":"11.117.0"}'), 'main', [{ key: 'filipkrawiec-workflow@filipkrawiec', scope: 'user' }]);
+  const log = console.log; let said = null;
+  console.log = text => { said = JSON.parse(text); };
+  try { driveCommand(['769'], lanes, {}, { stale: behind }); } finally { console.log = log; }
+  assert.match(said.blocked.reason, /11\.110\.0, older than 11\.117\.0 on origin\/main/);
+  assert.match(said.blocked.reason, /claude plugin update filipkrawiec-workflow@filipkrawiec --scope user/);
+  assert.equal(said.configCommit, 'abc123');
+});
+
+test('drive proceeds when the CLI matches or leads the fetched default branch, or the branch ships no plugin', () => {
+  assert.equal(staleCliStep('11.117.0', '11.117.0', 'main'), null);
+  assert.equal(staleCliStep('11.118.0', '11.117.0', 'main'), null);
+  assert.equal(staleCliStep('11.117.0', baseWorkflowVersion('main', () => { throw new Error('no such path'); }), 'main'), null);
 });
