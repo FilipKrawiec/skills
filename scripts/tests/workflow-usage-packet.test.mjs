@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { commandEffort, commandModel, findUsageComment, parseUsage, transcriptUsage, transcriptUsageLine, parseUsageComment, parseUsageLine, recordUsage, usageComment, usageCost, usageEntry, usageHost, usageSummary, usageTotals, visibleResult } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
 import { architectureNote, exportedSymbols, issueCriteria, reviewPacket } from '../../plugins/common/workflow/scripts/lib/packet.mjs';
-import { drive, githubIo, handBackRole, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { deliveryAssignment, drive, githubIo, handBackRole, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { statusCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 import { sessionUsage } from '../../plugins/common/workflow/scripts/lib/session-log.mjs';
 
@@ -367,4 +367,14 @@ test('usage.md says rates come from delivery.rates and only from published price
   const text = readFileSync(new URL('../../plugins/common/workflow/skills/deliver/references/usage.md', import.meta.url), 'utf8');
   assert.match(text, /delivery\.rates/);
   assert.match(text, /only from[^.]*published prices/i);
+});
+
+test('the real .agents/config.json delivery block resolves the same assignments as no delivery block', () => {
+  const delivery = JSON.parse(readFileSync(new URL('../../.agents/config.json', import.meta.url), 'utf8')).delivery;
+  for (const agent of ['implementer', 'reviewer', 'devops', 'conflict-resolver']) {
+    for (const risk of ['R0', 'R1', 'R2']) {
+      assert.deepEqual(deliveryAssignment(delivery, { agent }, risk), deliveryAssignment(null, { agent }, risk), `${agent} ${risk}`);
+    }
+  }
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'implementer', fresh: true }, 'R1', 3), deliveryAssignment(null, { agent: 'implementer', fresh: true }, 'R1', 3));
 });
