@@ -161,6 +161,16 @@ test('init adds the runner recipes to a justfile, creates one, leaves recipes al
   assert.match(merged, /^runner-uninstall:\n    node \S+ runner uninstall$/m);
 });
 
+test('a recipe whose name only starts with a runner recipe does not hide the missing one, and the hint names the repository to run it in', t => {
+  const f = fixture(t);
+  writeFileSync(join(f.root, 'justfile'), 'runner-install-dev:\n    echo dev\n');
+  initCommand(args, f.io);
+  assert.match(readFileSync(join(f.root, 'justfile'), 'utf8'), /^runner-install:\n/m, 'runner-install is added beside runner-install-dev');
+  const g = fixture(t);
+  g.io.runCli = (_root, a) => ({ ok: a[0] !== 'runner', text: 'no launchctl' });
+  assert.ok(initCommand(args, g.io).unable.find(item => item.startsWith('runner:')).includes(`in ${g.root}`), 'the consuming repository is named, not "this repository"');
+});
+
 test('the justfile runner recipes run existing CLI scripts, and init and runner.md name them', t => {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const justfile = readFileSync(join(root, 'justfile'), 'utf8');

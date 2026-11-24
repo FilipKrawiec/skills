@@ -415,6 +415,7 @@ async function implementerBenchCommand(options, io) {
   const snapshot = readJson(options.snapshot || defaultImplementerSnapshot);
   const problems = validateImplementerSnapshot(snapshot, options.snapshot ? dirname(options.snapshot) : repoRoot);
   if (problems.length) throw new Error(`Invalid implementer benchmark snapshot: ${problems.join('; ')}`);
+  // An explicit --snapshot resolves its fixtures against the snapshot's own directory; the committed snapshot, against the repository root.
   const root = options.snapshot ? dirname(options.snapshot) : repoRoot;
   const emit = (value, text) => console.log(options.json ? JSON.stringify(value, null, 2) : text);
   const setting = sessionFor('implementer', 'R0');

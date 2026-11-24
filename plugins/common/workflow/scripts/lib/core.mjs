@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { gate, isGraphql, isGraphqlRead, parseSecondaryLimit, retrySecondary, settleCost } from './quota.mjs';
+import { budgetFile, gate, isGraphql, isGraphqlRead, parseSecondaryLimit, retrySecondary, settleCost, tokenKey } from './quota.mjs';
 
 export const heldWorkflowLocks = new Set();
 export const workflowDefaults = {
@@ -14,16 +14,20 @@ export const workflowDefaults = {
 // Identical GraphQL reads within one invocation run once; any other GitHub call may change state and clears them.
 const readMemo = new Map();
 export const quotaPolicy = { memo: true, waitWhenExhausted: false };
+// A writer that spawns `gh` itself, outside `run`, calls this so the next read is not a memoized answer from before the write.
+export const clearReadMemo = () => readMemo.clear();
 export function run(program, args, options = {}) {
   const memoKey = program === 'gh' && quotaPolicy.memo && isGraphql(args) && isGraphqlRead(args) ? JSON.stringify([args, options.cwd, options.input]) : null;
   // Any call that is not a memoized read may change state, whatever the program or API.
   if (!memoKey) readMemo.clear();
   if (program !== 'gh') return execute(program, args, options);
   // GitHub keeps one secondary limit per token across REST and GraphQL, so REST calls honour the shared backoff too.
-  if (options.quota === false || process.env.WORKFLOW_QUOTA === 'off' || !isGraphql(args)) return retrySecondary(() => execute(program, args, options));
+  // A call that passes its own environment (the reviewer's GH_TOKEN) is counted and backed off under that token's key.
+  const env = options.env || process.env; const key = tokenKey(env);
+  if (options.quota === false || process.env.WORKFLOW_QUOTA === 'off' || !isGraphql(args)) return retrySecondary(() => execute(program, args, options), { key });
   if (memoKey && readMemo.has(memoKey)) return readMemo.get(memoKey);
-  const output = retrySecondary(() => { gate(args, { waitWhenExhausted: quotaPolicy.waitWhenExhausted }); return execute(program, args, options); });
-  settleCost(args, output);
+  const output = retrySecondary(() => { gate(args, { env, key, waitWhenExhausted: quotaPolicy.waitWhenExhausted }); return execute(program, args, options); }, { key });
+  settleCost(args, output, budgetFile(), key);
   if (memoKey) readMemo.set(memoKey, output); else readMemo.clear();
   return output;
 }

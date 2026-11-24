@@ -1,0 +1,178 @@
+{
+  "snapshot": "FilipKrawiec/skills",
+  "kind": "implementer",
+  "setting": {
+    "model": "sonnet",
+    "effort": "low"
+  },
+  "spendCap": 10,
+  "baseline": "origin/main",
+  "totalCost": 1.020724,
+  "arms": [
+    {
+      "arm": "current",
+      "ref": "working tree",
+      "rows": [
+        {
+          "task": "ts-users-change-email",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.14961559999999996
+        },
+        {
+          "task": "ts-orders-cancel",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.17824849999999998
+        },
+        {
+          "task": "ts-stock-reserve",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.17552790000000001
+        }
+      ],
+      "summary": {
+        "tasks": 3,
+        "tasksPassed": 3,
+        "checks": {
+          "layers": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          },
+          "primitives": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          },
+          "red": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          },
+          "gate": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          }
+        },
+        "overall": {
+          "passed": 12,
+          "total": 12,
+          "rate": 1
+        },
+        "cost": {
+          "total": 0.503392,
+          "perTask": 0.167797,
+          "reported": 3,
+          "unreported": 0
+        }
+      }
+    },
+    {
+      "arm": "baseline",
+      "ref": "origin/main",
+      "rows": [
+        {
+          "task": "ts-users-change-email",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.1713802
+        },
+        {
+          "task": "ts-orders-cancel",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.1556846
+        },
+        {
+          "task": "ts-stock-reserve",
+          "language": "typescript",
+          "checks": {
+            "layers": true,
+            "primitives": true,
+            "red": true,
+            "gate": true
+          },
+          "violations": {},
+          "passed": true,
+          "cost": 0.19026710000000002
+        }
+      ],
+      "summary": {
+        "tasks": 3,
+        "tasksPassed": 3,
+        "checks": {
+          "layers": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          },
+          "primitives": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          },
+          "red": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          },
+          "gate": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1
+          }
+        },
+        "overall": {
+          "passed": 12,
+          "total": 12,
+          "rate": 1
+        },
+        "cost": {
+          "total": 0.517332,
+          "perTask": 0.172444,
+          "reported": 3,
+          "unreported": 0
+        }
+      }
+    }
+  ],
+  "skipped": []
+}

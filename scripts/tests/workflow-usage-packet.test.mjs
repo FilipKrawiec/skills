@@ -9,6 +9,7 @@ import { commandEffort, commandModel, findUsageComment, parseUsage, transcriptUs
 import { architectureNote, exportedSymbols, issueCriteria, reviewPacket } from '../../plugins/common/workflow/scripts/lib/packet.mjs';
 import { drive, githubIo, handBackRole, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { statusCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
+import { sessionUsage } from '../../plugins/common/workflow/scripts/lib/session-log.mjs';
 
 const claudeOutput = JSON.stringify({ type: 'result', subtype: 'success', result: 'verdict: ready', total_cost_usd: 0.31, usage: { input_tokens: 12, output_tokens: 340, cache_read_input_tokens: 9000, cache_creation_input_tokens: 800 } });
 const codexOutput = [
@@ -146,6 +147,12 @@ test('a host that prints no figures still records an unreported row per role, on
   assert.deepEqual(recorded.splice(0), [[3, 'planner', undefined]], 'with no PR the row lands on the issue');
   drive(io(pr), 3, lanes, { risk: 'R1', reason: 'local' });
   assert.deepEqual(recorded.splice(0), [[5, 'devops', undefined]], 'a risk hand-back has no status yet is recorded');
+  const memory = {}; const withMemory = { ...io(pr, memory), read: path => memory[path] ?? null };
+  drive(withMemory, 3, lanes, { status: 'blocked', note: 'the gate cannot reach the registry' });
+  recorded.splice(0);
+  const repeated = drive(withMemory, 3, lanes, { status: 'blocked', note: 'the gate cannot reach the registry' });
+  assert.match(repeated.blocked?.reason, /same blocking cause twice/);
+  assert.deepEqual(recorded.splice(0), [[5, 'implementer', undefined]], 'the early return still records the row on the open PR');
   assert.equal(handBackRole({ status: 'sliced' }), 'planner');
   assert.equal(handBackRole({ status: 'narrowed' }), 'planner');
   assert.equal(handBackRole({ status: 'done', risk: 'R2' }), 'devops');
@@ -325,4 +332,18 @@ test('drive names the active architecture skills and matching language profiles 
   for (const text of [bare.packet, bare.brief, none.packet, none.brief]) assert.doesNotMatch(text, /Architecture skills|SKILL\.md|languages\//);
   const noProfile = run(rules, ['src/main.go']);
   for (const text of [noProfile.packet, noProfile.brief]) { assert.match(text, /skills\/ddd\/SKILL\.md/); assert.doesNotMatch(text, /languages\//); }
+});
+
+test('a hand-back without a usage line takes tokens and a configured-rate cost from the session transcript', () => {
+  const id = '11111111-2222-3333-4444-555555555555';
+  const transcript = [turn('m1', { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 20 }), JSON.stringify({ type: 'user', message: { content: `Session: ${id}` } })].join('\n');
+  const store = { files: () => [`/logs/agent-${id}.jsonl`], read: () => transcript };
+  const rates = { 'sonnet-5-5': [3, 15, 0.3, 3.75] };
+  const priced = sessionUsage(parseUsageLine(''), id, { store, rates });
+  assert.equal(priced.usage.cost, (10 * 3 + 5 * 15 + 100 * 0.3 + 20 * 3.75) / 1e6);
+  assert.deepEqual([priced.usage.input, priced.model], [10, 'claude-sonnet-5-5']);
+  assert.equal(sessionUsage(null, id, { store }).usage.cost, null, 'no rates: tokens count, cost stays unreported');
+  assert.equal(sessionUsage(parseUsageLine('usage: in=1 out=2 cost=0.5 model=sonnet'), id, { store, rates }).usage.cost, 0.5, 'a stated cost wins');
+  assert.equal(sessionUsage(null, id, { store: { files: () => [], read: () => '' }, rates }), null, 'no transcript leaves the row unreported');
+  assert.equal(sessionUsage(null, null, { store, rates }), null);
 });

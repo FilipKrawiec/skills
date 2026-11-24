@@ -3,7 +3,7 @@
 ## Layout
 
 - Feature-first packages: `users.domain`, `users.app`, `users.api`, `users.infra`.
-- `internal` is module-wide, not package-private: in a single Gradle module enforce layer imports with the project's configured boundary tool, else review; with several modules, the domain module depends on no other layer or framework module.
+- `internal` is module-wide, not package-private: a single Gradle module enforces no layer imports, so use the project's configured boundary tool, else split the layers into modules; with several modules, the domain module depends on no other layer or framework module.
 - A `platform-domain` module may hold pure technical primitives; it is not a Shared Kernel.
 - Name the aggregate file after its port (`users/domain/Users.kt`), one root per file, with its creation, sealed outcomes, events, value types and port when they belong only to it.
 - `Users` never extends a generic `Repository<User>`.

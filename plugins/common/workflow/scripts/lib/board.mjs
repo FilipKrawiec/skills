@@ -12,6 +12,8 @@ function scopePacket(body) {
 // that merely mentions it keeps its scope.
 function declaresNoChange(body) {
   const bare = body.replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ').replace(/"[^"\n]*"|\u201c[^\u201d\n]*\u201d/g, ' ');
+  // With no scope packet to protect, a declaration may sit anywhere in a sentence.
+  if (!scopePacket(body)) return /\b(?:make\s+no|do\s+not\s+make(?:\s+any)?)\s+(?:repository|repo)\s+(?:changes|files|commits)\b/i.test(bare);
   return /(?:^|[.!?]\s+)(?:[-*>]\s+)?(?:make\s+no|do\s+not\s+make(?:\s+any)?)\s+(?:repository|repo)\s+(?:changes|files|commits)\b(?=\s*(?:[.,;]|$))/im.test(bare);
 }
 export function pathsFromIssueBody(body = '') {

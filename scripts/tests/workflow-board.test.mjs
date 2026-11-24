@@ -61,6 +61,7 @@ test('an issue that only quotes the no-change statement keeps its declared scope
   }
   assert.deepEqual(pathsFromIssueBody('Verify only. Make no repository changes.' + scope), []);
   assert.deepEqual(pathsFromIssueBody('Make no repository changes.\n'), []);
+  assert.deepEqual(pathsFromIssueBody('This is verify-only, so do not make repository changes here'), [], 'without a scope packet a mid-sentence declaration still counts');
 });
 
 test('workflow label catalog is centralized in the CLI', () => {

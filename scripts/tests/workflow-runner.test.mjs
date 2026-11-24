@@ -248,6 +248,8 @@ test('two simultaneous polls: the second finds the lock and does nothing', t => 
   const result = x.poll();
   assert.equal(result.locked, true);
   assert.equal(x.world.reads, 0);
+  writeFileSync(join(x.logDirectory, 'poll.lock'), '');
+  assert.equal(x.poll().locked, true, 'a lock its holder has created but not yet filled is held, not taken over');
   writeFileSync(join(x.logDirectory, 'poll.lock'), '999999999');
   assert.equal(x.poll().locked, undefined, 'a lock held by a dead process is taken over');
   assert.equal(existsSync(join(x.logDirectory, 'poll.lock')), false, 'released after the poll');
@@ -264,7 +266,6 @@ test('the poll takes the same first issue as drive --next for the same input', (
   const owned = (number, labels, body = '') => ({ number, labels, body, author: { login: 'owner' } });
   const mixed = [owned(3, []), owned(4, [{ name: 'type:bug' }]), owned(5, [], BASE_RED_MARKER)];
   const asked = [];
-  const t = setup({ issues: mixed });
   const first = nextTargets(mixed).next().value;
   const root = mkdtempSync(join(tmpdir(), 'runner-'));
   mkdirSync(join(root, 'claims'));
@@ -272,7 +273,6 @@ test('the poll takes the same first issue as drive --next for the same input', (
   assert.equal(runnerPoll(lanes, { io, logDirectory: join(root, 'logs'), claims: join(root, 'claims'), cwd: root }).started.length, 1);
   assert.equal(first, 5);
   assert.equal(asked[0], first, 'the runner reads the dependencies of drive --next\'s first pick first');
-  assert.equal(t.world.issues.length, 3);
 });
 
 test('the poll takes an epic, not its slices, and starts nothing while a live session holds the epic or any of its slices', () => {
@@ -287,4 +287,16 @@ test('the poll takes an epic, not its slices, and starts nothing while a live se
     assert.equal(result.started.length, 0, `a live claim on #${held} starts no second session for the epic`);
     assert.equal(t.world.started.length, 0);
   }
+});
+
+test('the poll reads an epic\'s sub-issues once, however often ranking and the claim check ask', () => {
+  const asked = [];
+  const epic = { number: 5, labels: [{ name: 'type:epic' }], body: '', author: { login: 'owner' } };
+  const slice = { number: 6, labels: [], body: '', author: { login: 'owner' } };
+  const t = setup({ issues: [epic, slice], subs: { 5: [6] } });
+  const poll = t.poll;
+  const original = t.world.subs;
+  t.world.subs = new Proxy(original, { get: (target, key) => { asked.push(key); return target[key]; } });
+  poll();
+  assert.equal(asked.filter(key => key === '5').length, 1);
 });

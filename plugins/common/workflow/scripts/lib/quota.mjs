@@ -17,7 +17,7 @@ export const quotaDefaults = {
 };
 const shareFromEnv = () => { const value = Number(process.env.WORKFLOW_GRAPHQL_SHARE); return value > 0 && value <= 1 ? value : quotaDefaults.share; };
 export const budgetFile = () => process.env.WORKFLOW_QUOTA_DIR ? join(process.env.WORKFLOW_QUOTA_DIR, 'graphql-budget.json') : join(homedir(), '.config', 'gh-agents', 'graphql-budget.json');
-const tokenKey = () => createHash('sha256').update(process.env.GH_TOKEN || process.env.GITHUB_TOKEN || 'ambient').digest('hex').slice(0, 16);
+export const tokenKey = (env = process.env) => createHash('sha256').update(env.GH_TOKEN || env.GITHUB_TOKEN || 'ambient').digest('hex').slice(0, 16);
 
 function readJson(path) { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return {}; } }
 function writeJson(path, value) {
@@ -81,8 +81,8 @@ export function plan(budget, { now, critical = false, share = shareFromEnv() } =
   return { sleepMs: 0 };
 }
 
-function probe() {
-  const result = spawnSync('gh', ['api', 'rate_limit', '--jq', '.resources.graphql'], { encoding: 'utf8', timeout: 15_000 });
+function probe(env = process.env) {
+  const result = spawnSync('gh', ['api', 'rate_limit', '--jq', '.resources.graphql'], { encoding: 'utf8', timeout: 15_000, env });
   if (result.error || result.status !== 0) return null;
   try {
     const value = JSON.parse(result.stdout);
@@ -91,10 +91,10 @@ function probe() {
 }
 
 // Called before every GraphQL call. `sleep` blocks; `fetchLimit` returns GitHub's current quota or null.
-export function gate(args, { now = Date.now, sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms), fetchLimit = probe, file = budgetFile(), key = tokenKey(), share, waitWhenExhausted = false, report = message => console.error(message) } = {}) {
+export function gate(args, { now = Date.now, sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms), env = process.env, fetchLimit = probe, file = budgetFile(), key = tokenKey(env), share, waitWhenExhausted = false, report = message => console.error(message) } = {}) {
   let budget = readBudget(file, key);
   if (!budget || now() - (budget.probedAt || 0) >= quotaDefaults.probeEveryMs || Date.parse(budget.resetAt) <= now()) {
-    const fresh = fetchLimit();
+    const fresh = fetchLimit(env);
     budget = fresh ? { ...fresh, probedAt: now(), reportedFor: budget?.reportedFor } : { ...(budget || {}), probedAt: now() };
     writeBudget(budget, file, key);
   }
@@ -104,7 +104,7 @@ export function gate(args, { now = Date.now, sleep = ms => Atomics.wait(new Int3
       if (budget.reportedFor !== budget.resetAt) { report(`workflow: GitHub GraphQL quota used up to its ${Math.round((share ?? shareFromEnv()) * 100)}% share (${budget.remaining}/${budget.limit} left); resets at ${budget.resetAt}`); budget = { ...budget, reportedFor: budget.resetAt }; writeBudget(budget, file, key); }
       if (!waitWhenExhausted) throw new Error(`GitHub GraphQL quota is used up until ${budget.resetAt}; wait or poll after the reset`);
       sleep(Math.max(1000, Math.min(decision.until - now(), 60_000)));
-      const fresh = fetchLimit();
+      const fresh = fetchLimit(env);
       if (fresh) { budget = { ...fresh, probedAt: now(), reportedFor: budget.reportedFor }; writeBudget(budget, file, key); }
       else if (decision.until <= now()) budget = { ...budget, remaining: budget.limit, resetAt: new Date(now() + 3_600_000).toISOString() };
       continue;
@@ -123,7 +123,7 @@ export const backoffFile = () => budgetFile().replace(/graphql-budget\.json$/, '
 export const readBackoff = (file = backoffFile(), key = tokenKey()) => readJson(file)[key] || null;
 export function parseSecondaryLimit(text, now = Date.now()) {
   const body = String(text || '');
-  if (!/secondary rate limit|abuse detection|rate limit already exceeded|HTTP 429|HTTP 403[^\n]*rate limit|retry-after/i.test(body)) return null;
+  if (!/secondary rate limit|abuse detection|rate limit already exceeded|HTTP 429|retry-after/i.test(body)) return null;
   const retryAfter = body.match(/retry-after:?\s*(\d+)/i);
   const reset = body.match(/x-ratelimit-reset:?\s*(\d+)/i);
   const asked = retryAfter ? Number(retryAfter[1]) * 1000 : reset ? Number(reset[1]) * 1000 - now : secondaryDefaults.defaultDelayMs;

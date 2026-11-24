@@ -18,7 +18,7 @@ import { prState } from './state.mjs';
 import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
 import { architectureNote, exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
-import { collectOrchestrator, collectSession } from './session-log.mjs';
+import { collectOrchestrator, collectSession, sessionUsage } from './session-log.mjs';
 import { pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
 import { approveReady, previousReviewedHead } from './vcs.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
@@ -63,6 +63,8 @@ const advisoryAgy = 'AGY is advisory only; it may take the devops risk second op
 const deliveryRoles = ['reviewer', 'implementer', 'freshImplementer'];
 function validateDelivery(delivery) {
   if (delivery == null) return;
+  const rates = delivery.rates;
+  if (rates != null && (typeof rates !== 'object' || Array.isArray(rates) || Object.values(rates).some(rate => !Array.isArray(rate) || rate.length !== 4 || rate.some(price => !Number.isFinite(price) || price < 0)))) throw new Error('Configure delivery.rates as model fragment to [input, output, cache read, cache write] USD per million tokens');
   for (const role of deliveryRoles) {
     const configured = delivery.roles?.[role];
     if ((Array.isArray(configured) ? configured : [configured]).some(choice => choice?.host === 'agy')) throw new Error(`delivery.roles.${role} cannot use host "agy": ${advisoryAgy}`);
@@ -143,6 +145,24 @@ function assessmentStep(facts) {
   return agent('devops', 'risk', { task: 'risk', reason });
 }
 
+// `src/{a,b}.mjs` as `src/a.mjs src/b.mjs`: a hand-back path in brace shorthand, nested braces included.
+export function expandBraces(path) {
+  const open = path.indexOf('{');
+  if (open < 0) return [path];
+  let depth = 0, close = -1; const cuts = [];
+  for (let i = open; i < path.length; i++) {
+    if (path[i] === '{') depth++;
+    else if (path[i] === '}' && --depth === 0) { close = i; break; }
+    else if (path[i] === ',' && depth === 1) cuts.push(i);
+  }
+  if (close < 0 || !cuts.length) return [path];
+  const bounds = [open, ...cuts, close];
+  const parts = bounds.slice(1).map((end, i) => path.slice(bounds[i] + 1, end));
+  return parts.flatMap(part => expandBraces(`${path.slice(0, open)}${part}${path.slice(close + 1)}`));
+}
+// Split on whitespace and commas outside braces, so a comma inside `{a,b}` stays part of its path.
+const handBackPaths = text => text.match(/(?:[^\s,{]|\{[^}]*\})+/g)?.flatMap(expandBraces) ?? [];
+
 // A hand-back is at most 6 `key: value` lines; a bare first word is the status.
 export function parseHandBack(text) {
   const all = String(text || '').split('\n').map(line => line.trim()).filter(Boolean);
@@ -157,7 +177,7 @@ export function parseHandBack(text) {
   });
   if (usage) result.usage = usage.replace(/^usage:\s*/i, '');
   if (result.status) result.status = result.status.toLowerCase();
-  if (result.paths) result.paths = result.paths.split(/[\s,]+/).filter(Boolean);
+  if (result.paths) result.paths = handBackPaths(result.paths);
   return result;
 }
 
@@ -410,7 +430,7 @@ export function holdBaseUpdates(entries) {
 // Evidence a reviewer cannot open: a path on the implementer's machine stands in for a link.
 const localPathPattern = /(?<![\w:/.~-])(?:file:\/\/[^\s)>\]`'"]+|~\/[^\s)>\]`'"]+|\/(?:Users|home|tmp|private|var|Volumes|mnt|root|opt)\/[^\s)>\]`'"]+|[A-Za-z]:\\[^\s)>\]`'"]+)/g;
 export const localEvidencePaths = text => [...new Set([...String(text || '').matchAll(localPathPattern)].map(match => match[0].replace(/[.,;:]+$/, '')))];
-const evidenceWords = /\b(captures?|screenshots?|screen recordings?|recordings?|timings?|times|flow assessment|before and after|evidence)\b/i;
+const evidenceWords = /\b(captures?|screenshots?|screen recordings?|recordings?|timings?|flow assessment|before and after|evidence)\b/i;
 // The issue's acceptance bullets, split into those naming evidence (artifacts the PR body must carry) and code criteria.
 function acceptanceCriteria(body) {
   const lines = String(body || '').split('\n');
@@ -881,11 +901,12 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       }
     },
     recordUsage: (pr, hb, where = {}) => {
-      const parsed = parseUsageLine(hb.usage);
       const role = handBackRole(hb);
       // The session drive issued for this role, read back from beside its brief; the row and the log comment share its key.
       let sessionId = null;
       try { sessionId = readFileSync(join(workflowScratch(where.tree?.path), `drive-${where.issue ?? pr.number}-${role}.session`), 'utf8').trim() || null; } catch { /* no session issued */ }
+      // The host returns a subagent's answer without usage: complete the row from its transcript, priced by delivery.rates.
+      const parsed = sessionUsage(parseUsageLine(hb.usage), sessionId, { rates: lanes.delivery?.rates });
       const key = sessionId ? `session-${sessionId}` : createHash('sha1').update([pr.number, pr.headRefOid, role, hb.status, hb.usage, hb.note, hb.commit].join('\0')).digest('hex').slice(0, 12);
       recordUsage({ repo, pr: pr.number, author: lanes.implementer, entry: usageEntry({ role, host: parsed?.host, model: parsed?.model, effort: parsed?.effort, plugin: parsed?.plugin, usage: parsed?.usage, key }) }, { gh });
       if (sessionId) collectSession({ repo, pr: pr.number, author: lanes.implementer, session: { id: sessionId, role, status: hb.status || hb.risk, usage: hb.usage } });
@@ -1088,6 +1109,12 @@ export function blockCause(note = '') {
 }
 function driveIssueSteps(io, n, lanes, handBack, state) {
   let bodyUpdated = false;
+  // A failure never blocks a step.
+  const recordOnOpenPr = facts => {
+    if (state.recorded || !(handBack.status || handBack.risk || handBack.usage) || facts.pr?.state !== 'OPEN') return;
+    state.recorded = true;
+    try { io.recordUsage?.(facts.pr, handBack, { issue: n, tree: facts.tree }); } catch { /* usage is optional */ }
+  };
   // A conflict-resolver that failed the gate (or blocked) hands the merge in progress to the implementer.
   const resolverFailed = handBack.agent === 'conflict-resolver' && (handBack.status !== 'done' || handBack.check === 'fail');
   for (let i = 0; i < 12; i++) {
@@ -1097,14 +1124,10 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     if (i === 0 && handBack.status === 'blocked' && facts.tree && io.read && io.write) {
       const causeFile = join(io.scratch(facts.tree), `drive-${n}-cause`);
       const cause = blockCause(handBack.note);
-      if (io.read(causeFile) === cause) return { blocked: { issue: n, reason: `${handBack.agent || 'the implementer'} handed back the same blocking cause twice: ${String(handBack.note || cause).replace(/\s+/g, ' ').slice(0, 200)}` } };
+      if (io.read(causeFile) === cause) { recordOnOpenPr(facts); return { blocked: { issue: n, reason: `${handBack.agent || 'the implementer'} handed back the same blocking cause twice: ${String(handBack.note || cause).replace(/\s+/g, ' ').slice(0, 200)}` } }; }
       io.write(causeFile, cause);
     }
-    // A failure never blocks a step.
-    if (!state.recorded && (handBack.status || handBack.risk || handBack.usage) && facts.pr?.state === 'OPEN') {
-      state.recorded = true;
-      try { io.recordUsage?.(facts.pr, handBack, { issue: n, tree: facts.tree }); } catch { /* usage is optional */ }
-    }
+    recordOnOpenPr(facts);
     if (!bodyUpdated && handBack.status === 'done' && (handBack.note || handBack.body) && facts.pr?.state === 'OPEN' && facts.tree && !facts.tree.dirty && !facts.tree.unpushed) {
       io.updateBody(facts.pr, facts.tree, handBack);
       bodyUpdated = true;
@@ -1385,7 +1408,7 @@ export const ownerApproved = (timeline, owner, editedAt = null) => {
 export function* nextTargets(issues, depsOf = () => ({ blockers: [], dropped: [] }), trusted, approved = () => false, ownerWaiting = () => false, childrenOf = () => []) {
   const names = issue => issue.labels.map(label => label.name ?? label);
   const isBaseRed = issue => (issue.body || '').includes(BASE_RED_MARKER);
-  const candidates = issues.filter(issue => (!untrustedAuthor(issue, trusted) || approved(issue)) && !names(issue).includes('lane:owner') && !(issue.body || '').includes(INBOX_MARKER));
+  const candidates = issues.filter(issue => !names(issue).includes('lane:owner') && !(issue.body || '').includes(INBOX_MARKER) && (!untrustedAuthor(issue, trusted) || approved(issue)));
   // An issue whose owner step is already posted (listed on the Owner inbox) waits behind every issue that needs no owner.
   const rank = issue => ownerWaiting(issue) ? 4 : [isBaseRed(issue), names(issue).includes('state:started'), names(issue).includes('type:bug'), true].indexOf(true);
   const byNumber = new Map(issues.map(issue => [issue.number, issue]));
@@ -1583,6 +1606,14 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   if (notice) console.error(notice);
   if ((result.done && (!result.continue || (result.done.issue === n && result.epic !== n))) || result.owner || result.blocked) {
     lock.release();
+    // A slice that ends on an owner or blocked step takes the epic claim this session holds with it.
+    if (result.owner || result.blocked) {
+      try {
+        const epic = io.parentEpic?.(n) ?? null;
+        const epicLock = epic ? acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${epic}`, session, now }) : null;
+        if (epicLock?.acquired) epicLock.release();
+      } catch { /* a failed parent read leaves the claim to expire */ }
+    }
     try { io.orchestratorLog?.(n, Object.keys(result).find(key => ['done', 'owner', 'blocked'].includes(key))); } catch { /* a session log never blocks delivery */ }
   }
   console.log(JSON.stringify(withConfigCommit(result, lanes)));
