@@ -22,5 +22,5 @@ test('a write against a stale version is refused', async () => {
   await receiveStockUseCase(stock, 's1', 5);
   const loaded = await stock.find(sku('s1'));
   await receiveStockUseCase(stock, 's1', 1);
-  assert.equal(await stock.save(receiveStock(loaded, sku('s1'), quantity(1)).item, loaded?.version), false);
+  assert.deepEqual(await stock.save(receiveStock(loaded, sku('s1'), quantity(1)).item, loaded?.version), { type: 'Refused' });
 });

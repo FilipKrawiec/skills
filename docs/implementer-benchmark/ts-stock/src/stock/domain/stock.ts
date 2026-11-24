@@ -23,8 +23,11 @@ export function receiveStock(item: StockItem | undefined, id: Sku, received: Qua
   return { item: { ...base, onHand: quantity(base.onHand + received) }, event: { type: 'StockReceived', sku: id, quantity: received } };
 }
 
+// Saved: the item was stored. Refused: the stored version is no longer the one the caller loaded; another write got there first.
+export type SaveOutcome = { readonly type: 'Saved' } | { readonly type: 'Refused' };
+
 export interface Stock {
   find(id: Sku): Promise<StockItem | undefined>;
-  // Stores the item only when the stored version is still the one the caller loaded; false means another write got there first.
-  save(item: StockItem, loaded: Version | undefined): Promise<boolean>;
+  // Stores the item only when the stored version is still the one the caller loaded.
+  save(item: StockItem, loaded: Version | undefined): Promise<SaveOutcome>;
 }

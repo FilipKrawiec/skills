@@ -1,4 +1,4 @@
-import { nextVersion, firstVersion, type Sku, type Stock, type StockItem, type Version } from '../domain/stock.ts';
+import { nextVersion, firstVersion, type SaveOutcome, type Sku, type Stock, type StockItem, type Version } from '../domain/stock.ts';
 
 export class MemoryStock implements Stock {
   private readonly rows = new Map<string, StockItem>();
@@ -7,10 +7,10 @@ export class MemoryStock implements Stock {
     return this.rows.get(id);
   }
 
-  async save(item: StockItem, loaded: Version | undefined): Promise<boolean> {
+  async save(item: StockItem, loaded: Version | undefined): Promise<SaveOutcome> {
     const stored = this.rows.get(item.sku);
-    if (stored?.version !== loaded) return false;
+    if (stored?.version !== loaded) return { type: 'Refused' };
     this.rows.set(item.sku, { ...item, version: stored ? nextVersion(stored.version) : firstVersion });
-    return true;
+    return { type: 'Saved' };
   }
 }

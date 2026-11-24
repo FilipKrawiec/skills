@@ -7,7 +7,7 @@
   },
   "spendCap": 10,
   "baseline": "origin/main",
-  "totalCost": 1.039929,
+  "totalCost": 1.020724,
   "arms": [
     {
       "arm": "current",
@@ -24,7 +24,7 @@
           },
           "violations": {},
           "passed": true,
-          "cost": 0.24166230000000005
+          "cost": 0.14961559999999996
         },
         {
           "task": "ts-orders-cancel",
@@ -37,29 +37,25 @@
           },
           "violations": {},
           "passed": true,
-          "cost": 0.1471918
+          "cost": 0.17824849999999998
         },
         {
           "task": "ts-stock-reserve",
           "language": "typescript",
           "checks": {
             "layers": true,
-            "primitives": false,
+            "primitives": true,
             "red": true,
             "gate": true
           },
-          "violations": {
-            "primitives": [
-              "src/stock/domain/stock.ts: save uses Promise<boolean>"
-            ]
-          },
-          "passed": false,
-          "cost": 0.1671435
+          "violations": {},
+          "passed": true,
+          "cost": 0.17552790000000001
         }
       ],
       "summary": {
         "tasks": 3,
-        "tasksPassed": 2,
+        "tasksPassed": 3,
         "checks": {
           "layers": {
             "passed": 3,
@@ -67,9 +63,9 @@
             "rate": 1
           },
           "primitives": {
-            "passed": 2,
+            "passed": 3,
             "total": 3,
-            "rate": 0.666667
+            "rate": 1
           },
           "red": {
             "passed": 3,
@@ -83,13 +79,13 @@
           }
         },
         "overall": {
-          "passed": 11,
+          "passed": 12,
           "total": 12,
-          "rate": 0.916667
+          "rate": 1
         },
         "cost": {
-          "total": 0.555998,
-          "perTask": 0.185333,
+          "total": 0.503392,
+          "perTask": 0.167797,
           "reported": 3,
           "unreported": 0
         }
@@ -110,7 +106,7 @@
           },
           "violations": {},
           "passed": true,
-          "cost": 0.14832120000000001
+          "cost": 0.1713802
         },
         {
           "task": "ts-orders-cancel",
@@ -123,29 +119,25 @@
           },
           "violations": {},
           "passed": true,
-          "cost": 0.1731418
+          "cost": 0.1556846
         },
         {
           "task": "ts-stock-reserve",
           "language": "typescript",
           "checks": {
             "layers": true,
-            "primitives": false,
+            "primitives": true,
             "red": true,
             "gate": true
           },
-          "violations": {
-            "primitives": [
-              "src/stock/domain/stock.ts: save uses Promise<boolean>"
-            ]
-          },
-          "passed": false,
-          "cost": 0.1624685
+          "violations": {},
+          "passed": true,
+          "cost": 0.19026710000000002
         }
       ],
       "summary": {
         "tasks": 3,
-        "tasksPassed": 2,
+        "tasksPassed": 3,
         "checks": {
           "layers": {
             "passed": 3,
@@ -153,9 +145,9 @@
             "rate": 1
           },
           "primitives": {
-            "passed": 2,
+            "passed": 3,
             "total": 3,
-            "rate": 0.666667
+            "rate": 1
           },
           "red": {
             "passed": 3,
@@ -169,13 +161,13 @@
           }
         },
         "overall": {
-          "passed": 11,
+          "passed": 12,
           "total": 12,
-          "rate": 0.916667
+          "rate": 1
         },
         "cost": {
-          "total": 0.483932,
-          "perTask": 0.161311,
+          "total": 0.517332,
+          "perTask": 0.172444,
           "reported": 3,
           "unreported": 0
         }

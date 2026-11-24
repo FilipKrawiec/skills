@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { benchCommand, checkGate, checkLayerImports, checkRawPrimitives, checkRedRun, compareResults, parseSettings, parseVerdict, renderResults, scoreEntry, summarize, summarizeByRisk, validateImplementerSnapshot, validateSnapshot } from '../../plugins/common/workflow/scripts/lib/bench.mjs';
 
@@ -296,6 +296,16 @@ test('the committed implementer snapshot validates', () => {
   const committed = JSON.parse(readFileSync(fileURLToPath(new URL('../../docs/implementer-benchmark.json', import.meta.url)), 'utf8'));
   assert.deepEqual(validateImplementerSnapshot(committed), []);
   assert.ok(committed.tasks.length >= 3);
+});
+test('each committed fixture starts clean on the static checks, so a failure measures the skills, not the fixture', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const committed = JSON.parse(readFileSync(join(root, 'docs/implementer-benchmark.json'), 'utf8'));
+  for (const task of committed.tasks) {
+    const dir = join(root, task.fixture);
+    const files = new Map(readdirSync(dir, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile()).map(entry => { const path = join(entry.parentPath, entry.name); return [relative(dir, path), readFileSync(path, 'utf8')]; }));
+    assert.deepEqual(checkLayerImports(files, task.language), { pass: true, violations: [] }, task.id);
+    assert.deepEqual(checkRawPrimitives(files, task.language), { pass: true, violations: [] }, task.id);
+  }
 });
 test('without --run the implementer bench validates its snapshot and lists what it would run, spending nothing', async () => {
   await withImplementerSnapshot([implementerTask], async (dir, file) => {
