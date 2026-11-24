@@ -73,7 +73,10 @@ function validateDelivery(delivery) {
 // Missing configuration retains the existing Claude delivery behavior for migration.
 export function deliveryAssignment(delivery, step, risk, round = 0) {
   const { effort } = sessionFor(step.agent, risk, { round, fresh: Boolean(step.fresh) });
-  if (delivery == null) return { host: 'claude', model: modelForStep(step, risk, round), effort, session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
+  // A block that only prices usage (`rates`) configures no orchestrator or roles: keep the Claude defaults.
+  const pricingOnly = delivery && typeof delivery === 'object' && delivery.orchestrator == null && delivery.roles == null && delivery.executables == null;
+  if (pricingOnly) validateDelivery(delivery);
+  if (delivery == null || pricingOnly) return { host: 'claude', model: modelForStep(step, risk, round), effort, session: step.agent === 'reviewer' ? 'separate' : 'subagent' };
   if (!delivery || typeof delivery !== 'object' || !['codex', 'claude'].includes(delivery.orchestrator)) throw new Error('Unsupported delivery orchestrator; configure codex or claude after verifying host capabilities');
   if (delivery.executables != null && (typeof delivery.executables !== 'object' || Array.isArray(delivery.executables) || Object.entries(delivery.executables).some(([host, path]) => !['codex', 'claude', 'agy'].includes(host) || typeof path !== 'string' || !path.trim()))) throw new Error('Configure delivery.executables as host-to-executable paths');
   validateDelivery(delivery);

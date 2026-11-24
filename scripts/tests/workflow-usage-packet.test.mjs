@@ -1,13 +1,13 @@
 import './support/host-stubs.mjs';
 import test from 'node:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { commandEffort, commandModel, findUsageComment, parseUsage, transcriptUsage, transcriptUsageLine, parseUsageComment, parseUsageLine, recordUsage, usageComment, usageCost, usageEntry, usageHost, usageSummary, usageTotals, visibleResult } from '../../plugins/common/workflow/scripts/lib/usage.mjs';
 import { architectureNote, exportedSymbols, issueCriteria, reviewPacket } from '../../plugins/common/workflow/scripts/lib/packet.mjs';
-import { drive, githubIo, handBackRole, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { deliveryAssignment, drive, githubIo, handBackRole, parseHandBack, reviewerBrief, reviewerCommand } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { statusCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 import { sessionUsage } from '../../plugins/common/workflow/scripts/lib/session-log.mjs';
 
@@ -346,4 +346,35 @@ test('a hand-back without a usage line takes tokens and a configured-rate cost f
   assert.equal(sessionUsage(parseUsageLine('usage: in=1 out=2 cost=0.5 model=sonnet'), id, { store, rates }).usage.cost, 0.5, 'a stated cost wins');
   assert.equal(sessionUsage(null, id, { store: { files: () => [], read: () => '' }, rates }), null, 'no transcript leaves the row unreported');
   assert.equal(sessionUsage(null, null, { store, rates }), null);
+});
+
+const projectRates = JSON.parse(readFileSync(new URL('../../.agents/config.json', import.meta.url), 'utf8')).delivery?.rates;
+const ratedStore = (id, model) => ({ files: () => [`/logs/agent-${id}.jsonl`], read: () => [turn('m1', { input_tokens: 1000000, output_tokens: 1000000, cache_read_input_tokens: 1000000, cache_creation_input_tokens: 1000000 }, model), JSON.stringify({ type: 'user', message: { content: `Session: ${id}` } })].join('\n') });
+test('delivery.rates in .agents/config.json prices an implementer or devops row from its transcript', () => {
+  const id = '22222222-3333-4444-5555-666666666666';
+  assert.deepEqual(projectRates['claude-sonnet-5-5'], [2, 10, 0.1, 2.5], 'published Sonnet 5.5 prices: input, output, cache read, cache write');
+  const priced = sessionUsage(parseUsageLine(''), id, { store: ratedStore(id, 'claude-sonnet-5-5'), rates: projectRates });
+  assert.equal(priced.usage.cost, 2 + 10 + 0.1 + 2.5);
+  assert.equal(priced.usage.input, 1000000);
+});
+test('a model without a configured rate keeps its tokens and reads unreported cost', () => {
+  const id = '33333333-4444-5555-6666-777777777777';
+  const row = sessionUsage(parseUsageLine(''), id, { store: ratedStore(id, 'claude-haiku-5-5'), rates: projectRates });
+  assert.equal(row.usage.cost, null);
+  assert.equal(row.usage.input, 1000000);
+});
+test('usage.md says rates come from delivery.rates and only from published prices', () => {
+  const text = readFileSync(new URL('../../plugins/common/workflow/skills/deliver/references/usage.md', import.meta.url), 'utf8');
+  assert.match(text, /delivery\.rates/);
+  assert.match(text, /only from[^.]*published prices/i);
+});
+
+test('the real .agents/config.json delivery block resolves the same assignments as no delivery block', () => {
+  const delivery = JSON.parse(readFileSync(new URL('../../.agents/config.json', import.meta.url), 'utf8')).delivery;
+  for (const agent of ['implementer', 'reviewer', 'devops', 'conflict-resolver']) {
+    for (const risk of ['R0', 'R1', 'R2']) {
+      assert.deepEqual(deliveryAssignment(delivery, { agent }, risk), deliveryAssignment(null, { agent }, risk), `${agent} ${risk}`);
+    }
+  }
+  assert.deepEqual(deliveryAssignment(delivery, { agent: 'implementer', fresh: true }, 'R1', 3), deliveryAssignment(null, { agent: 'implementer', fresh: true }, 'R1', 3));
 });
