@@ -14,12 +14,12 @@ export const runnerDefaults = {
   quotaBelow: 0.2,         // back off when GraphQL remaining is under this fraction of the limit (#700)
   hangMs: 30 * 60_000,     // a live session whose claim shows no drive progress for this long is terminated
 };
-export const runnerLogDirectory = repo => join(homedir(), 'Library', 'Logs', 'workflow-runner', repo.replace(/[^A-Za-z0-9._-]+/g, '-'));
-export const claimDirectory = () => join(homedir(), '.cache', 'workflow-cli', 'drive-runs');
+const runnerLogDirectory = repo => join(homedir(), 'Library', 'Logs', 'workflow-runner', repo.replace(/[^A-Za-z0-9._-]+/g, '-'));
+const claimDirectory = () => join(homedir(), '.cache', 'workflow-cli', 'drive-runs');
 
 const sanitized = repo => repo.replace(/[^A-Za-z0-9._-]/g, '_');
 // Every claim file this repository holds (issue claims and the --next claim), parsed, with the issue it names.
-export function readClaims(directory, repo) {
+function readClaims(directory, repo) {
   const prefix = `${sanitized(repo)}-`;
   let files = [];
   try { files = readdirSync(directory); } catch { /* no claims yet */ }
@@ -121,7 +121,7 @@ function pollLocked(lanes, { io, logDirectory, claims, cwd, options }) {
   for (const number of nextTargets(open, issue => splitDependencies(io.dependencies(issue)), trustedLogins(lanes), issue => io.ownerApproved?.(issue) ?? false, issue => io.ownerWaiting?.(issue) ?? false, childrenOf)) {
     if (!taken.has(String(number)) && !(isEpic(number) && childrenOf(number).some(child => taken.has(String(child))))) { ready.push(number); break; }
   }
-  for (const index of ready.keys()) {
+  if (ready.length) {
     // One UUID is both Claude's `--session-id` (naming its transcript) and WORKFLOW_DRIVE_SESSION, so drive can find that transcript.
     const session = io.start({ id: randomUUID(), cwd, logDirectory, now: at });
     result.started.push(session.id);
@@ -147,7 +147,7 @@ export function runnerStatus(lanes, { logDirectory = runnerLogDirectory(lanes.re
 const toolingUrl = 'https://github.com/FilipKrawiec/skills.git';
 const xml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const jobLabel = repo => `com.filipkrawiec.workflow-runner.${repo.replace(/[^A-Za-z0-9._-]+/g, '-')}`;
-export const startInterval = 120;
+const startInterval = 120;
 const realLaunchd = () => ({
   home: homedir(), uid: process.getuid(), nodePath: process.execPath, repoRoot: git('rev-parse', '--show-toplevel'),
   launchctl: args => ({ status: spawnSync('launchctl', args, { encoding: 'utf8' }).status ?? 1 }),
@@ -159,7 +159,7 @@ function jobPaths(lanes, io) {
   const checkout = join(io.home, '.cache', 'workflow-cli', 'skills');
   return { label, logs, checkout, plist: join(io.home, 'Library', 'LaunchAgents', `${label}.plist`), target: `gui/${io.uid}` };
 }
-export function jobPlist(lanes, io) {
+function jobPlist(lanes, io) {
   const { label, logs, checkout } = jobPaths(lanes, io);
   const script = `cd ${JSON.stringify(checkout)} && { git fetch --quiet origin && git merge --ff-only --quiet origin/HEAD; } || echo "tooling update failed; polling on the current checkout" >&2; cd ${JSON.stringify(io.repoRoot)} && exec ${JSON.stringify(io.nodePath)} ${JSON.stringify(join(checkout, 'plugins', 'common', 'workflow', 'scripts', 'workflow.mjs'))} runner poll`;
   const path = [dirname(io.nodePath), join(io.home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'].join(':');
