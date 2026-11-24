@@ -22,12 +22,12 @@ Waiting: #14 on the payment sandbox; next: #15.
 
 ## Craft
 
-- With the owner: draft the body first. Then settle each open question, giving two to four options and a recommendation, and record each answer under Decisions. When no question is left, the owner's last answer approves the epic: remove `lane:owner`, slice it, set Backlog to In progress.
-- Without the owner: when an outcome needs several PRs and no open epic authorizes it, create the epic with `lane:owner`, at least one open question and the recommendation, in Backlog; `drive` reports it as an owner step. Never slice a draft. Work that fits an existing epic's intent becomes a slice under that epic.
+- With the owner: draft the body first. Then settle each open question one at a time, giving two to four options and a recommendation, and record each answer under Decisions while the next question waits. When no question is left, the owner's last answer approves the epic: remove `lane:owner`, slice it, and set Backlog to In progress.
+- Without the owner: when an outcome needs several PRs and no open epic authorizes it, create the epic with `lane:owner`, at least one open question and the recommendation, in Backlog; `drive` reports it as an owner step. Never slice a draft. Work that fits an existing epic's intent becomes a slice under that epic instead.
 
 ## Slice
 
-`drive <epic>` hands an approved epic with no sub-issues to the `planner` agent to slice; no slice needs the owner's agreement. Create one sub-issue per logical change, never per layer (`issue create --parent <epic> --milestone <name> --blocked-by N,M`; `issue edit` takes the same options; never raw `gh`), each with a type, the epic's milestone, criteria, a scope packet and `lane:owner` only where the owner takes part. Invoke `plan` to create the final refinement slice and its native blockers. Each slice's criteria carry the epic's and linked issues' owner decisions and decision records bearing on its scope paths, or name the slice delivering them; together they cover every epic criterion; leave the card In progress. When the body leaves a reserved question open, put `lane:owner` back on the epic and comment it.
+`drive <epic>` hands an approved epic with no sub-issues to the `planner` agent to slice; no slice needs the owner's agreement. Create one sub-issue per logical change, never per layer (`issue create --parent <epic> --milestone <name> --blocked-by N,M`), each with a type, its milestone, criteria, a scope packet and `lane:owner` only where the owner takes part. Invoke `plan` to create the final refinement slice and its native blockers. Each slice's criteria carry the epic's and linked issues' owner decisions and decision records bearing on its scope paths, or name the slice delivering them; together they cover every epic criterion; leave the card In progress. When the body leaves a reserved question open, put `lane:owner` back on the epic and comment it.
 
 ## Update
 
