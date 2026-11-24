@@ -1562,11 +1562,11 @@ export function baseWorkflowVersion(base, read = ref => git('show', ref)) {
   return null;
 }
 // A blocked step when the running CLI is older than the default branch drive reads config from: it never dispatches on stale code.
-export function staleCliStep(running, baseVersion, base, installed = installedPlugins()) {
+export function staleCliStep(running, baseVersion, base, installed = installedPlugins(), args = []) {
   if (!isOlder(running, baseVersion)) return null;
   const key = installed[0]?.key ?? 'filipkrawiec-workflow@filipkrawiec';
   const update = `claude plugin update ${key} --scope ${installed[0]?.scope ?? 'user'}; or, in a checkout of the library, git pull --ff-only origin ${base}`;
-  return { blocked: { reason: `this CLI is ${running}, older than ${baseVersion} on origin/${base}, which drive reads its config from; update it and run drive again. Run: ${update}` } };
+  return { blocked: { reason: `this CLI is ${running}, older than ${baseVersion} on origin/${base}, which drive reads its config from; update it and run drive again${args.includes('--hand-back') ? ' with the same arguments (keep `--hand-back`)' : ''}. Run: ${update}` } };
 }
 export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory = join(homedir(), '.cache', 'workflow-cli', 'drive-runs'), session = driveSessionId(), now = Date.now(), notice = versionNotice(pluginVersion()), stale = null } = {}) {
   const usage = 'Usage: drive NUMBER [--hand-back FILE|-] | drive --next';

@@ -2696,6 +2696,13 @@ test('drive blocks with the exact update command when the CLI is older than the 
   assert.equal(said.configCommit, 'abc123');
 });
 
+test('the stale-CLI block tells a hand-back run to keep its --hand-back argument', () => {
+  const installed = [{ key: 'filipkrawiec-workflow@filipkrawiec', scope: 'user' }];
+  const withHandBack = staleCliStep('11.110.0', '11.117.0', 'main', installed, ['769', '--hand-back', 'f.txt']);
+  assert.match(withHandBack.blocked.reason, /run drive again with the same arguments \(keep `--hand-back`\)/);
+  assert.doesNotMatch(staleCliStep('11.110.0', '11.117.0', 'main', installed, ['769']).blocked.reason, /--hand-back/);
+});
+
 test('drive proceeds when the CLI matches or leads the fetched default branch, or the branch ships no plugin', () => {
   assert.equal(staleCliStep('11.117.0', '11.117.0', 'main'), null);
   assert.equal(staleCliStep('11.118.0', '11.117.0', 'main'), null);

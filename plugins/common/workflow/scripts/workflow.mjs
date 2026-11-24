@@ -197,7 +197,7 @@ async function execute(command, args) {
   else if (command === 'wait') { const { lanes } = config(); process.exitCode = args[0] === 'slot' ? waitSlotCommand(args.slice(1), lanes) : waitCommand(args, lanes); }
   else if (command === 'next') { const { lanes } = config(); nextCommand(args, lanes); }
   else if (command === 'responsibility') { if (args.length !== 2) throw new Error('Usage: responsibility NAME BRIEF'); const { lanes } = config(); process.stdout.write(runResponsibility(lanes.delivery, args[0], args[1])); }
-  else if (command === 'drive') { const { lanes } = fetchedConfig(); driveCommand(args, lanes, undefined, { stale: staleCliStep(pluginVersion(), baseWorkflowVersion(lanes.base), lanes.base) }); }
+  else if (command === 'drive') { const { lanes } = fetchedConfig(); driveCommand(args, lanes, undefined, { stale: staleCliStep(pluginVersion(), baseWorkflowVersion(lanes.base), lanes.base, undefined, args) }); }
   else if (command === 'runner') { const { lanes } = fetchedConfig(); runnerCommand(args, lanes); }
   else if (command === 'bench') { const { lanes, root } = config(); const options = {}; for (const key of ['model', 'effort', 'host']) { const at = args.indexOf(`--${key}`); if (at >= 0) options[key] = args[at + 1]; } process.exitCode = await benchCommand(args, args.includes('--implementer') ? implementerIo(lanes, root, options) : reviewerIo(lanes, root, options)); }
   else if (command === 'check') { const { lanes } = config(); process.exitCode = checkCommand(args, lanes); }

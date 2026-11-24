@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { benchCommand, checkGate, checkLayerImports, checkRawPrimitives, checkRedRun, compareResults, parseSettings, parseVerdict, renderResults, scoreEntry, summarize, summarizeByRisk, validateImplementerSnapshot, validateSnapshot } from '../../plugins/common/workflow/scripts/lib/bench.mjs';
+import { benchCommand, checkGate, checkGuardRemoval, checkLayerImports, checkRawPrimitives, checkRedRun, compareResults, parseSettings, parseVerdict, renderResults, scoreEntry, summarize, summarizeByRisk, validateImplementerSnapshot, validateSnapshot } from '../../plugins/common/workflow/scripts/lib/bench.mjs';
 
 const sha = char => char.repeat(40);
 const defect = { pr: 1, issue: 11, title: 'feat: a', kind: 'defect', risk: 'R1', base: sha('a'), head: sha('b'), defect: { name: 'reverses delta-only rounds', keywords: ['delta', 'whole diff'] } };
@@ -254,6 +255,75 @@ test('red check: the new test must fail on the pre-fix tree', () => {
     assert.deepEqual(checkGate({ dir: scratch, gate: ['x'], run: () => ({ status: 0 }) }), { pass: true, violations: [] });
     assert.equal(checkGate({ dir: scratch, gate: ['x'], run: () => ({ status: 1 }) }).pass, false);
   } finally { rmSync(scratch, { recursive: true, force: true }); }
+});
+
+test('guard check: the run\'s tests must fail once the named guard is removed from the final tree', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'bench-guard-'));
+  try {
+    const guard = { path: 'src/trust.ts', find: "standing === 'Trusted'", replace: 'true' };
+    const final = tree({ 'src/trust.ts': "export const ok = a => a.standing === 'Trusted';", 'test/a.test.ts': 'x' });
+    const run = () => ({ status: 1 });
+    const caught = checkGuardRemoval({ final, guard, gate: ['x'], run: (gate, dir) => ({ status: readFileSync(join(dir, 'src/trust.ts'), 'utf8').includes("'Trusted'") ? 0 : 1 }), scratch });
+    assert.deepEqual(caught, { pass: true, violations: [] });
+    const survived = checkGuardRemoval({ final, guard, gate: ['x'], run: () => ({ status: 0 }), scratch });
+    assert.equal(survived.pass, false);
+    assert.match(survived.violations[0], /passed with the guard removed/);
+    assert.match(checkGuardRemoval({ final: tree({ 'src/trust.ts': 'export const ok = true;' }), guard, gate: ['x'], run, scratch }).violations[0], /guard not found/);
+    assert.match(checkGuardRemoval({ final: tree({}), guard, gate: ['x'], run, scratch }).violations[0], /guard not found/);
+    assert.equal(final.get('src/trust.ts').includes("'Trusted'"), true, 'the final tree itself is untouched');
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
+});
+test('the seeded intake task: the obvious test passes with the trust guard deleted, a rejected-input test does not', () => {
+  const root = fileURLToPath(new URL('../../', import.meta.url));
+  const committed = JSON.parse(readFileSync(join(root, 'docs/implementer-benchmark.json'), 'utf8'));
+  const task = committed.tasks.find(item => item.id === 'ts-intake-accept');
+  const dir = join(root, task.fixture);
+  const start = new Map(readdirSync(dir, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile()).map(entry => { const path = join(entry.parentPath, entry.name); return [relative(dir, path), readFileSync(path, 'utf8')]; }));
+  const useCase = `import { admit, authorId, title, type Authors, type Submissions } from '../domain/intake.ts';
+export async function acceptSubmission(authors: Authors, submissions: Submissions, rawAuthor: string, rawTitle: string) {
+  const author = await authors.find(authorId(rawAuthor));
+  if (!author) return { type: 'UnknownAuthor' } as const;
+  if (admit(author).type === 'Refused') return { type: 'Refused' } as const;
+  await submissions.save({ author: author.id, title: title(rawTitle) });
+  return { type: 'Accepted' } as const;
+}
+`;
+  const head = `import test from 'node:test';
+import assert from 'node:assert/strict';
+import { acceptSubmission } from '../src/intake/app/accept-submission.ts';
+import { authorId } from '../src/intake/domain/intake.ts';
+import { MemoryAuthors, MemorySubmissions } from '../src/intake/infra/memory-intake.ts';
+const trusted = { id: authorId('t'), standing: 'Trusted' } as const;
+const untrusted = { id: authorId('u'), standing: 'Untrusted' } as const;
+test('unknown author', async () => { assert.deepEqual(await acceptSubmission(new MemoryAuthors(), new MemorySubmissions(), 'x', 'T'), { type: 'UnknownAuthor' }); });
+test('a trusted author is accepted and stored', async () => {
+  const submissions = new MemorySubmissions();
+  assert.deepEqual(await acceptSubmission(new MemoryAuthors([trusted]), submissions, 't', 'T'), { type: 'Accepted' });
+  assert.equal((await submissions.all()).length, 1);
+});
+`;
+  const rejected = `test('an untrusted author is refused and nothing is stored', async () => {
+  const submissions = new MemorySubmissions();
+  assert.deepEqual(await acceptSubmission(new MemoryAuthors([untrusted]), submissions, 'u', 'T'), { type: 'Refused' });
+  assert.equal((await submissions.all()).length, 0);
+});
+`;
+  const scratch = mkdtempSync(join(tmpdir(), 'bench-intake-'));
+  const run = (gate, cwd) => spawnSync(gate[0], gate.slice(1), { cwd, stdio: 'ignore', env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'NODE_TEST_CONTEXT')) });
+  try {
+    const solved = body => new Map([...start, ['src/intake/app/accept-submission.ts', useCase], ['test/accept.test.ts', body]]);
+    const naive = solved(head);
+    assert.equal(run(task.gate, (() => { const d = mkdtempSync(join(scratch, 'n-')); for (const [path, content] of naive) { mkdirSync(join(d, path, '..'), { recursive: true }); writeFileSync(join(d, path), content); } return d; })()).status, 0, 'the naive solution passes the gate');
+    assert.match(checkGuardRemoval({ final: naive, guard: task.guard, gate: task.gate, run, scratch }).violations[0], /passed with the guard removed/);
+    assert.deepEqual(checkGuardRemoval({ final: solved(head + rejected), guard: task.guard, gate: task.gate, run, scratch }), { pass: true, violations: [] });
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
+});
+test('a task that grades a guard must name it', async () => {
+  await withImplementerSnapshot([implementerTask], async (dir) => {
+    const guarded = { ...implementerTask, checks: ['red', 'guard'] };
+    assert.match(validateImplementerSnapshot({ version: 1, repo: 'o/r', tasks: [guarded] }, dir).join('\n'), /ts-a: guard must name path, find and replace/);
+    assert.deepEqual(validateImplementerSnapshot({ version: 1, repo: 'o/r', tasks: [{ ...guarded, guard: { path: 'p', find: 'f', replace: 'r' } }] }, dir), []);
+  });
 });
 
 const implementerTask = { id: 'ts-a', language: 'typescript', fixture: 'fixtures/a', issue: { title: 'feat: a', body: 'Do a.' }, gate: ['node', '--test'], checks: ['layers', 'primitives', 'red', 'gate'] };

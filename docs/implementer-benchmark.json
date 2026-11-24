@@ -1,7 +1,7 @@
 {
   "version": 1,
   "repo": "FilipKrawiec/skills",
-  "note": "Seeded implementer tasks replayed by `workflow bench --implementer`. Each fixture is a small project whose AGENTS.md lists ddd and hexagonal-architecture under active_skills; the gate is its argv. Checks are deterministic: layers (no domain import of an app, api or infra path), primitives (no raw string, number or boolean on a public domain signature), red (the new test fails on the starting tree) and gate.",
+  "note": "Seeded implementer tasks replayed by `workflow bench --implementer`. Each fixture is a small project whose AGENTS.md lists ddd and hexagonal-architecture under active_skills; the gate is its argv. Checks are deterministic: layers (no domain import of an app, api or infra path), primitives (no raw string, number or boolean on a public domain signature), red (the new test fails on the starting tree), gate and, for a task that names a guard, guard (the run's tests fail once that guard is removed from the final tree).",
   "tasks": [
     {
       "id": "ts-users-change-email",
@@ -35,6 +35,18 @@
       },
       "gate": ["node", "--test"],
       "checks": ["layers", "primitives", "red", "gate"]
+    },
+    {
+      "id": "ts-intake-accept",
+      "language": "typescript",
+      "fixture": "docs/implementer-benchmark/ts-intake",
+      "issue": {
+        "title": "feat(intake): accept a submission from a trusted author",
+        "body": "## Summary\n\nAn author's submission is accepted only when the author is trusted. The domain already decides this in `admit`; the use case must go through it.\n\n### Acceptance criteria\n\n- [ ] A use case `acceptSubmission` takes an author id and a title as text, loads the author, and reports `UnknownAuthor` when there is none.\n- [ ] A submission from a trusted author is stored and the use case reports `Accepted`.\n- [ ] A submission from an untrusted author is refused through `admit`: the use case reports `Refused` and stores nothing.\n- [ ] Each criterion has a test, and the project gate passes."
+      },
+      "gate": ["node", "--test"],
+      "guard": {"path": "src/intake/domain/intake.ts", "find": "author.standing === 'Trusted'", "replace": "true"},
+      "checks": ["layers", "primitives", "red", "gate", "guard"]
     }
   ]
 }
