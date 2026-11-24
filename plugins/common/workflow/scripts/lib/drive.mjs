@@ -19,7 +19,7 @@ import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
 import { architectureNote, exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
 import { collectOrchestrator, collectSession, sessionUsage } from './session-log.mjs';
-import { pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
+import { installedPlugins, isOlder, pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
 import { approveReady, previousReviewedHead } from './vcs.mjs';
 import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
 
@@ -1554,8 +1554,23 @@ const blockedClaim = (issue, lock, now) => {
 };
 const lostClaim = issue => ({ blocked: { ...(issue ? { issue } : {}), reason: 'another drive session took over this claim; this session stops without pushing or posting' } });
 const fingerprintOf = result => JSON.stringify(result);
-export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory = join(homedir(), '.cache', 'workflow-cli', 'drive-runs'), session = driveSessionId(), now = Date.now(), notice = versionNotice(pluginVersion()) } = {}) {
+// The workflow version the fetched default branch ships, or null when that branch carries no workflow plugin.
+export function baseWorkflowVersion(base, read = ref => git('show', ref)) {
+  for (const path of ['plugins/common/workflow/.claude-plugin/plugin.json', 'plugins/common/workflow/plugin.json']) {
+    try { const version = JSON.parse(read(`refs/remotes/origin/${base}:${path}`)).version; if (typeof version === 'string') return version; } catch { /* try the next manifest */ }
+  }
+  return null;
+}
+// A blocked step when the running CLI is older than the default branch drive reads config from: it never dispatches on stale code.
+export function staleCliStep(running, baseVersion, base, installed = installedPlugins()) {
+  if (!isOlder(running, baseVersion)) return null;
+  const key = installed[0]?.key ?? 'filipkrawiec-workflow@filipkrawiec';
+  const update = `claude plugin update ${key} --scope ${installed[0]?.scope ?? 'user'}; or, in a checkout of the library, git pull --ff-only origin ${base}`;
+  return { blocked: { reason: `this CLI is ${running}, older than ${baseVersion} on origin/${base}, which drive reads its config from; update it and run drive again. Run: ${update}` } };
+}
+export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory = join(homedir(), '.cache', 'workflow-cli', 'drive-runs'), session = driveSessionId(), now = Date.now(), notice = versionNotice(pluginVersion()), stale = null } = {}) {
   const usage = 'Usage: drive NUMBER [--hand-back FILE|-] | drive --next';
+  if (stale) { console.log(JSON.stringify(withConfigCommit(stale, lanes))); return; }
   let handBack = {};
   const at = args.indexOf('--hand-back');
   if (at >= 0) {
