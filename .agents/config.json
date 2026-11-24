@@ -12,5 +12,21 @@
       "just",
       "verify"
     ]
+  },
+  "delivery": {
+    "rates": {
+      "claude-sonnet-5-5": [
+        2,
+        10,
+        0.1,
+        2.5
+      ],
+      "claude-opus-5-5": [
+        4,
+        20,
+        0.2,
+        5
+      ]
+    }
   }
 }
