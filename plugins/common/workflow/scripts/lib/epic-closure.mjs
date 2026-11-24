@@ -86,7 +86,7 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
     const outstanding = []; const unchecked = [];
     for (const c of criteria) {
       const outcome = packet.outcomes.find(o => o?.criterion?.id === c.id);
-      if (!outcome || outcome.criterion.text !== c.text || !['met', 'unmet', 'unverifiable'].includes(outcome.state)) stale(`Review criterion ${c.id} against its current text`);
+      if (!outcome || outcome.criterion.text !== c.text || !['met', 'unmet', 'unverifiable'].includes(outcome.state)) stale(`Review criterion ${c.id} against its current text; copy criterion.text verbatim from the epic body line, Markdown included`);
       if (!nonempty(outcome.explanation)) fail(`Criterion ${c.id} needs an explanation connecting its evidence to the outcome`);
       if (!Array.isArray(outcome.evidence) || !outcome.evidence.length) fail(`Criterion ${c.id} needs evidence links`);
       for (const link of outcome.evidence) {
