@@ -95,3 +95,16 @@ test('one review skill, one mode: one reviewer, no subagents, no round asks the 
   assert.match(implementer, /^disallowedTools: Agent$/m);
   assert.match(implementer, /at most 5 lines/);
 });
+
+test('building searches the whole repository, review flags copies and epic closure audits parity claims', () => {
+  const read = path => readFileSync(new URL(`../../plugins/common/workflow/${path}`, import.meta.url), 'utf8');
+  const implementerGuide = read('skills/deliver/references/implementer.md');
+  assert.match(implementerGuide, /search the whole repository for an existing one/);
+  assert.match(implementerGuide, /[Ll]ift the original into the shared home[\s\S]*never copy it beside the original/);
+  assert.match(implementerGuide, /`note` names what you searched and what you reused/);
+  assert.match(read('skills/review/SKILL.md'), /\*\*Duplication:\*\* \[duplication\.md\]/);
+  const duplication = read('skills/review/references/duplication.md');
+  assert.match(duplication, /duplicates one elsewhere in the repository[\s\S]*copied beside itself instead of lifted[\s\S]*side-by-side evidence/);
+  const closure = read('skills/deliver/references/epic-closure.md');
+  assert.match(closure, /claims parity or reuse[\s\S]*adversarial whole-area review[\s\S]*fixed or filed/);
+});

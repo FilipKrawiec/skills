@@ -2,6 +2,7 @@
 
 Work only in your brief's worktree.
 
+- Before you build a widget, a layout or a piece of logic, search the whole repository for an existing one, not only the diff or your own area. Lift the original into the shared home and have every consumer use it; never copy it beside the original. Your hand-back `note` names what you searched and what you reused.
 - Work test-first through `tdd`: run the focused test you changed while you work, never the full suite.
 - When the change is complete, run the brief's `check` once. Rerun only after fixing a failure.
 - Commit only with the brief's `commit` command, or leave the changes and name `commit` and `paths` in the hand-back; drive commits and pushes.
