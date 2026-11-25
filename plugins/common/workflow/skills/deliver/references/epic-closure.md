@@ -14,7 +14,7 @@ Evidence is a list of links. Drive checks that each cited PR or issue of this re
 
 ## Parity and reuse claims
 
-An epic whose outcome claims parity or reuse (two consumers share one unit) runs an adversarial whole-area review over the areas it touched (`review`'s `area-audit.md`) before it is reported done; its findings are fixed or filed first, and the outcome comment cites the review.
+An epic whose outcome claims parity or reuse (two consumers share one unit) runs an adversarial whole-area review over the areas it touched (`review`'s `area-audit.md`) before it is reported done. The epic-outcome Reviewer runs that audit (`epic-outcome.md` step 4); its findings are fixed or filed first, and the outcome comment cites the review.
 
 ## Refinement with nothing to change
 

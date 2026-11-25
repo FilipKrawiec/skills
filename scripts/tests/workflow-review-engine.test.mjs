@@ -1,6 +1,8 @@
+import './support/host-stubs.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { reviewerBrief } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { prRecord } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { ensureWorkflowLabels, workflowLabels } from '../../plugins/common/workflow/scripts/lib/core.mjs';
 
@@ -107,4 +109,8 @@ test('building searches the whole repository, review flags copies and epic closu
   assert.match(duplication, /duplicates one elsewhere in the repository[\s\S]*copied beside itself instead of lifted[\s\S]*side-by-side evidence/);
   const closure = read('skills/deliver/references/epic-closure.md');
   assert.match(closure, /claims parity or reuse[\s\S]*adversarial whole-area review[\s\S]*fixed or filed/);
+  const outcome = read('skills/review/references/epic-outcome.md');
+  assert.match(outcome, /claims parity or reuse[\s\S]*area-audit\.md[\s\S]*issue create[\s\S]*`unmet`[\s\S]*`nextAction`/);
+  assert.match(closure, /epic-outcome Reviewer runs that audit/);
+  assert.match(reviewerBrief({ issue: { number: 9, url: 'u', body: '' }, repo: 'o/r', base: 'main', pr: null, step: { mode: 'epic-outcome', round: 1, reason: 'r' } }), /claims parity or reuse[\s\S]*area-audit\.md/);
 });
