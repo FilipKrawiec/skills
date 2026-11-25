@@ -45,6 +45,7 @@ Round is `<cli> status <N>`'s round plus one; a new head never resets it. Fit is
 
 - **Acceptance outcome:** derive closing intent from current issue criteria and the diff, never stale PR text. Trace each criterion to an observable outcome and a production call site; test-only code proves nothing. Run manual steps CI cannot. Flag hollow tests, weakened thresholds and scope creep. Read the epic's recorded decisions that name the slice's area and raise one that no criterion covers as Important before approving.
 - **Correctness:** edge cases, failure paths, security, concurrency, cleanup and data loss in the changed code.
+- **Duplication:** [duplication.md](references/duplication.md).
 - **Fit:** breaches of the repository's own rules, each citing the rule's `file:line`; a PR with no linked issue is Important.
 - **Blast radius:** callers, contracts, migrations and configuration outside the diff that it breaks; a surviving reference to a removed or renamed name, or a doc or install instruction still stating the changed behaviour (search its user-facing terms), is Important.
 
@@ -56,13 +57,13 @@ Tag each candidate:
 - **Pre-existing:** a defect already on the base branch.
 - **Follow-up:** a real gap outside the acceptance criteria.
 
-Only Blocker and Important block. Verify each: read the line, trace the failure; drop the unconfirmed. Never report lint, taste or repeats.
+Only Blocker and Important block. Verify each: read the line, trace the failure; drop the unconfirmed. Report no lint, taste or repeats.
 
 **Exit gate:** each kept finding has a tag, a read `file:line`, a failure scenario and a remedy.
 
 ## 5. Post
 
-The verdict and its event, first match wins:
+The verdict, first match wins:
 
 - a Blocker or Important finding: `COMMENT` with `verdict=fixes`; from round 3, list each open one. If all open blockers are base conflicts, add `finding=base-conflict` to the marker;
 - a scope no fix cures: `COMMENT` with `verdict=split`, naming the cut;

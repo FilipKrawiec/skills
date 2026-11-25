@@ -1,6 +1,8 @@
+import './support/host-stubs.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { reviewerBrief } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { prRecord } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { ensureWorkflowLabels, workflowLabels } from '../../plugins/common/workflow/scripts/lib/core.mjs';
 
@@ -94,4 +96,21 @@ test('one review skill, one mode: one reviewer, no subagents, no round asks the 
   assert.doesNotMatch(implementer, /^  - deliver$/m);
   assert.match(implementer, /^disallowedTools: Agent$/m);
   assert.match(implementer, /at most 5 lines/);
+});
+
+test('building searches the whole repository, review flags copies and epic closure audits parity claims', () => {
+  const read = path => readFileSync(new URL(`../../plugins/common/workflow/${path}`, import.meta.url), 'utf8');
+  const implementerGuide = read('skills/deliver/references/implementer.md');
+  assert.match(implementerGuide, /search the whole repository for an existing one/);
+  assert.match(implementerGuide, /[Ll]ift the original into the shared home[\s\S]*never copy it beside the original/);
+  assert.match(implementerGuide, /`note` names what you searched and what you reused/);
+  assert.match(read('skills/review/SKILL.md'), /\*\*Duplication:\*\* \[duplication\.md\]/);
+  const duplication = read('skills/review/references/duplication.md');
+  assert.match(duplication, /duplicates one elsewhere in the repository[\s\S]*copied beside itself instead of lifted[\s\S]*side-by-side evidence/);
+  const closure = read('skills/deliver/references/epic-closure.md');
+  assert.match(closure, /claims parity or reuse[\s\S]*adversarial whole-area review[\s\S]*fixed or filed/);
+  const outcome = read('skills/review/references/epic-outcome.md');
+  assert.match(outcome, /claims parity or reuse[\s\S]*area-audit\.md[\s\S]*issue create[\s\S]*`unmet`[\s\S]*`nextAction`/);
+  assert.match(closure, /epic-outcome Reviewer runs that audit/);
+  assert.match(reviewerBrief({ issue: { number: 9, url: 'u', body: '' }, repo: 'o/r', base: 'main', pr: null, step: { mode: 'epic-outcome', round: 1, reason: 'r' } }), /claims parity or reuse[\s\S]*area-audit\.md/);
 });
