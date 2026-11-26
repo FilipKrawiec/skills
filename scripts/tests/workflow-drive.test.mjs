@@ -7,15 +7,16 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { waitCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
-  designState, designNoteMarker, baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  designState, designNoteMarker, baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand, waitCommandFor,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { baselineRefs, createdIssueNumber, isBaselinePath, retagBaseline, baselineFollowUp } from '../../plugins/common/workflow/scripts/lib/baselines.mjs';
 import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
-import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
+import { findCycle, notBefore, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
 
 const head = 'a'.repeat(40);
 const lanes = { repo: 'acme/app', base: 'main', implementer: 'builder', reviewer: 'reviewer', owner: 'owner', steps: { test: ['just', 'verify'] } };
@@ -35,6 +36,27 @@ test('an unstarted issue starts once assessed, and a blocked one reports its blo
   assert.deepEqual(decide({ issue: started }), { do: 'start' }, 'a claimed issue without its worktree makes it again');
 });
 
+test('a date-gated issue waits until its not-before time and starts after it; the same state gives the same wait', () => {
+  const at = '2026-12-01T00:00:00.000Z';
+  const early = { issue: issue({ assessment: assessed() }), notBefore: at, now: Date.parse('2026-11-30T23:59:59Z') };
+  const waiting = { wait: { until: 'date', at, issue: 3 }, reason: `#3 may start only after ${at}` };
+  assert.deepEqual(decide(early), waiting);
+  assert.deepEqual(decide({ ...early }), waiting);
+  assert.deepEqual(decide({ ...early, now: Date.parse(at) }), { do: 'start' });
+  assert.deepEqual(decide({ ...early, blockers: [2] }), { blocked: { issue: 3, by: [2] } }, 'an open blocker still reports itself first');
+});
+
+test('a hand-back calling itself a dependency wait is never an owner step: it becomes the wait, or blocks without the owner', () => {
+  const at = '2026-12-01T00:00:00.000Z';
+  const handBack = { status: 'blocked', note: 'Dependency wait, not an owner step: measure 7 days after #4 merges' };
+  const gated = decide({ issue: started, tree: tree(), handBack, notBefore: at, now: Date.parse('2026-11-30T00:00:00Z') });
+  assert.equal(gated.wait.until, 'date');
+  const ungated = decide({ issue: started, tree: tree(), handBack });
+  assert.equal(ungated.owner, undefined);
+  assert.match(ungated.blocked.reason, /dependency wait/i);
+  assert.equal(decide({ issue: started, tree: tree(), handBack: { status: 'blocked', note: 'needs a key' } }).owner, '#3: needs a key');
+});
+
 test('build: the implementer runs until it hands back done, then drive commits, pushes and opens', () => {
   assert.equal(decide({ issue: started, tree: tree() }).agent, 'implementer');
   assert.equal(decide({ issue: started, tree: tree({ commits: 1, unpushed: true }) }).agent, 'implementer', 'no hand-back: same instruction');
@@ -44,7 +66,7 @@ test('build: the implementer runs until it hands back done, then drive commits, 
   assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), handBack: done }), { do: 'open' });
   assert.equal(decide({ issue: started, tree: tree({ dirty: true }), handBack: { status: 'done' } }).agent, 'implementer', 'nothing to commit with');
   assert.deepEqual(decide({ issue: started, tree: tree(), handBack: { status: 'replan', note: 'two seams' } }), { agent: 'planner', mode: 'replan', reason: 'two seams' });
-  assert.deepEqual(decide({ issue: started, tree: tree(), handBack: { status: 'blocked', note: 'needs a key' } }), { owner: '#3: needs a key' });
+  assert.deepEqual(decide({ issue: started, tree: tree(), handBack: { status: 'blocked', note: 'needs a key' } }), { owner: '#3: needs a key', cause: 'needs a key' });
 });
 
 test('review, fix, ready, merge and close follow the PR state', () => {
@@ -709,6 +731,34 @@ test('readDependencies unions blocked-by links with packet dependencies, issues 
   );
 });
 
+test('an issue blocker carries the merge time of its closing PR, so wait-days resolves through readDependencies', () => {
+  const read = args => {
+    if (args[1] === 'graphql') {
+      // GitHub returns only the fields the query selects.
+      const selected = /nodes\{([^}]*)\}/.exec(args.find(arg => arg.startsWith('query=')))[1].split(/\s+/);
+      const node = { merged: true, mergedAt: '2026-11-20T10:00:00Z' };
+      const later = { merged: true, mergedAt: '2026-11-22T10:00:00Z' };
+      const pick = full => Object.fromEntries(Object.entries(full).filter(([key]) => selected.includes(key)));
+      return { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [pick(node), pick(later)] } } } } };
+    }
+    if (args.at(-1).includes('blocked_by')) return [[{ number: 7 }]];
+    return { state: 'closed', state_reason: 'completed', labels: [], body: '' };
+  };
+  const body = '<!-- workflow:wait-days 7 -->';
+  assert.equal(notBefore(body, readDependencies('acme/app', { number: 3, body }, read)), '2026-11-29T10:00:00.000Z');
+});
+
+test('the wait instruction of a date gate is a command that parses and sleeps until the time', () => {
+  const at = '2026-12-01T00:00:00.000Z';
+  const command = waitCommandFor(3, 'date', at);
+  assert.deepEqual(command.slice(2), ['wait', '3', '--until', 'date', '--at', at]);
+  let clock = Date.parse(at) - 90_000;
+  const code = waitCommand(command.slice(3), lanes, { pause: seconds => { clock += seconds * 1000; }, now: () => clock });
+  assert.equal(code, 0);
+  assert.ok(clock >= Date.parse(at));
+  assert.throws(() => waitCommand(['3', '--until', 'date'], lanes, { now: () => 0 }), /Usage: wait/);
+});
+
 test('an unmet dependency stops an item in every phase and keeps its worktree and PR', () => {
   const base = { issue: started, tree: tree({ commits: 1 }), blockers: [2] };
   const stop = { blocked: { issue: 3, by: [2] } };
@@ -812,7 +862,7 @@ test('configured dispatch produces an implementer brief and accepts its intact h
   assert.deepEqual([instruction.agent, instruction.host, instruction.model, instruction.session], ['implementer', 'codex', 'gpt-6.1-terra', 'subagent']);
   assert.match(repo.writes[instruction.brief], /status: done \| replan \| blocked/);
   const handBack = parseHandBack('status: blocked\nnote: bounded dispatch probe');
-  assert.deepEqual(drive(repo.io, 3, configured, handBack), { owner: '#3: bounded dispatch probe' });
+  assert.deepEqual(drive(repo.io, 3, configured, handBack), { owner: '#3: bounded dispatch probe', cause: 'bounded dispatch probe' });
 });
 
 test('the reviewer runs as a separate non-interactive session', () => {

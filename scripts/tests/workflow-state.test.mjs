@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ciState, nextCommand, prState, statusCommand, waitCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
-import { bugStats, bugsCommand, bugsLine } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
+import { notBefore } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
+import { bugStats, bugsCommand, bugsLine, postIssueComment } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 
 const head = 'a'.repeat(40);
 const lanes = { repo: 'acme/app', base: 'main', implementer: 'builder', reviewer: 'reviewer', owner: 'owner' };
@@ -260,8 +261,8 @@ function fakeSearch(repoSeen = []) {
     assert.match(q, /label:"type:bug"/);
     if (q.includes('is:open')) { assert.ok(args.includes('per_page=1')); return { total_count: 4, items: [] }; }
     assert.ok(args.includes('--paginate'));
-    if (q.includes('created:>=2026-11-05')) return [{ total_count: 3, items: opened }];
-    if (q.includes('closed:>=2026-11-05')) return [{ total_count: 5, items: closed.slice(0, 3) }, { total_count: 5, items: closed.slice(3) }];
+    if (q.includes('created:>=2026-11-05T12:00:00Z')) return [{ total_count: 3, items: opened }];
+    if (q.includes('closed:>=2026-11-05T12:00:00Z')) return [{ total_count: 5, items: closed.slice(0, 3) }, { total_count: 5, items: closed.slice(3) }];
     throw new Error(`unexpected search ${q}`);
   };
 }
@@ -269,7 +270,7 @@ function fakeSearch(repoSeen = []) {
 test('bugStats counts opened, closed, open, median time to close and duplicates in the window', () => {
   const stats = bugStats('acme/app', 14, fakeSearch(), now);
   // Closed durations: 11d, 12h, 1d, 1d, 1d: the median is 1d.
-  assert.deepEqual(stats, { repo: 'acme/app', days: 14, opened: 3, closed: 5, open: 4, medianMs: day, duplicates: 2 });
+  assert.deepEqual(stats, { repo: 'acme/app', days: 14, since: '2026-11-05T12:00:00Z', until: '2026-11-19T12:00:00Z', opened: 3, closed: 5, open: 4, medianMs: day, duplicates: 2 });
 });
 
 test('bugs prints one line per repo, and the status line carries the same numbers', () => {
@@ -277,7 +278,7 @@ test('bugs prints one line per repo, and the status line carries the same number
   const log = console.log; console.log = text => lines.push(text);
   try { bugsCommand(['--days', '14'], { repo: 'acme/app' }, fakeSearch(), now); } finally { console.log = log; }
   assert.equal(lines.length, 1);
-  assert.equal(lines[0], 'acme/app (14d): opened 3, closed 5, open 4, median time to close 1d, duplicates 2 (target 0)');
+  assert.equal(lines[0], 'acme/app (14d): opened 3, closed 5, open 4, median time to close 1d, duplicates 2 (target 0); window 2026-11-05T12:00:00Z to 2026-11-19T12:00:00Z');
   assert.equal(bugsLine(bugStats('acme/app', 14, fakeSearch(), now)), 'Bugs (14d): opened 3, closed 5, open 4, median time to close 1d, duplicates 2 (target 0)');
 });
 
@@ -289,6 +290,16 @@ test('bugs --repo reports that repo and --days rejects a non-positive value', ()
   assert.match(lines[0], /^other\/lib \(14d\):/);
   assert.ok(seen.every(q => q.includes('repo:other/lib')));
   for (const bad of [['--days', '0'], ['--days', '-3'], ['--days', 'x'], ['--repo', 'nope'], ['--days']]) {
+    assert.throws(() => bugsCommand(bad, { repo: 'acme/app' }, fakeSearch(), now), /Usage: bugs/);
+  }
+});
+
+test('bugs --since starts the window at that timestamp and prints it', () => {
+  const lines = [];
+  const log = console.log; console.log = text => lines.push(text);
+  try { bugsCommand(['--since', '2026-11-05T12:00:00Z'], { repo: 'acme/app' }, fakeSearch(), now); } finally { console.log = log; }
+  assert.match(lines[0], /^acme\/app \(since 2026-11-05T12:00:00Z\): opened 3,.*; window 2026-11-05T12:00:00Z to 2026-11-19T12:00:00Z$/);
+  for (const bad of [['--since', 'yesterday'], ['--since', '2026-11-05'], ['--since', '2026-11-05T12:00:00Z', '--days', '3']]) {
     assert.throws(() => bugsCommand(bad, { repo: 'acme/app' }, fakeSearch(), now), /Usage: bugs/);
   }
 });
@@ -337,4 +348,32 @@ test('wait --until ci settles when GitHub is ahead of the local branch, as after
     assert.equal(code, 0, 'a remote head that descends from the local tip is not stale');
     assert.equal(lines.at(-1).head, merged.headRefOid);
   } finally { console.log = log; }
+});
+
+test('a Measured: result posts once per issue and a rerun edits that comment', () => {
+  const comments = [{ id: 1, body: 'Plan' }];
+  const run = args => {
+    const patch = args.includes('PATCH');
+    const body = args.find(arg => arg.startsWith('body='))?.slice(5);
+    if (args.includes('--paginate')) return [comments];
+    if (!patch) { comments.push({ id: comments.length + 1, body }); return { id: comments.length }; }
+    const target = comments.find(c => args.includes(`repos/acme/app/issues/comments/${c.id}`));
+    target.body = body;
+    return { id: target.id };
+  };
+  assert.deepEqual(postIssueComment('acme/app', 7, 'Measured: 3 bugs', run), { id: 2, edited: false });
+  assert.deepEqual(postIssueComment('acme/app', 7, 'Measured: 5 bugs', run), { id: 2, edited: true });
+  assert.deepEqual(comments.map(c => c.body), ['Plan', 'Measured: 5 bugs']);
+  postIssueComment('acme/app', 7, 'Other note', run);
+  postIssueComment('acme/app', 7, 'Other note', run);
+  assert.equal(comments.length, 4, 'only a Measured: result is edited in place');
+});
+
+test('notBefore is the latest of a stated date and the blockers merge time plus the wait days', () => {
+  const deps = [{ number: 4, mergedAt: '2026-11-20T10:00:00Z' }, { number: 5, mergedAt: '2026-11-22T10:00:00Z' }, { number: 6 }];
+  assert.equal(notBefore('', deps), null);
+  assert.equal(notBefore('<!-- workflow:not-before 2026-12-25T00:00:00Z -->', []), '2026-12-25T00:00:00.000Z');
+  assert.equal(notBefore('<!-- workflow:wait-days 7 -->', deps), '2026-11-29T10:00:00.000Z', 'seven days after the last merge');
+  assert.equal(notBefore('<!-- workflow:wait-days 7 -->', []), null, 'no merge time, no date');
+  assert.equal(notBefore('<!-- workflow:wait-days 7 --><!-- workflow:not-before 2026-12-25T00:00:00Z -->', deps), '2026-12-25T00:00:00.000Z');
 });

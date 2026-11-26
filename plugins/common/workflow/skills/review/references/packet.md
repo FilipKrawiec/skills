@@ -10,3 +10,5 @@ Drive writes `review-packet.md` beside your brief before each round. Its section
 - Inline findings: `review-post` keys each by its path, `criterion` and `failure` (else its first line) and skips a key an open thread already carries, so retrying after an error never duplicates a thread.
 
 `issue create` is the only path to a new issue (a follow-up too): it matches open and 30-day-closed issues first, and `Exists: #N` creates nothing. Never use raw `gh` or GitHub tools to create one; `--distinct-from N --reason "<one line>"` marks a separate issue.
+
+Outside drive: `node <this-skill-directory>/../../scripts/review-session.mjs <PR> <HEAD> <reviewer-command>...`.
