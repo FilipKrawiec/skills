@@ -112,3 +112,15 @@ export function verifyEpicClosure({ epic, slices, base, repo }, adapters = {}) {
     return { complete: true, issues: [], outstanding: [], criteria, packet };
   } catch (error) { return { complete: false, issues: [error.message], outstanding: [], ...(error.needsReview ? { needsReview: true } : {}) }; }
 }
+
+export const epicMetricsMarker = '<!-- workflow:epic-metrics -->';
+// The rework record drive posts once at closure: `feat` vs `fix`/`refactor` share of the distinct merged PRs, their count and net lines.
+export function epicMetricsComment(epic, prs) {
+  const distinct = [...new Map(prs.map(pr => [pr.number, pr])).values()];
+  const kind = pr => (String(pr.title || '').match(/^([a-z]+)(?:\([^)]*\))?!?:/i)?.[1] || '').toLowerCase();
+  const feat = distinct.filter(pr => kind(pr) === 'feat').length;
+  const rework = distinct.filter(pr => ['fix', 'refactor'].includes(kind(pr))).length;
+  const share = n => `${distinct.length ? Math.round(100 * n / distinct.length) : 0}%`;
+  const net = distinct.reduce((sum, pr) => sum + (pr.additions || 0) - (pr.deletions || 0), 0);
+  return [epicMetricsMarker, `## Epic #${epic} delivery metrics`, '', `- PRs: ${distinct.length}`, `- feat: ${feat} (${share(feat)})`, `- fix/refactor: ${rework} (${share(rework)})`, `- Net lines: ${net}`, ''].join('\n');
+}
