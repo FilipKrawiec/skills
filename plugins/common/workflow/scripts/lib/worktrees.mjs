@@ -153,6 +153,12 @@ export function worktreeCommand(args) {
   const busy = busyPaths();
   const now = Date.now();
   for (const tree of trees) {
+    // A tree deleted outside git (its parent's removal took it) has nothing to back up: unlock its record for prune, keep its branch.
+    if (!existsSync(tree.path)) {
+      if (!dryRun && tree.locked) gitIn(root, ['worktree', 'unlock', tree.path]);
+      console.log(`${dryRun ? 'would prune' : 'pruned'} ${tree.path} (its directory is gone; branch kept)`);
+      continue;
+    }
     const facts = worktreeFacts(tree, { root, current, baseRef, prs: prs ?? new Map(), busy });
     let verdict = worktreeVerdict(facts, { now, idleDays });
     if (!prs && verdict.action === 'remove' && verdict.why !== 'its head is in the base') verdict = { action: 'keep', why: 'PR states unavailable' };
