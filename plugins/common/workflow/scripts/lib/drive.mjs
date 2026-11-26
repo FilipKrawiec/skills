@@ -15,7 +15,7 @@ import { consolidatedInto, droppedReason, findCycle, readDependencies, splitDepe
 import { checkState, failedStates, nitsSwept, prFields } from './pr.mjs';
 import { addCriterionIds, tickCriteria, verifyEpicClosure, epicMetricsComment, epicMetricsMarker } from './epic-closure.mjs';
 import { prState } from './state.mjs';
-import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
+import { BASE_RED_MARKER, closeFormsMessage, completedCloseAllowed } from './issues.mjs';
 import { baselineFollowUp, baselineRefs, createdIssueNumber, isBaselinePath, retagBaseline } from './baselines.mjs';
 import { architectureNote, exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
@@ -204,7 +204,7 @@ const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...ext
 
 // The planner appends this to the issue it was briefed on for each other issue it judged a distinct outcome, so drive asks once.
 // An issue body carrying this marker keeps main or the base red; `--next` takes it before everything else.
-export const BASE_RED_MARKER = '<!-- workflow:base-red -->';
+export { BASE_RED_MARKER };
 const baseRedEvidence = (red, base) => `Required check \`${red.check}\` fails on \`${base}\`: ${red.url}`;
 // One main-red bug per red base: an open issue carrying the marker is reused (the new run is commented once), else
 // `issue create --labels type:bug` files it. `ops` is the GitHub side: openIssues, comments, comment, create.

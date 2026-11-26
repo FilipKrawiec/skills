@@ -79,13 +79,13 @@ const STOP = new Set('the and for with that this when from into after before tha
 const SCOPE_FENCE = /```scope[\s\S]*?```/g;
 const words = text => new Set((text || '').replace(SCOPE_FENCE, ' ').toLowerCase().match(/[a-z][a-z0-9-]{3,}/g)?.filter(word => !STOP.has(word)) ?? []);
 const jaccard = (a, b) => { if (!a.size || !b.size) return 0; let shared = 0; for (const word of a) if (b.has(word)) shared++; return shared / (a.size + b.size - shared); };
-export const DUPLICATE_WINDOW_DAYS = 30;
+const DUPLICATE_WINDOW_DAYS = 30;
 // The same failing behaviour or outcome: the significant words of the two titles overlap by at least 60% (Jaccard), or those of title and body together by at least 50%.
-export function sameOutcome(candidate, title, body) {
+function sameOutcome(candidate, title, body) {
   return jaccard(words(candidate.title), words(title)) >= 0.6 || jaccard(words(`${candidate.title} ${candidate.body}`), words(`${title} ${body}`)) >= 0.5;
 }
 // An existing match: open, or closed within the last 30 days; it shares a scope path and the same outcome. The oldest wins.
-export function findExistingMatch(issues, { title, body, now = Date.now() }) {
+function findExistingMatch(issues, { title, body, now = Date.now() }) {
   const cutoff = now - DUPLICATE_WINDOW_DAYS * 86_400_000;
   const live = issues.filter(issue => issue.state !== 'CLOSED' || (issue.closedAt && Date.parse(issue.closedAt) >= cutoff));
   return scopeOverlaps(live, pathsFromIssueBody(body)).filter(issue => sameOutcome(issue, title, body)).sort((a, b) => a.number - b.number)[0] ?? null;
@@ -99,11 +99,12 @@ function structureOptions(o) {
   if (blockers.some(value => !positive(value))) throw new Error('--blocked-by expects issue numbers such as 12 or 12,13');
   return { milestone: o['--milestone'] || null, parent, blockers };
 }
-export const NIT_SWEEP_MARKER = '<!-- workflow:nit-sweep -->';
+const NIT_SWEEP_MARKER = '<!-- workflow:nit-sweep -->';
 const labelNames = labels => (labels || []).map(label => label.name ?? label);
 // Backlogs have two levels: an epic whose children are stories or bugs. Null when the structure holds, else why it does not.
 // The main-red bug belongs to no epic, so `issue create` asks it for no parent.
-export const baseRedBody = body => body.includes('<!-- workflow:base-red -->');
+export const BASE_RED_MARKER = '<!-- workflow:base-red -->';
+export const baseRedBody = body => body.includes(BASE_RED_MARKER);
 export function backlogViolation({ number, labels, parent, parentLabels }) {
   const own = labelNames(labels);
   const retired = own.find(name => name === 'type:task' || name === 'type:chore');
