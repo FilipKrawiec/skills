@@ -102,7 +102,7 @@ const refinementMarker = '<!-- workflow:epic-refinement -->';
 const noChangeMarker = '<!-- workflow:refinement-no-change -->';
 const refinementReview = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
 const refinementCriteria = [
-  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. The epic's own Nits go in this last PR, never in a separate Nit-sweep PR. With nothing to change, hand back \`status: done\`, empty \`paths\` and \`body: <file>\`.`,
+  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. Fix the epic's own Nits in this last PR: list them with \`<cli> nits\`, then run \`<cli> nits --done <PR>...\`; never in a separate Nit-sweep PR. With nothing to change, hand back \`status: done\`, empty \`paths\` and \`body: <file>\`.`,
   'Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.',
   'Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.',
   'Assess the epic\'s delivery flow: blocked and owner steps, rework, review rounds and cost. File at most two improvements, each with its evidence.',

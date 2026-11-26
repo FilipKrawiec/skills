@@ -938,6 +938,20 @@ test('refinement creation atomically links the parent even when the response is 
 });
 
 
+test('the refinement criterion sweeps the epic\'s Nits before the improver runs, and the improver files none for them', () => {
+  let body = '';
+  const gh = args => {
+    const query = args.find(arg => arg.startsWith('query=')) || '';
+    if (query.includes('createIssue')) { body = args.find(arg => arg.startsWith('body=')).slice(5); return { data: { createIssue: { issue: { number: 2 } } } }; }
+    if (query) return { data: { repository: { id: 'R', issue: { id: 'E', milestone: null } } } };
+    return { number: 2 };
+  };
+  githubIo({ repo: 'acme/app' }, gh).createRefinement({ number: 1, title: 'Epic', body: '' });
+  assert.match(body, /list them with `<cli> nits`[^\n]*`<cli> nits --done <PR>\.\.\.`[^\n]*never in a separate Nit-sweep PR/);
+  const improve = readFileSync(new URL('../../plugins/common/workflow/skills/improve/SKILL.md', import.meta.url), 'utf8');
+  assert.match(improve, /leftover Nits of the epic's own PRs[^\n]*`## Lessons`[^\n]*no new PR or `nit-sweep` story/);
+});
+
 test('epic closure requires freshly authenticated evidence before closing', () => {
   const epic = issue({ number: 9, labels: [label('type:epic')] });
   const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
