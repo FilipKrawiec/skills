@@ -733,7 +733,14 @@ test('readDependencies unions blocked-by links with packet dependencies, issues 
 
 test('an issue blocker carries the merge time of its closing PR, so wait-days resolves through readDependencies', () => {
   const read = args => {
-    if (args[1] === 'graphql') return { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [{ merged: true, mergedAt: '2026-11-20T10:00:00Z' }, { merged: true, mergedAt: '2026-11-22T10:00:00Z' }] } } } } };
+    if (args[1] === 'graphql') {
+      // GitHub returns only the fields the query selects.
+      const selected = /nodes\{([^}]*)\}/.exec(args.find(arg => arg.startsWith('query=')))[1].split(/\s+/);
+      const node = { merged: true, mergedAt: '2026-11-20T10:00:00Z' };
+      const later = { merged: true, mergedAt: '2026-11-22T10:00:00Z' };
+      const pick = full => Object.fromEntries(Object.entries(full).filter(([key]) => selected.includes(key)));
+      return { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [pick(node), pick(later)] } } } } };
+    }
     if (args.at(-1).includes('blocked_by')) return [[{ number: 7 }]];
     return { state: 'closed', state_reason: 'completed', labels: [], body: '' };
   };

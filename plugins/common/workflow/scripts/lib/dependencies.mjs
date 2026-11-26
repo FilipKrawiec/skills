@@ -67,7 +67,7 @@ function resolveDependency(repo, number, read, seen = new Set()) {
   let mergedAt;
   if (item.state_reason === 'completed' && !needsNoCode) {
     const [owner, name] = repo.split('/');
-    const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){closedByPullRequestsReferences(first:50,includeClosedPrs:true){nodes{merged}}}}}';
+    const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){closedByPullRequestsReferences(first:50,includeClosedPrs:true){nodes{merged mergedAt}}}}}';
     const found = read(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${number}`]);
     const nodes = (found.data?.repository?.issue?.closedByPullRequestsReferences?.nodes || []).filter(node => node.merged);
     merged = nodes.length > 0;
