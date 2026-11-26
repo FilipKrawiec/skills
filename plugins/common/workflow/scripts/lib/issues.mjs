@@ -84,7 +84,7 @@ const DUPLICATE_WINDOW_DAYS = 30;
 function sameOutcome(candidate, title, body) {
   return jaccard(words(candidate.title), words(title)) >= 0.6 || jaccard(words(`${candidate.title} ${candidate.body}`), words(`${title} ${body}`)) >= 0.5;
 }
-// An existing match: open, or closed within the last 30 days; it shares a scope path and the same outcome. The oldest wins.
+// An existing match: open, or closed within the last 30 days; it shares a scope path (or either side has none) and the same outcome. The oldest wins.
 function findExistingMatch(issues, { title, body, now = Date.now() }) {
   const cutoff = now - DUPLICATE_WINDOW_DAYS * 86_400_000;
   const live = issues.filter(issue => issue.state !== 'CLOSED' || (issue.closedAt && Date.parse(issue.closedAt) >= cutoff));
