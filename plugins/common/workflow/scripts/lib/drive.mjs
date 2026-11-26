@@ -13,7 +13,7 @@ import { boardStatus, sweepBoard, dependenciesFromIssueBody, pathsFromIssueBody,
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { consolidatedInto, droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
 import { checkState, failedStates, prFields } from './pr.mjs';
-import { addCriterionIds, tickCriteria, verifyEpicClosure } from './epic-closure.mjs';
+import { addCriterionIds, tickCriteria, verifyEpicClosure, epicMetricsComment, epicMetricsMarker } from './epic-closure.mjs';
 import { prState } from './state.mjs';
 import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
 import { architectureNote, exportedSymbols, reviewPacket } from './packet.mjs';
@@ -102,7 +102,7 @@ const refinementMarker = '<!-- workflow:epic-refinement -->';
 const noChangeMarker = '<!-- workflow:refinement-no-change -->';
 const refinementReview = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
 const refinementCriteria = [
-  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. With nothing to change, hand back \`status: done\`, empty \`paths\` and \`body: <file>\`.`,
+  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. The epic's own Nits go in this last PR, never in a separate Nit-sweep PR. With nothing to change, hand back \`status: done\`, empty \`paths\` and \`body: <file>\`.`,
   'Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.',
   'Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.',
   'Assess the epic\'s delivery flow: blocked and owner steps, rework, review rounds and cost. File at most two improvements, each with its evidence.',
@@ -983,6 +983,20 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     sweepBoard: () => { try { return sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, { windowed: true }); } catch (error) { console.error(`drive: board sweep skipped: ${error.message}`); return []; } },
     // A repository with no board skips the step (boardStatus returns false and says so); any other failure throws.
     requiredBoard: (n, value) => { boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, n, value, false); },
+    // Every merged PR that closes a child of the epic, with its size.
+    epicMergedPrs: (children, base) => {
+      const [owner, name] = repo.split('/');
+      const query = `query($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { issue(number:$number) { closedByPullRequestsReferences(first:100) { nodes { number title merged baseRefName additions deletions } } } } }`;
+      return children.flatMap(child => {
+        const data = gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${child.number}`]);
+        return data.data.repository.issue.closedByPullRequestsReferences.nodes.filter(pr => pr.merged && pr.baseRefName === base);
+      });
+    },
+    // One metrics comment per epic: a rerun after a failed close finds the marker and posts nothing more.
+    recordEpicMetrics: (epic, body) => {
+      const posted = gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${epic.number}/comments?per_page=100`]).flat().some(comment => String(comment.body || '').startsWith(epicMetricsMarker));
+      if (!posted) run('gh', ['issue', 'comment', String(epic.number), '--repo', repo, '--body', body]);
+    },
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
     removeTree: tree => {
       const all = trees(); const root = all[0].path;
@@ -1341,6 +1355,8 @@ export function driveEpic(io, epic, lanes) {
       if (step.do === 'close-epic') {
         const second = read();
         if (!second.result.complete || JSON.stringify(first) !== JSON.stringify(second)) return { owner: `epic #${epic.number}: evidence or issue state changed before closure`, url: epic.url };
+        // Best effort: the rework record never blocks closure; a failure is reported and the epic still closes.
+        try { io.recordEpicMetrics?.(second.current, epicMetricsComment(epic.number, io.epicMergedPrs?.(second.children, lanes.base) || [])); } catch (error) { console.error(`drive: epic metrics skipped: ${error.message}`); }
         io.closeEpic(second.current);
         return { done: { epic: epic.number } };
       }

@@ -1,6 +1,6 @@
 # Epic closure
 
-Drive adds a stable ID to any criterion without one and ticks each criterion the Reviewer's newest comment marks `met` before closing, so no epic needs a hand edit. To choose your own, give each acceptance criterion a stable ID, for example `- [ ] Users can sign in <!-- workflow:criterion sign-in -->`. Drive closes the epic when every linked child is closed with a merged PR into the base (or is folded with `<!-- workflow:consolidated-into N -->` into an issue so delivered or a PR merged into the base, says it makes no repository changes, or is a consolidated child, below), every criterion is checked, and the newest outcome comment by the configured Reviewer covers every criterion and child with state `met` and an explanation.
+Drive adds a stable ID to any criterion without one and ticks each `met` criterion before closing. To choose your own, give each acceptance criterion a stable ID, for example `- [ ] Users can sign in <!-- workflow:criterion sign-in -->`. Drive closes the epic when every linked child is closed with a merged PR into the base (or is folded with `<!-- workflow:consolidated-into N -->` into an issue so delivered or a PR merged into the base, says it makes no repository changes, or is a consolidated child, below), every criterion is checked, and the newest outcome comment by the configured Reviewer covers every criterion and child with state `met` and an explanation.
 
 When every slice is merged and lessons are recorded but no current outcome comment exists (none, or one that misses a child or criterion), drive dispatches the Reviewer in a separate session to post it (`review`'s `epic-outcome.md`) instead of asking the owner. Drive returns an owner step only when the Reviewer marks a criterion `unmet` or `unverifiable`, or the epic is `lane:owner`.
 
@@ -11,6 +11,10 @@ The Reviewer posts a JSON comment on the epic (raw JSON, or JSON in a fenced blo
 ```
 
 Evidence is a list of links. Drive checks that each cited PR or issue of this repository exists and each cited PR is merged into the base; it does not hash or re-read content. `unmet` or `unverifiable` needs a `nextAction`: the epic stays open with a linked follow-up. A closed child without its own closing PR adds `"consolidated":[{"issue":10,"pr":25,"state":"met"}]`, naming a PR merged into the base.
+
+## Closure metrics
+
+Before closing, drive posts once, led by `<!-- workflow:epic-metrics -->`: the `feat` vs `fix`/`refactor` share of the epic's merged PRs, their count and net lines. A failure never blocks closure.
 
 ## Parity and reuse claims
 

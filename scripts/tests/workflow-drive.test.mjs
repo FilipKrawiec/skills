@@ -2708,3 +2708,17 @@ test('drive proceeds when the CLI matches or leads the fetched default branch, o
   assert.equal(staleCliStep('11.118.0', '11.117.0', 'main'), null);
   assert.equal(staleCliStep('11.117.0', baseWorkflowVersion('main', () => { throw new Error('no such path'); }), 'main'), null);
 });
+
+test('closing an epic posts its metrics comment once, before the close', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  const posted = [];
+  repo.io.epicMergedPrs = (children, base) => { posted.push(['prs', children.map(c => c.number), base]); return [{ number: 7, title: 'feat: x', additions: 4, deletions: 1 }]; };
+  repo.io.recordEpicMetrics = (e, body) => { posted.push(['comment', e.number, body, repo.s.issues[9].state]); };
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  const comments = posted.filter(entry => entry[0] === 'comment');
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0][3], 'OPEN');
+  assert.match(comments[0][2], /PRs: 1\b[\s\S]*feat: 1 \(100%\)[\s\S]*Net lines: 3/);
+});

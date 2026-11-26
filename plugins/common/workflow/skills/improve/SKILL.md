@@ -24,7 +24,7 @@ Routine engineering within approved constraints is delegated. Product intent, co
 
 ## 3. Deliver and record
 
-Make an explicitly requested small change in place when repository rules allow. Fix the Nits worth fixing in one change with the lessons, or file them as one `type:story` carrying `<!-- workflow:nit-sweep -->` in its body (`issue create` refuses that marker on a `type:bug`); then run `<cli> nits --done <PR>...` for every PR swept. Deliver a change like any other: file its issue and run `drive <issue>`. On failure, attempt at most two evidence-led fixes, then record a concrete retry condition. Ask the owner only for reserved effects.
+Make an explicitly requested small change in place when repository rules allow. Fix the Nits of an epic's own PRs in its final refinement PR; never file a separate Nit-sweep PR for them. For Nits outside an epic, fix those worth fixing in one change with the lessons, or file them as one `type:story` carrying `<!-- workflow:nit-sweep -->` in its body (`issue create` refuses that marker on a `type:bug`); then run `<cli> nits --done <PR>...` for every PR swept. Deliver a change like any other: file its issue and run `drive <issue>`. On failure, attempt at most two evidence-led fixes, then record a concrete retry condition. Ask the owner only for reserved effects.
 
 On the epic, after filing, comment `## Lessons` with occurrences, target and wording, or `no lessons`, plus the swept Nits; list observations in one line each. With no epic, report these in the output.
 

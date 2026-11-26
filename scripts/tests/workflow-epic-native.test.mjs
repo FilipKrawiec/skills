@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { verifyConsolidatedDelivery } from '../../plugins/common/workflow/scripts/lib/consolidated-delivery.mjs';
-import { verifyEpicClosure } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
+import { verifyEpicClosure, epicMetricsComment, epicMetricsMarker } from '../../plugins/common/workflow/scripts/lib/epic-closure.mjs';
 import { resolveNativeEpicEvidence } from '../../plugins/common/workflow/scripts/lib/epic-attestation.mjs';
 
 const pr = 'https://github.com/a/b/pull/12';
@@ -133,4 +133,22 @@ test('an outcome must copy the criterion text verbatim, Markdown included; strip
   assert.equal(result.complete, false);
   assert.equal(result.needsReview, true);
   assert.match(result.issues[0], /verbatim/);
+});
+
+test('the epic metrics comment gives the feat vs fix/refactor share, the PR count and the net lines over distinct merged PRs', () => {
+  const prs = [
+    { number: 1, title: 'feat(a): one', additions: 100, deletions: 20 },
+    { number: 2, title: 'feat!: two', additions: 10, deletions: 40 },
+    { number: 3, title: 'fix(b): three', additions: 5, deletions: 5 },
+    { number: 4, title: 'refactor: four', additions: 0, deletions: 30 },
+    { number: 1, title: 'feat(a): one', additions: 100, deletions: 20 },
+    { number: 5, title: 'docs: five', additions: 3, deletions: 0 },
+  ];
+  const body = epicMetricsComment(9, prs);
+  assert.ok(body.startsWith(epicMetricsMarker));
+  assert.match(body, /PRs: 5\b/);
+  assert.match(body, /feat: 2 \(40%\)/);
+  assert.match(body, /fix\/refactor: 2 \(40%\)/);
+  assert.match(body, /Net lines: 23\b/);
+  assert.match(epicMetricsComment(9, []), /PRs: 0\b/);
 });
