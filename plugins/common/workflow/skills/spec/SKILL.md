@@ -12,7 +12,7 @@ The `lane:owner` label (the lane label) marks an issue the owner must take part 
 
 ## 1. Define
 
-Reuse an issue or template; read relevant code, tests, rules and decisions. Record intent, constraints, non-goals and observable `### Acceptance criteria` (test-only work needs behavior criteria). Bound investigations by question and time. New interactions need owner prototype direction or an accepted pattern. Record product choices as [decision records](references/decision-records.md).
+Reuse an issue or template; read relevant code, tests, rules, ADRs and decisions. Record intent, constraints, non-goals and observable `### Acceptance criteria` (test-only work needs behavior criteria). Bound investigations by question, time and evidence. New interactions need owner prototype direction or an accepted pattern. Record product choices as [decision records](references/decision-records.md).
 
 Reserve these for the owner, and continue independent work during the wait:
 
@@ -23,33 +23,18 @@ Reserve these for the owner, and continue independent work during the wait:
 Each open issue has:
 
 - a native milestone;
-- one type: an epic, or a story or bug under one epic (epics never nest);
+- one type: an epic, or a story or bug under one epic (epics never nest; refinement slices are stories);
 - `lane:owner` only while the owner must take part, and on an epic only while it is a draft.
 
-Titles use `feat`, `fix`, `docs/test/ci/refactor/perf` or `epic`, then area and outcome. Group and split per [split.md](references/split.md), never by size. Only epics have children; read [epics.md](references/epics.md) before changing one. UI criteria have feature code compose the project's component library; a missing primitive is added to it first, never inline. Write no conditional criterion. Record outcome dependencies as blocked-by links, not file ordering.
+Titles use `feat`, `fix`, `docs/test/ci/refactor/perf` or `epic`, then area and outcome. Group and split per [split.md](references/split.md), never by size. Only epics have children; read [epics.md](references/epics.md) before changing one. UI criteria have feature code compose the project's own component library; a missing primitive is added to the library first, never inline in the feature. Never write a conditional criterion. Record outcome dependencies as blocked-by links, not file ordering; verify outcomes.
 
-One filled issue body:
-
-````text
-Title: feat(auth): expired sessions read as signed out
-
-## Summary
-Part of epic #40. An expired session returns 401.
-
-### Acceptance criteria
-- [ ] `readSession` returns null once `expiresAt` is past.
-- [ ] A live session still returns its user.
-
-```scope
-{"paths": ["src/auth/", "test/auth/"], "dependencies": []}
-```
-````
+A filled issue body is in [issue-example.md](references/issue-example.md).
 
 **Exit gate:** grounded issue, authority, acceptance, dependencies and reserved decisions recorded; outsiders need `owner:approved`.
 
 ## 2. Transition
 
-Add a fenced `scope` JSON packet (above; a trailing `/` covers a subtree) when the changed paths are known. The `devops` assessor judges risk from the change, with the packet's paths as evidence (`review`'s `references/risk.md`); set an issue's `risk:R*` only as the owner's floor. A follow-up to an unmerged PR joins its next round or lists it in `dependencies`. `issue create` is the only path to a new issue, never raw `gh`; `--distinct-from N --reason "..."` marks a separate one. Re-read, then replace conflicting family labels; keep others and owner holds.
+Add a fenced `scope` JSON packet (see the example; a trailing `/` covers a subtree) when the changed paths are known. The `devops` assessor judges risk from the change, with the packet's paths as evidence (`review`'s `references/risk.md`); set an issue's `risk:R*` only as the owner's floor. A follow-up to an unmerged PR joins its next round or lists it in `dependencies`. `issue create` is the only path to a new issue, never raw `gh`; `--distinct-from N --reason "..."` marks a separate one. Re-read, then replace conflicting family labels; keep others and owner holds.
 
 The owner's session is where the owner runs `drive`.
 
@@ -59,26 +44,26 @@ The owner's session is where the owner runs `drive`.
 | Owner's session | remove `lane:owner` | Participation resolved and authority covers the rest; ready and unblocked goes to Todo. |
 | Planner | one `type:*` | Actual outcome changes type; an epic is never claimed. |
 | `drive` | add `state:started` | Exclusive assignment; In Progress. |
-| `drive` | remove `state:started` | PR marked ready (Review; the open PR still excludes reassignment), or work completed, returned or reverted. |
+| `drive` | remove `state:started` | PR marked ready (Review; the open PR still excludes reassignment), or work completed, returned or reverted (record evidence or replan). |
 | `drive` | one `risk:R*` on a PR | Set from the `devops` assessment when the draft opens, reason in one PR comment; reassessed when a later head touches unseen files; never below the owner's floor. |
 | Reviewer | add/remove own `review:owner` | An approval with `verdict=owner` needs the owner, or that gate clears; never erase an explicit owner hold. |
 | Owner's session | close a slice | Merged evidence proves its criteria; Done. |
 | Owner's session | close an epic | Closed slices delivered to test cover every criterion; Done. |
 | Owner's session | close a product milestone | Release evidence proves deployed acceptance; Done. |
 
-Temporary dependency, CI, capability or owner waits keep the labels, milestone and assignment: record cause, actor and resume condition; never overwrite active claims. With a board, status is:
+Temporary dependency, CI, capability or owner waits keep the labels, milestone and assignment: record cause, actor, resume condition and evidence, and never overwrite active claims. With a board, status is:
 
 - Todo for ready work;
 - In Progress for active work and draft PRs;
 - Review once its PR is ready (`Part of` until deployed acceptance);
 - Done for verified slices, delivered epics or accepted milestones.
 
-Draft epics stay in Backlog, approved ones In Progress. Without a board use priority labels; status grants no authority.
+Draft epics stay in Backlog, approved ones are In Progress. Without a board use priority labels; status grants no authority.
 
 **Exit gate:** one type and milestone, `lane:owner` only where the owner takes part, with waits and actors explicit.
 
 ## 3. Record
 
-Keep markers; link merged evidence per criterion. Withdrawn scope needs its decision; close unstarted duplicates per [split.md](references/split.md), no owner.
+Preserve template markers; link merged evidence per criterion. Withdrawn scope needs its decision; close unstarted duplicates per [split.md](references/split.md), no owner. Re-read the saved issue.
 
 **Exit gate/output:** at most 5 lines: **Summary:** issue, criteria, labels and waits. **Decision:** next action/actor or reserved options and recommendation.

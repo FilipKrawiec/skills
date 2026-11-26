@@ -22,7 +22,7 @@ if (!library) { console.log('design-system gate: no library path configured; not
 const root = process.cwd();
 const libDir = resolve(root, library);
 const skip = new Set(['node_modules', '.git', 'build', 'dist', '.dart_tool', 'coverage', '.next']);
-const react = /<(button|input|select)(?=[\s/>])/;
+const react = /<(button|input|select)(?=[\s/>]|$)/;
 const material = /\b(ElevatedButton|TextButton|OutlinedButton|FilledButton|IconButton|FloatingActionButton|TextField|TextFormField|DropdownButton|DropdownMenu|Checkbox|Radio|Switch|Slider)(?:<[^>()]*>)?\s*\(/;
 const problems = [];
 function walk(dir) {
@@ -229,6 +229,7 @@ export function initCommand(args, io = {}) {
       }
       todo.push(gatePath);
     }
+    unable.push('verify: add `design-system-gate` (`just design-system-gate`) to the project\'s verify recipe, or the gate never fails a pull request; init does not edit existing recipes');
   }
 
   // GitHub: labels and safety

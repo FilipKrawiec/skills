@@ -229,6 +229,16 @@ test('init --library installs a gate that fails raw React primitives outside the
   }
 });
 
+test('the gate fails a raw React primitive whose attributes start on the next lines, and init lists wiring it into verify', t => {
+  const f = fixture(t);
+  const { unable } = initCommand([...args, '--library', 'src/ui'], f.io);
+  assert.ok(unable.some(line => line.startsWith('verify:') && line.includes('design-system-gate')));
+  put(f, 'src/features/A.tsx', 'export const A = () => (\n  <button\n    type="button"\n    onClick={go}\n  >x</button>\n);\n');
+  const result = gateRun(f, 'src/ui');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /src\/features\/A\.tsx:2: raw <button> outside src\/ui/);
+});
+
 test('the gate fails a raw Material widget in Flutter feature code and passes it inside the library', t => {
   const f = fixture(t);
   initCommand([...args, '--library', 'lib/ui'], f.io);
