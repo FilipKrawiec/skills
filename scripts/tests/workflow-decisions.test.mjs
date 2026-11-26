@@ -60,7 +60,7 @@ test('decision 2026-11-16 (#466, #467, #560): the Reviewer approval merges every
   for (const risk of ['R0', 'R1', 'R2']) assert.equal(prState(pr({ labels: [label(`risk:${risk}`)], reviews: approved }), lanes).next.action, 'merge', risk);
   assert.equal(prState(pr({ labels: [label('review:owner')], reviews: [verdict('owner', 'APPROVED')] }), lanes).next.actor, 'owner', 'a reserved effect');
   assert.equal(prState(pr({ files: [{ path: '.github/CODEOWNERS' }], reviews: approved }), lanes).next.actor, 'owner', 'an owner code-owner path');
-  assert.match(text('AGENTS.md'), /budget increases, authority\/credential\/release changes, quality-gate weakening/);
+  assert.match(text('AGENTS.md'), /a new paid service or a budget increase, a weakened authority, credential, release or quality gate/);
 });
 
 test('decision 2026-11-16 (#560): AGY is advisory only and never reviews or implements', () => {
