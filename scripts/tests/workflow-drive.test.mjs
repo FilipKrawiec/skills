@@ -317,6 +317,36 @@ test('drive: one diff assessment and one reviewer session deliver a clean PR', (
   assert.equal(repo.s.comments.length, 1);
 });
 
+const GB = 1024 ** 3;
+test('under 50 GB free drive starts no new worktree and says why in one line, while an existing worktree still advances', () => {
+  const fresh = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
+  fresh.io.freeBytes = () => 32 * GB;
+  const held = drive(fresh.io, 3, lanes, {});
+  assert.deepEqual(fresh.calls, []);
+  assert.deepEqual(held, { blocked: { issue: 3, reason: 'drive: 32.0 GB free is under the 50 GB floor; no new worktree starts until space frees' } });
+  const own = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ path: '/w/3', branch: '3-x' }) } });
+  own.io.freeBytes = () => 32 * GB;
+  assert.equal(drive(own.io, 3, lanes, {}).agent, 'implementer');
+  const roomy = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
+  roomy.io.freeBytes = () => 60 * GB;
+  drive(roomy.io, 3, lanes, {});
+  assert.deepEqual(roomy.calls, [['start', 3]]);
+});
+
+test('every drive call, a single issue or --next, first removes settled worktrees', () => {
+  for (const args of [['3'], ['--next']]) {
+    const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ path: '/w/3', branch: '3-x' }) } });
+    let swept = 0;
+    repo.io.sweepWorktrees = () => { swept++; return ['/r/.claude/worktrees/old']; };
+    const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+    const log = console.log, error = console.error; const said = [];
+    console.log = () => {}; console.error = text => said.push(text);
+    try { driveCommand(args, lanes, repo.io, { lockDirectory: directory, session: 'test' }); } finally { console.log = log; console.error = error; rmSync(directory, { recursive: true, force: true }); }
+    assert.equal(swept, 1, args.join(' '));
+    assert.ok(said.some(line => /removed 1 settled worktree/.test(line)), said.join('\n'));
+  }
+});
+
 test('drive: an owner floor wins over a lower assessment', () => {
   const repo = fakeRepo({ issues: { 3: issue({ labels: [label('risk:R2')] }) }, trees: {} });
   drive(repo.io, 3, lanes, {});

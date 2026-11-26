@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, realpathSync, rmSync, statfsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { cleanEnvironment, config } from './core.mjs';
@@ -48,10 +48,32 @@ function gitIn(cwd, args, extraEnv = {}) {
   return spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...cleanEnvironment(), GIT_OPTIONAL_LOCKS: '0', ...extraEnv } });
 }
 
-export function busyPaths() {
-  const listed = spawnSync('lsof', ['-a', '-d', 'cwd', '-Fn'], { encoding: 'utf8' });
-  return listed.error ? null : listed.stdout.split('\n').filter(line => line.startsWith('n')).map(line => line.slice(1));
+// The desktop app's Apple Virtualization VM mounts the whole repository, so its process holds every tree's path without working in one.
+const vmProcess = /^com\.apple\.Virtualization/;
+
+// Directories real processes hold, from `lsof -Fpcn` output; a virtualization VM's own directory never counts as busy.
+export function busyFromLsof(text) {
+  const paths = [];
+  let command = '';
+  for (const line of text.split('\n')) {
+    if (line.startsWith('p')) command = '';
+    else if (line.startsWith('c')) command = line.slice(1);
+    else if (line.startsWith('n') && !vmProcess.test(command)) paths.push(line.slice(1));
+  }
+  return paths;
 }
+
+export function busyPaths() {
+  const listed = spawnSync('lsof', ['+c', '0', '-a', '-d', 'cwd', '-Fpcn'], { encoding: 'utf8' });
+  return listed.error ? null : busyFromLsof(listed.stdout);
+}
+
+// Below this much free disk, drive starts no new parallel worktree.
+export const diskFloorBytes = 50 * 1024 ** 3;
+export function freeDiskBytes(path) {
+  try { const stats = statfsSync(path); return stats.bavail * stats.bsize; } catch { return null; }
+}
+export const diskFloorLine = free => `drive: ${(free / 1024 ** 3).toFixed(1)} GB free is under the ${diskFloorBytes / 1024 ** 3} GB floor; no new worktree starts until space frees`;
 
 function touched(path) {
   const gitDir = gitIn(path, ['rev-parse', '--absolute-git-dir']).stdout.trim();
@@ -129,6 +151,36 @@ export function removeWorktree(tree, verdict, root, baseRef) {
   return { removed: true, backup };
 }
 
+// Removes the trees `worktreeVerdict` removes; `settledOnly` limits that to ended PRs and heads already in the base, as `drive` and the runner do every call.
+export function tidyWorktrees({ dryRun = false, idleDays = 2, settledOnly = false, log = console.log, busy = busyPaths() } = {}) {
+  const { root: current, baseRef } = config(false);
+  const listed = gitIn(current, ['worktree', 'list', '--porcelain']);
+  if (listed.status !== 0) throw new Error('git worktree list failed');
+  const trees = parseWorktreeList(listed.stdout);
+  const root = trees[0].path;
+  const pulls = spawnSync('gh', ['pr', 'list', '--state', 'all', '--limit', '1000', '--json', 'headRefName,state'], { cwd: current, encoding: 'utf8' });
+  // Without PR states an open PR's tree could look idle, so only a tree already in the base goes.
+  const prs = pulls.status === 0 ? prStates(JSON.parse(pulls.stdout)) : null;
+  const now = Date.now();
+  const removed = [];
+  for (const tree of trees) {
+    const facts = worktreeFacts(tree, { root, current, baseRef, prs: prs ?? new Map(), busy });
+    let verdict = worktreeVerdict(facts, { now, idleDays });
+    if (!prs && verdict.action === 'remove' && verdict.why !== 'its head is in the base') verdict = { action: 'keep', why: 'PR states unavailable' };
+    if (settledOnly && verdict.action === 'remove' && !settledReason.test(verdict.why)) verdict = { action: 'keep', why: 'not settled' };
+    if (verdict.action === 'keep') { log(`kept ${tree.path} (${verdict.why})`); continue; }
+    if (dryRun) { log(`would remove ${tree.path} (${verdict.why}${facts.dirty ? '; backs up its changes' : ''})`); continue; }
+    const result = removeWorktree(facts, verdict, root, baseRef);
+    if (result.removed) removed.push(tree.path);
+    log(`${result.removed ? 'removed' : 'kept'} ${tree.path} (${result.removed ? verdict.why : result.note}${result.removed && result.note ? `; ${result.note}` : ''}${result.backup ? `; changes in ${result.backup}` : ''})`);
+  }
+  if (!dryRun) gitIn(root, ['worktree', 'prune']);
+  return removed;
+}
+
+// A tree is settled once its PR merged or closed, or its head is in the base.
+const settledReason = /^(its PR is (merged|closed)|its head is in the base)$/;
+
 export function worktreeCommand(args) {
   const usage = 'Usage: worktree tidy [--dry-run] [--idle-days N]';
   if (args[0] !== 'tidy') throw new Error(usage);
@@ -142,24 +194,5 @@ export function worktreeCommand(args) {
   const idleAt = args.indexOf('--idle-days');
   const idleDays = idleAt === -1 ? 2 : Number(args[idleAt + 1]);
   if (!Number.isFinite(idleDays) || idleDays < 0) throw new Error(usage);
-  const { root: current, baseRef } = config(false);
-  const listed = gitIn(current, ['worktree', 'list', '--porcelain']);
-  if (listed.status !== 0) throw new Error('git worktree list failed');
-  const trees = parseWorktreeList(listed.stdout);
-  const root = trees[0].path;
-  const pulls = spawnSync('gh', ['pr', 'list', '--state', 'all', '--limit', '1000', '--json', 'headRefName,state'], { cwd: current, encoding: 'utf8' });
-  // Without PR states an open PR's tree could look idle, so only a tree already in the base goes.
-  const prs = pulls.status === 0 ? prStates(JSON.parse(pulls.stdout)) : null;
-  const busy = busyPaths();
-  const now = Date.now();
-  for (const tree of trees) {
-    const facts = worktreeFacts(tree, { root, current, baseRef, prs: prs ?? new Map(), busy });
-    let verdict = worktreeVerdict(facts, { now, idleDays });
-    if (!prs && verdict.action === 'remove' && verdict.why !== 'its head is in the base') verdict = { action: 'keep', why: 'PR states unavailable' };
-    if (verdict.action === 'keep') { console.log(`kept ${tree.path} (${verdict.why})`); continue; }
-    if (dryRun) { console.log(`would remove ${tree.path} (${verdict.why}${facts.dirty ? '; backs up its changes' : ''})`); continue; }
-    const result = removeWorktree(facts, verdict, root, baseRef);
-    console.log(`${result.removed ? 'removed' : 'kept'} ${tree.path} (${result.removed ? verdict.why : result.note}${result.removed && result.note ? `; ${result.note}` : ''}${result.backup ? `; changes in ${result.backup}` : ''})`);
-  }
-  if (!dryRun) gitIn(root, ['worktree', 'prune']);
+  tidyWorktrees({ dryRun, idleDays });
 }
