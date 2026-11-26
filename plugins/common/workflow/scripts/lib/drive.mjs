@@ -108,6 +108,18 @@ const refinementCriteria = [
   'Assess the epic\'s delivery flow: blocked and owner steps, rework, review rounds and cost. File at most two improvements, each with its evidence.',
 ];
 
+// The design pass: before it slices an epic, the planner posts one design note comment (module map, reuse, what is lifted first);
+// the Reviewer gates it with a verdict comment, and only an approved note lets `slice` run. Both are plain epic comments, so no owner step.
+export const designNoteMarker = '<!-- workflow:design-note -->';
+const designVerdict = /<!-- workflow:design-gate verdict=(approved|changes) -->/;
+// `comments` are the epic's comments oldest first as {author, body}. The newest note decides; only the Reviewer's verdict after it counts.
+export function designState(comments, reviewer) {
+  const at = comments.findLastIndex(comment => (comment.body || '').includes(designNoteMarker));
+  if (at < 0) return 'none';
+  const ruling = comments.slice(at + 1).findLast(comment => (!reviewer || comment.author?.toLowerCase() === reviewer.toLowerCase()) && designVerdict.test(comment.body || ''));
+  return ruling ? (designVerdict.exec(ruling.body)[1] === 'approved' ? 'approved' : 'changes') : 'pending';
+}
+
 // A risk assessment is a PR comment for each assessed diff, or a legacy issue comment: a marker with
 // the risk set, the assessor's risk, the owner floor, the head and the files it saw, then the reason for people to read.
 const assessmentMarker = /<!-- workflow:risk (\{.*?\}) -->/;
@@ -398,10 +410,15 @@ function uncoveredCriteria(epic, slices) {
     return bodies.some(body => body.includes(text) || (m[2] && body.includes(m[2].toLowerCase()))) ? [] : [{ id: m[2] || null, text: m[1] }];
   });
 }
-export function decideEpic({ epic, slices }) {
+export function decideEpic({ epic, slices, design = 'none' }) {
   if (epic.state !== 'OPEN') return { done: { epic: epic.number } };
   if ((epic.labels || []).some(label => (label.name ?? label) === 'lane:owner')) return { owner: `epic #${epic.number} waits for the owner's approval`, url: epic.url };
-  if (!slices.length) return agent('planner', 'slice', { reason: 'the epic has no slices' });
+  if (!slices.length) {
+    if (design === 'none') return agent('planner', 'design', { reason: 'the epic has no design note' });
+    if (design === 'pending') return agent('reviewer', 'design-gate', { reason: 'the epic design note has no Reviewer verdict' });
+    if (design === 'changes') return agent('planner', 'design', { reason: 'the Reviewer asked for changes to the epic design note', revise: true });
+    return agent('planner', 'slice', { reason: 'the epic has no slices' });
+  }
   const uncovered = uncoveredCriteria(epic, slices);
   if (uncovered.length) return agent('planner', 'slice', { reason: `epic criteria no slice covers: ${uncovered.map(c => c.id || c.text).join(', ')}`, uncovered });
   const dropped = slices.filter(slice => slice.state === 'OPEN' && slice.dropped?.length);
@@ -572,6 +589,23 @@ Invoke the \`improve\` skill for process lessons from the delivered epic ${f.iss
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 `;
 }
+function designGateBrief(f) {
+  return `# Reviewer brief: epic #${f.issue.number} design gate
+
+Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
+
+Task: gate the design note on ${f.issue.url} (review skill, references/design-gate.md). ${f.step.reason}.
+Read the newest epic comment starting \`${designNoteMarker}\`, the epic criteria and the repository. Approve it only when it holds the module map (bounded contexts or modules that change, judged with the \`ddd\` and \`hexagonal-architecture\` skills), names for each criterion the existing units and design-system parts it reuses (you search the repository and confirm none is missed, so no slice builds a second copy of one), and says what is lifted into a shared home first. Post one comment with \`GH_TOKEN=$(gh auth token --user <identities.reviewer>) gh api repos/${f.repo}/issues/${f.issue.number}/comments -F body=@<file>\` whose first line is \`<!-- workflow:design-gate verdict=approved|changes -->\`, then the reasons; for \`changes\` list each missing or wrong part so the planner can revise it. Never edit, commit or push, never start an agent, never ask the owner and never print a token.
+
+## Hand-back, at most 5 lines
+
+epic, the comment link, the verdict.
+
+## Epic
+
+${f.issue.body || '(no body)'}
+`;
+}
 function epicOutcomeBrief(f) {
   return `# Reviewer brief: epic #${f.issue.number} outcome review
 
@@ -591,11 +625,13 @@ ${f.issue.body || '(no body)'}
 }
 export function reviewerBrief(f) {
   if (f.step.mode === 'epic-outcome') return epicOutcomeBrief(f);
+  if (f.step.mode === 'design-gate') return designGateBrief(f);
   return `# Reviewer brief: PR #${f.pr.number} for #${f.issue.number}
 
 ${f.packet ? `Read the review packet first: ${f.packet}. It holds the issue criteria, CI, the project gate, the diff by area, the delta since your last verdict with open threads, and call sites of changed exports. Do not re-gather them; check blast radius outside it yourself.\n\n` : ''}Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
+Design note: when the issue cites an epic design note (\`${designNoteMarker}\`), read it; a change that builds a second copy of a unit the note names as existing or shared is a Blocker.
 ${f.step.disputed || f.step.dispute ? `Same head, disputed: the implementer disputes the blocking findings and changed no commit.${f.step.dispute ? ` Its evidence: ${f.step.dispute}` : ' It gave no note.'}\nJudge the evidence against the code; resolve a finding it refutes, repost the rest.\n` : f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 
@@ -613,7 +649,7 @@ verdict, PR, head, round, tag counts.
 export function plannerBrief(f) {
   return `# Planner brief: #${f.issue.number} ${f.issue.title}
 
-Task: ${f.step.mode === 'consolidate' ? `${f.step.reason}. Merge the overlapping unstarted issues ${f.step.overlaps.map(n => `#${n}`).join(', ')} and #${f.issue.number} into one canonical issue that carries every outcome, criterion, dependency, decision and milestone; close the others as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical issue) to each body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Split only for an independent outcome, a meaningful dependency, an authority boundary or a delivery constraint, never by size. Never merge a started issue, one with an open PR, issues in different epics without a shared outcome, or anything under \`lane:owner\`. When they are distinct outcomes, append \`${distinctMarker('M')}\` to #${f.issue.number} for each other issue M (and say why in a comment) and hand back \`distinct\`` : f.step.mode === 'refinement' ? `${f.step.reason}. Consolidate them into one canonical refinement slice (keep the one carrying the \`workflow:epic-refinement\` marker, or add the marker to the best candidate) that holds every outcome and criterion; close each other candidate as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical slice) to its body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Do not change how the refinement slice is built or what it must contain` : f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Invoke the `plan` skill to create the final refinement slice' + (f.step.uncovered?.length ? `. Epic criteria no slice covers yet: ${f.step.uncovered.map(c => `\`${c.id || c.text}\` (${c.text})`).join('; ')}. Add slices for them, each citing its criterion's ID or exact text in its body, or tick a criterion the epic already delivers` : '') : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Ignore base conflicts when narrowing scope; the implementer merges the base. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam: narrow it to its first outcome and create each other outcome as a sibling story or bug under the same epic (spec's split.md; never a nested epic) and hand back \`narrowed\``}. Invoke the \`spec\` skill for the issue form.
+Task: ${f.step.mode === 'consolidate' ? `${f.step.reason}. Merge the overlapping unstarted issues ${f.step.overlaps.map(n => `#${n}`).join(', ')} and #${f.issue.number} into one canonical issue that carries every outcome, criterion, dependency, decision and milestone; close the others as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical issue) to each body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Split only for an independent outcome, a meaningful dependency, an authority boundary or a delivery constraint, never by size. Never merge a started issue, one with an open PR, issues in different epics without a shared outcome, or anything under \`lane:owner\`. When they are distinct outcomes, append \`${distinctMarker('M')}\` to #${f.issue.number} for each other issue M (and say why in a comment) and hand back \`distinct\`` : f.step.mode === 'refinement' ? `${f.step.reason}. Consolidate them into one canonical refinement slice (keep the one carrying the \`workflow:epic-refinement\` marker, or add the marker to the best candidate) that holds every outcome and criterion; close each other candidate as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical slice) to its body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Do not change how the refinement slice is built or what it must contain` : f.step.mode === 'design' ? `${f.step.revise ? 'revise the design note: the Reviewer asked for changes in its latest `workflow:design-gate` comment, so read it, then post the revised note as a new comment (never edit the old one)' : 'write the design note for this approved epic before any slice exists'}. Post one comment on the epic with \`node ${cli} issue comment --number ${f.issue.number} --body-file PATH\`; its first line is \`${designNoteMarker}\`. Use the \`ddd\` and \`hexagonal-architecture\` skills and search the whole repository. The note holds (1) the module map: which bounded contexts or modules change; (2) for each epic criterion, the existing units and design-system parts it reuses, named by path; (3) what is lifted into a shared home first, as the epic's first slice. Create no slice and ask the owner nothing; hand back \`designed\`` : f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Read the gated design note (the epic comment starting `' + designNoteMarker + '`): every slice body must cite the design note (`design note: <comment link>`) and name the existing or shared units it uses, and a slice that lifts a unit into a shared home comes first. Invoke the `plan` skill to create the final refinement slice' + (f.step.uncovered?.length ? `. Epic criteria no slice covers yet: ${f.step.uncovered.map(c => `\`${c.id || c.text}\` (${c.text})`).join('; ')}. Add slices for them, each citing its criterion's ID or exact text in its body, or tick a criterion the epic already delivers` : '') : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Ignore base conflicts when narrowing scope; the implementer merges the base. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam: narrow it to its first outcome and create each other outcome as a sibling story or bug under the same epic (spec's split.md; never a nested epic) and hand back \`narrowed\``}. Invoke the \`spec\` skill for the issue form.
 Issue: ${f.issue.url}
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 Commands: \`node ${cli} issue create --title T --body-file PATH [--milestone NAME] [--parent N] [--blocked-by N,M]\`, \`node ${cli} issue edit --number N [--body-file PATH] [--milestone NAME] [--parent N] [--blocked-by N,M]\` (milestone, sub-issue link and blocked-by links, each confirmed from GitHub) and \`node ${cli} issue comment --number N --body-file PATH\`. Never run raw \`gh\`.
@@ -621,7 +657,7 @@ Never write code and never start an agent. Create only stories and bugs under th
 
 ## Hand-back, at most 5 lines
 
-status: sliced | narrowed | consolidated | distinct | blocked
+status: designed | sliced | narrowed | consolidated | distinct | blocked
 slices: <issue numbers, or the new issue when narrowed>
 into: <the canonical issue, when consolidated>
 closed: <issue numbers closed as consolidated into it>
@@ -789,6 +825,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
         return pr.number === number && isMergedInto(pr, repo, target);
       }
     }),
+    designComments: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().map(comment => ({ author: comment.user?.login || '', body: String(comment.body || '') })),
     hasLessons: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().some(comment => /^## Lessons\s*$/m.test(comment.body || '')),
     createRefinement: epic => {
       const scope = (epic.body || '').match(/```scope\s*\n[\s\S]*?```/)?.[0] || '```scope\n{"paths":[]}\n```';
@@ -1079,7 +1116,7 @@ function instruction(io, facts, step, lanes) {
   if (step.handoff) out.handoff = true;
   if (host === 'agy') out.command = ['node', fileURLToPath(new URL('../agy-session.mjs', import.meta.url)), lanes.delivery?.executables?.agy || 'agy', step.agent, model, brief];
   // The epic outcome review has no PR to claim: the Reviewer runs in its own session and posts one comment; the wrapper only records its usage on the epic.
-  if (step.agent === 'reviewer' && !pr) out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), '--epic', String(issue.number), ...reviewerCommand(model, brief, `epic-${issue.number}-outcome`, host, lanes.delivery?.executables?.[host] || host, effort)];
+  if (step.agent === 'reviewer' && !pr) out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), '--epic', String(issue.number), ...reviewerCommand(model, brief, `epic-${issue.number}-${step.mode === 'design-gate' ? 'design' : 'outcome'}`, host, lanes.delivery?.executables?.[host] || host, effort)];
   else if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host, effort)];
   return out;
 }
@@ -1094,7 +1131,7 @@ function finish(step) {
   return step;
 }
 // The session that wrote a hand-back: a `risk:` answer is devops, a planner answers consolidated or distinct, else the implementer.
-export const handBackRole = hb => hb.agent || (hb.risk ? 'devops' : ['consolidated', 'distinct', 'sliced', 'narrowed'].includes(hb.status) ? 'planner' : 'implementer');
+export const handBackRole = hb => hb.agent || (hb.risk ? 'devops' : ['consolidated', 'distinct', 'designed', 'sliced', 'narrowed'].includes(hb.status) ? 'planner' : 'implementer');
 // Every subagent hand-back records one usage row, `unreported` when it carries no `usage:` line: on its PR once open, else on the issue.
 export function driveIssue(io, n, lanes, handBack = {}) {
   const state = { recorded: false };
@@ -1239,7 +1276,7 @@ export function driveEpic(io, epic, lanes) {
   if (blockers.length) return { blocked: { issue: epic.number, by: blockers } };
   const withDependencies = slice => ({ ...slice, ...(slice.state === 'OPEN' ? splitDependencies(io.dependencies(slice)) : { blockers: [], dropped: [] }) });
   const slices = io.subIssues(epic.number).map(slice => withDependencies(io.issue(slice.number)));
-  if (!slices.length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices }), lanes);
+  if (!slices.length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices, design: designState(io.designComments?.(epic.number) ?? [], lanes.reviewer) }), lanes);
   // Backlogs are epic -> story|bug: an open epic under this epic is legacy (or a planner mistake); report it, never drive it as a story.
   const nested = slices.filter(slice => slice.state === 'OPEN' && isEpic(slice));
   if (nested.length) return { blocked: { issue: epic.number, reason: `epic #${epic.number} has nested epic ${nested.map(slice => `#${slice.number}`).join(', ')}; epics are never nested, so move its stories or bugs directly under #${epic.number} and close the nested epic` } };

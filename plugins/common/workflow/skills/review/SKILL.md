@@ -13,7 +13,7 @@ Outside drive: `node <this-skill-directory>/../../scripts/review-session.mjs <PR
 Branch on the assignment, first match wins:
 
 - a technical fork: read [assignments.md](references/assignments.md);
-- epic outcome: [epic-outcome.md](references/epic-outcome.md);
+- epic [design-gate.md](references/design-gate.md) or [epic-outcome.md](references/epic-outcome.md);
 - approve a ready PR whose newest verdict at its head is `ready`: read [approval.md](references/approval.md);
 - an area, diff or branch with no PR: read [area-audit.md](references/area-audit.md) for a whole area, do steps 3 and 4 and return the step 5 envelope without posting;
 - a PR: steps 1 to 5.
