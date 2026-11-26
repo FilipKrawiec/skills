@@ -1,6 +1,6 @@
 # Setting up a repository for drive
 
-Run `node <this-skill-directory>/../../scripts/workflow.mjs init` once, as the owner, in the project (`--dry-run` previews; add `--implementer LOGIN --reviewer LOGIN` and `--test "COMMAND"` when no config exists and no justfile or npm test is found). It merges the standing-approval `autoMode` into the user-level agent settings, enables marketplace auto-update, writes a missing config and Reviewer-only CODEOWNERS, runs `labels ensure` and `safety check`, and lists what failed. Nothing else is configured by hand.
+Run `node <this-skill-directory>/../../scripts/workflow.mjs init` once, as the owner, in the project (`--dry-run` previews; add `--implementer LOGIN --reviewer LOGIN` and `--test "COMMAND"` when no config exists and no justfile or npm test is found). It merges the standing-approval `autoMode` into the user-level agent settings, enables marketplace auto-update, writes a missing config and Reviewer-only CODEOWNERS, runs `labels ensure` and `safety check`, and lists what failed. `--library PATH` (the project's component library) installs a `design-system-gate` recipe failing a raw React `<button>`, `<input>`, `<select>` or Flutter Material widget outside it; add it to verify. Without it, `init` lists the missing setting. Nothing else is configured by hand.
 
 ## Configuration: `.agents/config.json`
 
@@ -18,9 +18,7 @@ Use version 1; read it from base.
 }
 ```
 
-`steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS names exactly one default Reviewer matching `identities.reviewer` and, by default, nothing else; `verify` is the default check. Owner: `identities.owner`, else a user repository owner, else commands fail; `init` writes it. A path CODEOWNERS still gives an owner makes `drive` return an `owner` step after approval; every other approval merges. Until the first config merges, `push --owner-bootstrap` reads `identities.owner` from the branch's config; afterwards, from base. The CLI caches the Project 24 hours; `cache show|refresh` manages it.
-
-Verify the host can dispatch and return an intact hand-back; the reviewer credential and exact-head approval stay mandatory.
+`steps.process` is `null`, `steps.assemble` an argv array or `null`, `steps.test` a non-empty argv array; `check` runs `steps.test`. Git derives repo/base; CODEOWNERS names exactly one default Reviewer matching `identities.reviewer` and, by default, nothing else; Owner: `identities.owner`, else a user repository owner, else commands fail; `init` writes it. A path CODEOWNERS still gives an owner makes `drive` return an `owner` step after approval; every other approval merges. Until the first config merges, `push --owner-bootstrap` reads `identities.owner` from the branch; afterwards, from base. `cache show|refresh` manages the 24-hour Project cache.
 
 ## GitHub
 
@@ -29,7 +27,6 @@ Verify the host can dispatch and return an intact hand-back; the reviewer creden
 ## Board
 
 - Statuses Backlog, Todo, In progress, Blocked, Review, Done; single-select Priority (P0, P1, P2).
-- Milestones group production outcomes or their health work; agents prioritize them.
 - Workflow: auto-add → Backlog. Do not automate PR-linked, reopened or closed status changes; `drive` and the owner's session apply readiness-aware transitions under `spec`.
 - Default view:
 
@@ -52,7 +49,7 @@ Verify the host can dispatch and return an intact hand-back; the reviewer creden
 
 Require configured status checks on branches up to date with the base in branch protection or the active ruleset. Drive cannot safely enable auto-merge without that setting.
 
-The project owns shared hardware verification: its test command must hold one machine-wide advisory lock per device for the entire run, including setup and cleanup. Use one lock path per device across checkouts; acquire several in a consistent order. Check slots limit gates, not devices.
+The project owns shared hardware verification: its test command holds one machine-wide advisory lock per device for the whole run, setup and cleanup included, with one lock path per device across checkouts and several acquired in a consistent order. Check slots limit gates, not devices.
 
 ## Start the drive session
 

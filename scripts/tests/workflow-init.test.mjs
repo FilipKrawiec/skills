@@ -1,5 +1,7 @@
 import test from 'node:test';
+import './support/host-stubs.mjs';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -202,4 +204,54 @@ test('dry run does not install the runner', t => {
   const f = fixture(t);
   initCommand([...args, '--dry-run'], f.io);
   assert.ok(f.lines.some(line => /would run: .*runner install/.test(line)));
+});
+
+function gateRun(f, library) {
+  return spawnSync(process.execPath, [join(f.root, 'scripts/design-system-gate.mjs'), library], { cwd: f.root, encoding: 'utf8' });
+}
+function put(f, path, text) {
+  mkdirSync(dirname(join(f.root, path)), { recursive: true });
+  writeFileSync(join(f.root, path), text);
+}
+
+test('init --library installs a gate that fails raw React primitives outside the library and passes them inside it', t => {
+  const f = fixture(t);
+  initCommand([...args, '--library', 'src/ui'], f.io);
+  assert.match(readFileSync(join(f.root, 'justfile'), 'utf8'), /^design-system-gate:\n    node scripts\/design-system-gate\.mjs src\/ui$/m);
+  put(f, 'src/ui/Button.tsx', 'export const Button = () => <button type="button">ok</button>;\n');
+  put(f, 'src/features/Home.tsx', 'import { Button } from "../ui/Button";\nexport const Home = () => <Button />;\n');
+  assert.equal(gateRun(f, 'src/ui').status, 0, 'the same element passes inside the library');
+  for (const tag of ['button', 'input', 'select']) {
+    put(f, 'src/features/Raw.tsx', `export const Raw = () => <${tag} name="x" />;\n`);
+    const result = gateRun(f, 'src/ui');
+    assert.equal(result.status, 1, `raw <${tag}> fails`);
+    assert.match(result.stderr, new RegExp(`src/features/Raw\\.tsx:1: raw <${tag}> outside src/ui`));
+  }
+});
+
+test('the gate fails a raw Material widget in Flutter feature code and passes it inside the library', t => {
+  const f = fixture(t);
+  initCommand([...args, '--library', 'lib/ui'], f.io);
+  put(f, 'lib/ui/app_button.dart', 'Widget build(c) => ElevatedButton(onPressed: null, child: Text("ok"));\n');
+  put(f, 'lib/features/home.dart', 'Widget build(c) => AppButton(label: "ok");\n');
+  assert.equal(gateRun(f, 'lib/ui').status, 0);
+  put(f, 'lib/features/home.dart', 'Widget build(c) => TextField();\n');
+  const result = gateRun(f, 'lib/ui');
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /lib\/features\/home\.dart:1: raw TextField outside lib\/ui/);
+});
+
+test('without a library path init installs no gate and lists the missing setting', t => {
+  const f = fixture(t);
+  const { unable } = initCommand(args, f.io);
+  assert.equal(existsSync(join(f.root, 'scripts/design-system-gate.mjs')), false);
+  assert.ok(!readFileSync(join(f.root, 'justfile'), 'utf8').includes('design-system-gate'));
+  assert.ok(unable.some(line => line.startsWith('design system:') && line.includes('--library')));
+});
+
+test('init --library rejects a path outside the project and a dry run writes no gate', t => {
+  const f = fixture(t);
+  assert.throws(() => initCommand([...args, '--library', '../ui'], f.io), /--library/);
+  initCommand([...args, '--library', 'src/ui', '--dry-run'], f.io);
+  assert.equal(existsSync(join(f.root, 'scripts')), false);
 });
