@@ -681,7 +681,7 @@ export function reviewerCommand(model, brief, name, host = 'claude', executable 
   if (host !== 'claude') throw new Error('Unsupported reviewer host');
   return [executable, '--print', '--output-format', 'json', '--agent', 'filipkrawiec-workflow:reviewer', '--model', model, ...(effort ? ['--effort', effort] : []), '--plugin-dir', pluginRoot.replace(/\/$/, ''), '--permission-mode', 'auto', '--name', name, `Follow your brief at ${brief}. Return at most 5 lines.`];
 }
-export const waitCommandFor = (pr, until) => ['node', cli, 'wait', String(pr), '--until', until];
+export const waitCommandFor = (pr, until, at) => ['node', cli, 'wait', String(pr), '--until', until, ...(at ? ['--at', at] : [])];
 
 export function updatePrBody(body, hb, evidence) {
   let result = body;
@@ -1215,7 +1215,7 @@ function writePacket(io, path, { issue, pr, tree, round, lanes }) {
   io.write(path, text);
 }
 function finish(step) {
-  if (step.wait) return { ...step, command: waitCommandFor(step.wait.pr, step.wait.until) };
+  if (step.wait) return { ...step, command: step.wait.until === 'date' ? waitCommandFor(step.wait.issue, 'date', step.wait.at) : waitCommandFor(step.wait.pr, step.wait.until) };
   return step;
 }
 // The session that wrote a hand-back: a `risk:` answer is devops, a planner answers consolidated or distinct, else the implementer.

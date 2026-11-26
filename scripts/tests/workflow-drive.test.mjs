@@ -7,15 +7,16 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { waitCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
-  designState, designNoteMarker, baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  designState, designNoteMarker, baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand, waitCommandFor,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { baselineRefs, createdIssueNumber, isBaselinePath, retagBaseline, baselineFollowUp } from '../../plugins/common/workflow/scripts/lib/baselines.mjs';
 import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
-import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
+import { findCycle, notBefore, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
 
 const head = 'a'.repeat(40);
 const lanes = { repo: 'acme/app', base: 'main', implementer: 'builder', reviewer: 'reviewer', owner: 'owner', steps: { test: ['just', 'verify'] } };
@@ -728,6 +729,27 @@ test('readDependencies unions blocked-by links with packet dependencies, issues 
   assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 3, body: '' }, closer([{ merged: false }]))), { blockers: [], dropped: [7] }, 'closed as completed with no merged PR is dropped');
   assert.deepEqual(splitDependencies(readDependencies('acme/app', { number: 3, body: '' }, closer([{ merged: false }, { merged: true }]))), { blockers: [], dropped: [] }, 'asks GitHub about the issue itself, however old its PR'
   );
+});
+
+test('an issue blocker carries the merge time of its closing PR, so wait-days resolves through readDependencies', () => {
+  const read = args => {
+    if (args[1] === 'graphql') return { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [{ merged: true, mergedAt: '2026-11-20T10:00:00Z' }, { merged: true, mergedAt: '2026-11-22T10:00:00Z' }] } } } } };
+    if (args.at(-1).includes('blocked_by')) return [[{ number: 7 }]];
+    return { state: 'closed', state_reason: 'completed', labels: [], body: '' };
+  };
+  const body = '<!-- workflow:wait-days 7 -->';
+  assert.equal(notBefore(body, readDependencies('acme/app', { number: 3, body }, read)), '2026-11-29T10:00:00.000Z');
+});
+
+test('the wait instruction of a date gate is a command that parses and sleeps until the time', () => {
+  const at = '2026-12-01T00:00:00.000Z';
+  const command = waitCommandFor(3, 'date', at);
+  assert.deepEqual(command.slice(2), ['wait', '3', '--until', 'date', '--at', at]);
+  let clock = Date.parse(at) - 90_000;
+  const code = waitCommand(command.slice(3), lanes, { pause: seconds => { clock += seconds * 1000; }, now: () => clock });
+  assert.equal(code, 0);
+  assert.ok(clock >= Date.parse(at));
+  assert.throws(() => waitCommand(['3', '--until', 'date'], lanes, { now: () => 0 }), /Usage: wait/);
 });
 
 test('an unmet dependency stops an item in every phase and keeps its worktree and PR', () => {

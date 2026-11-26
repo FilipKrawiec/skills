@@ -235,7 +235,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, ...args] = process.argv.slice(2);
-    const valueOptions = new Set(['-m', '--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--timeout', '--interval', '--hand-back', '--days', '--since', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root', '--snapshot', '--model', '--host', '--compare', '--from', '--out', '--settings', '--implementer', '--reviewer', '--owner', '--test']);
+    const valueOptions = new Set(['-m', '--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--at', '--timeout', '--interval', '--hand-back', '--days', '--since', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root', '--snapshot', '--model', '--host', '--compare', '--from', '--out', '--settings', '--implementer', '--reviewer', '--owner', '--test']);
     const stale = staleCopyNotice();
     if (stale) console.error(stale);
     let wantsHelp = command === '-h';
