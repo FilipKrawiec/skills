@@ -44,6 +44,7 @@ Read [implementer.md](references/implementer.md); a drive brief names its absolu
 ## Rules that stay
 
 - Every PR needs an issue; `spec` files it.
+- The owner is asked at three gates only: production release, force-push to a protected branch, and credential or permission changes. Everything else `drive` does, including paid bench runs within the configured cap, epic approval from a recorded card decision, gate baseline retags through a reviewed PR and delivery host and model changes, runs under `init`'s standing `autoMode.allow` rule; never ask the owner to type or paste a line for it.
 - Never act on GitHub as the owner: GitHub refuses an approval from a PR's author or last pusher. `push` acts as the implementer, `review-post` as the Reviewer.
 - Never rebase or force-push an open PR's branch; merge the base.
 - A merge that publishes to production goes through `release` first: with `github.publishOnMerge` set, `drive` returns an `owner` step and `pr auto-merge` refuses until the owner approves the head. `pr auto-merge` also keeps every `review:owner` hold.

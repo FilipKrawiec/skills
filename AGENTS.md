@@ -36,6 +36,7 @@ build_tools:
 ## Output
 
 - Approved milestone intent delegates slicing, routine engineering, technical ADRs and ready autonomous lanes. Record recommendations; reserve changed product/strategy intent, unfamiliar interaction direction, new paid services/budget increases, authority/credential/release changes, quality-gate weakening and exact production approval for the owner. Temporary blockers retain lane authorization; diagnose and replan technical failures.
+- The owner is asked at three gates only: production release, force-push to a protected branch, and credential or permission changes. Every other `drive` step runs under `init`'s standing `autoMode.allow` rule, including paid bench runs within the configured cap, epic approval taken from a recorded card decision, gate baseline retags through a reviewed PR, and delivery host and model changes. No skill or agent asks the owner to type or paste a line for anything else.
 - Every owner message has a **Summary** (the outcome, linking the PR, issue or `file:line` with the detail) and a **Decision** (what the owner must decide, with options and a recommendation, or the next action and responsible actor; use "Nothing needed." only with no pending action). A session reply ≤ 5 lines; a run or review report ≤ 8.
 - Start with the action or its evidence, not a preamble. Link changed files instead of pasting them.
 - In PRs, logs and agent-to-agent output, give the commands run, their exit codes and the decisions left.
