@@ -55,7 +55,7 @@ Read [implementer.md](references/implementer.md); a drive brief names its absolu
 
 ## Setup
 
-[setup.md](references/setup.md), [epic-closure.md](references/epic-closure.md), [runner.md](references/runner.md).
+[setup.md](references/setup.md), [epic-closure.md](references/epic-closure.md), [baselines.md](references/baselines.md), [runner.md](references/runner.md).
 
 ## Output
 

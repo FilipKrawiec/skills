@@ -16,6 +16,7 @@ import { checkState, failedStates, prFields } from './pr.mjs';
 import { addCriterionIds, tickCriteria, verifyEpicClosure } from './epic-closure.mjs';
 import { prState } from './state.mjs';
 import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
+import { baselineFollowUp, baselineRefs, isBaselinePath, retagBaseline } from './baselines.mjs';
 import { architectureNote, exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
 import { collectOrchestrator, collectSession, sessionUsage } from './session-log.mjs';
@@ -294,6 +295,8 @@ export function decideIssue(facts, lanes) {
     if (stray.length) return scopeStep('build', stray);
     return tree.unpushed ? { do: 'push' } : { do: 'open' };
   }
+  // The PR closes this issue, so a baseline entry still tagged with it would fail the gate on every PR once it closes.
+  if (facts.baselines?.length) return { do: 'retag-baselines' };
   const state = prState(pr, lanes);
   const completedClaim = facts.reviewingSince && (pr.reviews || []).some(review => review.author?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && review.commit?.oid === pr.headRefOid && review.state !== 'DISMISSED' && review.body?.includes(`sha=${pr.headRefOid}`) && /<!-- agent-review\b[^>]*\bverdict=(ready|fixes|split|owner)\b/.test(review.body) && Date.parse(review.submittedAt || '') > Math.max(facts.reviewingSince, facts.reviewSession?.startedAt || 0));
   if (facts.reviewSession?.unavailable) return { wait: { pr: pr.number, until: 'reviewed' } };
@@ -843,14 +846,41 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const body = epic.body.replace(/^(\s*[-*] \[[ xX]\] .+?\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->.*)$/gm, (line, whole, id) => ids.includes(id) ? line.replace(/\[[xX]\]/, '[ ]') : line);
       if (body !== epic.body) run('gh', ['issue', 'edit', String(epic.number), '--repo', repo, '--body', body]);
     },
-    createEpicFollowUp: (epic, criterion) => {
+    // Entries of gate baselines (tracked `*baseline*` files) tagged with issue n.
+    baselineRefs: (tree, n) => {
+      const listed = gitIn(tree.path, ['ls-files']);
+      const files = (listed || '').split('\n').filter(path => path && isBaselinePath(path) && existsSync(join(tree.path, path)));
+      return baselineRefs(files.map(path => ({ path, text: readFileSync(join(tree.path, path), 'utf8') })), n);
+    },
+    retagBaselines: (tree, refs, from, to) => {
+      for (const file of refs) writeFileSync(join(tree.path, file.path), retagBaseline(file.text, from, to));
+      return refs.map(file => file.path);
+    },
+    baselineFollowUp: (issue, refs) => {
+      const parent = io.parentEpic(issue.number);
+      return baselineFollowUp({
+        openIssues,
+        create: (epic, title, body) => {
+          if (epic) return io.createSubIssue(epic, title, body);
+          const file = join(workflowScratch(process.cwd()), `drive-baseline-${issue.number}.md`);
+          writeFileSync(file, body);
+          self(['issue', 'create', '--title', title, '--body-file', file, '--labels', 'type:story'], process.cwd());
+          return openIssues().find(open => (open.body || '').includes(body.split('\n')[0]))?.number;
+        },
+      }, issue, parent, refs);
+    },
+    // A sub-issue of an epic in the epic's milestone; returns its number.
+    createSubIssue: (epicNumber, title, body) => {
       const [owner, name] = repo.split('/');
       const lookup = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){id issue(number:$number){id milestone{id}}}}';
-      const data = gh(['api', 'graphql', '-f', `query=${lookup}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${epic.number}`]).data.repository;
+      const data = gh(['api', 'graphql', '-f', `query=${lookup}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${epicNumber}`]).data.repository;
       const mutation = 'mutation($repository:ID!,$parent:ID!,$title:String!,$body:String!,$milestone:ID){createIssue(input:{repositoryId:$repository,parentIssueId:$parent,title:$title,body:$body,milestoneId:$milestone}){issue{number}}}';
+      return gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=${title}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]).data.createIssue.issue.number;
+    },
+    createEpicFollowUp: (epic, criterion) => {
       const body = `<!-- workflow:epic-follow-up ${epic.number} ${criterion.id} -->\n\n## Outcome\n${criterion.nextAction}\n\n### Acceptance criteria\n- [ ] ${criterion.nextAction}`;
-      const result = gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=Follow up: ${criterion.text}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]);
-      return gh(['issue', 'view', String(result.data.createIssue.issue.number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
+      const number = io.createSubIssue(epic.number, `Follow up: ${criterion.text}`, body);
+      return gh(['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
     },
     // The open parent epic of a story or bug, or null; a failed read means no parent.
     parentEpic: n => { try { const parent = gh(['api', `repos/${repo}/issues/${n}/parent`]); return parent?.number && parent.state === 'open' && isEpic(parent) ? parent.number : null; } catch { return null; } },
@@ -1096,7 +1126,9 @@ function readIssueFacts(io, n, handBack) {
   // Only the assessment of the current phase is read: the issue's before a draft exists, then the PR's.
   const assessment = io.assessment(issue, pr?.state === 'OPEN' ? pr : null);
   const assessments = pr?.state === 'OPEN' ? { prAssessment: assessment } : { issueAssessment: assessment };
-  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, ...assessments, reviewingSince, reviewSession, postFailed, reviewThreads, now: io.now?.() ?? Date.now() };
+  // Entries of a gate baseline that name this issue, in a clean pushed worktree: they must move to an open follow-up before it closes.
+  const baselines = pr?.state === 'OPEN' && tree && !tree.dirty && !tree.unpushed && !tree.merging ? io.baselineRefs?.(tree, n) || [] : [];
+  return { issue, pr, tree, baselines, blockers, dropped, handBack, diffPaths, ...assessments, reviewingSince, reviewSession, postFailed, reviewThreads, now: io.now?.() ?? Date.now() };
 }
 // The risk that picks the models: the PR's label once a draft exists, else the issue assessment; never below the floor.
 function currentRisk(facts, step) {
@@ -1238,6 +1270,13 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
     else if (step.do === 'push') { if (pr?.autoMergeRequest) io.disableAutoMerge(pr); io.push(tree); }
     else if (step.do === 'open') { io.open(issue, tree, maxRisk(riskLabel(issue.labels || []), facts.issueAssessment?.risk || 'R1'), handBack); bodyUpdated = true; }
+    else if (step.do === 'retag-baselines') {
+      const followUp = io.baselineFollowUp(issue, facts.baselines);
+      const paths = io.retagBaselines(tree, facts.baselines, n, followUp);
+      io.commit(tree, `chore(baseline): retag entries of #${n} to #${followUp}`, paths);
+      if (pr.autoMergeRequest) io.disableAutoMerge(pr);
+      io.push(tree);
+    }
     else if (step.do === 'release-review') io.releaseReview(pr, tree, step.claim);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
