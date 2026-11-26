@@ -417,6 +417,7 @@ function fakeRepo(initial) {
     write: (path, text) => { writes[path] = text; },
     read: path => writes[path] ?? null,
     board: (n, value) => { (s.board ||= {})[n] = value; },
+    cardStatus: n => s.cards?.[n] ?? null,
     requiredBoard: (n, value) => { (s.board ||= {})[n] = value; },
   };
   return { s, io, calls, writes };
@@ -1218,6 +1219,20 @@ test('native incomplete review creates a follow-up once across a partial board f
   assert.equal(creates, 1);
   assert.equal(repo.s.board[100], 'PROGRESS');
   assert.equal(repo.s.issues[9].state, 'OPEN');
+});
+
+test('starting a slice moves an idle epic card to In progress and leaves Blocked, Review and Done alone', () => {
+  const slice = () => issue({ number: 3, body: '```scope\n{"paths":["docs/a.md"]}\n```', assessment: assessed('R0') });
+  for (const [status, moved] of [['Todo', true], ['Backlog', true], ['Blocked', false], ['Review', false], ['Done', false], [null, false]]) {
+    const epic = issue({ number: 9, labels: [label('type:epic')] });
+    const repo = fakeRepo({ issues: { 9: epic, 3: slice() }, subs: { 9: [3] }, cards: { 9: status } });
+    drive(repo.io, 3, lanes, {});
+    assert.equal(repo.s.board[3], 'PROGRESS');
+    assert.equal(repo.s.board[9], moved ? 'PROGRESS' : undefined, `epic card in ${status}`);
+  }
+  const alone = fakeRepo({ issues: { 3: slice() }, cards: { 3: 'Todo' } });
+  drive(alone.io, 3, lanes, {});
+  assert.deepEqual(alone.s.board, { 3: 'PROGRESS' }, 'a standalone issue has no epic card to move');
 });
 
 test('native review refuses unaccounted linked work without creating follow-ups', () => {

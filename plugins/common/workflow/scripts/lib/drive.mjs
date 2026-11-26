@@ -979,6 +979,17 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       if (current.state === 'OPEN') run('gh', ['issue', 'close', String(issue.number), '--repo', repo, '--reason', 'completed']);
     },
     board: (n, value) => board(lanes, n, value),
+    // The Status name of an issue's card on the repository's board; null when there is no board, no card or the read fails.
+    cardStatus: n => {
+      try {
+        const project = cachedGithubMetadata(lanes.repo).project;
+        if (!project?.number) return null;
+        const [org, name] = repo.split('/');
+        const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){projectItems(first:30){nodes{project{number} status:fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}';
+        const nodes = gh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${org}`, '-F', `name=${name}`, '-F', `number=${n}`]).data.repository.issue?.projectItems?.nodes || [];
+        return nodes.find(node => node.project?.number === project.number)?.status?.name ?? null;
+      } catch { return null; }
+    },
     // Best effort: a closed issue's card never waits for a rerun of drive for that issue.
     sweepBoard: () => { try { return sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, { windowed: true }); } catch (error) { console.error(`drive: board sweep skipped: ${error.message}`); return []; } },
     // A repository with no board skips the step (boardStatus returns false and says so); any other failure throws.
@@ -1012,6 +1023,15 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
     }),
   };
   return io;
+}
+// Starting or resuming a slice of an open epic moves the epic's card to In progress from Backlog or Todo only; Blocked, Review,
+// Done and an unknown status stay. A failed read or move never stops the slice.
+const epicCardIdle = new Set(['backlog', 'todo']);
+function startEpicCard(io, n) {
+  try {
+    const epic = io.parentEpic?.(n) ?? null;
+    if (epic && epicCardIdle.has(String(io.cardStatus?.(epic) ?? '').toLowerCase())) io.board(epic, 'PROGRESS');
+  } catch (error) { console.error(`drive: epic card not moved for #${n}: ${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}`); }
 }
 function board(lanes, number, value) {
   try { boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, number, value, true); } catch (error) { console.error(`drive: board status skipped for #${number}: ${error.message}`); }
@@ -1170,6 +1190,7 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
       const free = tree ? null : io.freeBytes?.() ?? null;
       if (free !== null && free < diskFloorBytes) return { blocked: { issue: n, reason: diskFloorLine(free) } };
       io.start(issue, pr?.headRefName); io.board(n, 'PROGRESS');
+      startEpicCard(io, n);
     }
     else if (step.do === 'assess') {
       const floor = riskLabel(issue.labels || []);
