@@ -88,7 +88,10 @@ function sameOutcome(candidate, title, body) {
 function findExistingMatch(issues, { title, body, now = Date.now() }) {
   const cutoff = now - DUPLICATE_WINDOW_DAYS * 86_400_000;
   const live = issues.filter(issue => issue.state !== 'CLOSED' || (issue.closedAt && Date.parse(issue.closedAt) >= cutoff));
-  return scopeOverlaps(live, pathsFromIssueBody(body)).filter(issue => sameOutcome(issue, title, body)).sort((a, b) => a.number - b.number)[0] ?? null;
+  const mine = pathsFromIssueBody(body);
+  // The scope packet is optional: when either side has no paths, the same failing behaviour or outcome alone matches.
+  const sharesScope = issue => !mine?.length || !pathsFromIssueBody(issue.body || '')?.length || scopeOverlaps([issue], mine).length > 0;
+  return live.filter(issue => sharesScope(issue) && sameOutcome(issue, title, body)).sort((a, b) => a.number - b.number)[0] ?? null;
 }
 const positive = value => Number.isInteger(value) && value > 0;
 // `--milestone NAME`, `--parent N` and `--blocked-by N[,M]`, validated before any write.
@@ -149,7 +152,7 @@ export function issueCreate(args) {
   const check = args.includes('--check');
   const o = flags(args.filter(arg => arg !== '--unique' && arg !== '--check'), ['--title', '--body-file', '--labels', '--repo', '--milestone', '--parent', '--blocked-by', '--distinct-from', '--reason']);
   const title = (o['--title'] || '').trim();
-  const usage = 'Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M] [--unique] [--check] [--distinct-from N --reason "<one line>"]. Before creating, any type of issue is matched against every open issue and those closed in the last 30 days: a match shares a scope path and the same failing behaviour or outcome (title words overlap 60%, or title and body words 50%). On a match nothing is created: the evidence is commented on it, a closed match is reopened (the fault is back), and `Exists: #N` is printed. --distinct-from N with --reason creates the issue anyway and records `Distinct from #N: <reason>` in its body.';
+  const usage = 'Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M] [--unique] [--check] [--distinct-from N --reason "<one line>"]. Before creating, any type of issue is matched against every open issue and those closed in the last 30 days: a match shares a scope path (or either side has none) and the same failing behaviour or outcome (title words overlap 60%, or title and body words 50%). On a match nothing is created: the evidence is commented on it, a closed match is reopened (the fault is back), and `Exists: #N` is printed. --distinct-from N with --reason creates the issue anyway and records `Distinct from #N: <reason>` in its body.';
   if (!title || !o['--body-file']) throw new Error(usage);
   const distinct = o['--distinct-from'] === undefined ? null : Number(o['--distinct-from']);
   const reason = (o['--reason'] || '').trim();
