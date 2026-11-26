@@ -2737,6 +2737,9 @@ test('designState: none without a note, pending until the Reviewer rules, the ne
   assert.equal(designState([designNote, verdict('changes'), designNote], 'reviewer'), 'pending', 'a revised note awaits a new verdict');
   assert.equal(designState([designNote, verdict('changes'), designNote, verdict('approved')], 'reviewer'), 'approved');
   assert.equal(designState([designNote, verdict('approved', 'someone-else')], 'reviewer'), 'pending', 'only the Reviewer identity gates');
+  const forged = { author: 'stranger', body: designNote.body };
+  assert.equal(designState([forged], 'reviewer', trustedLogins(lanes)), 'none', 'a stranger\'s note is not a note');
+  assert.equal(designState([designNote, verdict('approved'), forged], 'reviewer', trustedLogins(lanes)), 'approved', 'a stranger\'s note does not reset the gate');
 });
 
 test('an approved epic with no slices goes to the planner for a design note, never straight to slicing', () => {

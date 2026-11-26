@@ -113,8 +113,8 @@ const refinementCriteria = [
 export const designNoteMarker = '<!-- workflow:design-note -->';
 const designVerdict = /<!-- workflow:design-gate verdict=(approved|changes) -->/;
 // `comments` are the epic's comments oldest first as {author, body}. The newest note decides; only the Reviewer's verdict after it counts.
-export function designState(comments, reviewer) {
-  const at = comments.findLastIndex(comment => (comment.body || '').includes(designNoteMarker));
+export function designState(comments, reviewer, trusted) {
+  const at = comments.findLastIndex(comment => (comment.body || '').includes(designNoteMarker) && (!trusted || trusted.includes((comment.author || '').toLowerCase())));
   if (at < 0) return 'none';
   const ruling = comments.slice(at + 1).findLast(comment => (!reviewer || comment.author?.toLowerCase() === reviewer.toLowerCase()) && designVerdict.test(comment.body || ''));
   return ruling ? (designVerdict.exec(ruling.body)[1] === 'approved' ? 'approved' : 'changes') : 'pending';
@@ -1297,7 +1297,7 @@ export function driveEpic(io, epic, lanes) {
   if (blockers.length) return { blocked: { issue: epic.number, by: blockers } };
   const withDependencies = slice => ({ ...slice, ...(slice.state === 'OPEN' ? splitDependencies(io.dependencies(slice)) : { blockers: [], dropped: [] }) });
   const slices = io.subIssues(epic.number).map(slice => withDependencies(io.issue(slice.number)));
-  if (!slices.length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices, design: designState(io.designComments?.(epic.number) ?? [], lanes.reviewer) }), lanes);
+  if (!slices.length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices, design: designState(io.designComments?.(epic.number) ?? [], lanes.reviewer, trustedLogins(lanes)) }), lanes);
   // Backlogs are epic -> story|bug: an open epic under this epic is legacy (or a planner mistake); report it, never drive it as a story.
   const nested = slices.filter(slice => slice.state === 'OPEN' && isEpic(slice));
   if (nested.length) return { blocked: { issue: epic.number, reason: `epic #${epic.number} has nested epic ${nested.map(slice => `#${slice.number}`).join(', ')}; epics are never nested, so move its stories or bugs directly under #${epic.number} and close the nested epic` } };
