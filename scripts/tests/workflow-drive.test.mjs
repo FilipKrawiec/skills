@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
-  baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  designState, designNoteMarker, baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
@@ -335,7 +335,7 @@ test('hand-backs are at most 6 lines of key: value', () => {
 
 test('epics: slice when empty, deliver slices in dependency order, close when all are closed', () => {
   const epic = issue({ number: 9, labels: [label('type:epic')] });
-  assert.deepEqual(decideEpic({ epic, slices: [] }), { agent: 'planner', mode: 'slice', reason: 'the epic has no slices' });
+  assert.deepEqual(decideEpic({ epic, slices: [], design: 'approved' }), { agent: 'planner', mode: 'slice', reason: 'the epic has no slices' });
   assert.ok(decideEpic({ epic: { ...epic, labels: [label('type:epic'), label('lane:owner')] }, slices: [] }).owner);
   const slices = [{ number: 12, state: 'OPEN', blockers: [11] }, { number: 11, state: 'OPEN', blockers: [10] }, { number: 10, state: 'OPEN', blockers: [] }, { number: 13, state: 'OPEN', blockers: [] }, { number: 8, state: 'CLOSED', blockers: [] }];
   assert.deepEqual(dependencyOrder(slices).map(s => s.number), [10, 11, 12, 13]);
@@ -350,6 +350,7 @@ function fakeRepo(initial) {
   const s = structuredClone(initial); const calls = []; const writes = {};
   const io = {
     // A blocked-by link to a closed issue counts as met, like a completed issue whose closing PR merged.
+    designComments: n => s.designComments?.[n] || [],
     issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: s.issues[m]?.state || 'OPEN', reason: 'completed', merged: true })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state })),
     parentEpic: n => { const epic = Object.keys(s.subs || {}).map(Number).find(e => s.subs[e].includes(n) && s.issues[e]?.state === 'OPEN' && (s.issues[e].labels || []).some(l => (l.name ?? l) === 'type:epic')); return epic ?? null; },
     allBlockers: n => s.blockers?.[n] || [],
@@ -518,7 +519,7 @@ test('drive closes an issue after its PR merged and leaves it with no state labe
 
 test('drive <epic> plans, drives the first ready slice, lists the others and closes the epic', () => {
   const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
-  const empty = fakeRepo({ issues: { 9: epic } });
+  const empty = fakeRepo({ issues: { 9: epic }, designComments: { 9: [{ author: 'builder', body: '<!-- workflow:design-note -->' }, { author: 'reviewer', body: '<!-- workflow:design-gate verdict=approved -->' }] } });
   const planner = drive(empty.io, 9, lanes, {});
   assert.deepEqual([planner.agent, planner.model, planner.mode, planner.issue], ['planner', 'opus', 'slice', 9]);
   const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }), 11: issue({ number: 11 }), 12: issue({ number: 12 }) }, subs: { 9: [10, 11, 12] }, blockers: { 11: [10] } });
@@ -2722,4 +2723,71 @@ test('drive proceeds when the CLI matches or leads the fetched default branch, o
   assert.equal(staleCliStep('11.117.0', '11.117.0', 'main'), null);
   assert.equal(staleCliStep('11.118.0', '11.117.0', 'main'), null);
   assert.equal(staleCliStep('11.117.0', baseWorkflowVersion('main', () => { throw new Error('no such path'); }), 'main'), null);
+});
+
+// ---- Design pass: the planner writes a design note on the epic and the Reviewer gates it before any slice exists.
+const designNote = { author: 'builder', body: `${designNoteMarker}\n## Design note\nModule map, reuse, lifted first.` };
+const verdict = (value, author = 'reviewer') => ({ author, body: `<!-- workflow:design-gate verdict=${value} -->\nReviewed.` });
+
+test('designState: none without a note, pending until the Reviewer rules, the newest note supersedes an older verdict', () => {
+  assert.equal(designState([], 'reviewer'), 'none');
+  assert.equal(designState([{ author: 'builder', body: 'just talk' }], 'reviewer'), 'none');
+  assert.equal(designState([designNote], 'reviewer'), 'pending');
+  assert.equal(designState([designNote, verdict('changes')], 'reviewer'), 'changes');
+  assert.equal(designState([designNote, verdict('changes'), designNote], 'reviewer'), 'pending', 'a revised note awaits a new verdict');
+  assert.equal(designState([designNote, verdict('changes'), designNote, verdict('approved')], 'reviewer'), 'approved');
+  assert.equal(designState([designNote, verdict('approved', 'someone-else')], 'reviewer'), 'pending', 'only the Reviewer identity gates');
+  const forged = { author: 'stranger', body: designNote.body };
+  assert.equal(designState([forged], 'reviewer', trustedLogins(lanes)), 'none', 'a stranger\'s note is not a note');
+  assert.equal(designState([designNote, verdict('approved'), forged], 'reviewer', trustedLogins(lanes)), 'approved', 'a stranger\'s note does not reset the gate');
+});
+
+test('an approved epic with no slices goes to the planner for a design note, never straight to slicing', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const step = decideEpic({ epic, slices: [], design: 'none' });
+  assert.deepEqual([step.agent, step.mode, step.owner], ['planner', 'design', undefined]);
+  const text = plannerBrief({ issue: epic, step });
+  for (const needle of [/workflow:design-note/, /module map/i, /`ddd`/, /`hexagonal-architecture`/, /existing units and design-system parts/i, /shared home/i, /each epic criterion/i]) assert.match(text, needle);
+  assert.match(text, /status: .*designed/);
+});
+
+test('a note without a verdict goes to the Reviewer, a verdict for changes back to the planner, approval to slicing', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const gate = decideEpic({ epic, slices: [], design: 'pending' });
+  assert.deepEqual([gate.agent, gate.mode, gate.owner], ['reviewer', 'design-gate', undefined]);
+  const revise = decideEpic({ epic, slices: [], design: 'changes' });
+  assert.deepEqual([revise.agent, revise.mode, revise.revise, revise.owner], ['planner', 'design', true, undefined]);
+  assert.match(plannerBrief({ issue: epic, step: revise }), /revise|changes/i);
+  assert.deepEqual([decideEpic({ epic, slices: [], design: 'approved' }).mode], ['slice']);
+  const brief = reviewerBrief({ repo: 'acme/app', issue: epic, step: gate, base: 'main' });
+  for (const needle of [/workflow:design-gate verdict=approved\|changes/, /second copy/i, /module map/i, /Never edit, commit or push/]) assert.match(brief, needle);
+});
+
+test('drive walks an epic through design, gate, revision and approval, then slicing, with no owner step', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '### Acceptance criteria\n- [ ] Works <!-- workflow:criterion a -->\n' });
+  const repo = fakeRepo({ issues: { 9: epic }, subs: { 9: [] } });
+  const next = () => drive(repo.io, 9, lanes, {});
+  const seen = [];
+  const record = () => { const step = next(); seen.push(`${step.agent}:${step.mode}`); assert.equal(step.owner, undefined); return step; };
+  record();
+  repo.s.designComments = { 9: [designNote] };
+  const gate = record();
+  assert.ok(gate.command.includes('--epic'), 'the Reviewer runs in its own session on the epic');
+  repo.s.designComments[9].push(verdict('changes'));
+  record();
+  repo.s.designComments[9].push(designNote);
+  record();
+  repo.s.designComments[9].push(verdict('approved'));
+  record();
+  assert.deepEqual(seen, ['planner:design', 'reviewer:design-gate', 'planner:design', 'reviewer:design-gate', 'planner:slice']);
+});
+
+test('the slice brief makes every slice cite the design note and the PR review fails a second copy', () => {
+  const text = plannerBrief({ issue: issue(), step: { mode: 'slice' } });
+  assert.match(text, /cite the design note/i);
+  assert.match(text, /workflow:design-note/);
+  const review = reviewerBrief({ repo: 'acme/app', pr: pr(), issue: issue(), risk: 'R1', step: { mode: 'review', round: 1 }, lanes, base: 'main' });
+  assert.match(review, /design note/i);
+  assert.match(review, /second copy of a unit the note names as existing or shared/);
+  assert.match(review, /Blocker/);
 });
