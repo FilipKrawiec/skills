@@ -318,19 +318,44 @@ test('drive: one diff assessment and one reviewer session deliver a clean PR', (
 });
 
 const GB = 1024 ** 3;
-test('under 50 GB free drive starts no new worktree and says why in one line, while an existing worktree still advances', () => {
+test('under 50 GB free drive starts no parallel worktree and says why in one line, while a lone or existing worktree still advances', () => {
+  const lone = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
+  lone.io.freeBytes = () => 32 * GB;
+  lone.io.parallelWork = () => false;
+  drive(lone.io, 3, lanes, {});
+  assert.deepEqual(lone.calls, [['start', 3]], 'nothing else runs, so the lone issue starts');
   const fresh = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
   fresh.io.freeBytes = () => 32 * GB;
+  fresh.io.parallelWork = () => true;
   const held = drive(fresh.io, 3, lanes, {});
   assert.deepEqual(fresh.calls, []);
   assert.deepEqual(held, { blocked: { issue: 3, reason: 'drive: 32.0 GB free is under the 50 GB floor; no new worktree starts until space frees' } });
   const own = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ path: '/w/3', branch: '3-x' }) } });
   own.io.freeBytes = () => 32 * GB;
+  own.io.parallelWork = () => true;
   assert.equal(drive(own.io, 3, lanes, {}).agent, 'implementer');
   const roomy = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
   roomy.io.freeBytes = () => 60 * GB;
   drive(roomy.io, 3, lanes, {});
   assert.deepEqual(roomy.calls, [['start', 3]]);
+});
+
+test('under 50 GB free drive counts another issue\'s worktree or another session\'s live claim as parallel work, and nothing else', () => {
+  const GB2 = 1024 ** 3;
+  const run = (setup, { claim } = {}) => {
+    const repo = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
+    repo.io.freeBytes = () => 32 * GB2;
+    repo.io.otherWorktrees = setup;
+    const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+    if (claim) writeFileSync(join(directory, 'acme_app-9.json'), JSON.stringify({ session: 'other', at: 1000 }));
+    const log = console.log; let said = '';
+    console.log = text => { said = text; };
+    try { driveCommand(['3'], lanes, repo.io, { lockDirectory: directory, session: 'mine', now: 2000 }); } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
+    return { calls: repo.calls, said: JSON.parse(said) };
+  };
+  assert.deepEqual(run(() => false).calls, [['start', 3]]);
+  assert.match(run(() => true).said.blocked.reason, /under the 50 GB floor/);
+  assert.match(run(() => false, { claim: true }).said.blocked.reason, /under the 50 GB floor/);
 });
 
 test('every drive call, a single issue or --next, first removes settled worktrees', () => {
