@@ -12,7 +12,7 @@ import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
   designState, designNoteMarker, baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
-import { baselineRefs, isBaselinePath, retagBaseline, baselineFollowUp } from '../../plugins/common/workflow/scripts/lib/baselines.mjs';
+import { baselineRefs, createdIssueNumber, isBaselinePath, retagBaseline, baselineFollowUp } from '../../plugins/common/workflow/scripts/lib/baselines.mjs';
 import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
@@ -448,11 +448,12 @@ function fakeRepo(initial) {
     requiredBoard: (n, value) => { (s.board ||= {})[n] = value; },
     // Tracked files of the worktree by path; gate baselines are the ones named `*baseline*`.
     baselineRefs: (t, n) => baselineRefs(Object.entries(s.files || {}).filter(([path]) => isBaselinePath(path)).map(([path, text]) => ({ path, text })), n),
+    baseBaselineRefs: n => baselineRefs(Object.entries(s.files || {}).filter(([path]) => isBaselinePath(path)).map(([path, text]) => ({ path, text })), n),
     retagBaselines: (t, refs, from, to) => { for (const file of refs) s.files[file.path] = retagBaseline(file.text, from, to); return refs.map(file => file.path); },
-    baselineFollowUp: (i, refs) => baselineFollowUp({
+    baselineFollowUp: (i, refs, parent = io.parentEpic(i.number)) => baselineFollowUp({
       openIssues: () => Object.values(s.issues).filter(open => open.state === 'OPEN'),
       create: (parent, title, body) => { calls.push(['create-follow-up', parent]); s.issues[77] = issue({ number: 77, title, body }); if (parent) s.subs[parent].push(77); return 77; },
-    }, i, io.parentEpic(i.number), refs),
+    }, i, parent, refs),
   };
   return { s, io, calls, writes };
 }
@@ -2894,3 +2895,34 @@ test('an open baseline follow-up under the same epic is reused, never a second o
   assert.deepEqual(repo.calls.filter(call => call[0] === 'create-follow-up'), []);
   assert.match(repo.s.files['tool/unused_symbols_baseline.txt'], /a\.b {2}# #40/);
 });
+
+test('a no-change closure retags entries naming the issue to a follow-up and delivers it through a PR instead of closing', () => {
+  const refinement = issue({ number: 99, body: '<!-- workflow:epic-refinement -->', labels: [label('state:started')] });
+  const repo = fakeRepo({ issues: { 9: epic9(), 99: refinement }, subs: { 9: [99] }, files: { 'tool/x_baseline.txt': 'a.b  # #99\nc.d  # #9\n' }, trees: { 99: tree({ path: '/w/99' }) } });
+  repo.io.closeNoChange = () => assert.fail('closed with entries still naming the issue');
+  drive(repo.io, 99, lanes, { status: 'done', paths: [], body: '/w/.wf/evidence.md' });
+  assert.equal(repo.s.files['tool/x_baseline.txt'], 'a.b  # #77\nc.d  # #9\n');
+  assert.deepEqual(repo.calls.filter(call => ['commit', 'push', 'open'].includes(call[0])).map(call => call[0]), ['commit', 'push', 'open']);
+});
+
+test('epic closure files a follow-up and stays open while an entry names the epic', () => {
+  const repo = fakeRepo({ issues: { 9: epic9(), 10: issue({ number: 10 }) }, subs: { 9: [10] }, lessons: [9], files: { 'tool/x_baseline.txt': 'a.b  # #9\n' } });
+  drive(repo.io, 9, lanes, {});
+  for (const n of [10, 99]) repo.s.issues[n].state = 'CLOSED';
+  repo.s.merged = [10, 99];
+  const step = drive(repo.io, 9, lanes, {});
+  assert.ok(!repo.calls.some(call => call[0] === 'close-epic'), 'the epic is not closed');
+  assert.deepEqual(repo.calls.filter(call => call[0] === 'create-follow-up'), [['create-follow-up', 9]]);
+  assert.equal(step.epic, 9);
+  repo.s.files['tool/x_baseline.txt'] = '';
+  repo.s.issues[77].state = 'CLOSED'; repo.s.merged.push(77);
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } }, 'closes once nothing names it');
+});
+
+test('the baseline follow-up never returns an undefined number', () => {
+  assert.throws(() => baselineFollowUp({ openIssues: () => [], create: () => undefined }, { number: 3 }, null, [{ path: 'b_baseline.txt' }]), /no follow-up issue number/);
+  assert.equal(createdIssueNumber('Exists: #12\n'), 12);
+  assert.equal(createdIssueNumber('Created: #13\n'), 13);
+  assert.throws(() => createdIssueNumber('nothing\n'), /no issue number/);
+});
+const epic9 = () => issue({ number: 9, labels: [label('type:epic')] });

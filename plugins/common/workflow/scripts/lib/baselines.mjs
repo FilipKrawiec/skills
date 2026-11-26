@@ -18,6 +18,15 @@ export function baselineFollowUp(ops, issue, parent, refs) {
   const existing = ops.openIssues().filter(open => (open.body || '').includes(marker) && open.number !== issue.number).sort((a, b) => a.number - b.number)[0];
   if (existing) return existing.number;
   const paths = refs.map(file => `\`${file.path}\``).join(', ');
-  const body = `${marker}\n\n## Outcome\nRemove the gate baseline entries in ${paths} that #${issue.number} left behind, and retag any it cannot remove.\n\n### Acceptance criteria\n- [ ] No entry in ${paths} is tagged #${issue.number} or this issue; each is fixed and deleted.\n\nDrive filed this on closing #${issue.number}: a baseline entry naming a closed issue fails the gate on every PR.\n`;
-  return ops.create(parent, `chore(baseline): remove the gate baseline entries left by #${issue.number}`, body);
+  const body = `${marker}\n\n## Outcome\nRemove the gate baseline entries in ${paths} that #${issue.number} left behind: fix each unused symbol and delete its entry.\n\n### Acceptance criteria\n- [ ] No entry in ${paths} is tagged #${issue.number} or this issue; each is fixed and deleted.\n\nDrive filed this on closing #${issue.number}: a baseline entry naming a closed issue fails the gate on every PR.\n`;
+  const created = ops.create(parent, `chore(baseline): remove the gate baseline entries left by #${issue.number}`, body);
+  // Never retag to nothing: `issue create` that matched an existing issue creates none, so a missing number is an error.
+  if (!Number.isInteger(created) || created < 1) throw new Error(`no follow-up issue number for the baseline entries of #${issue.number}`);
+  return created;
+}
+// The issue number `issue create` printed: the one it created or the existing one it matched (`Created: #N`, `Exists: #N`).
+export function createdIssueNumber(output) {
+  const found = [...String(output).matchAll(/^(?:Created|Exists|Reopened): #(\d+)\s*$/gm)].pop();
+  if (!found) throw new Error(`issue create printed no issue number: ${String(output).trim().slice(0, 200)}`);
+  return Number(found[1]);
 }

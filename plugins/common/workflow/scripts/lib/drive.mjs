@@ -16,7 +16,7 @@ import { checkState, failedStates, prFields } from './pr.mjs';
 import { addCriterionIds, tickCriteria, verifyEpicClosure } from './epic-closure.mjs';
 import { prState } from './state.mjs';
 import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
-import { baselineFollowUp, baselineRefs, isBaselinePath, retagBaseline } from './baselines.mjs';
+import { baselineFollowUp, baselineRefs, createdIssueNumber, isBaselinePath, retagBaseline } from './baselines.mjs';
 import { architectureNote, exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
 import { collectOrchestrator, collectSession, sessionUsage } from './session-log.mjs';
@@ -739,6 +739,11 @@ function self(args, cwd) {
   const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: ['ignore', 2, 2], env: process.env });
   if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
 }
+function selfOutput(args, cwd) {
+  const result = spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 2], env: process.env });
+  if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
+  return result.stdout;
+}
 // Call sites of the exports a diff adds, found with git grep at head; shared with the reviewer benchmark so its packet matches drive's.
 export function changedExportSites({ files, diffs, head, git }) {
   const callSites = [];
@@ -856,16 +861,22 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       for (const file of refs) writeFileSync(join(tree.path, file.path), retagBaseline(file.text, from, to));
       return refs.map(file => file.path);
     },
-    baselineFollowUp: (issue, refs) => {
-      const parent = io.parentEpic(issue.number);
+    // Entries tagged with n in the base's tracked baseline files (an epic has no worktree of its own).
+    baseBaselineRefs: n => {
+      const ref = `origin/${lanes.base}`;
+      const listed = gitIn(process.cwd(), ['ls-tree', '-r', '--name-only', ref]);
+      const files = (listed || '').split('\n').filter(isBaselinePath).map(path => ({ path, text: gitIn(process.cwd(), ['show', `${ref}:${path}`]) || '' }));
+      return baselineRefs(files, n);
+    },
+    // `parent` overrides the issue's own parent epic: an epic's follow-up goes under the epic itself.
+    baselineFollowUp: (issue, refs, parent = io.parentEpic(issue.number)) => {
       return baselineFollowUp({
         openIssues,
         create: (epic, title, body) => {
           if (epic) return io.createSubIssue(epic, title, body);
           const file = join(workflowScratch(process.cwd()), `drive-baseline-${issue.number}.md`);
           writeFileSync(file, body);
-          self(['issue', 'create', '--title', title, '--body-file', file, '--labels', 'type:story'], process.cwd());
-          return openIssues().find(open => (open.body || '').includes(body.split('\n')[0]))?.number;
+          return createdIssueNumber(selfOutput(['issue', 'create', '--title', title, '--body-file', file, '--labels', 'type:story'], process.cwd()));
         },
       }, issue, parent, refs);
     },
@@ -1204,6 +1215,13 @@ export function blockCause(note = '') {
   const named = [...String(note).matchAll(/`([^`]+)`|'([^']+)'|"([^"]+)"|([\w./-]+\.test\.\w+)/g)].map(m => (m[1] || m[2] || m[3] || m[4]).trim().toLowerCase());
   return named.length ? [...new Set(named)].sort().join('|') : String(note).toLowerCase().replace(/[\d\s]+/g, ' ').trim();
 }
+// Entries of a gate baseline that name `issue` move to one open follow-up, in a commit pushed on its PR when it has one.
+function retagBaselineEntries(io, issue, tree, refs, pr) {
+  const followUp = io.baselineFollowUp(issue, refs);
+  const paths = io.retagBaselines(tree, refs, issue.number, followUp);
+  io.commit(tree, `chore(baseline): retag entries of #${issue.number} to #${followUp}`, paths);
+  if (pr) { if (pr.autoMergeRequest) io.disableAutoMerge(pr); io.push(tree); }
+}
 function driveIssueSteps(io, n, lanes, handBack, state) {
   let bodyUpdated = false;
   // A failure never blocks a step.
@@ -1270,13 +1288,7 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
     else if (step.do === 'push') { if (pr?.autoMergeRequest) io.disableAutoMerge(pr); io.push(tree); }
     else if (step.do === 'open') { io.open(issue, tree, maxRisk(riskLabel(issue.labels || []), facts.issueAssessment?.risk || 'R1'), handBack); bodyUpdated = true; }
-    else if (step.do === 'retag-baselines') {
-      const followUp = io.baselineFollowUp(issue, facts.baselines);
-      const paths = io.retagBaselines(tree, facts.baselines, n, followUp);
-      io.commit(tree, `chore(baseline): retag entries of #${n} to #${followUp}`, paths);
-      if (pr.autoMergeRequest) io.disableAutoMerge(pr);
-      io.push(tree);
-    }
+    else if (step.do === 'retag-baselines') retagBaselineEntries(io, issue, tree, facts.baselines, pr);
     else if (step.do === 'release-review') io.releaseReview(pr, tree, step.claim);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
@@ -1305,7 +1317,12 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
       if (!completedCloseAllowed(issue, () => io.mergedClosingPr(n, lanes.base))) return finish({ blocked: { issue: n, reason: closeFormsMessage(n) } });
       io.close(issue); io.board(n, 'DONE');
     }
-    else if (step.do === 'close-no-change') { io.closeNoChange(issue, tree, handBack); io.board(n, 'DONE'); }
+    else if (step.do === 'close-no-change') {
+      // Entries naming this issue would fail the gate once it closes: they move to a follow-up in a commit, and the issue then closes through its PR.
+      const refs = io.baselineRefs?.(tree, n) || [];
+      if (refs.length) { retagBaselineEntries(io, issue, tree, refs, null); continue; }
+      io.closeNoChange(issue, tree, handBack); io.board(n, 'DONE');
+    }
     else if (step.do === 'remove-worktree') { io.removeTree(tree); return { done: { issue: n } }; }
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
@@ -1446,6 +1463,12 @@ export function driveEpic(io, epic, lanes) {
       if (step.do === 'close-epic') {
         const second = read();
         if (!second.result.complete || JSON.stringify(first) !== JSON.stringify(second)) return { owner: `epic #${epic.number}: evidence or issue state changed before closure`, url: epic.url };
+        // An entry still naming the epic would fail the gate once it closes: a follow-up under the epic removes it first, and the epic stays open.
+        const refs = io.baseBaselineRefs?.(epic.number) || [];
+        if (refs.length) {
+          const followUp = io.baselineFollowUp(second.current, refs, epic.number);
+          return { ...driveIssue(io, followUp, lanes), epic: epic.number };
+        }
         io.closeEpic(second.current);
         return { done: { epic: epic.number } };
       }
