@@ -8,7 +8,7 @@ allowed-tools: Skill Read Edit Write Bash(gh:*,git:*,just:*,node:*)
 
 ## 1. Find the lesson
 
-Run once per delivered epic, never per PR, and sweep its Nits in the same run. Read the epic's merged PRs: review threads, fix rounds, verdicts and pipeline runs; an epic already carrying `## Lessons` is done, and step 3 writes that comment last. Run `<cli> nits` (`<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`) for the Reviewer's unswept Nits on recently merged PRs, grouped by file; a Nit repeated across PRs is an occurrence like any other. For an owner-requested improvement, inspect the named event and relevant prior evidence; do not sweep unrelated issues. Find repeated failures, owner corrections, missing signals and rules that cost time or tokens without preventing failure.
+Run once per delivered epic, never per PR, and sweep its Nits in the same run, except the epic's own PRs: its refinement PR already fixed those, and drive labels them `nits:swept` at closure. Read the epic's merged PRs: review threads, fix rounds, verdicts and pipeline runs; an epic already carrying `## Lessons` is done, and step 3 writes that comment last. Run `<cli> nits` (`<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`) for the Reviewer's unswept Nits on recently merged PRs, grouped by file; a Nit repeated across PRs is an occurrence like any other. For an owner-requested improvement, inspect the named event and relevant prior evidence; do not sweep unrelated issues. Find repeated failures, owner corrections, missing signals and rules that cost time or tokens without preventing failure.
 
 A lesson needs two linked occurrences or the owner's request. A revert or fix-forward needs only one: name the earliest `spec`, `tdd`, `review` or CI signal that should have caught it. A single other occurrence is an observation.
 
@@ -24,7 +24,7 @@ Routine engineering within approved constraints is delegated. Product intent, co
 
 ## 3. Deliver and record
 
-Make an explicitly requested small change in place when repository rules allow. Fix the Nits worth fixing in one change with the lessons, or file them as one `type:story` carrying `<!-- workflow:nit-sweep -->` in its body (`issue create` refuses that marker on a `type:bug`); then run `<cli> nits --done <PR>...` for every PR swept. Deliver a change like any other: file its issue and run `drive <issue>`. On failure, attempt at most two evidence-led fixes, then record a concrete retry condition. Ask the owner only for reserved effects.
+Make an explicitly requested small change in place when repository rules allow. The epic's own Nits were fixed in its final refinement PR; list any leftover Nits of the epic's own PRs in `## Lessons` as observations, with no new PR or `nit-sweep` story. For Nits outside an epic, fix those worth fixing in one change with the lessons, or file them as one `type:story` carrying `<!-- workflow:nit-sweep -->` in its body (`issue create` refuses that marker on a `type:bug`); then run `<cli> nits --done <PR>...` for every PR swept. Deliver a change like any other: file its issue and run `drive <issue>`. On failure, attempt at most two evidence-led fixes, then record a concrete retry condition. Ask the owner only for reserved effects.
 
 On the epic, after filing, comment `## Lessons` with occurrences, target and wording, or `no lessons`, plus the swept Nits; list observations in one line each. With no epic, report these in the output.
 
