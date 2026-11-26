@@ -12,7 +12,7 @@ import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
 import { boardStatus, sweepBoard, dependenciesFromIssueBody, pathsFromIssueBody, pathsWithinScope, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { consolidatedInto, droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
-import { checkState, failedStates, prFields } from './pr.mjs';
+import { checkState, failedStates, nitsSwept, prFields } from './pr.mjs';
 import { addCriterionIds, tickCriteria, verifyEpicClosure, epicMetricsComment, epicMetricsMarker } from './epic-closure.mjs';
 import { prState } from './state.mjs';
 import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
@@ -102,7 +102,7 @@ const refinementMarker = '<!-- workflow:epic-refinement -->';
 const noChangeMarker = '<!-- workflow:refinement-no-change -->';
 const refinementReview = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
 const refinementCriteria = [
-  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. Fix the epic's own Nits in this last PR: list them with \`<cli> nits\`, then run \`<cli> nits --done <PR>...\`; never in a separate Nit-sweep PR. With nothing to change, hand back \`status: done\`, empty \`paths\` and \`body: <file>\`.`,
+  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. Fix the epic's own Nits (the Reviewer's \`**Nit**\` comments on its merged PRs) in this last PR, never in a separate Nit-sweep PR; drive marks those PRs \`nits:swept\` at closure. With nothing to change, hand back \`status: done\`, empty \`paths\` and \`body: <file>\`.`,
   'Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.',
   'Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.',
   'Assess the epic\'s delivery flow: blocked and owner steps, rework, review rounds and cost. File at most two improvements, each with its evidence.',
@@ -1045,6 +1045,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const posted = gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${epic.number}/comments?per_page=100`]).flat().some(comment => String(comment.body || '').startsWith(epicMetricsMarker));
       if (!posted) run('gh', ['issue', 'comment', String(epic.number), '--repo', repo, '--body', body]);
     },
+    markNitsSwept: numbers => { for (const number of numbers) run('gh', ['pr', 'edit', String(number), '--repo', repo, '--add-label', nitsSwept]); },
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
     removeTree: tree => {
       const all = trees(); const root = all[0].path;
@@ -1413,8 +1414,12 @@ export function driveEpic(io, epic, lanes) {
       if (step.do === 'close-epic') {
         const second = read();
         if (!second.result.complete || JSON.stringify(first) !== JSON.stringify(second)) return { owner: `epic #${epic.number}: evidence or issue state changed before closure`, url: epic.url };
-        // Best effort: the rework record never blocks closure; a failure is reported and the epic still closes.
-        try { io.recordEpicMetrics?.(second.current, epicMetricsComment(epic.number, io.epicMergedPrs?.(second.children, lanes.base) || [])); } catch (error) { console.error(`drive: epic metrics skipped: ${error.message}`); }
+        // Best effort: the rework record and the Nit sweep never block closure; a failure is reported and the epic still closes.
+        let prs = [];
+        try { prs = io.epicMergedPrs?.(second.children, lanes.base) || []; } catch (error) { console.error(`drive: epic PRs unread: ${error.message}`); }
+        try { io.recordEpicMetrics?.(second.current, epicMetricsComment(epic.number, prs)); } catch (error) { console.error(`drive: epic metrics skipped: ${error.message}`); }
+        // The refinement PR fixed the epic's own Nits; drive marks those PRs swept so no improver files a separate sweep for them.
+        try { if (prs.length) io.markNitsSwept?.([...new Set(prs.map(pr => pr.number))]); } catch (error) { console.error(`drive: epic Nit sweep skipped: ${error.message}`); }
         io.closeEpic(second.current);
         return { done: { epic: epic.number } };
       }

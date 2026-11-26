@@ -947,7 +947,8 @@ test('the refinement criterion sweeps the epic\'s Nits before the improver runs,
     return { number: 2 };
   };
   githubIo({ repo: 'acme/app' }, gh).createRefinement({ number: 1, title: 'Epic', body: '' });
-  assert.match(body, /list them with `<cli> nits`[^\n]*`<cli> nits --done <PR>\.\.\.`[^\n]*never in a separate Nit-sweep PR/);
+  assert.match(body, /Fix the epic's own Nits[^\n]*never in a separate Nit-sweep PR; drive marks those PRs `nits:swept` at closure/);
+  assert.doesNotMatch(body, /<cli>/, 'the implementer brief defines no <cli> and forbids labelling, so the criterion names no command for it');
   const improve = readFileSync(new URL('../../plugins/common/workflow/skills/improve/SKILL.md', import.meta.url), 'utf8');
   assert.match(improve, /leftover Nits of the epic's own PRs[^\n]*`## Lessons`[^\n]*no new PR or `nit-sweep` story/);
 });
@@ -2751,6 +2752,25 @@ test('closing an epic posts its metrics comment once, before the close', () => {
   assert.equal(comments.length, 1);
   assert.equal(comments[0][3], 'OPEN');
   assert.match(comments[0][2], /PRs: 1\b[\s\S]*feat: 1 \(100%\)[\s\S]*Net lines: 3/);
+});
+
+test('closing an epic marks its merged PRs nits:swept, so no later improver files a Nit sweep for them, and a failure still closes', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  const swept = new Set();
+  repo.io.epicMergedPrs = () => [{ number: 7, title: 'feat: x' }, { number: 8, title: 'fix: y' }, { number: 7, title: 'feat: x' }];
+  repo.io.recordEpicMetrics = () => {};
+  repo.io.markNitsSwept = numbers => numbers.forEach(n => swept.add(n));
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  assert.deepEqual([...swept].sort(), [7, 8]);
+  assert.equal(repo.s.issues[9].state, 'CLOSED');
+
+  const again = fakeRepo({ issues: { 9: issue({ number: 9, labels: [label('type:epic')] }), 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  again.io.epicMergedPrs = () => [{ number: 7, title: 'feat: x' }];
+  again.io.markNitsSwept = () => { throw new Error('label refused'); };
+  assert.deepEqual(drive(again.io, 9, lanes, {}), { done: { epic: 9 } });
+  assert.equal(again.s.issues[9].state, 'CLOSED');
 });
 
 // ---- Design pass: the planner writes a design note on the epic and the Reviewer gates it before any slice exists.
