@@ -29,6 +29,8 @@ function setup(extra = {}) {
     start: ({ id, now }) => { const pid = 1000 + world.started.length; world.started.push(id); world.living.add(pid); return { id, pid, startedAt: now, log: join(logDirectory, `session-${id}.log`) }; },
     alive: pid => world.living.has(pid),
     terminate: pid => world.terminated.push(pid),
+    sweepWorktrees: () => { world.swept = (world.swept ?? 0) + 1; return world.removedTrees ?? []; },
+    freeBytes: () => world.free ?? null,
   };
   const poll = () => runnerPoll(lanes, { io, logDirectory, claims, cwd: root });
   const claim = (session, issue, extra = {}) => writeFileSync(join(claims, `acme_app-${issue}.json`), JSON.stringify({ session, at: world.now, progressAt: world.now, ...extra }));
@@ -89,6 +91,30 @@ test('every slot taken starts nothing and exits without reading issues', () => {
   assert.deepEqual(result.started, []);
   assert.equal(t.world.reads, 0);
   assert.match(lines(t.logDirectory)[0], /slots full/);
+});
+
+test('every poll tick removes settled worktrees and logs how many', () => {
+  const t = setup({ issues: [], removedTrees: ['/r/.claude/worktrees/old', '/r/.worktrees/9-done'] });
+  t.poll();
+  assert.equal(t.world.swept, 1);
+  assert.match(lines(t.logDirectory)[0], /removed=2/);
+  t.advance(runnerDefaults.minIntervalMs);
+  t.poll();
+  assert.equal(t.world.swept, 2);
+});
+
+test('under 50 GB free the runner starts no session beside a live one and logs why; with none live drive decides', () => {
+  const GB = 1024 ** 3;
+  const t = setup({ free: 32 * GB });
+  t.claim('live', 3);
+  const held = t.poll();
+  assert.deepEqual(held.started, []);
+  assert.match(lines(t.logDirectory)[0], /32\.0 GB free is under the 50 GB floor/);
+  const alone = setup({ free: 32 * GB });
+  assert.equal(alone.poll().started.length, 1);
+  const roomy = setup({ free: 60 * GB });
+  roomy.claim('live', 3);
+  assert.equal(roomy.poll().started.length, 1);
 });
 
 test('low GraphQL quota backs off before reading issues and logs the reset time', () => {

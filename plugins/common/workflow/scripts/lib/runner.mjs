@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { git } from './core.mjs';
 import { driveHeadlessArgs, githubIo, maxRuns, nextTargets, trustedLogins } from './drive.mjs';
 import { splitDependencies } from './dependencies.mjs';
+import { diskFloorBytes, diskFloorLine, freeDiskBytes, tidyWorktrees } from './worktrees.mjs';
 
 // The runner holds no scheduler or queue logic: it asks drive whether ready work exists and starts today's `drive --next`.
 export const runnerDefaults = {
@@ -52,7 +53,9 @@ function startSession({ id, cwd, logDirectory, now }) {
     return { id, pid: child.pid, startedAt: now, log };
   } finally { closeSync(fd); }
 }
-const realIo = lanes => ({ ...githubIo(lanes), probeQuota, start: startSession, alive, terminate, sleep: ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms), random: Math.random, now: Date.now });
+// Settled worktrees (merged or closed PR, or head in the base) go on every tick; a failure never stops the poll.
+const sweepWorktrees = () => { try { return tidyWorktrees({ settledOnly: true, log: () => {} }); } catch { return []; } };
+const realIo = lanes => ({ ...githubIo(lanes), probeQuota, sweepWorktrees, freeBytes: () => freeDiskBytes(process.cwd()), start: startSession, alive, terminate, sleep: ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms), random: Math.random, now: Date.now });
 
 // One poll. `io` supplies the clock, jitter, quota, issues and process control so tests run with fakes.
 export function runnerPoll(lanes, { io = realIo(lanes), logDirectory = runnerLogDirectory(lanes.repo), claims = claimDirectory(), cwd = process.cwd(), options = runnerDefaults } = {}) {
@@ -99,17 +102,22 @@ function pollLocked(lanes, { io, logDirectory, claims, cwd, options }) {
   const finish = (text, extra = {}) => {
     Object.assign(result, extra);
     const shown = quota ? `${quota.remaining}/${quota.limit}` : 'unknown';
-    note(`${stamp} quota=${shown} ready=${result.ready ?? 0} live=${result.live ?? sessions.length} started=${result.started.length} recovered=${recovered.length} ${text}`.trim());
+    note(`${stamp} quota=${shown} ready=${result.ready ?? 0} live=${result.live ?? sessions.length} started=${result.started.length} recovered=${recovered.length}${result.removed ? ` removed=${result.removed}` : ''} ${text}`.trim());
     writeState(statePath, { lastPollAt: at, lastResult: text || 'ok', nextPollAt: result.nextPollAt, quota, sessions, recovered: recovered.length ? recovered : undefined });
     for (const item of recovered) note(`${stamp} recovered ${item.id} (${item.reason}) released ${item.issues.join(',') || 'no claim'}`);
     return result;
   };
   if (!quota || quota.remaining < quota.limit * options.quotaBelow) return finish(quota ? `backoff until ${quota.resetAt}` : 'backoff: quota unknown', { backoff: true });
+  const removed = io.sweepWorktrees?.() ?? [];
+  result.removed = removed.length;
   // Drive's `--next` claim admits one session at a time, so a second `drive --next` would only return blocked: start one session per poll, and none while one holds that claim or is still starting.
   const fresh = readClaims(claims, lanes.repo).filter(claim => at - claim.at < options.hangMs);
   const pending = sessions.filter(session => !session.claimed).length;
   const live = new Set(fresh.map(claim => claim.session ?? claim.file)).size + pending;
   if (live >= maxRuns) return finish('slots full', { live, ready: 0 });
+  // Under the disk floor no parallel session starts; a lone one still may, since drive lets an existing worktree advance.
+  const free = io.freeBytes?.() ?? null;
+  if (live > 0 && free !== null && free < diskFloorBytes) return finish(diskFloorLine(free), { live, ready: 0 });
   if (pending || fresh.some(claim => claim.issue === 'next')) return finish('next claim held', { live, ready: 0 });
   const taken = new Set(fresh.map(claim => claim.issue));
   const ready = [];
