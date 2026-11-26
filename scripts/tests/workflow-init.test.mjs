@@ -32,7 +32,10 @@ test('merges autoMode keeping $defaults and every existing key, with a backup', 
   assert.match(result.autoMode.environment[2], /acme\/.*acme-reviewer/);
   assert.deepEqual(result.autoMode.allow.slice(0, 2), ['$defaults', 'keep']);
   assert.match(result.autoMode.allow[2], /\.agents\/config\.json/);
-  assert.match(result.autoMode.allow[2], /Production release or publish, force-push to a protected branch/);
+  const entry = result.autoMode.allow[2];
+  const ownerOnly = entry.slice(entry.indexOf('Only '));
+  assert.match(ownerOnly, /^Only production release, force-push to a protected branch, and credential or permission changes are owner-only\.$/);
+  for (const covered of ['paid bench runs within the configured cap', 'epic approval taken from a recorded card decision', 'gate baseline retags through a reviewed pull request', 'delivery host and model changes']) assert.ok(entry.includes(covered), covered);
   assert.deepEqual(JSON.parse(readFileSync(`${f.settings}.bak`, 'utf8')), original);
 });
 

@@ -48,7 +48,7 @@ Never mutate string literals, comments, imports, logging or generated files.
 `score = killed / (killed + survived)`, per file and per area.
 
 - Apply configured project mutation, coverage and risk gates; use stricter gates for changed and critical behavior, not a universal score.
-- Ratchet measured confidence. Weakening thresholds, narrowing scope, adding exclusions or resetting a baseline requires explicit owner approval with impact evidence. A sampled score ratchets nothing.
+- Ratchet measured confidence. Weakening thresholds, narrowing scope or adding exclusions requires explicit owner approval with impact evidence; resetting a baseline goes through a reviewed PR with impact evidence. A sampled score ratchets nothing.
 - Classify survivors with behavioral evidence; add meaningful tests or remove unneeded behavior. Do not pin unspecified tuning constants or force churn for a score.
 - Record revision, toolchain, command/exit, scope, operators, seed, baseline and artifacts. Compare duration only for equivalent scope, environment and warm/cold conditions. Missing or incomplete evidence blocks a gate.
 - Report one table (file, sampled, killed, survived, equivalent, tuning, score), then each survivor as `file:line`, the mutant, and the missing case in words.
