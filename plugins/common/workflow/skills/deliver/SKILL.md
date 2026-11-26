@@ -27,6 +27,8 @@ Run `<cli> drive <issue|epic>`, or `<cli> drive --next` (an epic is the unit; re
 - `blocked`: report the cause; end the turn.
 - `done`: report it. For an epic, or a slice with `continue: drive <epic>`, rerun that until the epic is done.
 
+An approved epic with no slices first gets the design pass: the planner (`design` mode) posts a design note on the epic, the Reviewer (`design-gate`, a separate session like any review) gates it, and a `changes` verdict sends the planner back to revise; `slice` runs only once it is approved, and no step of the pass is an owner step.
+
 Drive each `alsoReady` slice alone. Report a result's `consolidated` merge. Background each `alsoWaiting` command. Start only drive's agents; edit no files; run no `gh`; rerun `drive` after interruption.
 
 **Exit gate:** `done` for the issue or epic, or an `owner` or `blocked` step reported.
