@@ -26,30 +26,15 @@ Each open issue has:
 - one type: an epic, or a story or bug under one epic (epics never nest; refinement slices are stories);
 - `lane:owner` only while the owner must take part, and on an epic only while it is a draft.
 
-Titles use `feat`, `fix`, `docs/test/ci/refactor/perf` or `epic`, then area and outcome. Group and split per [split.md](references/split.md), never by size. Only epics have children; read [epics.md](references/epics.md) before changing one. Never write a conditional criterion. Record outcome dependencies as blocked-by links, not file ordering; verify outcomes.
+Titles use `feat`, `fix`, `docs/test/ci/refactor/perf` or `epic`, then area and outcome. Group and split per [split.md](references/split.md), never by size. Only epics have children; read [epics.md](references/epics.md) before changing one. UI criteria have feature code compose the project's own component library; a missing primitive is added to the library first, never inline in the feature. Never write a conditional criterion. Record outcome dependencies as blocked-by links, not file ordering; verify outcomes.
 
-One filled issue body:
-
-````text
-Title: feat(auth): expired sessions read as signed out
-
-## Summary
-Part of epic #40. An expired session returns 401.
-
-### Acceptance criteria
-- [ ] `readSession` returns null once `expiresAt` is past.
-- [ ] A live session still returns its user.
-
-```scope
-{"paths": ["src/auth/", "test/auth/"], "dependencies": []}
-```
-````
+A filled issue body is in [issue-example.md](references/issue-example.md).
 
 **Exit gate:** grounded issue, authority, acceptance, dependencies and reserved decisions recorded; outsiders need `owner:approved`.
 
 ## 2. Transition
 
-Add a fenced `scope` JSON packet (above; a trailing `/` covers a subtree) when the changed paths are known. The `devops` assessor judges risk from the change, with the packet's paths as evidence (`review`'s `references/risk.md`); set an issue's `risk:R*` only as the owner's floor. A follow-up to an unmerged PR joins its next round or lists it in `dependencies`. `issue create` is the only path to a new issue, never raw `gh`; `--distinct-from N --reason "..."` marks a separate one. Re-read, then replace conflicting family labels; keep others and owner holds.
+Add a fenced `scope` JSON packet (see the example; a trailing `/` covers a subtree) when the changed paths are known. The `devops` assessor judges risk from the change, with the packet's paths as evidence (`review`'s `references/risk.md`); set an issue's `risk:R*` only as the owner's floor. A follow-up to an unmerged PR joins its next round or lists it in `dependencies`. `issue create` is the only path to a new issue, never raw `gh`; `--distinct-from N --reason "..."` marks a separate one. Re-read, then replace conflicting family labels; keep others and owner holds.
 
 The owner's session is where the owner runs `drive`.
 

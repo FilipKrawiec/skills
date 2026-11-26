@@ -18,7 +18,8 @@ This skill owns layers, imports, ports and adapters; the `ddd` skill owns the do
 6. Queries return read models owned by the application layer, never aggregates: through an application-level query port that bypasses the domain, or a `Queries` port declared there.
 7. The API layer owns transport: routing, status codes, (de)serialization, rate limits and structural payload validation. It maps each request to a command or query, calls the use case injected directly (no mediator or bus), holds no business logic, owns its request and response DTOs, and maps domain values to its own transport form, never exposing a domain type.
 8. Infrastructure holds persistence models, DAOs, mappers and client models; it maps them to domain types inside the adapter and never passes them inward. A DAO is a private helper of an adapter, never a port. A database-backed check (uniqueness) is a domain-named port (`EmailUniqueness`) whose adapter uses the DAO. Keep adapters non-public where the language allows, and wire them at the composition root.
-9. Keep technical reuse layer-scoped. A Shared Kernel holds only domain concepts jointly governed by the contexts sharing them, never workflows, ports, DTOs, adapters, persistence or framework types.
+9. Compose UI from the project's own component library: feature code never hand-rolls a primitive (button, input, select, a Material widget) the library should own, and a missing primitive is added to the library first, never inline in the feature. One design system per project, no cross-project kit.
+10. Keep technical reuse layer-scoped. A Shared Kernel holds only domain concepts jointly governed by the contexts sharing them, never workflows, ports, DTOs, adapters, persistence or framework types.
 
 **Exit gate:** the project's import or boundary check exits 0 (or, without one, `domain/` imports only the language and the domain).
 
