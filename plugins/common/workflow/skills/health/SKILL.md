@@ -22,7 +22,7 @@ Use independent review and configured delivery controls. Production promotion ne
 
 ## 3. Preserve confidence
 
-Run configured reproducible coverage, mutation and complexity/risk gates, stricter for changed and critical behavior; use `tdd` mutation sampling when no mutation tool is configured. Missing measurements are not passes. Lower thresholds, narrower scope, new exclusions or reset baselines need explicit owner approval with impact evidence. Record revision, commands, toolchain, scope, seed, results and environment; compare timing only across equivalent runs.
+Run configured reproducible coverage, mutation and complexity/risk gates, stricter for changed and critical behavior; use `tdd` mutation sampling when no mutation tool is configured. Missing measurements are not passes. Lower thresholds, narrower scope or new exclusions need explicit owner approval with impact evidence; a baseline reset or retag goes through a reviewed PR with impact evidence. Record revision, commands, toolchain, scope, seed, results and environment; compare timing only across equivalent runs.
 
 Request a `review` area audit of areas changed by the product milestone and file verified Important findings in the health milestone. Improve tests or structure for demonstrated risk or measured maintenance cost, not counts alone; preserve meaningful behavior when removing redundant tests.
 

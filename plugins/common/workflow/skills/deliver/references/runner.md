@@ -2,6 +2,8 @@
 
 `<cli> runner poll` (no model) starts one headless `drive --next` session per poll (its `-next` claim admits one at a time, and none while one holds it) with drive's model and effort when ready work exists, backs off on low GraphQL quota, and releases the claim of a crashed or hung session; `runner status` prints its health as JSON. The runner has no scheduler or queue logic of its own: drive keeps every rule.
 
+Cleanup: each poll and `drive` first removes settled worktrees (merged or closed PR, or head in the base; changes backed up), ignoring the desktop app's VM mount. Under 50 GB free disk drive starts no new worktree and the runner no parallel session, saying why.
+
 Unit: automatic runs take an epic, not a story. An open story or bug under an open parent epic is never a target on its own; its epic is, ranked by the best rank of itself and its open slices, once, and the session keeps driving it (`continue: drive <epic>` after each finished slice) until the epic is done or drive returns an `owner` or `blocked` step. Exceptions: an issue carrying the base-red marker is still taken first, by itself, and an open story or bug with no open parent epic (an orphan) is taken on its own. The runner starts no second session for an epic while a live session holds its claim or any slice's claim.
 
 Order: `drive --next` and the runner take ready work by one rank, ties by issue number: (1) an issue that keeps main or the base red (body carries `<!-- workflow:base-red -->`), (2) `state:started`, (3) `type:bug`, (4) the rest. `lane:owner` issues and the Owner inbox are never taken; owner-waiting issues stay last.

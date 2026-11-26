@@ -21,7 +21,7 @@ import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
 import { collectOrchestrator, collectSession, sessionUsage } from './session-log.mjs';
 import { installedPlugins, isOlder, pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
 import { approveReady, previousReviewedHead } from './vcs.mjs';
-import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
+import { busyPaths, diskFloorBytes, diskFloorLine, freeDiskBytes, parseWorktreeList, removeWorktree, tidyWorktrees, worktreeFacts } from './worktrees.mjs';
 
 const cli = fileURLToPath(new URL('../workflow.mjs', import.meta.url));
 const implementerGuide = fileURLToPath(new URL('../../skills/deliver/references/implementer.md', import.meta.url));
@@ -1040,6 +1040,11 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       if (facts.current || facts.busy) { console.error(`drive: kept ${tree.path}; a process works in it`); return; }
       removeWorktree(facts, { deleteBranch: true }, root, `refs/remotes/origin/${lanes.base}`);
     },
+    // Settled worktrees (merged or closed PR, or head in the base), Claude Code session ones included; a failure never blocks a drive call.
+    sweepWorktrees: () => { try { return tidyWorktrees({ settledOnly: true, log: () => {} }); } catch (error) { console.error(`drive: worktree cleanup skipped: ${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}`); return []; } },
+    freeBytes: () => freeDiskBytes(trees()[0].path),
+    // Whether an issue other than `n` already has a worktree.
+    otherWorktrees: n => trees().slice(1).some(tree => /^\d+-/.test(tree.branch ?? '') && !tree.branch.startsWith(`${n}-`)),
     scratch: tree => workflowScratch(tree?.path),
     write: (path, text) => writeFileSync(path, text),
     // The brief drive wrote when it last started this role; null when none, so a first dispatch never hands off.
@@ -1220,6 +1225,9 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
         if (['consolidated', 'distinct'].includes(handBack.status)) return { blocked: { issue: n, reason: `the planner handed back ${handBack.status}, yet ${overlaps.map(o => `#${o}`).join(', ')} still overlap${overlaps.length === 1 ? 's' : ''} it` } };
         return finish(instruction(io, facts, agent('planner', 'consolidate', { reason: `${overlaps.map(o => `#${o}`).join(', ')} overlap${overlaps.length === 1 ? 's' : ''} the scope and epic of #${n}`, overlaps }), lanes));
       }
+      // Under the disk floor an issue with no worktree of its own waits only while other work runs beside it (another issue's worktree or a live claim); a lone issue and one that already has its worktree still advance.
+      const free = tree ? null : io.freeBytes?.() ?? null;
+      if (free !== null && free < diskFloorBytes && io.parallelWork?.(n)) return { blocked: { issue: n, reason: diskFloorLine(free) } };
       io.start(issue, pr?.headRefName); io.board(n, 'PROGRESS');
       startEpicCard(io, n);
     }
@@ -1641,8 +1649,13 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     }
   }
   if (args.length !== 1) throw new Error(usage);
+  const removed = io.sweepWorktrees?.() ?? [];
+  if (removed.length) console.error(`drive: removed ${removed.length} settled worktree${removed.length === 1 ? '' : 's'}: ${removed.join(', ')}`);
   const swept = io.sweepBoard?.() ?? [];
   if (swept.length) console.error(`drive: moved ${swept.length} closed issue card${swept.length === 1 ? '' : 's'} to Done: ${swept.map(n => `#${n}`).join(', ')}`);
+  // Parallel work: another issue's worktree, or a live claim of another session, after the sweep above.
+  const direct = io;
+  const withParallel = except => ({ ...direct, parallelWork: m => Boolean(direct.otherWorktrees?.(m)) || liveRuns({ directory: lockDirectory, repo: lanes.repo, now, except, session }) > 0 });
   let n;
   if (args[0] === '--next') {
     baseRedIssue(io, lanes);
@@ -1651,7 +1664,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
     if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(null, lock, now))); return; }
     if (lock.tookOver) io.noteTakeover?.(null, lock.tookOver, now);
-    const result = driveNext(io, numbers, lanes, handBack);
+    const result = driveNext(withParallel(null), numbers, lanes, handBack);
     if (!lock.record(fingerprintOf(result), now)) { console.log(JSON.stringify(lostClaim(null))); return; }
     if (notice) console.error(notice);
     if ((result.done && !result.continue) || result.owner || result.blocked) lock.release();
@@ -1668,7 +1681,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${n}`, session, now });
   if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(n, lock, now))); return; }
   if (lock.tookOver) io.noteTakeover?.(n, lock.tookOver, now);
-  let result = drive(io, n, lanes, handBack);
+  let result = drive(withParallel(own), n, lanes, handBack);
   // A slice's own `done` continues on its open parent epic only inside a session that holds that epic's claim (one that took the epic);
   // `drive <slice>` on its own ends at the slice.
   if (result.done?.issue === n && !result.continue) {

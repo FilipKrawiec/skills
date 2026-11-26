@@ -55,7 +55,7 @@ export function ensureMarketplaceAutoUpdate(settings) {
 function environmentEntry(repoOwner, reviewer) {
   return `${markEnvironment(repoOwner)} github.com/${repoOwner}/ repositories and their organization are trusted source control; the GitHub account ${reviewer} is the configured Reviewer identity and posts review verdicts there.`;
 }
-const allowEntry = `${markAllow} the owner pre-approves everything the workflow drive command does: pushing drive branches, opening and readying pull requests, starting the separate Reviewer session and posting its verdict, turning on auto-merge, merging an approved pull request, closing issues and epics, and changing delivery hosts and models in .agents/config.json through a reviewed pull request. Production release or publish, force-push to a protected branch, and changes to credentials or permissions stay owner-only.`;
+const allowEntry = `${markAllow} the owner pre-approves everything the workflow drive command does: pushing drive branches, opening and readying pull requests, starting the separate Reviewer session and posting its verdict, turning on auto-merge, merging an approved pull request, closing issues and epics, paid bench runs within the configured cap, epic approval taken from a recorded card decision, gate baseline retags through a reviewed pull request, and delivery host and model changes in .agents/config.json through a reviewed pull request. Only production release, force-push to a protected branch, and credential or permission changes are owner-only.`;
 
 export const hasStandingApproval = settings => Array.isArray(settings?.autoMode?.allow) && settings.autoMode.allow.some(item => typeof item === 'string' && item.startsWith(markAllow));
 
