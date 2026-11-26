@@ -8,8 +8,6 @@ allowed-tools: Skill Read Bash(git:*,gh:*,node:*)
 
 Review at head. Never start a subagent, finder or verifier. Never implement, commit or push; refuse a head this session committed or pushed. Post only with `review-post`: it acts as the Reviewer and never prints the token. Run one plain command per Bash call. `<cli>` is `node <this-skill-directory>/../../scripts/workflow.mjs`.
 
-Outside drive: `node <this-skill-directory>/../../scripts/review-session.mjs <PR> <HEAD> <reviewer-command>...`.
-
 Branch on the assignment, first match wins:
 
 - a technical fork: read [assignments.md](references/assignments.md);
@@ -30,7 +28,7 @@ Require exactly one `risk:R0|R1|R2` label; otherwise return `shape: <missing>`. 
 
 Run `<cli> wait <N> --until ci`. Record a red required check as an **Important** finding with its run link; continue the review.
 
-**Exit gate:** CI settled, red required check recorded.
+**Exit gate:** CI settled, any red required check recorded.
 
 ## 3. Read the evidence
 

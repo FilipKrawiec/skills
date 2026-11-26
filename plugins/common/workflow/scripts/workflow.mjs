@@ -55,7 +55,7 @@ const help = `Usage:
   node workflow.mjs scratch
   node workflow.mjs usage-line TRANSCRIPT [--rates IN,OUT,CACHE_READ,CACHE_WRITE]
   node workflow.mjs status NUMBER
-  node workflow.mjs bugs [--days N] [--repo OWNER/NAME]
+  node workflow.mjs bugs [--days N | --since ISO] [--repo OWNER/NAME]
   node workflow.mjs wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]
   node workflow.mjs wait slot
   node workflow.mjs next [--owner]
@@ -89,7 +89,7 @@ A PR reviewer runs through review-session.mjs, which records the session's usage
 drive fetches origin first, reads .agents/config.json from the remote default branch and names that commit as configCommit; it advances an issue or epic from GitHub state: it performs every mechanical step (claim, worktree, commit and push from a hand-back, draft PR, risk, ready, auto-merge, close, worktree removal); on every call it first removes settled worktrees (merged or closed PR, or head in the base, Claude Code session ones included, uncommitted work backed up under refs/backup/worktrees/), and under 50 GB free disk it starts no new worktree and says so in one line and prints one JSON instruction: an agent to start with its model and brief, a wait command to run in the background, an owner step, or done. Re-running it on unchanged state repeats the instruction.
 bench replays the pinned known-defect and known-clean PRs of docs/review-benchmark.json through the Reviewer with a drive-built packet and reports catches, false positives and cost per setting and per risk; --settings model:effort,... replays the snapshot once per setting; without --run it only validates the snapshot and lists what it would run, spending nothing; --out saves the JSON result and --compare shows the delta against a saved one. bench --implementer replays the seeded implementer tasks of docs/implementer-benchmark.json on sessionFor('implementer', 'R0') with the skills at the working tree and at --baseline REF (default the merge base with the default branch), graded by deterministic checks (layer imports, raw primitives on public domain signatures, a red run before the fix, the project gate); it reports the pass rate per check and overall and the cost per task per arm, and starts no new task once reported cost reaches 10 USD, listing the skipped ones.
 check runs steps.test under a machine-wide lock with two slots, so at most two gates run at once.
-bugs prints per repo (default: the configured one, 14 days) the type:bug issues opened and closed in the window, the open count, the median time to close and the closed-as-duplicate count, target 0; status NUMBER also prints one Bugs (14d): line with the same numbers on stderr.
+bugs prints per repo (default: the configured one, 14 days) the type:bug issues opened and closed in the window (exactly N x 24 hours back from now, or from --since; it prints the window FROM to TO), the open count, the median time to close and the closed-as-duplicate count, target 0; status NUMBER also prints one Bugs (14d): line with the same numbers on stderr.
 A body or comments file is - (stdin) or a path inside the worktree; scratch creates the git-ignored .wf/ directory for such files and prints its path.`;
 export function hasLockfAncestor(commands) {
   return commands.some(command => basename(command.trim().split(/\s+/, 1)[0]) === 'lockf');
@@ -235,7 +235,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 } else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [command, ...args] = process.argv.slice(2);
-    const valueOptions = new Set(['-m', '--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--timeout', '--interval', '--hand-back', '--days', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root', '--snapshot', '--model', '--host', '--compare', '--from', '--out', '--settings', '--implementer', '--reviewer', '--owner', '--test']);
+    const valueOptions = new Set(['-m', '--message', '--pr', '--previous', '--previous-base', '--issue', '--sha', '--event', '--body-file', '--comments-file', '--resolve-thread', '--until', '--timeout', '--interval', '--hand-back', '--days', '--since', '--done', '--number', '--value', '--title', '--repo', '--labels', '--idle-days', '--root', '--snapshot', '--model', '--host', '--compare', '--from', '--out', '--settings', '--implementer', '--reviewer', '--owner', '--test']);
     const stale = staleCopyNotice();
     if (stale) console.error(stale);
     let wantsHelp = command === '-h';

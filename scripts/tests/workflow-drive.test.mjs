@@ -35,6 +35,27 @@ test('an unstarted issue starts once assessed, and a blocked one reports its blo
   assert.deepEqual(decide({ issue: started }), { do: 'start' }, 'a claimed issue without its worktree makes it again');
 });
 
+test('a date-gated issue waits until its not-before time and starts after it; the same state gives the same wait', () => {
+  const at = '2026-12-01T00:00:00.000Z';
+  const early = { issue: issue({ assessment: assessed() }), notBefore: at, now: Date.parse('2026-11-30T23:59:59Z') };
+  const waiting = { wait: { until: 'date', at, issue: 3 }, reason: `#3 may start only after ${at}` };
+  assert.deepEqual(decide(early), waiting);
+  assert.deepEqual(decide({ ...early }), waiting);
+  assert.deepEqual(decide({ ...early, now: Date.parse(at) }), { do: 'start' });
+  assert.deepEqual(decide({ ...early, blockers: [2] }), { blocked: { issue: 3, by: [2] } }, 'an open blocker still reports itself first');
+});
+
+test('a hand-back calling itself a dependency wait is never an owner step: it becomes the wait, or blocks without the owner', () => {
+  const at = '2026-12-01T00:00:00.000Z';
+  const handBack = { status: 'blocked', note: 'Dependency wait, not an owner step: measure 7 days after #4 merges' };
+  const gated = decide({ issue: started, tree: tree(), handBack, notBefore: at, now: Date.parse('2026-11-30T00:00:00Z') });
+  assert.equal(gated.wait.until, 'date');
+  const ungated = decide({ issue: started, tree: tree(), handBack });
+  assert.equal(ungated.owner, undefined);
+  assert.match(ungated.blocked.reason, /dependency wait/i);
+  assert.equal(decide({ issue: started, tree: tree(), handBack: { status: 'blocked', note: 'needs a key' } }).owner, '#3: needs a key');
+});
+
 test('build: the implementer runs until it hands back done, then drive commits, pushes and opens', () => {
   assert.equal(decide({ issue: started, tree: tree() }).agent, 'implementer');
   assert.equal(decide({ issue: started, tree: tree({ commits: 1, unpushed: true }) }).agent, 'implementer', 'no hand-back: same instruction');
@@ -44,7 +65,7 @@ test('build: the implementer runs until it hands back done, then drive commits, 
   assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), handBack: done }), { do: 'open' });
   assert.equal(decide({ issue: started, tree: tree({ dirty: true }), handBack: { status: 'done' } }).agent, 'implementer', 'nothing to commit with');
   assert.deepEqual(decide({ issue: started, tree: tree(), handBack: { status: 'replan', note: 'two seams' } }), { agent: 'planner', mode: 'replan', reason: 'two seams' });
-  assert.deepEqual(decide({ issue: started, tree: tree(), handBack: { status: 'blocked', note: 'needs a key' } }), { owner: '#3: needs a key' });
+  assert.deepEqual(decide({ issue: started, tree: tree(), handBack: { status: 'blocked', note: 'needs a key' } }), { owner: '#3: needs a key', cause: 'needs a key' });
 });
 
 test('review, fix, ready, merge and close follow the PR state', () => {
@@ -812,7 +833,7 @@ test('configured dispatch produces an implementer brief and accepts its intact h
   assert.deepEqual([instruction.agent, instruction.host, instruction.model, instruction.session], ['implementer', 'codex', 'gpt-6.1-terra', 'subagent']);
   assert.match(repo.writes[instruction.brief], /status: done \| replan \| blocked/);
   const handBack = parseHandBack('status: blocked\nnote: bounded dispatch probe');
-  assert.deepEqual(drive(repo.io, 3, configured, handBack), { owner: '#3: bounded dispatch probe' });
+  assert.deepEqual(drive(repo.io, 3, configured, handBack), { owner: '#3: bounded dispatch probe', cause: 'bounded dispatch probe' });
 });
 
 test('the reviewer runs as a separate non-interactive session', () => {

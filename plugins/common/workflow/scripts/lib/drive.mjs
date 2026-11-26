@@ -11,7 +11,7 @@ import { effectiveBranchPolicy } from '../safety.mjs';
 import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
 import { boardStatus, sweepBoard, dependenciesFromIssueBody, pathsFromIssueBody, pathsWithinScope, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
-import { consolidatedInto, droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
+import { consolidatedInto, droppedReason, findCycle, notBefore, readDependencies, splitDependencies } from './dependencies.mjs';
 import { checkState, failedStates, nitsSwept, prFields } from './pr.mjs';
 import { addCriterionIds, tickCriteria, verifyEpicClosure, epicMetricsComment, epicMetricsMarker } from './epic-closure.mjs';
 import { prState } from './state.mjs';
@@ -273,8 +273,12 @@ export function decideIssue(facts, lanes) {
   // Unmet dependencies stop the item in every phase and touch nothing; a dropped one needs the owner.
   if (dropped.length) return { owner: droppedReason(issue.number, dropped), url: issue.url };
   if (blockers.length) return { blocked: { issue: issue.number, by: blockers } };
+  // A date-gated issue waits in the CLI: no agent starts for it before its not-before time.
+  if (facts.notBefore && (!pr || pr.state !== 'OPEN') && (facts.now ?? Date.now()) < Date.parse(facts.notBefore)) return { wait: { until: 'date', at: facts.notBefore, issue: issue.number }, reason: `#${issue.number} may start only after ${facts.notBefore}` };
   if (hb.status === 'replan' && (!pr || pr.state !== 'OPEN')) return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
-  const blockedOwner = { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}` };
+  const blockedOwner = { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}`, cause: blockCause(hb.note) };
+  // A dependency wait is the CLI's, never an owner step: with no future not-before time it blocks without the owner.
+  if (hb.status === 'blocked' && pr?.state !== 'OPEN' && /\bdependency wait\b/i.test(hb.note || '')) return { blocked: { issue: issue.number, reason: `the hand-back called itself a dependency wait, yet #${issue.number} has no future not-before time; add <!-- workflow:not-before ISO --> or <!-- workflow:wait-days N --> to the issue` } };
   if (hb.status === 'blocked' && pr?.state !== 'OPEN') return blockedOwner;
   // A planner split makes the issue an epic, which `drive` routes to `driveEpic`; still a story, the split did not happen,
   // and dispatching the planner again would loop on the same blocking verdict. A narrowed issue is handled with its PR.
@@ -1139,7 +1143,8 @@ function readIssueFacts(io, n, handBack) {
   if (issue.state !== 'OPEN') return { issue, tree: io.tree(n), pr: null };
   const pr = io.pr(n);
   const tree = io.tree(n, pr?.headRefName);
-  const { blockers, dropped } = splitDependencies(io.dependencies(issue));
+  const dependencies = io.dependencies(issue);
+  const { blockers, dropped } = splitDependencies(dependencies);
   const diffPaths = [...new Set([...(tree?.diffPaths || []), ...(pr?.files || []).map(file => file.path)])];
   const claimed = (pr?.labels || []).some(label => label.name === 'state:reviewing');
   const reviewingSince = pr?.state === 'OPEN' ? io.reviewingSince(pr) : null;
@@ -1154,7 +1159,7 @@ function readIssueFacts(io, n, handBack) {
   const assessments = pr?.state === 'OPEN' ? { prAssessment: assessment } : { issueAssessment: assessment };
   // Entries of a gate baseline that name this issue, in a clean pushed worktree: they must move to an open follow-up before it closes.
   const baselines = pr?.state === 'OPEN' && tree && !tree.dirty && !tree.unpushed && !tree.merging ? io.baselineRefs?.(tree, n) || [] : [];
-  return { issue, pr, tree, baselines, blockers, dropped, handBack, diffPaths, ...assessments, reviewingSince, reviewSession, postFailed, reviewThreads, now: io.now?.() ?? Date.now() };
+  return { issue, pr, tree, baselines, blockers, dropped, notBefore: notBefore(issue.body || '', dependencies), handBack, diffPaths, ...assessments, reviewingSince, reviewSession, postFailed, reviewThreads, now: io.now?.() ?? Date.now() };
 }
 // The risk that picks the models: the PR's label once a draft exists, else the issue assessment; never below the floor.
 function currentRisk(facts, step) {

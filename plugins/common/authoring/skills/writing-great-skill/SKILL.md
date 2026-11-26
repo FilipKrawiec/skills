@@ -14,7 +14,7 @@ A skill is a system-prompt fragment: direct orders to an agent that already know
 2. Place the rule in the skill whose phase acts on it (Placement below).
 3. Write it as plain imperative sentences an agent new to this repository can follow cold: "Run X.", "Never Y; do Z instead." Give the reason in one clause where the agent must judge an unnamed case or would otherwise override the rule ("never rebase: it detaches review threads").
 4. Cut every line the agent would follow untold: general best practice, background paragraphs, history, restatements of a tooling gate.
-5. After each trim, run `node plugins/common/workflow/scripts/workflow.mjs manifests verify`; run `just verify` once when the change is done. Word budgets are a ceiling, not a target; a trim to meet one never removes a rule's operative word.
+5. After each trim, run `node plugins/common/workflow/scripts/workflow.mjs manifests verify`; run `just verify` once when the change is done. Word budgets are a ceiling, not a target; a trim to meet one never removes a rule's operative word. Words come only from moving a branch to `references/` or from lines the issue already changes, never from rewording other lines.
 6. A change to `ddd`, `hexagonal-architecture` or `tdd` also requires `workflow bench --implementer --run`, whose record under `docs/records/` must show no lower overall pass rate than the baseline's at no higher cost per task; commit that record.
 
 ## Placement
@@ -37,12 +37,6 @@ A skill is a system-prompt fragment: direct orders to an agent that already know
 - **Output:** every phase that talks to a human or agent gets an envelope, written out in that skill: its fields and a line limit. A fixed format (PR body, report) shows one filled instance in a code block; a step that spawns a worker shows the worker's whole brief, since that brief is all the worker knows.
 - **Calls:** at most two deep, no cycles; a callee returns its exit gate.
 - **Names:** say "agent", "AI" or "host", never a product name. Directories and references are lowercase kebab-case; scripts in `scripts/` run non-interactively.
-
-## Example
-
-Bad, a pointer the agent may never follow: "Then run board.md's Merge gate."
-
-Good, the step itself: "Run `git merge --no-ff --no-commit origin/<base>`; resolve conflicts, then commit through the workflow CLI."
 
 ## Context pointer
 
