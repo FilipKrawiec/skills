@@ -210,6 +210,14 @@ test('a second call while the base is still red reuses the main-red bug and comm
   assert.ok(ops.commented[0].body.includes(next.url));
 });
 
+test('a base red again within 30 days reuses the closed main-red bug that `issue create` reopens', () => {
+  const closed = { number: 33, title: `fix(drive): ${lanes.base} is red, verify fails`, body: BASE_RED_MARKER, state: 'CLOSED' };
+  const ops = redOps();
+  ops.openIssues = () => [closed].filter(issue => issue.state !== 'CLOSED');
+  ops.create = (title, body) => { ops.created.push({ title, body }); if (title === closed.title) closed.state = 'OPEN'; };
+  assert.equal(fileBaseRed(ops, red, lanes), 33);
+});
+
 test('a red base holds every other merge with a wait naming the main-red issue; its own PR still merges', () => {
   const ready = pr({ issue: 3, isDraft: false, reviews: [review('ready', 'APPROVED')], assessment: assessed('R1') });
   const own = pr({ issue: 40, number: 90, isDraft: false, reviews: [review('ready', 'APPROVED')], assessment: assessed('R1') });

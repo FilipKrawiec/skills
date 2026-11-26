@@ -45,7 +45,7 @@ build_tools:
 
 ## Issues
 
-- `issue create` is the only path to a new issue: it first matches every open issue and those closed in the last 30 days (shared scope path and the same failing behaviour or outcome), comments on and prints `Exists: #N` for a match instead of creating, and takes `--distinct-from N --reason "<one line>"` for a truly separate one. Never use raw `gh` or GitHub tools to create an issue. This binds every agent and every cloud or chat session.
+- `issue create` is the only path to a new issue: it first matches every open issue and those closed in the last 30 days (a shared scope path, or none on either side, and the same failing behaviour or outcome), comments on and prints `Exists: #N` for a match instead of creating, and takes `--distinct-from N --reason "<one line>"` for a truly separate one. Never use raw `gh` or GitHub tools to create an issue. This binds every agent and every cloud or chat session.
 
 ## Diagrams
 

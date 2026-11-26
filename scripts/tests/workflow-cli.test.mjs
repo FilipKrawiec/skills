@@ -691,6 +691,25 @@ test('the same behaviour in a path outside the scope creates a new issue', t => 
   assert.match(filed(f, FAULT, elsewhere, '--labels', 'type:bug').stdout, /Created: #100/);
 });
 
+test('a scope-less body matches an open scope-less issue with the same outcome and creates nothing', t => {
+  const bare = 'The claim is lost when the push fails in drive.';
+  const f = duplicateFixture(t, [{ number: 40, title: FAULT, body: bare, state: 'OPEN', closedAt: null }]);
+  const result = filed(f, FAULT, bare, '--labels', 'type:bug');
+  assert.match(result.stdout, /Exists: #40/);
+  assert.equal(dupState(f).creates.length, 0);
+  assert.equal(dupState(f).comments.length, 1);
+});
+
+test('a recently closed main-red bug without a scope packet is reopened when the base goes red again', t => {
+  const title = 'fix(drive): main is red, verify fails';
+  const body = '## Why\nmain is red.\n\n## Evidence\nRequired check `verify` fails on `main`: https://x/runs/1\n\n<!-- workflow:base-red -->\n';
+  const f = duplicateFixture(t, [{ number: 40, title, body, state: 'CLOSED', closedAt: daysAgo(3) }]);
+  const result = filed(f, title, body.replace('runs/1', 'runs/2'), '--labels', 'type:bug');
+  assert.match(result.stdout, /Reopened: #40/);
+  assert.match(result.stdout, /Exists: #40/);
+  assert.equal(dupState(f).creates.length, 0);
+});
+
 test('two concurrent issue creates for the same issue create one under the repo lock', async t => {
   if (!['darwin', 'linux'].includes(process.platform)) { t.skip('workflow locks need lockf or flock'); return; }
   const f = duplicateFixture(t, []);
