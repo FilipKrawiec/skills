@@ -641,7 +641,7 @@ const packet = paths => `\u0060\u0060\u0060scope\n${JSON.stringify({ paths })}\n
 const daysAgo = days => new Date(Date.now() - days * 86_400_000).toISOString();
 const dupState = f => JSON.parse(readFileSync(f.env.TEST_ISSUES, 'utf8'));
 const FAULT = 'drive loses the claim when the push fails';
-const faultBody = `The claim is lost when the push fails in drive.\n${packet(['plugins/common/workflow/scripts/drive.mjs'])}`;
+const faultBody = `The claim is lost when the push fails in drive.\nObserved: the claim is gone. Expected: the claim is kept.\n${packet(['plugins/common/workflow/scripts/drive.mjs'])}`;
 const filed = (f, title, body, ...extra) => {
   writeFileSync(join(f.repo, 'dup.md'), body);
   return f.cliRun('issue', 'create', '--title', title, '--body-file', 'dup.md', '--parent', '1', ...extra);
@@ -687,12 +687,12 @@ test('a body sharing a scope path but describing a different behaviour creates a
 
 test('the same behaviour in a path outside the scope creates a new issue', t => {
   const f = duplicateFixture(t, [{ number: 40, title: FAULT, body: faultBody, state: 'OPEN', closedAt: null }]);
-  const elsewhere = `The claim is lost when the push fails in drive.\n${packet(['docs/elsewhere.md'])}`;
+  const elsewhere = `The claim is lost when the push fails in drive.\nObserved: the claim is gone. Expected: the claim is kept.\n${packet(['docs/elsewhere.md'])}`;
   assert.match(filed(f, FAULT, elsewhere, '--labels', 'type:bug').stdout, /Created: #100/);
 });
 
 test('a scope-less body matches an open scope-less issue with the same outcome and creates nothing', t => {
-  const bare = 'The claim is lost when the push fails in drive.';
+  const bare = 'The claim is lost when the push fails in drive. Observed: the claim is gone. Expected: the claim is kept.';
   const f = duplicateFixture(t, [{ number: 40, title: FAULT, body: bare, state: 'OPEN', closedAt: null }]);
   const result = filed(f, FAULT, bare, '--labels', 'type:bug');
   assert.match(result.stdout, /Exists: #40/);
@@ -745,4 +745,16 @@ test('the duplicate search lists open issues and recently closed ones separately
   assert.match(lists, /--state open /);
   assert.match(lists, /--state closed --search closed:>=\d{4}-\d{2}-\d{2}/);
   assert.doesNotMatch(lists, /--state all/);
+});
+test('issue create refuses a type:bug slice of an epic that reports no failing behaviour and names type:story', t => {
+  const f = structureFixture(t);
+  writeFileSync(join(f.repo, 'slice.md'), '## Problem\nExtract the shared parser into one home.\n\n## Acceptance criteria\n- [ ] one parser\n');
+  writeFileSync(join(f.repo, 'fault.md'), '## Problem\nObserved: the export drops the last row. Expected: every row is exported.\n\n## Acceptance criteria\n- [ ] a reproducing test fails before the fix\n');
+  const create = (file, ...extra) => f.cliRun('issue', 'create', '--title', 'Parser work', '--body-file', file, '--parent', '1', ...extra);
+  const refused = create('slice.md', '--labels', 'type:bug');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /type:story/);
+  assert.doesNotMatch(calls(f), /issues -f title/, 'nothing was created');
+  assert.equal(create('fault.md', '--labels', 'type:bug').status, 0, 'a reported failing behaviour is a bug');
+  assert.equal(create('slice.md', '--labels', 'type:story').status, 0, 'a slice is a story');
 });
