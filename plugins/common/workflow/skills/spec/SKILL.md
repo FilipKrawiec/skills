@@ -24,7 +24,7 @@ Each open issue has:
 
 - a native milestone;
 - one type: an epic, or a story or bug under one epic (epics never nest; refinement slices are stories);
-- the type rule: only a reported failing behaviour (a fault in behaviour already delivered, or a main-red failure) is a `type:bug`; a planned epic slice, a refinement slice, a split of an issue, a refactor, a perf or size budget, a design change, an audit or review follow-up and a gap an outcome review finds in a criterion are `type:story`;
+- the type rule: only a reported failing behaviour (a fault in behaviour already delivered, or a main-red failure) is a `type:bug`; a planned epic slice, a refinement slice, a split of an issue, a refactor, a perf or size budget, a design change, an audit or review follow-up and a gap an outcome review finds in a criterion are `type:story`, so a `perf`, `test`, `refactor` or `feat` titled epic child is never `type:bug` (`issue create` refuses it);
 - `lane:owner` only while the owner must take part, and on an epic only while it is a draft.
 
 Titles use `feat`, `fix`, `docs/test/ci/refactor/perf` or `epic`, then area and outcome. Group and split per [split.md](references/split.md), never by size. Only epics have children; read [epics.md](references/epics.md) before changing one. Never write a conditional criterion. Record outcome dependencies as blocked-by links, not file ordering; verify outcomes.

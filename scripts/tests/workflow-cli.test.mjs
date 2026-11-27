@@ -758,3 +758,16 @@ test('issue create refuses a type:bug slice of an epic that reports no failing b
   assert.equal(create('fault.md', '--labels', 'type:bug').status, 0, 'a reported failing behaviour is a bug');
   assert.equal(create('slice.md', '--labels', 'type:story').status, 0, 'a slice is a story');
 });
+test('issue create refuses a type:bug epic child titled as planned work even when its body reads like a fault', t => {
+  const f = structureFixture(t);
+  writeFileSync(join(f.repo, 'fault.md'), '## Problem\nObserved: cold start takes 4s. Expected: under 2s.\n\n## Acceptance criteria\n- [ ] a failing test pins the budget\n');
+  const create = (title, ...extra) => f.cliRun('issue', 'create', '--title', title, '--body-file', 'fault.md', '--parent', '1', ...extra);
+  for (const title of ['perf(companion): cold start budget', 'test(companion): cover the pairing flow', 'refactor(adapters): one parser', 'feat(api): add export']) {
+    const refused = create(title, '--labels', 'type:bug');
+    assert.notEqual(refused.status, 0, title);
+    assert.match(refused.stderr, /type:story/, title);
+  }
+  assert.doesNotMatch(calls(f), /issues -f title/, 'nothing was created');
+  assert.equal(create('fix(export): last row dropped', '--labels', 'type:bug').status, 0, 'a fix-titled fault is a bug');
+  assert.equal(create('perf(companion): cold start budget', '--labels', 'type:story').status, 0, 'planned work is a story');
+});
