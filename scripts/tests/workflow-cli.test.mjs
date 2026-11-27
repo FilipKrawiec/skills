@@ -771,3 +771,30 @@ test('issue create refuses a type:bug epic child titled as planned work even whe
   assert.equal(create('fix(export): last row dropped', '--labels', 'type:bug').status, 0, 'a fix-titled fault is a bug');
   assert.equal(create('perf(companion): cold start budget', '--labels', 'type:story').status, 0, 'planned work is a story');
 });
+
+const sliceBody = `Part of epic #1819.\nOne shared adapter replaces the nine copies; a regression test pins it.\n${packet(['plugins/common/workflow/scripts/lib/issues.mjs'])}`;
+const filedBare = (f, title, body, ...extra) => {
+  writeFileSync(join(f.repo, 'dup.md'), body);
+  return f.cliRun('issue', 'create', '--title', title, '--body-file', 'dup.md', '--parent', '1', ...extra);
+};
+
+test('issue create refuses a type:bug that opens as a slice of planned work and names type:story', t => {
+  for (const opening of ['Part of epic #1819.', 'Split from #1983.']) {
+    const f = duplicateFixture(t, []);
+    const result = filedBare(f, 'One shared adapter', sliceBody.replace('Part of epic #1819.', opening), '--labels', 'type:bug');
+    assert.notEqual(result.status, 0, opening);
+    assert.match(result.stderr, /type:story/);
+    assert.equal(dupState(f).creates.length, 0);
+  }
+});
+
+test('a slice-opening type:bug with an observed failure, and a type:story slice, still create', t => {
+  const failing = duplicateFixture(t, []);
+  const bug = filedBare(failing, 'Drive loses the claim', `Part of epic #1819.\n${faultBody}`, '--labels', 'type:bug');
+  assert.equal(bug.status, 0, bug.stderr);
+  assert.equal(dupState(failing).creates.length, 1);
+  const story = duplicateFixture(t, []);
+  const result = filedBare(story, 'One shared adapter', sliceBody, '--labels', 'type:story');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(dupState(story).creates.length, 1);
+});

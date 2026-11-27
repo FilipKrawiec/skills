@@ -35,7 +35,7 @@ A filled issue body and the UI criteria rule are in [issue-example.md](reference
 
 ## 2. Transition
 
-Add a fenced `scope` JSON packet (see the example; a trailing `/` covers a subtree) when the changed paths are known. The `devops` assessor judges risk from the change, with the packet's paths as evidence (`review`'s `references/risk.md`); set an issue's `risk:R*` only as the owner's floor. A follow-up to an unmerged PR joins its next round or lists it in `dependencies`. `issue create` is the only path to a new issue, never raw `gh`; `--distinct-from N --reason "..."` marks a separate one. Re-read, then replace conflicting family labels; keep others and owner holds.
+Add a fenced `scope` JSON packet (see the example; a trailing `/` covers a subtree) when the changed paths are known. The `devops` assessor judges risk from the change, with the packet's paths as evidence (`review`'s `references/risk.md`); set an issue's `risk:R*` only as the owner's floor. A follow-up to an unmerged PR joins its next round or lists it in `dependencies`. `issue create` is the only path to a new issue, never raw `gh`, and refuses a `type:bug` slice ("Part of epic #N", "Split from #N") with no observed failure: file a `type:story`; `--distinct-from N --reason "..."` marks a separate one. Re-read, then replace conflicting family labels; keep others and owner holds.
 
 The owner's session is where the owner runs `drive`.
 
