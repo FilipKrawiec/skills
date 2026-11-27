@@ -105,6 +105,8 @@ function structureOptions(o) {
 const NIT_SWEEP_MARKER = '<!-- workflow:nit-sweep -->';
 // A bug under an epic reports a failing behaviour: an observed-versus-expected line or a reproducing-test criterion.
 const reportsFailingBehaviour = body => /\b(observed|actual)\b[^\n]*\bexpected\b|\bexpected\b[^\n]*\b(observed|actual)\b|\b(reproducing|regression|failing) test\b/i.test(body);
+// A conventional-commit title other than `fix` names planned work (a perf budget, a test addition, a refactor, a feature).
+const plannedWorkTitle = title => /^(perf|test|refactor|feat|docs|chore|ci|build|style)(\([^)]*\))?!?:/i.test(title.trim());
 const labelNames = labels => (labels || []).map(label => label.name ?? label);
 // Backlogs have two levels: an epic whose children are stories or bugs. Null when the structure holds, else why it does not.
 // The main-red bug belongs to no epic, so `issue create` asks it for no parent.
@@ -168,7 +170,7 @@ export function issueCreate(args) {
   requireImplementer(cfg);
   const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
   if (!check && body.includes(NIT_SWEEP_MARKER) && labels.includes('type:bug')) throw new Error('a Nit sweep is never a type:bug: file it as type:story');
-  if (!check && structure.parent && labels.includes('type:bug') && !baseRedBody(body) && !reportsFailingBehaviour(body)) throw new Error('a type:bug under an epic reports a failing behaviour (observed versus expected, or a reproducing-test criterion); a slice, split, refactor or follow-up is a type:story');
+  if (!check && structure.parent && labels.includes('type:bug') && !baseRedBody(body) && (plannedWorkTitle(title) || !reportsFailingBehaviour(body))) throw new Error('a type:bug under an epic reports a failing behaviour (observed versus expected, or a reproducing-test criterion); a slice, split, refactor or follow-up is a type:story');
   if (!check && !baseRedBody(body)) requireBacklogStructure(repo, { labels, parent: structure.parent });
   // List without --search: the search index lags new issues and would hide a concurrent duplicate.
   const open = () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body']);
