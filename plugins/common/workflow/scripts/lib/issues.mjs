@@ -113,6 +113,8 @@ const NIT_SWEEP_MARKER = '<!-- workflow:nit-sweep -->';
 // A bug under an epic reports a failing behaviour: an observed-versus-expected line or a reproducing-test criterion.
 const reportsFailingBehaviour = body => /\b(observed|actual)\b[^\n]*\bexpected\b|\bexpected\b[^\n]*\b(observed|actual)\b|\b(reproducing|regression|failing) test\b/i.test(body);
 // A conventional-commit title other than `fix` names planned work (a perf budget, a test addition, a refactor, a feature).
+const opensAsSlice = body => /^\s*(part of epic|split from)\s+#\d+/i.test(body);
+const observedFailure = body => /\b(observed|steps to reproduce)\b|^\s*(\$|>)\s+\S.*\n[^\n]*(error|fail|exit(ed)? (code )?[1-9])/im.test(body);
 const plannedWorkTitle = title => /^(perf|test|refactor|feat|docs|chore|ci|build|style)(\([^)]*\))?!?:/i.test(title.trim());
 const labelNames = labels => (labels || []).map(label => label.name ?? label);
 // Backlogs have two levels: an epic whose children are stories or bugs. Null when the structure holds, else why it does not.
@@ -176,7 +178,7 @@ export function issueCreate(args) {
   const check = args.includes('--check');
   const o = flags(args.filter(arg => arg !== '--unique' && arg !== '--check'), ['--title', '--body-file', '--labels', '--repo', '--milestone', '--parent', '--blocked-by', '--distinct-from', '--reason']);
   const title = (o['--title'] || '').trim();
-  const usage = 'Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M] [--unique] [--check] [--distinct-from N --reason "<one line>"]. Before creating, any type of issue is matched against every open issue and those closed in the last 30 days: a match shares a scope path (or either side has none) and the same failing behaviour or outcome (title words overlap 60%, or title and body words 50%). On a match nothing is created: the evidence is commented on it, a closed match is reopened (the fault is back), and `Exists: #N` is printed. --distinct-from N with --reason creates the issue anyway and records `Distinct from #N: <reason>` in its body.';
+  const usage = 'Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M] [--unique] [--check] [--distinct-from N --reason "<one line>"]. A type:bug whose body opens "Part of epic #N" or "Split from #N" without an observed failure is refused: file a type:story. Before creating, any type of issue is matched against every open issue and those closed in the last 30 days: a match shares a scope path (or either side has none) and the same failing behaviour or outcome (title words overlap 60%, or title and body words 50%). On a match nothing is created: the evidence is commented on it, a closed match is reopened (the fault is back), and `Exists: #N` is printed. --distinct-from N with --reason creates the issue anyway and records `Distinct from #N: <reason>` in its body.';
   if (!title || !o['--body-file']) throw new Error(usage);
   const distinct = o['--distinct-from'] === undefined ? null : Number(o['--distinct-from']);
   const reason = (o['--reason'] || '').trim();
@@ -190,6 +192,7 @@ export function issueCreate(args) {
   requireImplementer(cfg);
   const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
   if (!check && body.includes(NIT_SWEEP_MARKER) && labels.includes('type:bug')) throw new Error('a Nit sweep is never a type:bug: file it as type:story');
+  if (!check && labels.includes('type:bug') && !baseRedBody(body) && opensAsSlice(body) && !observedFailure(body)) throw new Error('a type:bug opening "Part of epic #N" or "Split from #N" names no observed failure: it is a slice of planned work, so file it as type:story');
   if (!check && structure.parent && labels.includes('type:bug') && !baseRedBody(body) && (plannedWorkTitle(title) || !reportsFailingBehaviour(body))) throw new Error('a type:bug under an epic reports a failing behaviour (observed versus expected, or a reproducing-test criterion); a slice, split, refactor or follow-up is a type:story');
   if (!check && !baseRedBody(body)) requireBacklogStructure(repo, { labels, parent: structure.parent });
   // List without --search: the search index lags new issues and would hide a concurrent duplicate.
