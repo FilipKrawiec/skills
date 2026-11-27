@@ -94,13 +94,20 @@ function findExistingMatch(issues, { title, body, now = Date.now() }) {
   return live.filter(issue => sharesScope(issue) && sameOutcome(issue, title, body)).sort((a, b) => a.number - b.number)[0] ?? null;
 }
 const positive = value => Number.isInteger(value) && value > 0;
-// `--milestone NAME`, `--parent N` and `--blocked-by N[,M]`, validated before any write.
+// `--milestone NAME`, `--parent N`, `--blocked-by N[,M]`, and the removals `--no-parent N` (the parent to leave) and
+// `--unblock N[,M]`, validated before any write.
 function structureOptions(o) {
   const parent = o['--parent'] === undefined ? null : Number(o['--parent']);
   if (parent !== null && !positive(parent)) throw new Error('--parent expects an issue number');
   const blockers = o['--blocked-by'] === undefined ? [] : o['--blocked-by'].split(',').map(value => Number(value.trim()));
   if (blockers.some(value => !positive(value))) throw new Error('--blocked-by expects issue numbers such as 12 or 12,13');
-  return { milestone: o['--milestone'] || null, parent, blockers };
+  const noParent = o['--no-parent'] === undefined ? null : Number(o['--no-parent']);
+  if (noParent !== null && !positive(noParent)) throw new Error('--no-parent expects the parent issue number');
+  const unblock = o['--unblock'] === undefined ? [] : o['--unblock'].split(',').map(value => Number(value.trim()));
+  if (unblock.some(value => !positive(value))) throw new Error('--unblock expects issue numbers such as 12 or 12,13');
+  if (parent !== null && parent === noParent) throw new Error('--parent and --no-parent name the same issue');
+  if (blockers.some(value => unblock.includes(value))) throw new Error('--blocked-by and --unblock name the same issue');
+  return { milestone: o['--milestone'] || null, parent, blockers, noParent, unblock };
 }
 const NIT_SWEEP_MARKER = '<!-- workflow:nit-sweep -->';
 // A bug under an epic reports a failing behaviour: an observed-versus-expected line or a reproducing-test criterion.
@@ -133,7 +140,7 @@ function milestoneNumber(repo, name) {
   return found.number;
 }
 // Adds the links the issue lacks, then reads them back from GitHub; a link already present is left alone.
-function linkIssue(repo, n, { parent, blockers }) {
+function linkIssue(repo, n, { parent, blockers, noParent = null, unblock = [] }) {
   if (parent === n || blockers.includes(n)) throw new Error(`#${n} cannot be its own parent or blocker`);
   const numbers = path => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${path}?per_page=100`]).flat().map(issue => issue.number);
   const id = number => gh(['api', `repos/${repo}/issues/${number}`]).id;
@@ -149,6 +156,19 @@ function linkIssue(repo, n, { parent, blockers }) {
     const missing = blockers.filter(number => !after.includes(number));
     if (missing.length) throw new Error(`GitHub did not confirm #${n} blocked by ${missing.map(number => `#${number}`).join(', ')}`);
     console.log(`Blocked #${n} by ${blockers.map(number => `#${number}`).join(', ')}`);
+  }
+  // Removal, the mirror of the adds above: drop a link that is present and read it back from GitHub; an absent one is left alone.
+  if (noParent) {
+    if (numbers(`${noParent}/sub_issues`).includes(n)) gh(['api', '--method', 'DELETE', `repos/${repo}/issues/${noParent}/sub_issue`, '-F', `sub_issue_id=${id(n)}`]);
+    if (numbers(`${noParent}/sub_issues`).includes(n)) throw new Error(`GitHub did not confirm #${n} removed from under #${noParent}`);
+    console.log(`Unlinked #${n} from under #${noParent}`);
+  }
+  if (unblock.length) {
+    const present = numbers(`${n}/dependencies/blocked_by`);
+    for (const blocker of unblock.filter(number => present.includes(number))) gh(['api', '--method', 'DELETE', `repos/${repo}/issues/${n}/dependencies/blocked_by/${id(blocker)}`]);
+    const still = numbers(`${n}/dependencies/blocked_by`).filter(number => unblock.includes(number));
+    if (still.length) throw new Error(`GitHub did not confirm #${n} unblocked from ${still.map(number => `#${number}`).join(', ')}`);
+    console.log(`Unblocked #${n} from ${unblock.map(number => `#${number}`).join(', ')}`);
   }
 }
 export function issueCreate(args) {
@@ -245,11 +265,11 @@ export function issueComment(args) {
   });
 }
 export function issueEdit(args) {
-  const o = flags(args, ['--number', '--body-file', '--repo', '--milestone', '--parent', '--blocked-by']);
+  const o = flags(args, ['--number', '--body-file', '--repo', '--milestone', '--parent', '--blocked-by', '--no-parent', '--unblock']);
   const n = Number(o['--number']);
   const structure = structureOptions(o);
-  const usage = 'Usage: issue edit --number N [--body-file PATH] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M]';
-  if (!positive(n) || !(o['--body-file'] || structure.milestone || structure.parent || structure.blockers.length)) throw new Error(usage);
+  const usage = 'Usage: issue edit --number N [--body-file PATH] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M] [--no-parent N] [--unblock N,M]';
+  if (!positive(n) || !(o['--body-file'] || structure.milestone || structure.parent || structure.blockers.length || structure.noParent || structure.unblock.length)) throw new Error(usage);
   const root = git('rev-parse', '--show-toplevel');
   const body = o['--body-file'] ? validateIssueCommentBody(readWorkspaceText(root, o['--body-file'])) : null;
   const cfg = writerConfig(); loadEnvironment(cfg);

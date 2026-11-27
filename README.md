@@ -18,7 +18,7 @@ You approve milestone direction and production candidates. The team owns refinem
 | Workflow | `milestone`, `spec`, `refine`, `plan`, `tdd`, `review`, `deliver`, `release`, `health`, `improve`, `explore`, `pair` |
 | Authoring | `writing-great-skill` |
 
-The Product partner, Craftsman, Reviewer and Delivery steward are responsibilities assigned by the host. They use these skills; this library does not add a separate role registry, scheduler or workflow engine.
+The Product partner, Craftsman, Reviewer and Delivery steward are responsibilities assigned by the host. They use these skills. The workflow package's `drive` command and its background runner deliver issues and epics, and the host still assigns the roles: the library adds no role registry of its own.
 
 ## Load the library
 

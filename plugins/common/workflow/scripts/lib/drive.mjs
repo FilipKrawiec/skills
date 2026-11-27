@@ -1347,16 +1347,17 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
 }
-function unresolvedDelivery(io, slice, base, epic, ancestors = new Set()) {
+function unresolvedDelivery(io, slice, base, epic, ancestors = new Set(), open = new Set()) {
   if (!slice || slice.state !== 'CLOSED' || ancestors.has(slice.number)) return [slice?.number].filter(Boolean);
   // A slice folded into another issue stands for it; one folded into a PR is delivered once that PR merged into the base.
   const target = consolidatedInto(slice.body);
   if (target && target !== slice.number && !ancestors.has(target)) {
-    if (io.mergedPr?.(target, base)) return [];
+    // A target that is still an open slice of the epic, the refinement included, is delivered by its own run, so it never holds that run back.
+    if (open.has(target) || io.mergedPr?.(target, base)) return [];
     // A target that cannot be read or checked, such as a PR closed without merging, holds the epic under its own number.
     try {
       const folded = io.issue(target);
-      return folded ? unresolvedDelivery(io, folded, base, epic, new Set([...ancestors, slice.number])) : [target];
+      return folded ? unresolvedDelivery(io, folded, base, epic, new Set([...ancestors, slice.number]), open) : [target];
     } catch { return [target]; }
   }
   // A completed slice that says it makes no repository changes needed no code, as dependencies already count it.
@@ -1368,7 +1369,7 @@ function unresolvedDelivery(io, slice, base, epic, ancestors = new Set()) {
     if (!children.length) return [slice.number];
     return children.flatMap(child => {
       const issue = io.issue(child.number);
-      return issue ? unresolvedDelivery(io, issue, base, epic, seen) : [child.number];
+      return issue ? unresolvedDelivery(io, issue, base, epic, seen, open) : [child.number];
     });
   } catch {
     return [slice.number];
@@ -1405,13 +1406,14 @@ export function driveEpic(io, epic, lanes) {
   const existing = io.allBlockers(refinement.number);
   for (const slice of others.filter(slice => !retired.has(slice.number))) if (!existing.includes(slice.number)) io.addBlocker(refinement.number, slice.number);
   // A closed slice without a merged closing PR holds only refinement and epic completion, not other open slices.
-  const unresolved = others.filter(slice => slice.state !== 'OPEN' && !notPlanned(slice)).flatMap(slice => unresolvedDelivery(io, slice, lanes.base, epic.number));
+  const openSlices = new Set(slices.filter(slice => slice.state === 'OPEN').map(slice => slice.number));
+  const unresolved = others.filter(slice => slice.state !== 'OPEN' && !notPlanned(slice)).flatMap(slice => unresolvedDelivery(io, slice, lanes.base, epic.number, new Set(), openSlices));
   const unresolvedOwner = unresolved.length ? { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for ${[...new Set(unresolved)].map(number => `#${number}`).join(', ')}`, url: epic.url } : null;
   // Read the refinement's links again after the repair; every open slice blocks it even before GitHub shows a new link.
   const repaired = splitDependencies(io.dependencies(refinement));
   refinement.blockers = [...new Set([...repaired.blockers, ...others.filter(slice => slice.state === 'OPEN').map(slice => slice.number)])];
   refinement.dropped = repaired.dropped.filter(number => !retired.has(number));
-  if (refinement.state !== 'OPEN' && unresolvedDelivery(io, refinement, lanes.base, epic.number).length) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for #${refinement.number}`, url: epic.url };
+  if (refinement.state !== 'OPEN' && unresolvedDelivery(io, refinement, lanes.base, epic.number, new Set(), openSlices).length) return { owner: `epic #${epic.number}: missing closing PR merged into ${lanes.base} for #${refinement.number}`, url: epic.url };
   const step = decideEpic({ epic, slices });
   if (unresolvedOwner && (step.do === 'close-epic' || step.slices?.includes(refinement.number))) return unresolvedOwner;
   if (step.do === 'close-epic' && !io.hasLessons(epic.number)) return instruction(io, { issue: epic, pr: null, tree: null }, agent('improver', 'improve'), lanes);
