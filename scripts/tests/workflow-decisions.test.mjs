@@ -1,6 +1,7 @@
 // Owner decisions of epics #409 and #560 that code or skill text implements, one test each, named with its decision and date.
 // The owner is notified when this file merges. A decision changes only when the owner records a new one first: never edit,
-// weaken or delete a test here to make a change pass; stop and ask the owner.
+// weaken or delete a test here to make a change pass; stop and ask the owner. Exception (owner decision on #824): when a
+// wording-only change leaves a decision's meaning unchanged, an agent may update that pin's phrase and name the decision.
 import './support/host-stubs.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';

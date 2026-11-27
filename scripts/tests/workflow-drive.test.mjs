@@ -949,7 +949,7 @@ test('a refinement candidate closed as not planned or consolidated is retired, n
     assert.notEqual(result.mode, 'refinement');
     assert.notEqual(result.agent, 'planner', 'a retired candidate is no rival');
     if (retired.stateReason === 'NOT_PLANNED') assert.deepEqual([result.owner, result.agent, result.issue, result.mode], [undefined, 'implementer', 11, 'build'], '#11 is the refinement');
-    else assert.match(result.owner, /missing closing PR merged into main for #11$/, 'a consolidated candidate hands its delivery to #11, which has no merged PR yet');
+    else assert.deepEqual([result.owner, result.agent, result.issue, result.mode], [undefined, 'implementer', 11, 'build'], 'a candidate folded into the open refinement hands its delivery to #11, which builds');
   }
 });
 

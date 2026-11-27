@@ -424,6 +424,8 @@ if(a[0]==='auth'){console.log('SECRET_TOKEN');process.exit(0);}
 if(a.includes('user')){out({login:'builder'});process.exit(0);}
 if(a[0]==='issue'&&a[1]==='list'){out([]);process.exit(0);}
 if(path.includes('/milestones')){out([[{number:2,title:'v0'},{number:3,title:'v1'}]]);process.exit(0);}
+const unlink=path.match(/issues\\/(\\d+)\\/(sub_issue|dependencies\\/blocked_by\\/(\\d+))$/);
+if(unlink&&a.includes('DELETE')){const key=unlink[1]+(unlink[3]?'dependencies/blocked_by':'sub_issues'),gone=unlink[3]?Number(unlink[3])/100:Number(field('sub_issue_id'))/100;if(!process.env.TEST_NO_UNLINK)links[key]=(links[key]||[]).filter(x=>x!==gone);fs.writeFileSync(file,JSON.stringify(links));out({});process.exit(0);}
 const link=path.match(/issues\\/(\\d+)\\/(sub_issues|dependencies\\/blocked_by)/);
 if(link){const key=link[1]+link[2];
   if(a.includes('POST')){if(!process.env.TEST_NO_LINK)links[key]=[...(links[key]||[]),Number(field(link[2]==='sub_issues'?'sub_issue_id':'issue_id'))/100];fs.writeFileSync(file,JSON.stringify(links));out({});}
@@ -484,6 +486,34 @@ test('issue edit adds each blocked-by link and skips one already present', t => 
   assert.deepEqual(links(f)['4dependencies/blocked_by'], [2, 3]);
   assert.equal(f.cliRun('issue', 'edit', '--number', '4', '--blocked-by', '4').status, 1);
   assert.match(f.cliRun('issue', 'edit', '--number', '4', '--blocked-by', 'x').stderr, /--blocked-by expects issue numbers/);
+});
+
+test('issue edit drops a blocked-by link and a sub-issue link, confirms each from GitHub, and leaves an absent one alone', t => {
+  const f = structureFixture(t);
+  assert.equal(f.cliRun('issue', 'edit', '--number', '4', '--blocked-by', '2,3', '--parent', '1').status, 0);
+  const result = f.cliRun('issue', 'edit', '--number', '4', '--unblock', '2,7', '--no-parent', '1');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Unlinked #4 from under #1/);
+  assert.match(result.stdout, /Unblocked #4 from #2, #7/);
+  assert.deepEqual(links(f)['4dependencies/blocked_by'], [3]);
+  assert.deepEqual(links(f)['1sub_issues'], []);
+  assert.match(calls(f), /DELETE repos\/acme\/app\/issues\/4\/dependencies\/blocked_by\/200/);
+  assert.doesNotMatch(calls(f), /DELETE .*blocked_by\/700/);
+  assert.match(calls(f), /DELETE repos\/acme\/app\/issues\/1\/sub_issue -F sub_issue_id=400/);
+  const again = f.cliRun('issue', 'edit', '--number', '4', '--no-parent', '1');
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(calls(f).split('\n').filter(line => /DELETE .*issues\/1\/sub_issue /.test(line)).length, 1);
+});
+
+test('issue edit refuses an unlink GitHub does not confirm and a contradictory or malformed one', t => {
+  const f = structureFixture(t);
+  assert.equal(f.cliRun('issue', 'edit', '--number', '4', '--blocked-by', '2', '--parent', '1').status, 0);
+  f.env.TEST_NO_UNLINK = '1';
+  assert.match(f.cliRun('issue', 'edit', '--number', '4', '--unblock', '2').stderr, /did not confirm #4 unblocked from #2/);
+  assert.match(f.cliRun('issue', 'edit', '--number', '4', '--no-parent', '1').stderr, /did not confirm #4 removed from under #1/);
+  assert.match(f.cliRun('issue', 'edit', '--number', '4', '--blocked-by', '2', '--unblock', '2').stderr, /name the same issue/);
+  assert.match(f.cliRun('issue', 'edit', '--number', '4', '--no-parent', 'x').stderr, /--no-parent expects/);
+  assert.match(f.cliRun('issue', 'edit', '--number', '4', '--unblock', 'x').stderr, /--unblock expects/);
 });
 
 test('issue edit with nothing to change prints its usage', t => {
@@ -601,7 +631,7 @@ test('a usage error on a locked command reports only the usage message', t => {
   const f = fixture(t);
   const result = f.cliRun('issue', 'edit', '--number', '304', '--body-file', 'F', '--bogus', '12.0.0');
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Expected --number --body-file --repo --milestone --parent --blocked-by/);
+  assert.match(result.stderr, /Expected --number --body-file --repo --milestone --parent --blocked-by --no-parent --unblock/);
   assert.doesNotMatch(result.stderr, /\block\b/);
 });
 
