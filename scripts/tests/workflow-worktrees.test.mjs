@@ -233,6 +233,8 @@ test('worktree tidy prunes a locked tree whose directory is gone, keeps its bran
   assert.equal(git(repo, 'remote', 'add', 'origin', 'https://github.com/example/repo.git').status, 0);
   const gone = add('gone');
   rmSync(gone, { recursive: true, force: true });
+  const held = add('held', `claude session (pid ${process.pid})`);
+  rmSync(held, { recursive: true, force: true });
   const inBase = add('ended');
   const old = new Date(Date.now() - 2 * hour);
   const gitDir = git(inBase, 'rev-parse', '--absolute-git-dir').stdout.trim();
@@ -250,6 +252,9 @@ test('worktree tidy prunes a locked tree whose directory is gone, keeps its bran
   assert.ok(lines.some(line => line.startsWith('pruned') && line.includes(gone)), lines.join('\n'));
   assert.doesNotMatch(git(repo, 'worktree', 'list').stdout, /gone/);
   assert.equal(git(repo, 'rev-parse', '--verify', '-q', 'refs/heads/gone').status, 0);
+  // A live session's lock keeps the record of a directory that may only be unmounted.
+  assert.ok(lines.some(line => line.startsWith('kept') && line.includes(held) && line.includes('live session')), lines.join('\n'));
+  assert.match(git(repo, 'worktree', 'list').stdout, /held/);
   assert.ok(lines.some(line => line.startsWith('removed') && line.includes(inBase)), lines.join('\n'));
 });
 

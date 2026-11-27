@@ -152,6 +152,7 @@ export function removeWorktree(tree, verdict, root, baseRef) {
 }
 
 // Removes the trees `worktreeVerdict` removes; `settledOnly` limits that to ended PRs and heads already in the base, as `drive` and the runner do every call.
+// A tree whose directory is gone is pruned from git's list (its branch kept) unless a live session holds its lock; it is not counted in the trees removed.
 export function tidyWorktrees({ dryRun = false, idleDays = 2, settledOnly = false, log = console.log, busy = busyPaths() } = {}) {
   const { root: current, baseRef } = config(false);
   const listed = gitIn(current, ['worktree', 'list', '--porcelain']);
@@ -163,11 +164,15 @@ export function tidyWorktrees({ dryRun = false, idleDays = 2, settledOnly = fals
   const prs = pulls.status === 0 ? prStates(JSON.parse(pulls.stdout)) : null;
   const now = Date.now();
   const removed = [];
+  const gone = [];
   for (const tree of trees) {
     // A tree deleted outside git (its parent's removal took it) has nothing to back up: unlock its record for prune, keep its branch.
+    // A live session's lock stays: its directory may be on a volume that is only unmounted.
     if (!existsSync(tree.path)) {
-      if (!dryRun && tree.locked) gitIn(root, ['worktree', 'unlock', tree.path]);
-      log(`${dryRun ? 'would prune' : 'pruned'} ${tree.path} (its directory is gone; branch kept)`);
+      if (liveSession(tree)) { log(`kept ${tree.path} (its directory is missing but a live session holds its lock)`); continue; }
+      if (dryRun) { log(`would prune ${tree.path} (its directory is gone; branch kept)`); continue; }
+      if (tree.locked && gitIn(root, ['worktree', 'unlock', tree.path]).status !== 0) { log(`kept ${tree.path} (its directory is gone but unlocking its record failed)`); continue; }
+      gone.push(tree.path);
       continue;
     }
     const facts = worktreeFacts(tree, { root, current, baseRef, prs: prs ?? new Map(), busy });
@@ -180,7 +185,10 @@ export function tidyWorktrees({ dryRun = false, idleDays = 2, settledOnly = fals
     if (result.removed) removed.push(tree.path);
     log(`${result.removed ? 'removed' : 'kept'} ${tree.path} (${result.removed ? verdict.why : result.note}${result.removed && result.note ? `; ${result.note}` : ''}${result.backup ? `; changes in ${result.backup}` : ''})`);
   }
-  if (!dryRun) gitIn(root, ['worktree', 'prune']);
+  if (!dryRun) {
+    const pruned = gitIn(root, ['worktree', 'prune']).status === 0;
+    for (const path of gone) log(`${pruned ? 'pruned' : 'kept'} ${path} (${pruned ? 'its directory is gone; branch kept' : 'git worktree prune failed'})`);
+  }
   return removed;
 }
 
