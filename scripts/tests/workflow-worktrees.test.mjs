@@ -227,6 +227,37 @@ test('worktree facts compare real paths, so a symlinked checkout or process dire
   assert.equal(facts.busy, true);
 });
 
+test('worktree tidy prunes a locked tree whose directory is gone, keeps its branch, and goes on to the rest', t => {
+  const { repo, git, add } = fixture(t);
+  const bin = hermeticBin(join(repo, '..', 'bin'));
+  assert.equal(git(repo, 'remote', 'add', 'origin', 'https://github.com/example/repo.git').status, 0);
+  const gone = add('gone');
+  rmSync(gone, { recursive: true, force: true });
+  const held = add('held', `claude session (pid ${process.pid})`);
+  rmSync(held, { recursive: true, force: true });
+  const inBase = add('ended');
+  const old = new Date(Date.now() - 2 * hour);
+  const gitDir = git(inBase, 'rev-parse', '--absolute-git-dir').stdout.trim();
+  for (const name of ['index', 'HEAD', 'logs/HEAD']) if (existsSync(join(gitDir, name))) utimesSync(join(gitDir, name), old, old);
+  const cwd = process.cwd(), path = process.env.PATH, log = console.log, lines = [];
+  try {
+    process.chdir(repo);
+    process.env.PATH = bin;
+    console.log = line => lines.push(line);
+    worktreeCommand(['tidy', '--dry-run']);
+    assert.ok(lines.some(line => line.startsWith('would prune') && line.includes(gone)), lines.join('\n'));
+    assert.match(git(repo, 'worktree', 'list').stdout, /gone/);
+    worktreeCommand(['tidy']);
+  } finally { console.log = log; process.env.PATH = path; process.chdir(cwd); }
+  assert.ok(lines.some(line => line.startsWith('pruned') && line.includes(gone)), lines.join('\n'));
+  assert.doesNotMatch(git(repo, 'worktree', 'list').stdout, /gone/);
+  assert.equal(git(repo, 'rev-parse', '--verify', '-q', 'refs/heads/gone').status, 0);
+  // A live session's lock keeps the record of a directory that may only be unmounted.
+  assert.ok(lines.some(line => line.startsWith('kept') && line.includes(held) && line.includes('live session')), lines.join('\n'));
+  assert.match(git(repo, 'worktree', 'list').stdout, /held/);
+  assert.ok(lines.some(line => line.startsWith('removed') && line.includes(inBase)), lines.join('\n'));
+});
+
 const age = (git, tree, ms) => {
   const gitDir = git(tree, 'rev-parse', '--absolute-git-dir').stdout.trim();
   const old = new Date(Date.now() - ms);
