@@ -14,7 +14,7 @@ Evidence is a list of links. Drive checks that each cited PR or issue of this re
 
 ## Closure metrics
 
-Before closing, drive posts once, led by `<!-- workflow:epic-metrics -->`: the `feat` vs `fix`/`refactor` share of the epic's merged PRs, their count and net lines. It then labels them `nits:swept`: the refinement PR fixed their Nits. A failure never blocks closure.
+Before closing, drive posts once, led by `<!-- workflow:epic-metrics -->`: the `feat` vs `fix`/`refactor` share of the epic's merged PRs, their count and net lines. Only PRs the brief carried get `nits:swept`; later merges stay unswept. A failure never blocks closure.
 
 ## Parity and reuse claims
 
