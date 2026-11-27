@@ -3032,3 +3032,12 @@ test('the baseline follow-up never returns an undefined number', () => {
   assert.throws(() => createdIssueNumber('nothing\n'), /no issue number/);
 });
 const epic9 = () => issue({ number: 9, labels: [label('type:epic')] });
+
+test('spec states the type rule once and the filing skills point at it without naming type:bug for a slice or an unmet criterion', () => {
+  const read = path => readFileSync(new URL(`../../plugins/common/workflow/skills/${path}`, import.meta.url), 'utf8');
+  assert.match(read('spec/SKILL.md'), /only a reported failing behaviour[^\n]*is a `type:bug`[^\n]*planned epic slice[^\n]*split of an issue[^\n]*refactor[^\n]*audit or review follow-up[^\n]*outcome review[^\n]*`type:story`/);
+  for (const path of ['plan/SKILL.md', 'explore/SKILL.md', 'review/references/approval.md', 'review/references/epic-outcome.md', 'improve/SKILL.md']) {
+    assert.match(read(path), /`spec`('s)? (type )?rule/, `${path} points at the spec type rule`);
+  }
+  assert.doesNotMatch(read('review/references/epic-outcome.md'), /`type:bug`/, 'an unmet criterion is never filed as a bug');
+});

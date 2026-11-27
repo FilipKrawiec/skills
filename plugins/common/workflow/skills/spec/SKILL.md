@@ -24,11 +24,12 @@ Each open issue has:
 
 - a native milestone;
 - one type: an epic, or a story or bug under one epic (epics never nest; refinement slices are stories);
+- the type rule: only a reported failing behaviour (a fault in behaviour already delivered, or a main-red failure) is a `type:bug`; a planned epic slice, a refinement slice, a split of an issue, a refactor, a perf or size budget, a design change, an audit or review follow-up and a gap an outcome review finds in a criterion are `type:story`;
 - `lane:owner` only while the owner must take part, and on an epic only while it is a draft.
 
-Titles use `feat`, `fix`, `docs/test/ci/refactor/perf` or `epic`, then area and outcome. Group and split per [split.md](references/split.md), never by size. Only epics have children; read [epics.md](references/epics.md) before changing one. UI criteria have feature code compose the project's own component library; a missing primitive is added to the library first, never inline in the feature. Never write a conditional criterion. Record outcome dependencies as blocked-by links, not file ordering; verify outcomes.
+Titles use `feat`, `fix`, `docs/test/ci/refactor/perf` or `epic`, then area and outcome. Group and split per [split.md](references/split.md), never by size. Only epics have children; read [epics.md](references/epics.md) before changing one. Never write a conditional criterion. Record outcome dependencies as blocked-by links, not file ordering; verify outcomes.
 
-A filled issue body is in [issue-example.md](references/issue-example.md).
+A filled issue body and the UI criteria rule are in [issue-example.md](references/issue-example.md).
 
 **Exit gate:** grounded issue, authority, acceptance, dependencies and reserved decisions recorded; outsiders need `owner:approved`.
 
@@ -51,14 +52,7 @@ The owner's session is where the owner runs `drive`.
 | Owner's session | close an epic | Closed slices delivered to test cover every criterion; Done. |
 | Owner's session | close a product milestone | Release evidence proves deployed acceptance; Done. |
 
-Temporary dependency, CI, capability or owner waits keep the labels, milestone and assignment: record cause, actor, resume condition and evidence, and never overwrite active claims. With a board, status is:
-
-- Todo for ready work;
-- In Progress for active work and draft PRs;
-- Review once its PR is ready (`Part of` until deployed acceptance);
-- Done for verified slices, delivered epics or accepted milestones.
-
-Draft epics stay in Backlog, approved ones are In Progress. Without a board use priority labels; status grants no authority.
+Temporary dependency, CI, capability or owner waits keep the labels, milestone and assignment: record cause, actor, resume condition and evidence, and never overwrite active claims. With a board, status follows [board-status.md](references/board-status.md).
 
 **Exit gate:** one type and milestone, `lane:owner` only where the owner takes part, with waits and actors explicit.
 

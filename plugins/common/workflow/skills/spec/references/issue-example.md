@@ -16,3 +16,7 @@ Part of epic #40. An expired session returns 401.
 {"paths": ["src/auth/", "test/auth/"], "dependencies": []}
 ```
 ````
+
+## UI criteria
+
+UI criteria have feature code compose the project's own component library; a missing primitive is added to the library first, never inline in the feature.

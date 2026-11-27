@@ -12,6 +12,6 @@ The owner sees a PR only after this approval; review rounds and line count never
 
 Approve only as neither the PR author nor its latest pusher. Dismiss only your own outdated change requests whose threads are fixed, never a human's.
 
-File at most one follow-up issue per PR, gathering every Pre-existing, Follow-up and Nit finding into it. Run `issue create --check` first: a follow-up overlapping an open issue becomes an `issue comment --number N --body-file PATH` on it. A Nit sweep is `type:story`, never `type:bug` (`issue create` refuses the `<!-- workflow:nit-sweep -->` marker on a bug).
+File at most one follow-up issue per PR, gathering every Pre-existing, Follow-up and Nit finding into it. Run `issue create --check` first: a follow-up overlapping an open issue becomes an `issue comment --number N --body-file PATH` on it. Type it by the `spec` type rule: a review follow-up is a `type:story`, a Nit sweep never a `type:bug` (`issue create` refuses the `<!-- workflow:nit-sweep -->` marker on a bug).
 
 Return at most 5 lines: verdict, PR, head, auto-merge state or refusal, next actor.
