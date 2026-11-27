@@ -7,9 +7,13 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
+  busyFromLsof,
+  diskFloorBytes,
+  diskFloorLine,
   parseWorktreeList,
   prStates,
   removeWorktree,
+  tidyWorktrees,
   worktreeCommand,
   worktreeFacts,
   worktreeVerdict,
@@ -247,4 +251,67 @@ test('worktree tidy prunes a locked tree whose directory is gone, keeps its bran
   assert.doesNotMatch(git(repo, 'worktree', 'list').stdout, /gone/);
   assert.equal(git(repo, 'rev-parse', '--verify', '-q', 'refs/heads/gone').status, 0);
   assert.ok(lines.some(line => line.startsWith('removed') && line.includes(inBase)), lines.join('\n'));
+});
+
+const age = (git, tree, ms) => {
+  const gitDir = git(tree, 'rev-parse', '--absolute-git-dir').stdout.trim();
+  const old = new Date(Date.now() - ms);
+  for (const name of ['index', 'HEAD', 'logs/HEAD']) if (existsSync(join(gitDir, name))) utimesSync(join(gitDir, name), old, old);
+};
+
+// Runs the sweep drive and the runner perform each call, from the fixture repository with no gh.
+function sweep(t, fx, busy) {
+  const bin = hermeticBin(join(fx.repo, '..', 'bin'));
+  assert.equal(fx.git(fx.repo, 'remote', 'add', 'origin', 'https://github.com/example/repo.git').status, 0);
+  const cwd = process.cwd(), path = process.env.PATH;
+  try {
+    process.chdir(fx.repo);
+    process.env.PATH = bin;
+    return tidyWorktrees({ settledOnly: true, busy, log: () => {} });
+  } finally { process.env.PATH = path; process.chdir(cwd); }
+}
+
+test('the settled sweep removes ended trees under both worktree directories, backs up their changes and keeps unsettled work', t => {
+  const fx = fixture(t);
+  const claude = fx.add('ended');
+  writeFileSync(join(claude, 'notes.txt'), 'uncommitted');
+  const inRepo = join(fx.repo, '.worktrees', 'delivered');
+  assert.equal(fx.git(fx.repo, 'worktree', 'add', '-q', '-b', 'delivered', inRepo, 'origin/main').status, 0);
+  const idle = fx.add('idle');
+  assert.equal(fx.git(idle, 'commit', '-q', '--allow-empty', '-m', 'local only').status, 0);
+  for (const tree of [claude, inRepo, idle]) age(fx.git, tree, 3 * day);
+  const removed = sweep(t, fx, []);
+  // An aged dirty tree whose head is in the base is kept as unfinished work; only clean ended trees go.
+  assert.deepEqual(removed.sort(), [inRepo]);
+  assert.equal(existsSync(claude), true);
+  assert.equal(existsSync(idle), true, 'idle unpushed work is not settled');
+  assert.equal(fx.git(fx.repo, 'rev-parse', '--verify', '-q', 'refs/heads/delivered').status, 1);
+});
+
+test('the settled sweep removes a Claude session tree whose head is in the base, build outputs included', t => {
+  const fx = fixture(t);
+  const tree = fx.add('session');
+  writeFileSync(join(fx.repo, '.git', 'info', 'exclude'), 'node_modules\n');
+  mkdirSync(join(tree, 'node_modules', 'big'), { recursive: true });
+  writeFileSync(join(tree, 'node_modules', 'big', 'blob'), 'x'.repeat(1000));
+  age(fx.git, tree, 3 * day);
+  assert.deepEqual(sweep(t, fx, []), [tree]);
+  assert.equal(existsSync(tree), false);
+});
+
+test('the busy check ignores the desktop app\'s virtualization VM but keeps a tree a real process works in', t => {
+  const fx = fixture(t);
+  const vmOnly = fx.add('vm-only');
+  const worked = fx.add('worked');
+  for (const tree of [vmOnly, worked]) age(fx.git, tree, 3 * day);
+  const lsof = `p10\nccom.apple.Virtualization.VirtualMachine\nn${vmOnly}\nn${worked}\np11\ncnode\nn${worked}/src\n`;
+  assert.deepEqual(busyFromLsof(lsof), [`${worked}/src`]);
+  assert.deepEqual(busyFromLsof(`p10\nccom.apple.Virtualization.VirtualMachine\nn${vmOnly}\n`), []);
+  assert.deepEqual(sweep(t, fx, busyFromLsof(lsof)), [vmOnly]);
+  assert.equal(existsSync(worked), true);
+});
+
+test('the disk floor is 50 GB and its line names the free space', () => {
+  assert.equal(diskFloorBytes, 50 * 1024 ** 3);
+  assert.equal(diskFloorLine(32.5 * 1024 ** 3), 'drive: 32.5 GB free is under the 50 GB floor; no new worktree starts until space frees');
 });

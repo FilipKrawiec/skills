@@ -33,3 +33,9 @@ For each line ask: would the run go wrong without it? Delete it unless the answe
 - `--help` with one example; errors say what was expected and how to fix it.
 - Data on stdout, diagnostics on stderr; JSON when another agent reads it.
 - Pin versions of one-off tools (`npx eslint@9.0.0`).
+
+## Example
+
+Bad, a pointer the agent may never follow: "Then run board.md's Merge gate."
+
+Good, the step itself: "Run `git merge --no-ff --no-commit origin/<base>`; resolve conflicts, then commit through the workflow CLI."

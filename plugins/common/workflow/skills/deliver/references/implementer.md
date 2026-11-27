@@ -11,6 +11,7 @@ Work only in your brief's worktree.
 - Use the project's documented capture command; no native build is needed unless documented. Capture after the UI settles.
 - When the brief lists evidence criteria (captures per device class, timings, flow assessment), put each in the `body` file as a reachable link or the figures themselves, and check the file against every one before `done`. A local path is refused.
 - Add no capability, option or refactor the issue did not ask for, and make no edit its Non-goals exclude or that lies outside its scope; read both against your diff before `done`.
+- Words for a word budget come only from moving a branch to `references/` or from lines the issue already changes, never from rewording other lines.
 - Never push, open, label, ready or merge a PR, never start an agent and never print a token.
 
 Hand back the brief's format, 6 lines at most:

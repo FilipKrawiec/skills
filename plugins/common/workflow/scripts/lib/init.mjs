@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { git, githubRepoFromRemote } from './core.mjs';
 
@@ -9,6 +9,41 @@ const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'workflow.mjs');
 const login = /^[A-Za-z0-9-]+$/;
 const markEnvironment = repoOwner => `workflow init (${repoOwner}) environment:`;
 const runnerRecipes = ['install', 'uninstall'].map(verb => ({ name: `runner-${verb}`, text: `runner-${verb}:\n    node ${cli} runner ${verb}\n` }));
+const gatePath = 'scripts/design-system-gate.mjs';
+// Copied into a consuming project: it composes its own component library, so feature code never hand-rolls a primitive the library should own.
+const gateSource = String.raw`#!/usr/bin/env node
+// Design-system gate (workflow init): fails a raw React <button>, <input> or <select>, or a raw Flutter Material widget, outside the library path.
+// Usage: node scripts/design-system-gate.mjs LIBRARY_PATH. A missing primitive is added to the library first, never inline in the feature.
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
+
+const library = process.argv[2];
+if (!library) { console.log('design-system gate: no library path configured; nothing to check'); process.exit(0); }
+const root = process.cwd();
+const libDir = resolve(root, library);
+const skip = new Set(['node_modules', '.git', 'build', 'dist', '.dart_tool', 'coverage', '.next']);
+const react = /<(button|input|select)(?=[\s/>]|$)/;
+const material = /\b(ElevatedButton|TextButton|OutlinedButton|FilledButton|IconButton|FloatingActionButton|TextField|TextFormField|DropdownButton|DropdownMenu|Checkbox|Radio|Switch|Slider)(?:<[^>()]*>)?\s*\(/;
+const problems = [];
+function walk(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) { if (!skip.has(entry.name) && path !== libDir) walk(path); continue; }
+    const isReact = /\.(jsx|tsx)$/.test(entry.name);
+    const isDart = entry.name.endsWith('.dart');
+    if (!isReact && !isDart) continue;
+    if (/\.(test|spec)\.(jsx|tsx)$|_test\.dart$/.test(entry.name)) continue;
+    readFileSync(path, 'utf8').split(/\r?\n/).forEach((line, at) => {
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+      const hit = (isReact ? react : material).exec(line);
+      if (hit) problems.push(relative(root, path).split(sep).join('/') + ':' + (at + 1) + ': raw ' + (isReact ? '<' + hit[1] + '>' : hit[1]) + ' outside ' + library + '; add the primitive to the library first');
+    });
+  }
+}
+walk(root);
+if (problems.length) { console.error(problems.join('\n')); process.exit(1); }
+console.log('design-system gate: no raw primitives outside ' + library);
+`;
 const markAllow = 'workflow init standing owner approval:';
 
 // Claude Code's per-marketplace auto-update flag: released plugin versions then reach the installation without the owner.
@@ -20,7 +55,7 @@ export function ensureMarketplaceAutoUpdate(settings) {
 function environmentEntry(repoOwner, reviewer) {
   return `${markEnvironment(repoOwner)} github.com/${repoOwner}/ repositories and their organization are trusted source control; the GitHub account ${reviewer} is the configured Reviewer identity and posts review verdicts there.`;
 }
-const allowEntry = `${markAllow} the owner pre-approves everything the workflow drive command does: pushing drive branches, opening and readying pull requests, starting the separate Reviewer session and posting its verdict, turning on auto-merge, merging an approved pull request, closing issues and epics, and changing delivery hosts and models in .agents/config.json through a reviewed pull request. Production release or publish, force-push to a protected branch, and changes to credentials or permissions stay owner-only.`;
+const allowEntry = `${markAllow} the owner pre-approves everything the workflow drive command does: pushing drive branches, opening and readying pull requests, starting the separate Reviewer session and posting its verdict, turning on auto-merge, merging an approved pull request, closing issues and epics, paid bench runs within the configured cap, epic approval taken from a recorded card decision, gate baseline retags through a reviewed pull request, and delivery host and model changes in .agents/config.json through a reviewed pull request. Only production release, force-push to a protected branch, and credential or permission changes are owner-only.`;
 
 export const hasStandingApproval = settings => Array.isArray(settings?.autoMode?.allow) && settings.autoMode.allow.some(item => typeof item === 'string' && item.startsWith(markAllow));
 
@@ -99,8 +134,8 @@ const defaultIo = {
 
 export function initCommand(args, io = {}) {
   const env = { ...defaultIo, ...io };
-  const unknown = args.filter((arg, at) => arg.startsWith('--') && !['--dry-run', '--settings', '--implementer', '--reviewer', '--owner', '--test'].includes(arg) && !['--settings', '--implementer', '--reviewer', '--owner', '--test'].includes(args[at - 1]));
-  if (unknown.length) throw new Error('Usage: init [--dry-run] [--settings FILE] [--implementer LOGIN] [--reviewer LOGIN] [--owner LOGIN] [--test COMMAND]');
+  const unknown = args.filter((arg, at) => arg.startsWith('--') && !['--dry-run', '--settings', '--implementer', '--reviewer', '--owner', '--test', '--library'].includes(arg) && !['--settings', '--implementer', '--reviewer', '--owner', '--test', '--library'].includes(args[at - 1]));
+  if (unknown.length) throw new Error('Usage: init [--dry-run] [--settings FILE] [--implementer LOGIN] [--reviewer LOGIN] [--owner LOGIN] [--test COMMAND] [--library PATH]');
   const dry = args.includes('--dry-run');
   const root = env.root();
   const repo = githubRepoFromRemote(env.remote());
@@ -116,6 +151,8 @@ export function initCommand(args, io = {}) {
     test = detectTestCommand(root, option(args, '--test'));
     if (!test) throw new Error('Cannot tell how this project verifies itself (no justfile verify recipe, no npm test script); rerun with --test "COMMAND" naming its full test command (plain words only: no quotes or shell syntax)');
   }
+  const library = option(args, '--library');
+  if (library !== undefined && (isAbsolute(library) || library.split(/[\\/]/).includes('..') || /\s/.test(library))) throw new Error('--library must be a relative path inside the project, without spaces');
   const todo = [];
   const unable = [];
   const said = message => { env.log(message); };
@@ -170,12 +207,29 @@ export function initCommand(args, io = {}) {
   // Project: justfile runner recipes (existing recipes stay)
   const justPath = ['justfile', 'Justfile', '.justfile'].map(name => join(root, name)).find(path => existsSync(path)) ?? join(root, 'justfile');
   const justText = existsSync(justPath) ? readFileSync(justPath, 'utf8') : '';
-  const missing = runnerRecipes.filter(recipe => !new RegExp(`^${recipe.name}(?=[\\s:])[^\\n]*:`, 'm').test(justText));
-  if (!missing.length) said(`left untouched: ${justPath} already has the runner recipes`);
+  const recipes = library ? [...runnerRecipes, { name: 'design-system-gate', text: `design-system-gate:\n    node ${gatePath} ${library}\n` }] : runnerRecipes;
+  const missing = recipes.filter(recipe => !new RegExp(`^${recipe.name}(?=[\\s:])[^\\n]*:`, 'm').test(justText));
+  if (!missing.length) said(`left untouched: ${justPath} already has the recipes`);
   else {
     said(`${dry ? 'would add' : 'added'} to ${justPath}: ${missing.map(recipe => recipe.name).join(', ')}`);
     if (!dry) writeFileSync(justPath, `${justText}${justText && !justText.endsWith('\n\n') ? (justText.endsWith('\n') ? '\n' : '\n\n') : ''}${missing.map(recipe => recipe.text).join('\n')}`);
     todo.push(justPath.slice(root.length + 1));
+  }
+
+  // Project: the design-system gate, configured with the library path
+  if (!library) unable.push('design system: no component library path is configured, so no raw-primitive gate was installed; rerun `init --library PATH` naming the directory of the project\'s own component library');
+  else {
+    const gateFile = join(root, gatePath);
+    if (existsSync(gateFile)) said(`left untouched: ${gateFile} already exists`);
+    else {
+      said(`${dry ? 'would write' : 'wrote'}: ${gateFile} (fails a raw <button>, <input> or <select>, or a Material widget, outside ${library}; run it with \`just design-system-gate\` and add that to the verify recipe)`);
+      if (!dry) {
+        mkdirSync(dirname(gateFile), { recursive: true });
+        writeFileSync(gateFile, gateSource);
+      }
+      todo.push(gatePath);
+    }
+    unable.push('verify: add `design-system-gate` (`just design-system-gate`) to the project\'s verify recipe, or the gate never fails a pull request; init does not edit existing recipes');
   }
 
   // GitHub: labels and safety

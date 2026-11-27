@@ -27,6 +27,17 @@ test('an owner step posts once with an @-mention and a repeat posts nothing', ()
   assert.equal(g.comments[3].length, 2);
 });
 
+test('an owner step is keyed by issue and cause: a reworded step posts nothing, another cause or issue does', () => {
+  const g = fakeGithub();
+  notifyOwner(g.api, 'alice', 3, { owner: '#3: waiting on #9', cause: 'wait' });
+  notifyOwner(g.api, 'alice', 3, { owner: '#3: Dependency wait, resumes later', cause: 'wait' });
+  assert.equal(g.comments[3].length, 1);
+  notifyOwner(g.api, 'alice', 3, { owner: '#3: needs a key', cause: 'key' });
+  assert.equal(g.comments[3].length, 2);
+  notifyOwner(g.api, 'alice', 4, { owner: '#4: needs a key', cause: 'key' });
+  assert.equal(g.comments[4].length, 1);
+});
+
 test('the inbox is created once, pinned, updated on change and left alone otherwise', () => {
   const g = fakeGithub();
   notifyOwner(g.api, 'alice', 3, step(3, 'https://x/3'));

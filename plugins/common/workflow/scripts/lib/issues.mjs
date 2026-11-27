@@ -79,16 +79,19 @@ const STOP = new Set('the and for with that this when from into after before tha
 const SCOPE_FENCE = /```scope[\s\S]*?```/g;
 const words = text => new Set((text || '').replace(SCOPE_FENCE, ' ').toLowerCase().match(/[a-z][a-z0-9-]{3,}/g)?.filter(word => !STOP.has(word)) ?? []);
 const jaccard = (a, b) => { if (!a.size || !b.size) return 0; let shared = 0; for (const word of a) if (b.has(word)) shared++; return shared / (a.size + b.size - shared); };
-export const DUPLICATE_WINDOW_DAYS = 30;
+const DUPLICATE_WINDOW_DAYS = 30;
 // The same failing behaviour or outcome: the significant words of the two titles overlap by at least 60% (Jaccard), or those of title and body together by at least 50%.
-export function sameOutcome(candidate, title, body) {
+function sameOutcome(candidate, title, body) {
   return jaccard(words(candidate.title), words(title)) >= 0.6 || jaccard(words(`${candidate.title} ${candidate.body}`), words(`${title} ${body}`)) >= 0.5;
 }
-// An existing match: open, or closed within the last 30 days; it shares a scope path and the same outcome. The oldest wins.
-export function findExistingMatch(issues, { title, body, now = Date.now() }) {
+// An existing match: open, or closed within the last 30 days; it shares a scope path (or either side has none) and the same outcome. The oldest wins.
+function findExistingMatch(issues, { title, body, now = Date.now() }) {
   const cutoff = now - DUPLICATE_WINDOW_DAYS * 86_400_000;
   const live = issues.filter(issue => issue.state !== 'CLOSED' || (issue.closedAt && Date.parse(issue.closedAt) >= cutoff));
-  return scopeOverlaps(live, pathsFromIssueBody(body)).filter(issue => sameOutcome(issue, title, body)).sort((a, b) => a.number - b.number)[0] ?? null;
+  const mine = pathsFromIssueBody(body);
+  // The scope packet is optional: when either side has no paths, the same failing behaviour or outcome alone matches.
+  const sharesScope = issue => !mine?.length || !pathsFromIssueBody(issue.body || '')?.length || scopeOverlaps([issue], mine).length > 0;
+  return live.filter(issue => sharesScope(issue) && sameOutcome(issue, title, body)).sort((a, b) => a.number - b.number)[0] ?? null;
 }
 const positive = value => Number.isInteger(value) && value > 0;
 // `--milestone NAME`, `--parent N` and `--blocked-by N[,M]`, validated before any write.
@@ -99,11 +102,14 @@ function structureOptions(o) {
   if (blockers.some(value => !positive(value))) throw new Error('--blocked-by expects issue numbers such as 12 or 12,13');
   return { milestone: o['--milestone'] || null, parent, blockers };
 }
-export const NIT_SWEEP_MARKER = '<!-- workflow:nit-sweep -->';
+const NIT_SWEEP_MARKER = '<!-- workflow:nit-sweep -->';
+// A bug under an epic reports a failing behaviour: an observed-versus-expected line or a reproducing-test criterion.
+const reportsFailingBehaviour = body => /\b(observed|actual)\b[^\n]*\bexpected\b|\bexpected\b[^\n]*\b(observed|actual)\b|\b(reproducing|regression|failing) test\b/i.test(body);
 const labelNames = labels => (labels || []).map(label => label.name ?? label);
 // Backlogs have two levels: an epic whose children are stories or bugs. Null when the structure holds, else why it does not.
 // The main-red bug belongs to no epic, so `issue create` asks it for no parent.
-export const baseRedBody = body => body.includes('<!-- workflow:base-red -->');
+export const BASE_RED_MARKER = '<!-- workflow:base-red -->';
+export const baseRedBody = body => body.includes(BASE_RED_MARKER);
 export function backlogViolation({ number, labels, parent, parentLabels }) {
   const own = labelNames(labels);
   const retired = own.find(name => name === 'type:task' || name === 'type:chore');
@@ -148,7 +154,7 @@ export function issueCreate(args) {
   const check = args.includes('--check');
   const o = flags(args.filter(arg => arg !== '--unique' && arg !== '--check'), ['--title', '--body-file', '--labels', '--repo', '--milestone', '--parent', '--blocked-by', '--distinct-from', '--reason']);
   const title = (o['--title'] || '').trim();
-  const usage = 'Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M] [--unique] [--check] [--distinct-from N --reason "<one line>"]. Before creating, any type of issue is matched against every open issue and those closed in the last 30 days: a match shares a scope path and the same failing behaviour or outcome (title words overlap 60%, or title and body words 50%). On a match nothing is created: the evidence is commented on it, a closed match is reopened (the fault is back), and `Exists: #N` is printed. --distinct-from N with --reason creates the issue anyway and records `Distinct from #N: <reason>` in its body.';
+  const usage = 'Usage: issue create --title TITLE --body-file PATH [--labels A,B] [--repo OWNER/NAME] [--milestone NAME] [--parent N] [--blocked-by N,M] [--unique] [--check] [--distinct-from N --reason "<one line>"]. Before creating, any type of issue is matched against every open issue and those closed in the last 30 days: a match shares a scope path (or either side has none) and the same failing behaviour or outcome (title words overlap 60%, or title and body words 50%). On a match nothing is created: the evidence is commented on it, a closed match is reopened (the fault is back), and `Exists: #N` is printed. --distinct-from N with --reason creates the issue anyway and records `Distinct from #N: <reason>` in its body.';
   if (!title || !o['--body-file']) throw new Error(usage);
   const distinct = o['--distinct-from'] === undefined ? null : Number(o['--distinct-from']);
   const reason = (o['--reason'] || '').trim();
@@ -162,6 +168,7 @@ export function issueCreate(args) {
   requireImplementer(cfg);
   const labels = (o['--labels'] || '').split(',').map(label => label.trim()).filter(Boolean);
   if (!check && body.includes(NIT_SWEEP_MARKER) && labels.includes('type:bug')) throw new Error('a Nit sweep is never a type:bug: file it as type:story');
+  if (!check && structure.parent && labels.includes('type:bug') && !baseRedBody(body) && !reportsFailingBehaviour(body)) throw new Error('a type:bug under an epic reports a failing behaviour (observed versus expected, or a reproducing-test criterion); a slice, split, refactor or follow-up is a type:story');
   if (!check && !baseRedBody(body)) requireBacklogStructure(repo, { labels, parent: structure.parent });
   // List without --search: the search index lags new issues and would hide a concurrent duplicate.
   const open = () => gh(['issue', 'list', '--repo', repo, '--state', 'open', '--limit', '1000', '--json', 'number,title,body']);
@@ -207,6 +214,20 @@ export function issueCreate(args) {
     linkIssue(repo, created.number, structure);
   });
 }
+// A `Measured:` result is one comment per issue: a rerun edits it, so the epic never collects a second measurement.
+export function postIssueComment(repo, n, body, run = gh) {
+  if (/^\s*Measured:/.test(body)) {
+    const existing = run(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().find(comment => /^\s*Measured:/.test(comment.body || ''));
+    if (existing) {
+      const edited = run(['api', '-X', 'PATCH', `repos/${repo}/issues/comments/${existing.id}`, '-f', `body=${body}`]);
+      if (!Number.isSafeInteger(edited.id)) throw new Error(`GitHub did not confirm the edit of the Measured: comment on #${n}`);
+      return { id: edited.id, edited: true };
+    }
+  }
+  const result = run(['api', `repos/${repo}/issues/${n}/comments`, '-f', `body=${body}`]);
+  if (!Number.isSafeInteger(result.id)) throw new Error(`GitHub did not confirm the comment on #${n}`);
+  return { id: result.id, edited: false };
+}
 export function issueComment(args) {
   const o = flags(args, ['--number', '--body-file', '--repo']);
   const n = Number(o['--number']);
@@ -217,9 +238,8 @@ export function issueComment(args) {
   const repo = issueWriteRepo(cfg, o['--repo'], [body]);
   requireImplementer(cfg);
   return withRepoLock(`issue-comment-${n}`, () => {
-    const result = gh(['api', `repos/${repo}/issues/${n}/comments`, '-f', `body=${body}`]);
-    if (!Number.isSafeInteger(result.id)) throw new Error(`GitHub did not confirm the comment on #${n}`);
-    console.log(`Commented on #${n} (${result.id})`);
+    const result = postIssueComment(repo, n, body);
+    console.log(`${result.edited ? 'Edited the Measured: comment on' : 'Commented on'} #${n} (${result.id})`);
   });
 }
 export function issueEdit(args) {
@@ -298,14 +318,16 @@ export function labelsCommand(args) {
 const searchBugs = (read, repo, qualifiers, paginate = true) => read(['api', '--method', 'GET', ...(paginate ? ['--paginate', '--slurp'] : []), 'search/issues', '-f', `q=repo:${repo} is:issue label:"type:bug" ${qualifiers}`, '-f', `per_page=${paginate ? 100 : 1}`]);
 const isDuplicate = issue => issue.state_reason === 'duplicate' || (issue.state_reason === 'not_planned' && consolidatedInto(issue.body || '') !== null);
 const median = values => { const sorted = [...values].sort((a, b) => a - b); const mid = sorted.length >> 1; return sorted.length ? (sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2) : null; };
-export function bugStats(repo, days, read = args => gh(args), now = Date.now()) {
-  const since = new Date(now - days * 86_400_000).toISOString().slice(0, 10);
+const stamp = ms => new Date(ms).toISOString().replace('.000Z', 'Z');
+// The window is exactly `days` x 24 hours back from `now`, or starts at `sinceMs`; never a calendar day.
+export function bugStats(repo, days, read = args => gh(args), now = Date.now(), sinceMs = null) {
+  const since = stamp(sinceMs ?? now - days * 86_400_000);
   const items = qualifiers => searchBugs(read, repo, qualifiers).flatMap(page => page.items || []);
   const opened = items(`created:>=${since}`);
   const closed = items(`is:closed closed:>=${since}`);
   const open = searchBugs(read, repo, 'is:open', false).total_count;
   return {
-    repo, days, opened: opened.length, closed: closed.length, open,
+    repo, days, since, until: stamp(now), opened: opened.length, closed: closed.length, open,
     medianMs: median(closed.map(issue => Date.parse(issue.closed_at) - Date.parse(issue.created_at))),
     duplicates: closed.filter(isDuplicate).length,
   };
@@ -319,12 +341,14 @@ const duration = ms => {
 const bugNumbers = stats => `opened ${stats.opened}, closed ${stats.closed}, open ${stats.open}, median time to close ${duration(stats.medianMs)}, duplicates ${stats.duplicates} (target 0)`;
 export const bugsLine = stats => `Bugs (${stats.days}d): ${bugNumbers(stats)}`;
 export function bugsCommand(args, lanes, read, now) {
-  const usage = 'Usage: bugs [--days N] [--repo OWNER/NAME]';
+  const usage = 'Usage: bugs [--days N | --since ISO-TIMESTAMP] [--repo OWNER/NAME]';
   let o;
-  try { o = flags(args, ['--days', '--repo']); } catch { throw new Error(usage); }
+  try { o = flags(args, ['--days', '--repo', '--since']); } catch { throw new Error(usage); }
+  const sinceMs = o['--since'] === undefined ? null : Date.parse(o['--since']);
+  if (o['--since'] !== undefined && (o['--days'] !== undefined || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(o['--since']) || !Number.isFinite(sinceMs))) throw new Error(usage);
   const days = o['--days'] === undefined ? 14 : Number(o['--days']);
   const repo = o['--repo'] ?? lanes.repo;
   if (!Number.isInteger(days) || days < 1 || !/^[\w.-]+\/[\w.-]+$/.test(repo || '')) throw new Error(usage);
-  const stats = bugStats(repo, days, read, now);
-  console.log(`${repo} (${days}d): ${bugNumbers(stats)}`);
+  const stats = bugStats(repo, days, read, now, sinceMs);
+  console.log(`${repo} (${sinceMs === null ? `${days}d` : `since ${stats.since}`}): ${bugNumbers(stats)}; window ${stats.since} to ${stats.until}`);
 }

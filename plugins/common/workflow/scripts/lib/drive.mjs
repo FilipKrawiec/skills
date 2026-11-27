@@ -11,17 +11,18 @@ import { effectiveBranchPolicy } from '../safety.mjs';
 import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
 import { boardStatus, sweepBoard, dependenciesFromIssueBody, pathsFromIssueBody, pathsWithinScope, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
-import { consolidatedInto, droppedReason, findCycle, readDependencies, splitDependencies } from './dependencies.mjs';
-import { checkState, failedStates, prFields } from './pr.mjs';
-import { addCriterionIds, tickCriteria, verifyEpicClosure } from './epic-closure.mjs';
+import { consolidatedInto, droppedReason, findCycle, notBefore, readDependencies, splitDependencies } from './dependencies.mjs';
+import { checkState, failedStates, nitsSwept, prFields } from './pr.mjs';
+import { addCriterionIds, tickCriteria, verifyEpicClosure, epicMetricsComment, epicMetricsMarker } from './epic-closure.mjs';
 import { prState } from './state.mjs';
-import { closeFormsMessage, completedCloseAllowed } from './issues.mjs';
+import { BASE_RED_MARKER, closeFormsMessage, completedCloseAllowed } from './issues.mjs';
+import { baselineFollowUp, baselineRefs, createdIssueNumber, isBaselinePath, retagBaseline } from './baselines.mjs';
 import { architectureNote, exportedSymbols, reviewPacket } from './packet.mjs';
 import { parseUsageLine, recordUsage, usageEntry } from './usage.mjs';
 import { collectOrchestrator, collectSession, sessionUsage } from './session-log.mjs';
 import { installedPlugins, isOlder, pluginRoot, pluginVersion, versionNotice } from './plugin.mjs';
 import { approveReady, previousReviewedHead } from './vcs.mjs';
-import { busyPaths, parseWorktreeList, removeWorktree, worktreeFacts } from './worktrees.mjs';
+import { busyPaths, diskFloorBytes, diskFloorLine, freeDiskBytes, parseWorktreeList, removeWorktree, tidyWorktrees, worktreeFacts } from './worktrees.mjs';
 
 const cli = fileURLToPath(new URL('../workflow.mjs', import.meta.url));
 const implementerGuide = fileURLToPath(new URL('../../skills/deliver/references/implementer.md', import.meta.url));
@@ -102,11 +103,23 @@ const refinementMarker = '<!-- workflow:epic-refinement -->';
 const noChangeMarker = '<!-- workflow:refinement-no-change -->';
 const refinementReview = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
 const refinementCriteria = [
-  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. With nothing to change, hand back \`status: done\`, empty \`paths\` and \`body: <file>\`.`,
+  `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. Fix the epic's own Nits (Reviewer \`**Nit**\` comments on its merged PRs) here, never in a separate Nit-sweep PR; drive marks those PRs \`nits:swept\` at closure. With nothing to change, hand back \`status: done\`, empty \`paths\` and \`body: <file>\`.`,
   'Remove dead files, exports, symbols, fixtures and baseline entries left by the epic. Use project configuration for unused-code tooling; baselines shrink, with no new entries. Make no new feature or behavior change; keep the gate green.',
   'Use project configuration to record before and after times per project gate and CI part; make only measured wins. If a timing source is unavailable or unconfigured, record missing evidence and claim no measured win.',
   'Assess the epic\'s delivery flow: blocked and owner steps, rework, review rounds and cost. File at most two improvements, each with its evidence.',
 ];
+
+// The design pass: before it slices an epic, the planner posts one design note comment (module map, reuse, what is lifted first);
+// the Reviewer gates it with a verdict comment, and only an approved note lets `slice` run. Both are plain epic comments, so no owner step.
+export const designNoteMarker = '<!-- workflow:design-note -->';
+const designVerdict = /<!-- workflow:design-gate verdict=(approved|changes) -->/;
+// `comments` are the epic's comments oldest first as {author, body}. The newest note decides; only the Reviewer's verdict after it counts.
+export function designState(comments, reviewer, trusted) {
+  const at = comments.findLastIndex(comment => (comment.body || '').includes(designNoteMarker) && (!trusted || trusted.includes((comment.author || '').toLowerCase())));
+  if (at < 0) return 'none';
+  const ruling = comments.slice(at + 1).findLast(comment => (!reviewer || comment.author?.toLowerCase() === reviewer.toLowerCase()) && designVerdict.test(comment.body || ''));
+  return ruling ? (designVerdict.exec(ruling.body)[1] === 'approved' ? 'approved' : 'changes') : 'pending';
+}
 
 // A risk assessment is a PR comment for each assessed diff, or a legacy issue comment: a marker with
 // the risk set, the assessor's risk, the owner floor, the head and the files it saw, then the reason for people to read.
@@ -191,7 +204,7 @@ const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...ext
 
 // The planner appends this to the issue it was briefed on for each other issue it judged a distinct outcome, so drive asks once.
 // An issue body carrying this marker keeps main or the base red; `--next` takes it before everything else.
-export const BASE_RED_MARKER = '<!-- workflow:base-red -->';
+export { BASE_RED_MARKER };
 const baseRedEvidence = (red, base) => `Required check \`${red.check}\` fails on \`${base}\`: ${red.url}`;
 // One main-red bug per red base: an open issue carrying the marker is reused (the new run is commented once), else
 // `issue create --labels type:bug` files it. `ops` is the GitHub side: openIssues, comments, comment, create.
@@ -260,8 +273,12 @@ export function decideIssue(facts, lanes) {
   // Unmet dependencies stop the item in every phase and touch nothing; a dropped one needs the owner.
   if (dropped.length) return { owner: droppedReason(issue.number, dropped), url: issue.url };
   if (blockers.length) return { blocked: { issue: issue.number, by: blockers } };
+  // A date-gated issue waits in the CLI: no agent starts for it before its not-before time.
+  if (facts.notBefore && (!pr || pr.state !== 'OPEN') && (facts.now ?? Date.now()) < Date.parse(facts.notBefore)) return { wait: { until: 'date', at: facts.notBefore, issue: issue.number }, reason: `#${issue.number} may start only after ${facts.notBefore}` };
   if (hb.status === 'replan' && (!pr || pr.state !== 'OPEN')) return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
-  const blockedOwner = { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}` };
+  const blockedOwner = { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}`, cause: blockCause(hb.note) };
+  // A dependency wait is the CLI's, never an owner step: with no future not-before time it blocks without the owner.
+  if (hb.status === 'blocked' && pr?.state !== 'OPEN' && /\bdependency wait\b/i.test(hb.note || '')) return { blocked: { issue: issue.number, reason: `the hand-back called itself a dependency wait, yet #${issue.number} has no future not-before time; add <!-- workflow:not-before ISO --> or <!-- workflow:wait-days N --> to the issue` } };
   if (hb.status === 'blocked' && pr?.state !== 'OPEN') return blockedOwner;
   // A planner split makes the issue an epic, which `drive` routes to `driveEpic`; still a story, the split did not happen,
   // and dispatching the planner again would loop on the same blocking verdict. A narrowed issue is handled with its PR.
@@ -282,6 +299,8 @@ export function decideIssue(facts, lanes) {
     if (stray.length) return scopeStep('build', stray);
     return tree.unpushed ? { do: 'push' } : { do: 'open' };
   }
+  // The PR closes this issue, so a baseline entry still tagged with it would fail the gate on every PR once it closes.
+  if (facts.baselines?.length) return { do: 'retag-baselines' };
   const state = prState(pr, lanes);
   const completedClaim = facts.reviewingSince && (pr.reviews || []).some(review => review.author?.login?.toLowerCase() === lanes.reviewer?.toLowerCase() && review.commit?.oid === pr.headRefOid && review.state !== 'DISMISSED' && review.body?.includes(`sha=${pr.headRefOid}`) && /<!-- agent-review\b[^>]*\bverdict=(ready|fixes|split|owner)\b/.test(review.body) && Date.parse(review.submittedAt || '') > Math.max(facts.reviewingSince, facts.reviewSession?.startedAt || 0));
   if (facts.reviewSession?.unavailable) return { wait: { pr: pr.number, until: 'reviewed' } };
@@ -398,10 +417,15 @@ function uncoveredCriteria(epic, slices) {
     return bodies.some(body => body.includes(text) || (m[2] && body.includes(m[2].toLowerCase()))) ? [] : [{ id: m[2] || null, text: m[1] }];
   });
 }
-export function decideEpic({ epic, slices }) {
+export function decideEpic({ epic, slices, design = 'none' }) {
   if (epic.state !== 'OPEN') return { done: { epic: epic.number } };
   if ((epic.labels || []).some(label => (label.name ?? label) === 'lane:owner')) return { owner: `epic #${epic.number} waits for the owner's approval`, url: epic.url };
-  if (!slices.length) return agent('planner', 'slice', { reason: 'the epic has no slices' });
+  if (!slices.length) {
+    if (design === 'none') return agent('planner', 'design', { reason: 'the epic has no design note' });
+    if (design === 'pending') return agent('reviewer', 'design-gate', { reason: 'the epic design note has no Reviewer verdict' });
+    if (design === 'changes') return agent('planner', 'design', { reason: 'the Reviewer asked for changes to the epic design note', revise: true });
+    return agent('planner', 'slice', { reason: 'the epic has no slices' });
+  }
   const uncovered = uncoveredCriteria(epic, slices);
   if (uncovered.length) return agent('planner', 'slice', { reason: `epic criteria no slice covers: ${uncovered.map(c => c.id || c.text).join(', ')}`, uncovered });
   const dropped = slices.filter(slice => slice.state === 'OPEN' && slice.dropped?.length);
@@ -572,6 +596,23 @@ Invoke the \`improve\` skill for process lessons from the delivered epic ${f.iss
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 `;
 }
+function designGateBrief(f) {
+  return `# Reviewer brief: epic #${f.issue.number} design gate
+
+Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
+
+Task: gate the design note on ${f.issue.url} (review skill, references/design-gate.md). ${f.step.reason}.
+Read the newest epic comment starting \`${designNoteMarker}\`, the epic criteria and the repository. Approve it only when it holds the module map (bounded contexts or modules that change, judged with the \`ddd\` and \`hexagonal-architecture\` skills), names for each criterion the existing units and design-system parts it reuses (you search the repository and confirm none is missed, so no slice builds a second copy of one), and says what is lifted into a shared home first. Post one comment with \`GH_TOKEN=$(gh auth token --user <identities.reviewer>) gh api repos/${f.repo}/issues/${f.issue.number}/comments -F body=@<file>\` whose first line is \`<!-- workflow:design-gate verdict=approved|changes -->\`, then the reasons; for \`changes\` list each missing or wrong part so the planner can revise it. Never edit, commit or push, never start an agent, never ask the owner and never print a token.
+
+## Hand-back, at most 5 lines
+
+epic, the comment link, the verdict.
+
+## Epic
+
+${f.issue.body || '(no body)'}
+`;
+}
 function epicOutcomeBrief(f) {
   return `# Reviewer brief: epic #${f.issue.number} outcome review
 
@@ -591,11 +632,13 @@ ${f.issue.body || '(no body)'}
 }
 export function reviewerBrief(f) {
   if (f.step.mode === 'epic-outcome') return epicOutcomeBrief(f);
+  if (f.step.mode === 'design-gate') return designGateBrief(f);
   return `# Reviewer brief: PR #${f.pr.number} for #${f.issue.number}
 
 ${f.packet ? `Read the review packet first: ${f.packet}. It holds the issue criteria, CI, the project gate, the diff by area, the delta since your last verdict with open threads, and call sites of changed exports. Do not re-gather them; check blast radius outside it yourself.\n\n` : ''}Task: ${f.step.mode === 'approve' ? 'approve a ready PR whose newest verdict at its head is `ready` (review skill, references/approval.md)' : 'review the draft at its head (review skill, steps 1 to 5)'}.
 PR: ${f.pr.url} at head ${f.pr.headRefOid}; round ${f.step.round}; risk ${f.risk}. Issue: ${f.issue.url}
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
+Design note: when the issue cites an epic design note (\`${designNoteMarker}\`), read it; a change that builds a second copy of a unit the note names as existing or shared is a Blocker.
 ${f.step.disputed || f.step.dispute ? `Same head, disputed: the implementer disputes the blocking findings and changed no commit.${f.step.dispute ? ` Its evidence: ${f.step.dispute}` : ' It gave no note.'}\nJudge the evidence against the code; resolve a finding it refutes, repost the rest.\n` : f.step.sameHead ? 'Same head: the implementer completed a fix without a commit. Review the updated evidence and open findings again.\n' : f.step.narrowed ? 'Narrowed scope, same head: the planner narrowed the issue to what this head delivers. Re-judge each of your open blocking threads against the issue as it now reads, pass each one outside it as `--resolve-thread`, and post a new verdict.\n' : f.step.round > 1 ? 'Later round: judge only the delta `review-context` returns as `comparison`, your open threads and the criteria. If no earlier verdict of yours reviewed the whole diff (it was a red-CI or shape-only verdict), review the whole diff at head instead.\n' : ''}
 ## Commands you may run, one plain command per Bash call
 
@@ -613,7 +656,7 @@ verdict, PR, head, round, tag counts.
 export function plannerBrief(f) {
   return `# Planner brief: #${f.issue.number} ${f.issue.title}
 
-Task: ${f.step.mode === 'consolidate' ? `${f.step.reason}. Merge the overlapping unstarted issues ${f.step.overlaps.map(n => `#${n}`).join(', ')} and #${f.issue.number} into one canonical issue that carries every outcome, criterion, dependency, decision and milestone; close the others as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical issue) to each body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Split only for an independent outcome, a meaningful dependency, an authority boundary or a delivery constraint, never by size. Never merge a started issue, one with an open PR, issues in different epics without a shared outcome, or anything under \`lane:owner\`. When they are distinct outcomes, append \`${distinctMarker('M')}\` to #${f.issue.number} for each other issue M (and say why in a comment) and hand back \`distinct\`` : f.step.mode === 'refinement' ? `${f.step.reason}. Consolidate them into one canonical refinement slice (keep the one carrying the \`workflow:epic-refinement\` marker, or add the marker to the best candidate) that holds every outcome and criterion; close each other candidate as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical slice) to its body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Do not change how the refinement slice is built or what it must contain` : f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Invoke the `plan` skill to create the final refinement slice' + (f.step.uncovered?.length ? `. Epic criteria no slice covers yet: ${f.step.uncovered.map(c => `\`${c.id || c.text}\` (${c.text})`).join('; ')}. Add slices for them, each citing its criterion's ID or exact text in its body, or tick a criterion the epic already delivers` : '') : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Ignore base conflicts when narrowing scope; the implementer merges the base. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam: narrow it to its first outcome and create each other outcome as a sibling story or bug under the same epic (spec's split.md; never a nested epic) and hand back \`narrowed\``}. Invoke the \`spec\` skill for the issue form.
+Task: ${f.step.mode === 'consolidate' ? `${f.step.reason}. Merge the overlapping unstarted issues ${f.step.overlaps.map(n => `#${n}`).join(', ')} and #${f.issue.number} into one canonical issue that carries every outcome, criterion, dependency, decision and milestone; close the others as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical issue) to each body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Split only for an independent outcome, a meaningful dependency, an authority boundary or a delivery constraint, never by size. Never merge a started issue, one with an open PR, issues in different epics without a shared outcome, or anything under \`lane:owner\`. When they are distinct outcomes, append \`${distinctMarker('M')}\` to #${f.issue.number} for each other issue M (and say why in a comment) and hand back \`distinct\`` : f.step.mode === 'refinement' ? `${f.step.reason}. Consolidate them into one canonical refinement slice (keep the one carrying the \`workflow:epic-refinement\` marker, or add the marker to the best candidate) that holds every outcome and criterion; close each other candidate as not planned after appending \`<!-- workflow:consolidated-into N -->\` (N is the canonical slice) to its body and commenting where its content went, then hand back \`consolidated\` with \`into\` and \`closed\`. Do not change how the refinement slice is built or what it must contain` : f.step.mode === 'design' ? `${f.step.revise ? 'revise the design note: the Reviewer asked for changes in its latest `workflow:design-gate` comment, so read it, then post the revised note as a new comment (never edit the old one)' : 'write the design note for this approved epic before any slice exists'}. Post one comment on the epic with \`node ${cli} issue comment --number ${f.issue.number} --body-file PATH\`; its first line is \`${designNoteMarker}\`. Use the \`ddd\` and \`hexagonal-architecture\` skills and search the whole repository. The note holds (1) the module map: which bounded contexts or modules change; (2) for each epic criterion, the existing units and design-system parts it reuses, named by path; (3) what is lifted into a shared home first, as the epic's first slice. Create no slice and ask the owner nothing; hand back \`designed\`` : f.step.mode === 'slice' ? 'slice this approved epic into sub-issues, each deliverable alone, with blocked-by links between dependent slices. Read the gated design note (the epic comment starting `' + designNoteMarker + '`): every slice body must cite the design note (`design note: <comment link>`) and name the existing or shared units it uses, and a slice that lifts a unit into a shared home comes first. Invoke the `plan` skill to create the final refinement slice' + (f.step.uncovered?.length ? `. Epic criteria no slice covers yet: ${f.step.uncovered.map(c => `\`${c.id || c.text}\` (${c.text})`).join('; ')}. Add slices for them, each citing its criterion's ID or exact text in its body, or tick a criterion the epic already delivers` : '') : f.pr ? `${f.step.reason}; narrow this issue's criteria to what PR #${f.pr.number} delivers at its head, and move the unmet criteria to a new issue under the same epic, blocked by this one. Ignore base conflicts when narrowing scope; the implementer merges the base. Hand back \`narrowed\`: the Reviewer then judges the same head against the narrowed criteria and the PR merges closing this issue. Never close the PR` : `${f.step.reason}; split the issue at its logical seam: narrow it to its first outcome and create each other outcome as a sibling story or bug under the same epic (spec's split.md; never a nested epic) and hand back \`narrowed\``}. Invoke the \`spec\` skill for the issue form.
 Issue: ${f.issue.url}
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 Commands: \`node ${cli} issue create --title T --body-file PATH [--milestone NAME] [--parent N] [--blocked-by N,M]\`, \`node ${cli} issue edit --number N [--body-file PATH] [--milestone NAME] [--parent N] [--blocked-by N,M]\` (milestone, sub-issue link and blocked-by links, each confirmed from GitHub) and \`node ${cli} issue comment --number N --body-file PATH\`. Never run raw \`gh\`.
@@ -621,7 +664,7 @@ Never write code and never start an agent. Create only stories and bugs under th
 
 ## Hand-back, at most 5 lines
 
-status: sliced | narrowed | consolidated | distinct | blocked
+status: designed | sliced | narrowed | consolidated | distinct | blocked
 slices: <issue numbers, or the new issue when narrowed>
 into: <the canonical issue, when consolidated>
 closed: <issue numbers closed as consolidated into it>
@@ -638,7 +681,7 @@ export function reviewerCommand(model, brief, name, host = 'claude', executable 
   if (host !== 'claude') throw new Error('Unsupported reviewer host');
   return [executable, '--print', '--output-format', 'json', '--agent', 'filipkrawiec-workflow:reviewer', '--model', model, ...(effort ? ['--effort', effort] : []), '--plugin-dir', pluginRoot.replace(/\/$/, ''), '--permission-mode', 'auto', '--name', name, `Follow your brief at ${brief}. Return at most 5 lines.`];
 }
-export const waitCommandFor = (pr, until) => ['node', cli, 'wait', String(pr), '--until', until];
+export const waitCommandFor = (pr, until, at) => ['node', cli, 'wait', String(pr), '--until', until, ...(at ? ['--at', at] : [])];
 
 export function updatePrBody(body, hb, evidence) {
   let result = body;
@@ -699,6 +742,11 @@ export function mergeBaseIntoHead({ path, base, git = args => spawnSync('git', a
 function self(args, cwd) {
   const result = spawnSync(process.execPath, [cli, ...args], { cwd, stdio: ['ignore', 2, 2], env: process.env });
   if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
+}
+function selfOutput(args, cwd) {
+  const result = spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 2], env: process.env });
+  if (result.status !== 0) throw new Error(`${args.slice(0, 2).join(' ')} failed in ${cwd}`);
+  return result.stdout;
 }
 // Call sites of the exports a diff adds, found with git grep at head; shared with the reviewer benchmark so its packet matches drive's.
 export function changedExportSites({ files, diffs, head, git }) {
@@ -789,6 +837,7 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
         return pr.number === number && isMergedInto(pr, repo, target);
       }
     }),
+    designComments: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().map(comment => ({ author: comment.user?.login || '', body: String(comment.body || '') })),
     hasLessons: n => gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat().some(comment => /^## Lessons\s*$/m.test(comment.body || '')),
     createRefinement: epic => {
       const scope = (epic.body || '').match(/```scope\s*\n[\s\S]*?```/)?.[0] || '```scope\n{"paths":[]}\n```';
@@ -806,14 +855,47 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const body = epic.body.replace(/^(\s*[-*] \[[ xX]\] .+?\s*<!-- workflow:criterion ([A-Za-z0-9._-]+) -->.*)$/gm, (line, whole, id) => ids.includes(id) ? line.replace(/\[[xX]\]/, '[ ]') : line);
       if (body !== epic.body) run('gh', ['issue', 'edit', String(epic.number), '--repo', repo, '--body', body]);
     },
-    createEpicFollowUp: (epic, criterion) => {
+    // Entries of gate baselines (tracked `*baseline*` files) tagged with issue n.
+    baselineRefs: (tree, n) => {
+      const listed = gitIn(tree.path, ['ls-files']);
+      const files = (listed || '').split('\n').filter(path => path && isBaselinePath(path) && existsSync(join(tree.path, path)));
+      return baselineRefs(files.map(path => ({ path, text: readFileSync(join(tree.path, path), 'utf8') })), n);
+    },
+    retagBaselines: (tree, refs, from, to) => {
+      for (const file of refs) writeFileSync(join(tree.path, file.path), retagBaseline(file.text, from, to));
+      return refs.map(file => file.path);
+    },
+    // Entries tagged with n in the base's tracked baseline files (an epic has no worktree of its own).
+    baseBaselineRefs: n => {
+      const ref = `origin/${lanes.base}`;
+      const listed = gitIn(process.cwd(), ['ls-tree', '-r', '--name-only', ref]);
+      const files = (listed || '').split('\n').filter(isBaselinePath).map(path => ({ path, text: gitIn(process.cwd(), ['show', `${ref}:${path}`]) || '' }));
+      return baselineRefs(files, n);
+    },
+    // `parent` overrides the issue's own parent epic: an epic's follow-up goes under the epic itself.
+    baselineFollowUp: (issue, refs, parent = io.parentEpic(issue.number)) => {
+      return baselineFollowUp({
+        openIssues,
+        create: (epic, title, body) => {
+          if (epic) return io.createSubIssue(epic, title, body);
+          const file = join(workflowScratch(process.cwd()), `drive-baseline-${issue.number}.md`);
+          writeFileSync(file, body);
+          return createdIssueNumber(selfOutput(['issue', 'create', '--title', title, '--body-file', file, '--labels', 'type:story'], process.cwd()));
+        },
+      }, issue, parent, refs);
+    },
+    // A sub-issue of an epic in the epic's milestone; returns its number.
+    createSubIssue: (epicNumber, title, body) => {
       const [owner, name] = repo.split('/');
       const lookup = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){id issue(number:$number){id milestone{id}}}}';
-      const data = gh(['api', 'graphql', '-f', `query=${lookup}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${epic.number}`]).data.repository;
+      const data = gh(['api', 'graphql', '-f', `query=${lookup}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${epicNumber}`]).data.repository;
       const mutation = 'mutation($repository:ID!,$parent:ID!,$title:String!,$body:String!,$milestone:ID){createIssue(input:{repositoryId:$repository,parentIssueId:$parent,title:$title,body:$body,milestoneId:$milestone}){issue{number}}}';
+      return gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=${title}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]).data.createIssue.issue.number;
+    },
+    createEpicFollowUp: (epic, criterion) => {
       const body = `<!-- workflow:epic-follow-up ${epic.number} ${criterion.id} -->\n\n## Outcome\n${criterion.nextAction}\n\n### Acceptance criteria\n- [ ] ${criterion.nextAction}`;
-      const result = gh(['api', 'graphql', '-f', `query=${mutation}`, '-f', `repository=${data.id}`, '-f', `parent=${data.issue.id}`, '-f', `title=Follow up: ${criterion.text}`, '-f', `body=${body}`, ...(data.issue.milestone ? ['-f', `milestone=${data.issue.milestone.id}`] : [])]);
-      return gh(['issue', 'view', String(result.data.createIssue.issue.number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
+      const number = io.createSubIssue(epic.number, `Follow up: ${criterion.text}`, body);
+      return gh(['issue', 'view', String(number), '--repo', repo, '--json', 'number,url,state,title,body,labels,assignees,milestone']);
     },
     // The open parent epic of a story or bug, or null; a failed read means no parent.
     parentEpic: n => { try { const parent = gh(['api', `repos/${repo}/issues/${n}/parent`]); return parent?.number && parent.state === 'open' && isEpic(parent) ? parent.number : null; } catch { return null; } },
@@ -979,10 +1061,36 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       if (current.state === 'OPEN') run('gh', ['issue', 'close', String(issue.number), '--repo', repo, '--reason', 'completed']);
     },
     board: (n, value) => board(lanes, n, value),
+    // The Status name of an issue's card on the repository's board; null when there is no board, no card or the read fails.
+    cardStatus: n => {
+      try {
+        const project = cachedGithubMetadata(lanes.repo).project;
+        if (!project?.number) return null;
+        const [org, name] = repo.split('/');
+        const query = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issue(number:$number){projectItems(first:30){nodes{project{number} status:fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}';
+        const nodes = gh(['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${org}`, '-F', `name=${name}`, '-F', `number=${n}`]).data.repository.issue?.projectItems?.nodes || [];
+        return nodes.find(node => node.project?.number === project.number)?.status?.name ?? null;
+      } catch { return null; }
+    },
     // Best effort: a closed issue's card never waits for a rerun of drive for that issue.
     sweepBoard: () => { try { return sweepBoard({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, { windowed: true }); } catch (error) { console.error(`drive: board sweep skipped: ${error.message}`); return []; } },
     // A repository with no board skips the step (boardStatus returns false and says so); any other failure throws.
     requiredBoard: (n, value) => { boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, n, value, false); },
+    // Every merged PR that closes a child of the epic, with its size.
+    epicMergedPrs: (children, base) => {
+      const [owner, name] = repo.split('/');
+      const query = `query($owner:String!,$name:String!,$number:Int!) { repository(owner:$owner,name:$name) { issue(number:$number) { closedByPullRequestsReferences(first:100) { nodes { number title merged baseRefName additions deletions } } } } }`;
+      return children.flatMap(child => {
+        const data = gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${child.number}`]);
+        return data.data.repository.issue.closedByPullRequestsReferences.nodes.filter(pr => pr.merged && pr.baseRefName === base);
+      });
+    },
+    // One metrics comment per epic: a rerun after a failed close finds the marker and posts nothing more.
+    recordEpicMetrics: (epic, body) => {
+      const posted = gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${epic.number}/comments?per_page=100`]).flat().some(comment => String(comment.body || '').startsWith(epicMetricsMarker));
+      if (!posted) run('gh', ['issue', 'comment', String(epic.number), '--repo', repo, '--body', body]);
+    },
+    markNitsSwept: numbers => { for (const number of numbers) run('gh', ['pr', 'edit', String(number), '--repo', repo, '--add-label', nitsSwept]); },
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
     removeTree: tree => {
       const all = trees(); const root = all[0].path;
@@ -992,6 +1100,11 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       if (facts.current || facts.busy) { console.error(`drive: kept ${tree.path}; a process works in it`); return; }
       removeWorktree(facts, { deleteBranch: true }, root, `refs/remotes/origin/${lanes.base}`);
     },
+    // Settled worktrees (merged or closed PR, or head in the base), Claude Code session ones included; a failure never blocks a drive call.
+    sweepWorktrees: () => { try { return tidyWorktrees({ settledOnly: true, log: () => {} }); } catch (error) { console.error(`drive: worktree cleanup skipped: ${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}`); return []; } },
+    freeBytes: () => freeDiskBytes(trees()[0].path),
+    // Whether an issue other than `n` already has a worktree.
+    otherWorktrees: n => trees().slice(1).some(tree => /^\d+-/.test(tree.branch ?? '') && !tree.branch.startsWith(`${n}-`)),
     scratch: tree => workflowScratch(tree?.path),
     write: (path, text) => writeFileSync(path, text),
     // The brief drive wrote when it last started this role; null when none, so a first dispatch never hands off.
@@ -1010,6 +1123,15 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
   };
   return io;
 }
+// Starting or resuming a slice of an open epic moves the epic's card to In progress from Backlog or Todo only; Blocked, Review,
+// Done and an unknown status stay. A failed read or move never stops the slice.
+const epicCardIdle = new Set(['backlog', 'todo']);
+function startEpicCard(io, n) {
+  try {
+    const epic = io.parentEpic?.(n) ?? null;
+    if (epic && epicCardIdle.has(String(io.cardStatus?.(epic) ?? '').toLowerCase())) io.board(epic, 'PROGRESS');
+  } catch (error) { console.error(`drive: epic card not moved for #${n}: ${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}`); }
+}
 function board(lanes, number, value) {
   try { boardStatus({ ...lanes, project: cachedGithubMetadata(lanes.repo).project }, number, value, true); } catch (error) { console.error(`drive: board status skipped for #${number}: ${error.message}`); }
 }
@@ -1021,7 +1143,8 @@ function readIssueFacts(io, n, handBack) {
   if (issue.state !== 'OPEN') return { issue, tree: io.tree(n), pr: null };
   const pr = io.pr(n);
   const tree = io.tree(n, pr?.headRefName);
-  const { blockers, dropped } = splitDependencies(io.dependencies(issue));
+  const dependencies = io.dependencies(issue);
+  const { blockers, dropped } = splitDependencies(dependencies);
   const diffPaths = [...new Set([...(tree?.diffPaths || []), ...(pr?.files || []).map(file => file.path)])];
   const claimed = (pr?.labels || []).some(label => label.name === 'state:reviewing');
   const reviewingSince = pr?.state === 'OPEN' ? io.reviewingSince(pr) : null;
@@ -1034,7 +1157,9 @@ function readIssueFacts(io, n, handBack) {
   // Only the assessment of the current phase is read: the issue's before a draft exists, then the PR's.
   const assessment = io.assessment(issue, pr?.state === 'OPEN' ? pr : null);
   const assessments = pr?.state === 'OPEN' ? { prAssessment: assessment } : { issueAssessment: assessment };
-  return { issue, pr, tree, blockers, dropped, handBack, diffPaths, ...assessments, reviewingSince, reviewSession, postFailed, reviewThreads, now: io.now?.() ?? Date.now() };
+  // Entries of a gate baseline that name this issue, in a clean pushed worktree: they must move to an open follow-up before it closes.
+  const baselines = pr?.state === 'OPEN' && tree && !tree.dirty && !tree.unpushed && !tree.merging ? io.baselineRefs?.(tree, n) || [] : [];
+  return { issue, pr, tree, baselines, blockers, dropped, notBefore: notBefore(issue.body || '', dependencies), handBack, diffPaths, ...assessments, reviewingSince, reviewSession, postFailed, reviewThreads, now: io.now?.() ?? Date.now() };
 }
 // The risk that picks the models: the PR's label once a draft exists, else the issue assessment; never below the floor.
 function currentRisk(facts, step) {
@@ -1079,7 +1204,7 @@ function instruction(io, facts, step, lanes) {
   if (step.handoff) out.handoff = true;
   if (host === 'agy') out.command = ['node', fileURLToPath(new URL('../agy-session.mjs', import.meta.url)), lanes.delivery?.executables?.agy || 'agy', step.agent, model, brief];
   // The epic outcome review has no PR to claim: the Reviewer runs in its own session and posts one comment; the wrapper only records its usage on the epic.
-  if (step.agent === 'reviewer' && !pr) out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), '--epic', String(issue.number), ...reviewerCommand(model, brief, `epic-${issue.number}-outcome`, host, lanes.delivery?.executables?.[host] || host, effort)];
+  if (step.agent === 'reviewer' && !pr) out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), '--epic', String(issue.number), ...reviewerCommand(model, brief, `epic-${issue.number}-${step.mode === 'design-gate' ? 'design' : 'outcome'}`, host, lanes.delivery?.executables?.[host] || host, effort)];
   else if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host, effort)];
   return out;
 }
@@ -1090,11 +1215,11 @@ function writePacket(io, path, { issue, pr, tree, round, lanes }) {
   io.write(path, text);
 }
 function finish(step) {
-  if (step.wait) return { ...step, command: waitCommandFor(step.wait.pr, step.wait.until) };
+  if (step.wait) return { ...step, command: step.wait.until === 'date' ? waitCommandFor(step.wait.issue, 'date', step.wait.at) : waitCommandFor(step.wait.pr, step.wait.until) };
   return step;
 }
 // The session that wrote a hand-back: a `risk:` answer is devops, a planner answers consolidated or distinct, else the implementer.
-export const handBackRole = hb => hb.agent || (hb.risk ? 'devops' : ['consolidated', 'distinct', 'sliced', 'narrowed'].includes(hb.status) ? 'planner' : 'implementer');
+export const handBackRole = hb => hb.agent || (hb.risk ? 'devops' : ['consolidated', 'distinct', 'designed', 'sliced', 'narrowed'].includes(hb.status) ? 'planner' : 'implementer');
 // Every subagent hand-back records one usage row, `unreported` when it carries no `usage:` line: on its PR once open, else on the issue.
 export function driveIssue(io, n, lanes, handBack = {}) {
   const state = { recorded: false };
@@ -1109,6 +1234,13 @@ export function driveIssue(io, n, lanes, handBack = {}) {
 export function blockCause(note = '') {
   const named = [...String(note).matchAll(/`([^`]+)`|'([^']+)'|"([^"]+)"|([\w./-]+\.test\.\w+)/g)].map(m => (m[1] || m[2] || m[3] || m[4]).trim().toLowerCase());
   return named.length ? [...new Set(named)].sort().join('|') : String(note).toLowerCase().replace(/[\d\s]+/g, ' ').trim();
+}
+// Entries of a gate baseline that name `issue` move to one open follow-up, in a commit pushed on its PR when it has one.
+function retagBaselineEntries(io, issue, tree, refs, pr) {
+  const followUp = io.baselineFollowUp(issue, refs);
+  const paths = io.retagBaselines(tree, refs, issue.number, followUp);
+  io.commit(tree, `chore(baseline): retag entries of #${issue.number} to #${followUp}`, paths);
+  if (pr) { if (pr.autoMergeRequest) io.disableAutoMerge(pr); io.push(tree); }
 }
 function driveIssueSteps(io, n, lanes, handBack, state) {
   let bodyUpdated = false;
@@ -1163,7 +1295,11 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
         if (['consolidated', 'distinct'].includes(handBack.status)) return { blocked: { issue: n, reason: `the planner handed back ${handBack.status}, yet ${overlaps.map(o => `#${o}`).join(', ')} still overlap${overlaps.length === 1 ? 's' : ''} it` } };
         return finish(instruction(io, facts, agent('planner', 'consolidate', { reason: `${overlaps.map(o => `#${o}`).join(', ')} overlap${overlaps.length === 1 ? 's' : ''} the scope and epic of #${n}`, overlaps }), lanes));
       }
+      // Under the disk floor an issue with no worktree of its own waits only while other work runs beside it (another issue's worktree or a live claim); a lone issue and one that already has its worktree still advance.
+      const free = tree ? null : io.freeBytes?.() ?? null;
+      if (free !== null && free < diskFloorBytes && io.parallelWork?.(n)) return { blocked: { issue: n, reason: diskFloorLine(free) } };
       io.start(issue, pr?.headRefName); io.board(n, 'PROGRESS');
+      startEpicCard(io, n);
     }
     else if (step.do === 'assess') {
       const floor = riskLabel(issue.labels || []);
@@ -1172,6 +1308,7 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     else if (step.do === 'commit') io.commit(tree, handBack.commit, handBack.paths);
     else if (step.do === 'push') { if (pr?.autoMergeRequest) io.disableAutoMerge(pr); io.push(tree); }
     else if (step.do === 'open') { io.open(issue, tree, maxRisk(riskLabel(issue.labels || []), facts.issueAssessment?.risk || 'R1'), handBack); bodyUpdated = true; }
+    else if (step.do === 'retag-baselines') retagBaselineEntries(io, issue, tree, facts.baselines, pr);
     else if (step.do === 'release-review') io.releaseReview(pr, tree, step.claim);
     else if (step.do === 'link-issue') io.linkIssue(pr, issue);
     else if (step.do === 'risk') io.risk(pr, prState(pr, lanes).risk, step.risk);
@@ -1200,7 +1337,12 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
       if (!completedCloseAllowed(issue, () => io.mergedClosingPr(n, lanes.base))) return finish({ blocked: { issue: n, reason: closeFormsMessage(n) } });
       io.close(issue); io.board(n, 'DONE');
     }
-    else if (step.do === 'close-no-change') { io.closeNoChange(issue, tree, handBack); io.board(n, 'DONE'); }
+    else if (step.do === 'close-no-change') {
+      // Entries naming this issue would fail the gate once it closes: they move to a follow-up in a commit, and the issue then closes through its PR.
+      const refs = io.baselineRefs?.(tree, n) || [];
+      if (refs.length) { retagBaselineEntries(io, issue, tree, refs, null); continue; }
+      io.closeNoChange(issue, tree, handBack); io.board(n, 'DONE');
+    }
     else if (step.do === 'remove-worktree') { io.removeTree(tree); return { done: { issue: n } }; }
   }
   throw new Error(`drive made no progress on #${n}; run status ${n}`);
@@ -1239,7 +1381,7 @@ export function driveEpic(io, epic, lanes) {
   if (blockers.length) return { blocked: { issue: epic.number, by: blockers } };
   const withDependencies = slice => ({ ...slice, ...(slice.state === 'OPEN' ? splitDependencies(io.dependencies(slice)) : { blockers: [], dropped: [] }) });
   const slices = io.subIssues(epic.number).map(slice => withDependencies(io.issue(slice.number)));
-  if (!slices.length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices }), lanes);
+  if (!slices.length) return instruction(io, { issue: epic, pr: null, tree: null }, decideEpic({ epic, slices, design: designState(io.designComments?.(epic.number) ?? [], lanes.reviewer, trustedLogins(lanes)) }), lanes);
   // Backlogs are epic -> story|bug: an open epic under this epic is legacy (or a planner mistake); report it, never drive it as a story.
   const nested = slices.filter(slice => slice.state === 'OPEN' && isEpic(slice));
   if (nested.length) return { blocked: { issue: epic.number, reason: `epic #${epic.number} has nested epic ${nested.map(slice => `#${slice.number}`).join(', ')}; epics are never nested, so move its stories or bugs directly under #${epic.number} and close the nested epic` } };
@@ -1341,6 +1483,18 @@ export function driveEpic(io, epic, lanes) {
       if (step.do === 'close-epic') {
         const second = read();
         if (!second.result.complete || JSON.stringify(first) !== JSON.stringify(second)) return { owner: `epic #${epic.number}: evidence or issue state changed before closure`, url: epic.url };
+        // An entry still naming the epic would fail the gate once it closes: a follow-up under the epic removes it first, and the epic stays open.
+        const refs = io.baseBaselineRefs?.(epic.number) || [];
+        if (refs.length) {
+          const followUp = io.baselineFollowUp(second.current, refs, epic.number);
+          return { ...driveIssue(io, followUp, lanes), epic: epic.number };
+        }
+        // Best effort: the rework record and the Nit sweep never block closure; a failure is reported and the epic still closes.
+        let prs = [];
+        try { prs = io.epicMergedPrs?.(second.children, lanes.base) || []; } catch (error) { console.error(`drive: epic PRs unread: ${error.message}`); }
+        try { io.recordEpicMetrics?.(second.current, epicMetricsComment(epic.number, prs)); } catch (error) { console.error(`drive: epic metrics skipped: ${error.message}`); }
+        // The refinement PR fixed the epic's own Nits; drive marks those PRs swept so no improver files a separate sweep for them.
+        try { if (prs.length) io.markNitsSwept?.([...new Set(prs.map(pr => pr.number))]); } catch (error) { console.error(`drive: epic Nit sweep skipped: ${error.message}`); }
         io.closeEpic(second.current);
         return { done: { epic: epic.number } };
       }
@@ -1583,8 +1737,13 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     }
   }
   if (args.length !== 1) throw new Error(usage);
+  const removed = io.sweepWorktrees?.() ?? [];
+  if (removed.length) console.error(`drive: removed ${removed.length} settled worktree${removed.length === 1 ? '' : 's'}: ${removed.join(', ')}`);
   const swept = io.sweepBoard?.() ?? [];
   if (swept.length) console.error(`drive: moved ${swept.length} closed issue card${swept.length === 1 ? '' : 's'} to Done: ${swept.map(n => `#${n}`).join(', ')}`);
+  // Parallel work: another issue's worktree, or a live claim of another session, after the sweep above.
+  const direct = io;
+  const withParallel = except => ({ ...direct, parallelWork: m => Boolean(direct.otherWorktrees?.(m)) || liveRuns({ directory: lockDirectory, repo: lanes.repo, now, except, session }) > 0 });
   let n;
   if (args[0] === '--next') {
     baseRedIssue(io, lanes);
@@ -1593,7 +1752,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
     const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-next`, session, now });
     if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(null, lock, now))); return; }
     if (lock.tookOver) io.noteTakeover?.(null, lock.tookOver, now);
-    const result = driveNext(io, numbers, lanes, handBack);
+    const result = driveNext(withParallel(null), numbers, lanes, handBack);
     if (!lock.record(fingerprintOf(result), now)) { console.log(JSON.stringify(lostClaim(null))); return; }
     if (notice) console.error(notice);
     if ((result.done && !result.continue) || result.owner || result.blocked) lock.release();
@@ -1610,7 +1769,7 @@ export function driveCommand(args, lanes, io = githubIo(lanes), { lockDirectory 
   const lock = acquireRunLock({ directory: lockDirectory, key: `${lanes.repo}-${n}`, session, now });
   if (!lock.acquired) { console.log(JSON.stringify(blockedClaim(n, lock, now))); return; }
   if (lock.tookOver) io.noteTakeover?.(n, lock.tookOver, now);
-  let result = drive(io, n, lanes, handBack);
+  let result = drive(withParallel(own), n, lanes, handBack);
   // A slice's own `done` continues on its open parent epic only inside a session that holds that epic's claim (one that took the epic);
   // `drive <slice>` on its own ends at the slice.
   if (result.done?.issue === n && !result.continue) {

@@ -145,11 +145,18 @@ const remoteIsAhead = (tip, remote) => {
   return !git(['cat-file', '-e', `${remote}^{commit}`]) || git(['merge-base', '--is-ancestor', tip, remote]);
 };
 export function waitCommand(args, lanes, { pause = sleep, now = Date.now, read = sharedReadPr, readFresh = readPr, localHead = localBranchHead, remoteAhead = remoteIsAhead, random = Math.random, checksAt = readChecksAt, sweep = sweepClosedBoard, moveClosing = moveClosingCards } = {}) {
-  const usage = 'Usage: wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS]';
+  const usage = 'Usage: wait NUMBER --until ci|reviewed|merged|base [--timeout MINUTES] [--interval SECONDS] | wait NUMBER --until date --at ISO';
   const [value, ...rest] = args;
   const o = {};
-  while (rest.length) { const key = rest.shift(); if (!['--until', '--timeout', '--interval'].includes(key) || !rest.length || Object.hasOwn(o, key)) throw new Error(usage); o[key] = rest.shift(); }
-  if (!['ci', 'reviewed', 'merged', 'base'].includes(o['--until'])) throw new Error(usage);
+  while (rest.length) { const key = rest.shift(); if (!['--until', '--timeout', '--interval', '--at'].includes(key) || !rest.length || Object.hasOwn(o, key)) throw new Error(usage); o[key] = rest.shift(); }
+  if (o['--until'] === 'date') {
+    // A date gate: sleep until the not-before time; no PR is read.
+    const at = Date.parse(o['--at']);
+    if (!/^\d+$/.test(value || '') || !/^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(o['--at'] || '') || !Number.isFinite(at) || Object.keys(o).some(key => !['--until', '--at'].includes(key))) throw new Error(usage);
+    for (let left = at - now(); left > 0; left = at - now()) pause(Math.min(60, Math.ceil(left / 1000)));
+    return 0;
+  }
+  if (!['ci', 'reviewed', 'merged', 'base'].includes(o['--until']) || Object.hasOwn(o, '--at')) throw new Error(usage);
   const n = number(value);
   const timeout = Number(o['--timeout'] ?? 120), interval = Number(o['--interval'] ?? 60);
   if (!(timeout > 0) || !(interval >= 1)) throw new Error(usage);

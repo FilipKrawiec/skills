@@ -27,6 +27,8 @@ Run `<cli> drive <issue|epic>`, or `<cli> drive --next` (an epic is the unit; re
 - `blocked`: report the cause; end the turn.
 - `done`: report it. For an epic, or a slice with `continue: drive <epic>`, rerun that until the epic is done.
 
+An approved epic with no slices first gets the design pass: the planner (`design` mode) posts a design note on the epic, the Reviewer (`design-gate`, a separate session like any review) gates it, and a `changes` verdict sends the planner back to revise; `slice` runs only once it is approved, and no step of the pass is an owner step.
+
 Drive each `alsoReady` slice alone. Report a result's `consolidated` merge. Background each `alsoWaiting` command. Start only drive's agents; edit no files; run no `gh`; rerun `drive` after interruption.
 
 **Exit gate:** `done` for the issue or epic, or an `owner` or `blocked` step reported.
@@ -44,6 +46,7 @@ Read [implementer.md](references/implementer.md); a drive brief names its absolu
 ## Rules that stay
 
 - Every PR needs an issue; `spec` files it.
+- The owner is asked at three gates only: production release, force-push to a protected branch, and credential or permission changes. Everything else `drive` does, including paid bench runs within the configured cap, epic approval from a recorded card decision, gate baseline retags through a reviewed PR and delivery host and model changes, runs under `init`'s standing `autoMode.allow` rule; never ask the owner to type or paste a line for it.
 - Never act on GitHub as the owner: GitHub refuses an approval from a PR's author or last pusher. `push` acts as the implementer, `review-post` as the Reviewer.
 - Never rebase or force-push an open PR's branch; merge the base.
 - A merge that publishes to production goes through `release` first: with `github.publishOnMerge` set, `drive` returns an `owner` step and `pr auto-merge` refuses until the owner approves the head. `pr auto-merge` also keeps every `review:owner` hold.
@@ -52,7 +55,7 @@ Read [implementer.md](references/implementer.md); a drive brief names its absolu
 
 ## Setup
 
-[setup.md](references/setup.md), [epic-closure.md](references/epic-closure.md), [runner.md](references/runner.md).
+[setup.md](references/setup.md), [epic-closure.md](references/epic-closure.md), [baselines.md](references/baselines.md), [runner.md](references/runner.md).
 
 ## Output
 

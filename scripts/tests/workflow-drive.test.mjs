@@ -7,14 +7,16 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { waitCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
   acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
-  baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand,
+  designState, designNoteMarker, baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand, waitCommandFor,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { baselineRefs, createdIssueNumber, isBaselinePath, retagBaseline, baselineFollowUp } from '../../plugins/common/workflow/scripts/lib/baselines.mjs';
 import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
-import { findCycle, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
+import { findCycle, notBefore, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
 
 const head = 'a'.repeat(40);
 const lanes = { repo: 'acme/app', base: 'main', implementer: 'builder', reviewer: 'reviewer', owner: 'owner', steps: { test: ['just', 'verify'] } };
@@ -34,6 +36,27 @@ test('an unstarted issue starts once assessed, and a blocked one reports its blo
   assert.deepEqual(decide({ issue: started }), { do: 'start' }, 'a claimed issue without its worktree makes it again');
 });
 
+test('a date-gated issue waits until its not-before time and starts after it; the same state gives the same wait', () => {
+  const at = '2026-12-01T00:00:00.000Z';
+  const early = { issue: issue({ assessment: assessed() }), notBefore: at, now: Date.parse('2026-11-30T23:59:59Z') };
+  const waiting = { wait: { until: 'date', at, issue: 3 }, reason: `#3 may start only after ${at}` };
+  assert.deepEqual(decide(early), waiting);
+  assert.deepEqual(decide({ ...early }), waiting);
+  assert.deepEqual(decide({ ...early, now: Date.parse(at) }), { do: 'start' });
+  assert.deepEqual(decide({ ...early, blockers: [2] }), { blocked: { issue: 3, by: [2] } }, 'an open blocker still reports itself first');
+});
+
+test('a hand-back calling itself a dependency wait is never an owner step: it becomes the wait, or blocks without the owner', () => {
+  const at = '2026-12-01T00:00:00.000Z';
+  const handBack = { status: 'blocked', note: 'Dependency wait, not an owner step: measure 7 days after #4 merges' };
+  const gated = decide({ issue: started, tree: tree(), handBack, notBefore: at, now: Date.parse('2026-11-30T00:00:00Z') });
+  assert.equal(gated.wait.until, 'date');
+  const ungated = decide({ issue: started, tree: tree(), handBack });
+  assert.equal(ungated.owner, undefined);
+  assert.match(ungated.blocked.reason, /dependency wait/i);
+  assert.equal(decide({ issue: started, tree: tree(), handBack: { status: 'blocked', note: 'needs a key' } }).owner, '#3: needs a key');
+});
+
 test('build: the implementer runs until it hands back done, then drive commits, pushes and opens', () => {
   assert.equal(decide({ issue: started, tree: tree() }).agent, 'implementer');
   assert.equal(decide({ issue: started, tree: tree({ commits: 1, unpushed: true }) }).agent, 'implementer', 'no hand-back: same instruction');
@@ -43,7 +66,7 @@ test('build: the implementer runs until it hands back done, then drive commits, 
   assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), handBack: done }), { do: 'open' });
   assert.equal(decide({ issue: started, tree: tree({ dirty: true }), handBack: { status: 'done' } }).agent, 'implementer', 'nothing to commit with');
   assert.deepEqual(decide({ issue: started, tree: tree(), handBack: { status: 'replan', note: 'two seams' } }), { agent: 'planner', mode: 'replan', reason: 'two seams' });
-  assert.deepEqual(decide({ issue: started, tree: tree(), handBack: { status: 'blocked', note: 'needs a key' } }), { owner: '#3: needs a key' });
+  assert.deepEqual(decide({ issue: started, tree: tree(), handBack: { status: 'blocked', note: 'needs a key' } }), { owner: '#3: needs a key', cause: 'needs a key' });
 });
 
 test('review, fix, ready, merge and close follow the PR state', () => {
@@ -187,6 +210,14 @@ test('a second call while the base is still red reuses the main-red bug and comm
   assert.ok(ops.commented[0].body.includes(next.url));
 });
 
+test('a base red again within 30 days reuses the closed main-red bug that `issue create` reopens', () => {
+  const closed = { number: 33, title: `fix(drive): ${lanes.base} is red, verify fails`, body: BASE_RED_MARKER, state: 'CLOSED' };
+  const ops = redOps();
+  ops.openIssues = () => [closed].filter(issue => issue.state !== 'CLOSED');
+  ops.create = (title, body) => { ops.created.push({ title, body }); if (title === closed.title) closed.state = 'OPEN'; };
+  assert.equal(fileBaseRed(ops, red, lanes), 33);
+});
+
 test('a red base holds every other merge with a wait naming the main-red issue; its own PR still merges', () => {
   const ready = pr({ issue: 3, isDraft: false, reviews: [review('ready', 'APPROVED')], assessment: assessed('R1') });
   const own = pr({ issue: 40, number: 90, isDraft: false, reviews: [review('ready', 'APPROVED')], assessment: assessed('R1') });
@@ -317,6 +348,61 @@ test('drive: one diff assessment and one reviewer session deliver a clean PR', (
   assert.equal(repo.s.comments.length, 1);
 });
 
+const GB = 1024 ** 3;
+test('under 50 GB free drive starts no parallel worktree and says why in one line, while a lone or existing worktree still advances', () => {
+  const lone = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
+  lone.io.freeBytes = () => 32 * GB;
+  lone.io.parallelWork = () => false;
+  drive(lone.io, 3, lanes, {});
+  assert.deepEqual(lone.calls, [['start', 3]], 'nothing else runs, so the lone issue starts');
+  const fresh = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
+  fresh.io.freeBytes = () => 32 * GB;
+  fresh.io.parallelWork = () => true;
+  const held = drive(fresh.io, 3, lanes, {});
+  assert.deepEqual(fresh.calls, []);
+  assert.deepEqual(held, { blocked: { issue: 3, reason: 'drive: 32.0 GB free is under the 50 GB floor; no new worktree starts until space frees' } });
+  const own = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ path: '/w/3', branch: '3-x' }) } });
+  own.io.freeBytes = () => 32 * GB;
+  own.io.parallelWork = () => true;
+  assert.equal(drive(own.io, 3, lanes, {}).agent, 'implementer');
+  const roomy = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
+  roomy.io.freeBytes = () => 60 * GB;
+  drive(roomy.io, 3, lanes, {});
+  assert.deepEqual(roomy.calls, [['start', 3]]);
+});
+
+test('under 50 GB free drive counts another issue\'s worktree or another session\'s live claim as parallel work, and nothing else', () => {
+  const GB2 = 1024 ** 3;
+  const run = (setup, { claim } = {}) => {
+    const repo = fakeRepo({ issues: { 3: issue({ assessment: assessed('R1') }) } });
+    repo.io.freeBytes = () => 32 * GB2;
+    repo.io.otherWorktrees = setup;
+    const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+    if (claim) writeFileSync(join(directory, 'acme_app-9.json'), JSON.stringify({ session: 'other', at: 1000 }));
+    const log = console.log; let said = '';
+    console.log = text => { said = text; };
+    try { driveCommand(['3'], lanes, repo.io, { lockDirectory: directory, session: 'mine', now: 2000 }); } finally { console.log = log; rmSync(directory, { recursive: true, force: true }); }
+    return { calls: repo.calls, said: JSON.parse(said) };
+  };
+  assert.deepEqual(run(() => false).calls, [['start', 3]]);
+  assert.match(run(() => true).said.blocked.reason, /under the 50 GB floor/);
+  assert.match(run(() => false, { claim: true }).said.blocked.reason, /under the 50 GB floor/);
+});
+
+test('every drive call, a single issue or --next, first removes settled worktrees', () => {
+  for (const args of [['3'], ['--next']]) {
+    const repo = fakeRepo({ issues: { 3: started }, trees: { 3: tree({ path: '/w/3', branch: '3-x' }) } });
+    let swept = 0;
+    repo.io.sweepWorktrees = () => { swept++; return ['/r/.claude/worktrees/old']; };
+    const directory = mkdtempSync(join(tmpdir(), 'drive-runs-'));
+    const log = console.log, error = console.error; const said = [];
+    console.log = () => {}; console.error = text => said.push(text);
+    try { driveCommand(args, lanes, repo.io, { lockDirectory: directory, session: 'test' }); } finally { console.log = log; console.error = error; rmSync(directory, { recursive: true, force: true }); }
+    assert.equal(swept, 1, args.join(' '));
+    assert.ok(said.some(line => /removed 1 settled worktree/.test(line)), said.join('\n'));
+  }
+});
+
 test('drive: an owner floor wins over a lower assessment', () => {
   const repo = fakeRepo({ issues: { 3: issue({ labels: [label('risk:R2')] }) }, trees: {} });
   drive(repo.io, 3, lanes, {});
@@ -335,7 +421,7 @@ test('hand-backs are at most 6 lines of key: value', () => {
 
 test('epics: slice when empty, deliver slices in dependency order, close when all are closed', () => {
   const epic = issue({ number: 9, labels: [label('type:epic')] });
-  assert.deepEqual(decideEpic({ epic, slices: [] }), { agent: 'planner', mode: 'slice', reason: 'the epic has no slices' });
+  assert.deepEqual(decideEpic({ epic, slices: [], design: 'approved' }), { agent: 'planner', mode: 'slice', reason: 'the epic has no slices' });
   assert.ok(decideEpic({ epic: { ...epic, labels: [label('type:epic'), label('lane:owner')] }, slices: [] }).owner);
   const slices = [{ number: 12, state: 'OPEN', blockers: [11] }, { number: 11, state: 'OPEN', blockers: [10] }, { number: 10, state: 'OPEN', blockers: [] }, { number: 13, state: 'OPEN', blockers: [] }, { number: 8, state: 'CLOSED', blockers: [] }];
   assert.deepEqual(dependencyOrder(slices).map(s => s.number), [10, 11, 12, 13]);
@@ -350,6 +436,7 @@ function fakeRepo(initial) {
   const s = structuredClone(initial); const calls = []; const writes = {};
   const io = {
     // A blocked-by link to a closed issue counts as met, like a completed issue whose closing PR merged.
+    designComments: n => s.designComments?.[n] || [],
     issue: n => s.issues[n], dependencies: i => [...(s.blockers?.[i.number] || []).map(m => ({ number: m, kind: 'issue', state: s.issues[m]?.state || 'OPEN', reason: 'completed', merged: true })), ...(s.deps?.[i.number] || [])], subIssues: n => (s.subs?.[n] || []).map(m => ({ number: m, state: s.issues[m].state })),
     parentEpic: n => { const epic = Object.keys(s.subs || {}).map(Number).find(e => s.subs[e].includes(n) && s.issues[e]?.state === 'OPEN' && (s.issues[e].labels || []).some(l => (l.name ?? l) === 'type:epic')); return epic ?? null; },
     allBlockers: n => s.blockers?.[n] || [],
@@ -387,7 +474,16 @@ function fakeRepo(initial) {
     write: (path, text) => { writes[path] = text; },
     read: path => writes[path] ?? null,
     board: (n, value) => { (s.board ||= {})[n] = value; },
+    cardStatus: n => s.cards?.[n] ?? null,
     requiredBoard: (n, value) => { (s.board ||= {})[n] = value; },
+    // Tracked files of the worktree by path; gate baselines are the ones named `*baseline*`.
+    baselineRefs: (t, n) => baselineRefs(Object.entries(s.files || {}).filter(([path]) => isBaselinePath(path)).map(([path, text]) => ({ path, text })), n),
+    baseBaselineRefs: n => baselineRefs(Object.entries(s.files || {}).filter(([path]) => isBaselinePath(path)).map(([path, text]) => ({ path, text })), n),
+    retagBaselines: (t, refs, from, to) => { for (const file of refs) s.files[file.path] = retagBaseline(file.text, from, to); return refs.map(file => file.path); },
+    baselineFollowUp: (i, refs, parent = io.parentEpic(i.number)) => baselineFollowUp({
+      openIssues: () => Object.values(s.issues).filter(open => open.state === 'OPEN'),
+      create: (parent, title, body) => { calls.push(['create-follow-up', parent]); s.issues[77] = issue({ number: 77, title, body }); if (parent) s.subs[parent].push(77); return 77; },
+    }, i, parent, refs),
   };
   return { s, io, calls, writes };
 }
@@ -517,7 +613,7 @@ test('drive closes an issue after its PR merged and leaves it with no state labe
 
 test('drive <epic> plans, drives the first ready slice, lists the others and closes the epic', () => {
   const epic = issue({ number: 9, title: 'epic', labels: [label('type:epic')] });
-  const empty = fakeRepo({ issues: { 9: epic } });
+  const empty = fakeRepo({ issues: { 9: epic }, designComments: { 9: [{ author: 'builder', body: '<!-- workflow:design-note -->' }, { author: 'reviewer', body: '<!-- workflow:design-gate verdict=approved -->' }] } });
   const planner = drive(empty.io, 9, lanes, {});
   assert.deepEqual([planner.agent, planner.model, planner.mode, planner.issue], ['planner', 'opus', 'slice', 9]);
   const repo = fakeRepo({ issues: { 9: epic, 10: issue({ number: 10 }), 11: issue({ number: 11 }), 12: issue({ number: 12 }) }, subs: { 9: [10, 11, 12] }, blockers: { 11: [10] } });
@@ -643,6 +739,34 @@ test('readDependencies unions blocked-by links with packet dependencies, issues 
   );
 });
 
+test('an issue blocker carries the merge time of its closing PR, so wait-days resolves through readDependencies', () => {
+  const read = args => {
+    if (args[1] === 'graphql') {
+      // GitHub returns only the fields the query selects.
+      const selected = /nodes\{([^}]*)\}/.exec(args.find(arg => arg.startsWith('query=')))[1].split(/\s+/);
+      const node = { merged: true, mergedAt: '2026-11-20T10:00:00Z' };
+      const later = { merged: true, mergedAt: '2026-11-22T10:00:00Z' };
+      const pick = full => Object.fromEntries(Object.entries(full).filter(([key]) => selected.includes(key)));
+      return { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [pick(node), pick(later)] } } } } };
+    }
+    if (args.at(-1).includes('blocked_by')) return [[{ number: 7 }]];
+    return { state: 'closed', state_reason: 'completed', labels: [], body: '' };
+  };
+  const body = '<!-- workflow:wait-days 7 -->';
+  assert.equal(notBefore(body, readDependencies('acme/app', { number: 3, body }, read)), '2026-11-29T10:00:00.000Z');
+});
+
+test('the wait instruction of a date gate is a command that parses and sleeps until the time', () => {
+  const at = '2026-12-01T00:00:00.000Z';
+  const command = waitCommandFor(3, 'date', at);
+  assert.deepEqual(command.slice(2), ['wait', '3', '--until', 'date', '--at', at]);
+  let clock = Date.parse(at) - 90_000;
+  const code = waitCommand(command.slice(3), lanes, { pause: seconds => { clock += seconds * 1000; }, now: () => clock });
+  assert.equal(code, 0);
+  assert.ok(clock >= Date.parse(at));
+  assert.throws(() => waitCommand(['3', '--until', 'date'], lanes, { now: () => 0 }), /Usage: wait/);
+});
+
 test('an unmet dependency stops an item in every phase and keeps its worktree and PR', () => {
   const base = { issue: started, tree: tree({ commits: 1 }), blockers: [2] };
   const stop = { blocked: { issue: 3, by: [2] } };
@@ -746,7 +870,7 @@ test('configured dispatch produces an implementer brief and accepts its intact h
   assert.deepEqual([instruction.agent, instruction.host, instruction.model, instruction.session], ['implementer', 'codex', 'gpt-6.1-terra', 'subagent']);
   assert.match(repo.writes[instruction.brief], /status: done \| replan \| blocked/);
   const handBack = parseHandBack('status: blocked\nnote: bounded dispatch probe');
-  assert.deepEqual(drive(repo.io, 3, configured, handBack), { owner: '#3: bounded dispatch probe' });
+  assert.deepEqual(drive(repo.io, 3, configured, handBack), { owner: '#3: bounded dispatch probe', cause: 'bounded dispatch probe' });
 });
 
 test('the reviewer runs as a separate non-interactive session', () => {
@@ -935,6 +1059,21 @@ test('refinement creation atomically links the parent even when the response is 
   assert.deepEqual(repo.s.subs[9], [10, 99]);
 });
 
+
+test('the refinement criterion sweeps the epic\'s Nits before the improver runs, and the improver files none for them', () => {
+  let body = '';
+  const gh = args => {
+    const query = args.find(arg => arg.startsWith('query=')) || '';
+    if (query.includes('createIssue')) { body = args.find(arg => arg.startsWith('body=')).slice(5); return { data: { createIssue: { issue: { number: 2 } } } }; }
+    if (query) return { data: { repository: { id: 'R', issue: { id: 'E', milestone: null } } } };
+    return { number: 2 };
+  };
+  githubIo({ repo: 'acme/app' }, gh).createRefinement({ number: 1, title: 'Epic', body: '' });
+  assert.match(body, /Fix the epic's own Nits[^\n]*never in a separate Nit-sweep PR; drive marks those PRs `nits:swept` at closure/);
+  assert.doesNotMatch(body, /<cli>/, 'the implementer brief defines no <cli> and forbids labelling, so the criterion names no command for it');
+  const improve = readFileSync(new URL('../../plugins/common/workflow/skills/improve/SKILL.md', import.meta.url), 'utf8');
+  assert.match(improve, /leftover Nits of the epic's own PRs[^\n]*`## Lessons`[^\n]*no new PR or `nit-sweep` story/);
+});
 
 test('epic closure requires freshly authenticated evidence before closing', () => {
   const epic = issue({ number: 9, labels: [label('type:epic')] });
@@ -1188,6 +1327,20 @@ test('native incomplete review creates a follow-up once across a partial board f
   assert.equal(creates, 1);
   assert.equal(repo.s.board[100], 'PROGRESS');
   assert.equal(repo.s.issues[9].state, 'OPEN');
+});
+
+test('starting a slice moves an idle epic card to In progress and leaves Blocked, Review and Done alone', () => {
+  const slice = () => issue({ number: 3, body: '```scope\n{"paths":["docs/a.md"]}\n```', assessment: assessed('R0') });
+  for (const [status, moved] of [['Todo', true], ['Backlog', true], ['Blocked', false], ['Review', false], ['Done', false], [null, false]]) {
+    const epic = issue({ number: 9, labels: [label('type:epic')] });
+    const repo = fakeRepo({ issues: { 9: epic, 3: slice() }, subs: { 9: [3] }, cards: { 9: status } });
+    drive(repo.io, 3, lanes, {});
+    assert.equal(repo.s.board[3], 'PROGRESS');
+    assert.equal(repo.s.board[9], moved ? 'PROGRESS' : undefined, `epic card in ${status}`);
+  }
+  const alone = fakeRepo({ issues: { 3: slice() }, cards: { 3: 'Todo' } });
+  drive(alone.io, 3, lanes, {});
+  assert.deepEqual(alone.s.board, { 3: 'PROGRESS' }, 'a standalone issue has no epic card to move');
 });
 
 test('native review refuses unaccounted linked work without creating follow-ups', () => {
@@ -2707,4 +2860,184 @@ test('drive proceeds when the CLI matches or leads the fetched default branch, o
   assert.equal(staleCliStep('11.117.0', '11.117.0', 'main'), null);
   assert.equal(staleCliStep('11.118.0', '11.117.0', 'main'), null);
   assert.equal(staleCliStep('11.117.0', baseWorkflowVersion('main', () => { throw new Error('no such path'); }), 'main'), null);
+});
+
+test('closing an epic posts its metrics comment once, before the close', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  const posted = [];
+  repo.io.epicMergedPrs = (children, base) => { posted.push(['prs', children.map(c => c.number), base]); return [{ number: 7, title: 'feat: x', additions: 4, deletions: 1 }]; };
+  repo.io.recordEpicMetrics = (e, body) => { posted.push(['comment', e.number, body, repo.s.issues[9].state]); };
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  const comments = posted.filter(entry => entry[0] === 'comment');
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0][3], 'OPEN');
+  assert.match(comments[0][2], /PRs: 1\b[\s\S]*feat: 1 \(100%\)[\s\S]*Net lines: 3/);
+});
+
+test('closing an epic marks its merged PRs nits:swept, so no later improver files a Nit sweep for them, and a failure still closes', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const refinement = issue({ number: 99, state: 'CLOSED', body: '<!-- workflow:epic-refinement -->' });
+  const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  const swept = new Set();
+  repo.io.epicMergedPrs = () => [{ number: 7, title: 'feat: x' }, { number: 8, title: 'fix: y' }, { number: 7, title: 'feat: x' }];
+  repo.io.recordEpicMetrics = () => {};
+  repo.io.markNitsSwept = numbers => numbers.forEach(n => swept.add(n));
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  assert.deepEqual([...swept].sort(), [7, 8]);
+  assert.equal(repo.s.issues[9].state, 'CLOSED');
+
+  const again = fakeRepo({ issues: { 9: issue({ number: 9, labels: [label('type:epic')] }), 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
+  again.io.epicMergedPrs = () => [{ number: 7, title: 'feat: x' }];
+  again.io.markNitsSwept = () => { throw new Error('label refused'); };
+  assert.deepEqual(drive(again.io, 9, lanes, {}), { done: { epic: 9 } });
+  assert.equal(again.s.issues[9].state, 'CLOSED');
+});
+
+// ---- Design pass: the planner writes a design note on the epic and the Reviewer gates it before any slice exists.
+const designNote = { author: 'builder', body: `${designNoteMarker}\n## Design note\nModule map, reuse, lifted first.` };
+const verdict = (value, author = 'reviewer') => ({ author, body: `<!-- workflow:design-gate verdict=${value} -->\nReviewed.` });
+
+test('designState: none without a note, pending until the Reviewer rules, the newest note supersedes an older verdict', () => {
+  assert.equal(designState([], 'reviewer'), 'none');
+  assert.equal(designState([{ author: 'builder', body: 'just talk' }], 'reviewer'), 'none');
+  assert.equal(designState([designNote], 'reviewer'), 'pending');
+  assert.equal(designState([designNote, verdict('changes')], 'reviewer'), 'changes');
+  assert.equal(designState([designNote, verdict('changes'), designNote], 'reviewer'), 'pending', 'a revised note awaits a new verdict');
+  assert.equal(designState([designNote, verdict('changes'), designNote, verdict('approved')], 'reviewer'), 'approved');
+  assert.equal(designState([designNote, verdict('approved', 'someone-else')], 'reviewer'), 'pending', 'only the Reviewer identity gates');
+  const forged = { author: 'stranger', body: designNote.body };
+  assert.equal(designState([forged], 'reviewer', trustedLogins(lanes)), 'none', 'a stranger\'s note is not a note');
+  assert.equal(designState([designNote, verdict('approved'), forged], 'reviewer', trustedLogins(lanes)), 'approved', 'a stranger\'s note does not reset the gate');
+});
+
+test('an approved epic with no slices goes to the planner for a design note, never straight to slicing', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const step = decideEpic({ epic, slices: [], design: 'none' });
+  assert.deepEqual([step.agent, step.mode, step.owner], ['planner', 'design', undefined]);
+  const text = plannerBrief({ issue: epic, step });
+  for (const needle of [/workflow:design-note/, /module map/i, /`ddd`/, /`hexagonal-architecture`/, /existing units and design-system parts/i, /shared home/i, /each epic criterion/i]) assert.match(text, needle);
+  assert.match(text, /status: .*designed/);
+});
+
+test('a note without a verdict goes to the Reviewer, a verdict for changes back to the planner, approval to slicing', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const gate = decideEpic({ epic, slices: [], design: 'pending' });
+  assert.deepEqual([gate.agent, gate.mode, gate.owner], ['reviewer', 'design-gate', undefined]);
+  const revise = decideEpic({ epic, slices: [], design: 'changes' });
+  assert.deepEqual([revise.agent, revise.mode, revise.revise, revise.owner], ['planner', 'design', true, undefined]);
+  assert.match(plannerBrief({ issue: epic, step: revise }), /revise|changes/i);
+  assert.deepEqual([decideEpic({ epic, slices: [], design: 'approved' }).mode], ['slice']);
+  const brief = reviewerBrief({ repo: 'acme/app', issue: epic, step: gate, base: 'main' });
+  for (const needle of [/workflow:design-gate verdict=approved\|changes/, /second copy/i, /module map/i, /Never edit, commit or push/]) assert.match(brief, needle);
+});
+
+test('drive walks an epic through design, gate, revision and approval, then slicing, with no owner step', () => {
+  const epic = issue({ number: 9, labels: [label('type:epic')], body: '### Acceptance criteria\n- [ ] Works <!-- workflow:criterion a -->\n' });
+  const repo = fakeRepo({ issues: { 9: epic }, subs: { 9: [] } });
+  const next = () => drive(repo.io, 9, lanes, {});
+  const seen = [];
+  const record = () => { const step = next(); seen.push(`${step.agent}:${step.mode}`); assert.equal(step.owner, undefined); return step; };
+  record();
+  repo.s.designComments = { 9: [designNote] };
+  const gate = record();
+  assert.ok(gate.command.includes('--epic'), 'the Reviewer runs in its own session on the epic');
+  repo.s.designComments[9].push(verdict('changes'));
+  record();
+  repo.s.designComments[9].push(designNote);
+  record();
+  repo.s.designComments[9].push(verdict('approved'));
+  record();
+  assert.deepEqual(seen, ['planner:design', 'reviewer:design-gate', 'planner:design', 'reviewer:design-gate', 'planner:slice']);
+});
+
+test('the slice brief makes every slice cite the design note and the PR review fails a second copy', () => {
+  const text = plannerBrief({ issue: issue(), step: { mode: 'slice' } });
+  assert.match(text, /cite the design note/i);
+  assert.match(text, /workflow:design-note/);
+  const review = reviewerBrief({ repo: 'acme/app', pr: pr(), issue: issue(), risk: 'R1', step: { mode: 'review', round: 1 }, lanes, base: 'main' });
+  assert.match(review, /design note/i);
+  assert.match(review, /second copy of a unit the note names as existing or shared/);
+  assert.match(review, /Blocker/);
+});
+
+// The unused-symbols gate: an entry tagged with a closed issue fails it, as in the stagely-pro report (#727).
+const gateFailures = (files, closed) => Object.entries(files).filter(([path]) => isBaselinePath(path)).flatMap(([, text]) => [...text.matchAll(/#(\d+)\b/g)].map(m => Number(m[1])).filter(n => closed.includes(n)));
+const epic = issue({ number: 1, title: 'epic', labels: [label('type:epic')], body: '' });
+const baselineRepo = (extra = {}) => fakeRepo({
+  issues: { 1: epic, 3: started },
+  subs: { 1: [3] },
+  files: { 'tool/unused_symbols_baseline.txt': 'a.b  # #3\nc.d  # #9\ne.f  # #3\n', 'src/code.txt': 'see #3' },
+  trees: { 3: tree({ commits: 1 }) },
+  prs: [pr({ issue: 3, reviews: [review('ready')] })],
+  ...extra,
+});
+
+test('a PR whose issue a gate baseline still names retags the entries to one open follow-up under the epic before anything else', () => {
+  assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: [review('ready')] }), baselines: [{ path: 'b_baseline.txt', text: '# #3' }] }), { do: 'retag-baselines' });
+  assert.deepEqual(decide({ issue: started, tree: tree({ commits: 1 }), pr: pr({ reviews: [review('ready')] }), baselines: [] }), { do: 'ready' });
+});
+
+test('closing an issue that a baseline references leaves the gate green', () => {
+  const repo = baselineRepo();
+  const before = gateFailures(repo.s.files, [3]);
+  assert.deepEqual(before, [3, 3], 'the gate fails once #3 closes while entries name it');
+  drive(repo.io, 3, lanes, {});
+  repo.s.issues[3].state = 'CLOSED';
+  assert.deepEqual(gateFailures(repo.s.files, [3]), [], 'no entry names the closed issue');
+  assert.equal(repo.s.files['tool/unused_symbols_baseline.txt'], 'a.b  # #77\nc.d  # #9\ne.f  # #77\n', 'only the closing issue\'s entries move; others and code files stay');
+  assert.equal(repo.s.files['src/code.txt'], 'see #3');
+  assert.deepEqual(repo.calls.filter(call => call[0] === 'create-follow-up'), [['create-follow-up', 1]], 'one follow-up under the epic, with no owner step');
+  assert.ok(repo.calls.some(call => call[0] === 'commit') && repo.calls.some(call => call[0] === 'push'));
+  assert.deepEqual(repo.s.subs[1], [3, 77]);
+});
+
+test('an open baseline follow-up under the same epic is reused, never a second one', () => {
+  const repo = baselineRepo();
+  repo.s.issues[40] = issue({ number: 40, body: '<!-- workflow:baseline-follow-up 1 -->' });
+  repo.s.subs[1].push(40);
+  drive(repo.io, 3, lanes, {});
+  assert.deepEqual(repo.calls.filter(call => call[0] === 'create-follow-up'), []);
+  assert.match(repo.s.files['tool/unused_symbols_baseline.txt'], /a\.b {2}# #40/);
+});
+
+test('a no-change closure retags entries naming the issue to a follow-up and delivers it through a PR instead of closing', () => {
+  const refinement = issue({ number: 99, body: '<!-- workflow:epic-refinement -->', labels: [label('state:started')] });
+  const repo = fakeRepo({ issues: { 9: epic9(), 99: refinement }, subs: { 9: [99] }, files: { 'tool/x_baseline.txt': 'a.b  # #99\nc.d  # #9\n' }, trees: { 99: tree({ path: '/w/99' }) } });
+  repo.io.closeNoChange = () => assert.fail('closed with entries still naming the issue');
+  drive(repo.io, 99, lanes, { status: 'done', paths: [], body: '/w/.wf/evidence.md' });
+  assert.equal(repo.s.files['tool/x_baseline.txt'], 'a.b  # #77\nc.d  # #9\n');
+  assert.deepEqual(repo.calls.filter(call => ['commit', 'push', 'open'].includes(call[0])).map(call => call[0]), ['commit', 'push', 'open']);
+});
+
+test('epic closure files a follow-up and stays open while an entry names the epic', () => {
+  const repo = fakeRepo({ issues: { 9: epic9(), 10: issue({ number: 10 }) }, subs: { 9: [10] }, lessons: [9], files: { 'tool/x_baseline.txt': 'a.b  # #9\n' } });
+  drive(repo.io, 9, lanes, {});
+  for (const n of [10, 99]) repo.s.issues[n].state = 'CLOSED';
+  repo.s.merged = [10, 99];
+  const step = drive(repo.io, 9, lanes, {});
+  assert.ok(!repo.calls.some(call => call[0] === 'close-epic'), 'the epic is not closed');
+  assert.deepEqual(repo.calls.filter(call => call[0] === 'create-follow-up'), [['create-follow-up', 9]]);
+  assert.equal(step.epic, 9);
+  repo.s.files['tool/x_baseline.txt'] = '';
+  repo.s.issues[77].state = 'CLOSED'; repo.s.merged.push(77);
+  assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } }, 'closes once nothing names it');
+});
+
+test('the baseline follow-up never returns an undefined number', () => {
+  assert.throws(() => baselineFollowUp({ openIssues: () => [], create: () => undefined }, { number: 3 }, null, [{ path: 'b_baseline.txt' }]), /no follow-up issue number/);
+  assert.equal(createdIssueNumber('Exists: #12\n'), 12);
+  assert.equal(createdIssueNumber('Created: #13\n'), 13);
+  assert.throws(() => createdIssueNumber('nothing\n'), /no issue number/);
+});
+const epic9 = () => issue({ number: 9, labels: [label('type:epic')] });
+
+test('spec states the type rule once and the filing skills point at it without naming type:bug for a slice or an unmet criterion', () => {
+  const read = path => readFileSync(new URL(`../../plugins/common/workflow/skills/${path}`, import.meta.url), 'utf8');
+  assert.match(read('spec/SKILL.md'), /only a reported failing behaviour[^\n]*is a `type:bug`[^\n]*planned epic slice[^\n]*split of an issue[^\n]*refactor[^\n]*audit or review follow-up[^\n]*outcome review[^\n]*`type:story`/);
+  for (const path of ['plan/SKILL.md', 'explore/SKILL.md', 'review/references/approval.md', 'review/references/epic-outcome.md', 'improve/SKILL.md']) {
+    assert.match(read(path), /`spec`('s)? (type )?rule/, `${path} points at the spec type rule`);
+  }
+  assert.doesNotMatch(read('review/references/epic-outcome.md'), /`type:bug`/, 'an unmet criterion is never filed as a bug');
 });
