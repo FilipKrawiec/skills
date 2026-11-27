@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BASE_RED_MARKER, driveHeadlessArgs, driveSession, maxRuns, nextTargets } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { driveHeadlessArgs, driveSession, maxRuns, nextTargets } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
+import { BASE_RED_MARKER } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { runnerDefaults, runnerInstall, runnerJob, runnerPoll, runnerStatus, runnerUninstall } from '../../plugins/common/workflow/scripts/lib/runner.mjs';
 
 const lanes = { repo: 'acme/app', owner: 'owner' };
