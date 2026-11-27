@@ -110,11 +110,12 @@ function structureOptions(o) {
   return { milestone: o['--milestone'] || null, parent, blockers, noParent, unblock };
 }
 const NIT_SWEEP_MARKER = '<!-- workflow:nit-sweep -->';
-// A bug under an epic reports a failing behaviour: an observed-versus-expected line or a reproducing-test criterion.
-const reportsFailingBehaviour = body => /\b(observed|actual)\b[^\n]*\bexpected\b|\bexpected\b[^\n]*\b(observed|actual)\b|\b(reproducing|regression|failing) test\b/i.test(body);
-// A conventional-commit title other than `fix` names planned work (a perf budget, a test addition, a refactor, a feature).
-const opensAsSlice = body => /^\s*(part of epic|split from)\s+#\d+/i.test(body);
+// A bug under an epic reports a failing behaviour: observed versus expected anywhere in the body, or a reproduction or reproducing-test criterion.
+const reportsFailingBehaviour = body => /\b(observed|actual)\b[\s\S]*\bexpected\b|\bexpected\b[\s\S]*\b(observed|actual)\b|\breproduc\w*|\b(regression|failing) test\b/i.test(body);
+// A body that opens as a slice (after any heading lines) is planned work, not a failure report.
+const opensAsSlice = body => /^(?:\s*#+[^\n]*\n)*\s*(part of epic|split from)\s+#\d+/i.test(body);
 const observedFailure = body => /\b(observed|steps to reproduce)\b|^\s*(\$|>)\s+\S.*\n[^\n]*(error|fail|exit(ed)? (code )?[1-9])/im.test(body);
+// A conventional-commit title other than `fix` names planned work (a perf budget, a test addition, a refactor, a feature).
 const plannedWorkTitle = title => /^(perf|test|refactor|feat|docs|chore|ci|build|style)(\([^)]*\))?!?:/i.test(title.trim());
 const labelNames = labels => (labels || []).map(label => label.name ?? label);
 // Backlogs have two levels: an epic whose children are stories or bugs. Null when the structure holds, else why it does not.

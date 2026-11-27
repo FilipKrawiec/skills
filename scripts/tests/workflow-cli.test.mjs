@@ -818,6 +818,18 @@ test('issue create refuses a type:bug that opens as a slice of planned work and 
   }
 });
 
+test('a heading line before "Part of epic" still opens a slice, and an observed/expected pair on separate lines or a reproduction counts as a failing behaviour', t => {
+  const headed = duplicateFixture(t, []);
+  const refused = filedBare(headed, 'One shared adapter', `## Why\n${sliceBody}`, '--labels', 'type:bug');
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /type:story/);
+  for (const [name, body] of [['split lines', 'The claim is lost.\nObserved: the claim is gone.\nExpected: the claim is kept.'], ['reproduction', 'The claim is lost; reproduce it by pushing a failing branch.']]) {
+    const f = duplicateFixture(t, []);
+    const result = filedBare(f, 'Drive loses the claim', `${body}\n${packet(['plugins/common/workflow/scripts/drive.mjs'])}`, '--labels', 'type:bug');
+    assert.equal(result.status, 0, `${name}: ${result.stderr}`);
+  }
+});
+
 test('a slice-opening type:bug with an observed failure, and a type:story slice, still create', t => {
   const failing = duplicateFixture(t, []);
   const bug = filedBare(failing, 'Drive loses the claim', `Part of epic #1819.\n${faultBody}`, '--labels', 'type:bug');

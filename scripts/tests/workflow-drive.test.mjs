@@ -10,11 +10,11 @@ import { join } from 'node:path';
 import { waitCommand } from '../../plugins/common/workflow/scripts/lib/state.mjs';
 import { fixture, nativeRemote, run } from './support/workflow-cli-fixture.mjs';
 import {
-  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, BASE_RED_MARKER, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
+  acquireRunLock, driveSessionId, assessmentComment, checkCommand, chooseSlot, checkSlots, decideEpic, decideIssue, dependencyOrder, drive, driveNext, fileBaseRed, nextTargets, trustedLogins, ownerApproved, holdBaseUpdates, latestAssessment,
   designState, designNoteMarker, baseWorkflowVersion, staleCliStep, driveCommand, liveRuns, mergeCommitMessage, maxRuns, mergeBaseIntoHead, isManifestPath, waitSlotCommand, githubIo, findOverlaps, consolidationReport, distinctMarker, modelFor, modelForStep, sessionFor, driveSession, driveSessionCommand, deliveryAssignment, nextTarget, parseHandBack, localEvidencePaths, evidenceCriteria, updatePrBody, pickSlice, plannerBrief, implementerBrief, reviewerBrief, reviewerCommand, waitCommandFor,
 } from '../../plugins/common/workflow/scripts/lib/drive.mjs';
 import { baselineRefs, createdIssueNumber, isBaselinePath, retagBaseline, baselineFollowUp } from '../../plugins/common/workflow/scripts/lib/baselines.mjs';
-import { baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
+import { BASE_RED_MARKER, baseRedBody } from '../../plugins/common/workflow/scripts/lib/issues.mjs';
 import { dependenciesFromIssueBody } from '../../plugins/common/workflow/scripts/lib/board.mjs';
 import { findCycle, notBefore, readDependencies, splitDependencies } from '../../plugins/common/workflow/scripts/lib/dependencies.mjs';
 
@@ -2593,6 +2593,15 @@ test('a role that hands back the same blocking cause twice blocks the issue, how
   assert.equal(second.owner, undefined);
 });
 
+test('a hand-back `cause:` field is the blocking cause, so a reworded note on the same cause still blocks', () => {
+  assert.equal(parseHandBack('status: blocked\nnote: x\ncause: Gate Red').cause, 'Gate Red');
+  const repo = fakeRepo(conflictFor({ trees: { 3: tree({ commits: 1 }) } }));
+  const first = drive(repo.io, 3, lanes, { status: 'blocked', note: 'the gate is red because of lint', cause: 'gate-red' });
+  assert.ok(!first.blocked);
+  const second = drive(repo.io, 3, lanes, { status: 'blocked', note: 'verify keeps failing: a linter complaint remains', cause: ' Gate-Red ' });
+  assert.match(second.blocked?.reason, /same blocking cause twice/);
+});
+
 test('mergeBaseIntoHead takes the base side of manifest conflicts and syncs, else leaves other conflicts', () => {
   const dir = mkdtempSync(join(tmpdir(), 'merge-base-'));
   const git = (...args) => { const r = spawnSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.test', ...args], { cwd: dir, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r; };
@@ -2882,6 +2891,7 @@ test('closing an epic marks its merged PRs nits:swept, so no later improver file
   const repo = fakeRepo({ issues: { 9: epic, 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
   const swept = new Set();
   repo.io.epicMergedPrs = () => [{ number: 7, title: 'feat: x' }, { number: 8, title: 'fix: y' }, { number: 7, title: 'feat: x' }];
+  repo.io.carriedNits = () => [7, 8];
   repo.io.recordEpicMetrics = () => {};
   repo.io.markNitsSwept = numbers => numbers.forEach(n => swept.add(n));
   assert.deepEqual(drive(repo.io, 9, lanes, {}), { done: { epic: 9 } });
@@ -2890,9 +2900,59 @@ test('closing an epic marks its merged PRs nits:swept, so no later improver file
 
   const again = fakeRepo({ issues: { 9: issue({ number: 9, labels: [label('type:epic')] }), 99: refinement }, subs: { 9: [99] }, merged: [99], lessons: [9] });
   again.io.epicMergedPrs = () => [{ number: 7, title: 'feat: x' }];
+  again.io.carriedNits = () => [7];
   again.io.markNitsSwept = () => { throw new Error('label refused'); };
   assert.deepEqual(drive(again.io, 9, lanes, {}), { done: { epic: 9 } });
   assert.equal(again.s.issues[9].state, 'CLOSED');
+});
+
+// The refinement slice's implementer brief carries the epic's unswept Reviewer Nits; closure marks swept only the PRs the brief carried.
+const nitFixture = (merged, ledgerOf) => {
+  const epic = issue({ number: 9, labels: [label('type:epic')] });
+  const child = issue({ number: 10, state: 'CLOSED' });
+  const refinement = issue({ number: 99, body: '<!-- workflow:epic-refinement -->\n\n### Acceptance criteria\n- [ ] Fix the epic\'s own Nits' });
+  const repo = fakeRepo({ issues: { 9: epic, 10: child, 99: refinement }, subs: { 9: [10, 99] }, merged: [10], lessons: [9] });
+  const records = {};
+  repo.io.epicMergedPrs = () => merged();
+  repo.io.nitsOf = numbers => ledgerOf(numbers);
+  repo.io.carriedNits = n => records[n] ?? null;
+  repo.io.recordCarriedNits = (n, numbers) => { records[n] = numbers; };
+  return { repo, records };
+};
+
+test('the refinement brief embeds the epic\'s unswept Nits (path, line, body, PR), and says none when there are none', () => {
+  const nits = nitFixture(() => [{ number: 7 }, { number: 8 }], numbers => ({ prs: numbers.filter(n => n === 7).map(number => ({ number })), files: [{ path: 'src/a.mjs', nits: [{ pr: 7, line: 12, body: '**Nit** rename `x`\nto `y`' }] }] }));
+  const step = drive(nits.repo.io, 9, lanes, {});
+  assert.equal(step.issue, 99);
+  const brief = nits.repo.writes[step.brief];
+  assert.match(brief, /src\/a\.mjs:12 \(PR #7\): \*\*Nit\*\* rename `x` to `y`/);
+  assert.deepEqual(nits.records[99], [7], 'only the PR whose Nits the brief carried is recorded');
+
+  const none = nitFixture(() => [{ number: 7 }], () => ({ prs: [], files: [] }));
+  const bare = drive(none.repo.io, 9, lanes, {});
+  assert.match(none.repo.writes[bare.brief], /Epic Nits[^\n]*\n[^\n]*\nNone\./);
+  assert.deepEqual(none.records[99], []);
+});
+
+test('closing an epic marks swept only the PRs the refinement brief carried; a PR merged after it stays unswept', () => {
+  const nits = nitFixture(() => [{ number: 7 }, { number: 8 }, { number: 9 }], () => ({ prs: [], files: [] }));
+  nits.records[99] = [7, 8];
+  nits.repo.s.issues[99].state = 'CLOSED';
+  nits.repo.s.merged.push(99);
+  const swept = [];
+  nits.repo.io.recordEpicMetrics = () => {};
+  nits.repo.io.markNitsSwept = numbers => swept.push(...numbers);
+  assert.deepEqual(drive(nits.repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  assert.deepEqual(swept.sort(), [7, 8], 'PR 9 merged after the brief was built keeps its Nits unswept');
+
+  const unrecorded = nitFixture(() => [{ number: 7 }], () => ({ prs: [], files: [] }));
+  unrecorded.repo.s.issues[99].state = 'CLOSED';
+  unrecorded.repo.s.merged.push(99);
+  const none = [];
+  unrecorded.repo.io.recordEpicMetrics = () => {};
+  unrecorded.repo.io.markNitsSwept = numbers => none.push(...numbers);
+  assert.deepEqual(drive(unrecorded.repo.io, 9, lanes, {}), { done: { epic: 9 } });
+  assert.deepEqual(none, [], 'a refinement whose brief carried nothing sweeps nothing');
 });
 
 // ---- Design pass: the planner writes a design note on the epic and the Reviewer gates it before any slice exists.

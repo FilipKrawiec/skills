@@ -12,7 +12,7 @@ import { lockTimeoutStatus, runWithLocks } from '../locks.mjs';
 import { boardStatus, sweepBoard, dependenciesFromIssueBody, pathsFromIssueBody, pathsWithinScope, prRecord } from './board.mjs';
 import { cachedGithubMetadata, cleanEnvironment, ensureWorkflowLabels, git, jsonCommand, run, workflowScratch } from './core.mjs';
 import { consolidatedInto, droppedReason, findCycle, notBefore, readDependencies, splitDependencies } from './dependencies.mjs';
-import { checkState, failedStates, nitsSwept, prFields } from './pr.mjs';
+import { checkState, failedStates, nitsLedger, nitsSwept, prFields } from './pr.mjs';
 import { addCriterionIds, tickCriteria, verifyEpicClosure, epicMetricsComment, epicMetricsMarker } from './epic-closure.mjs';
 import { prState } from './state.mjs';
 import { BASE_RED_MARKER, closeFormsMessage, completedCloseAllowed } from './issues.mjs';
@@ -101,6 +101,15 @@ const riskLabel = labels => labels.map(label => label.name ?? label).find(name =
 const refinementMarker = '<!-- workflow:epic-refinement -->';
 // drive posts this with a no-change refinement's evidence; the comment stands in for a closing PR.
 const noChangeMarker = '<!-- workflow:refinement-no-change -->';
+// drive records on the refinement slice which merged PRs' Nits its brief carried; closure marks only those PRs swept.
+const nitsCarriedMarker = '<!-- workflow:nits-carried';
+const nitsCarriedPattern = /^<!-- workflow:nits-carried((?: \d+)*) -->/;
+export const nitsCarriedComment = numbers => `${nitsCarriedMarker}${numbers.map(number => ` ${number}`).join('')} -->\nThe refinement brief carries the unswept Reviewer Nits of ${numbers.length ? numbers.map(number => `#${number}`).join(', ') : 'no merged PR'}; closure marks only those PRs \`nits:swept\`.`;
+export const nitsCarriedNumbers = comments => { const found = comments.map(comment => nitsCarriedPattern.exec(String(comment.body || ''))).find(Boolean); return found ? found[1].split(' ').filter(Boolean).map(Number) : null; };
+export function nitsSection(ledger) {
+  const lines = ledger.files.flatMap(file => file.nits.map(nit => `- ${file.path}${nit.line ? `:${nit.line}` : ''} (PR #${nit.pr}): ${String(nit.body).replace(/\s+/g, ' ').trim()}`));
+  return `## Epic Nits\nUnswept Reviewer \`**Nit**\` comments on the epic's merged PRs. Fix each in this PR or answer it with a reason; drive marks those PRs \`nits:swept\` at closure.\n${lines.length ? lines.join('\n') : 'None.'}\n`;
+}
 const refinementReview = 'Review the merged whole epic against its Outcome, Decisions and architecture rules';
 const refinementCriteria = [
   `${refinementReview}. Fix findings in the refinement PR or name them there with reasons. Resolve recorded Nits, aliases, shims and naming clashes, or raise them on owner paths. Fix the epic's own Nits (Reviewer \`**Nit**\` comments on its merged PRs) here, never in a separate Nit-sweep PR; drive marks those PRs \`nits:swept\` at closure. With nothing to change, hand back \`status: done\`, empty \`paths\` and \`body: <file>\`.`,
@@ -182,9 +191,10 @@ const handBackPaths = text => text.match(/(?:[^\s,{]|\{[^}]*\})+/g)?.flatMap(exp
 // A hand-back is at most 6 `key: value` lines; a bare first word is the status.
 export function parseHandBack(text) {
   const all = String(text || '').split('\n').map(line => line.trim()).filter(Boolean);
-  // The optional `usage:` line rides along without taking one of the six lines.
+  // The optional `usage:` and `cause:` lines ride along without taking one of the six lines.
   const usage = all.find((line, index) => index > 0 && /^usage:/i.test(line));
-  const lines = all.filter(line => line !== usage).slice(0, 6);
+  const cause = all.find((line, index) => index > 0 && /^cause:/i.test(line));
+  const lines = all.filter(line => line !== usage && line !== cause).slice(0, 6);
   const result = {};
   lines.forEach((line, index) => {
     const match = /^(\w+):\s*(.*)$/.exec(line);
@@ -192,6 +202,7 @@ export function parseHandBack(text) {
     else if (index === 0) result.status = line.split(/\s+/)[0];
   });
   if (usage) result.usage = usage.replace(/^usage:\s*/i, '');
+  if (cause) result.cause = cause.replace(/^cause:\s*/i, '');
   if (result.status) result.status = result.status.toLowerCase();
   if (result.paths) result.paths = handBackPaths(result.paths);
   return result;
@@ -202,9 +213,6 @@ const agent = (agentName, mode, extra = {}) => ({ agent: agentName, mode, ...ext
 
 // ---- Overlap: before drive starts an issue, the planner consolidates unstarted issues that share its outcome.
 
-// The planner appends this to the issue it was briefed on for each other issue it judged a distinct outcome, so drive asks once.
-// An issue body carrying this marker keeps main or the base red; `--next` takes it before everything else.
-export { BASE_RED_MARKER };
 const baseRedEvidence = (red, base) => `Required check \`${red.check}\` fails on \`${base}\`: ${red.url}`;
 // One main-red bug per red base: an open issue carrying the marker is reused (the new run is commented once), else
 // `issue create --labels type:bug` files it. `ops` is the GitHub side: openIssues, comments, comment, create.
@@ -228,6 +236,7 @@ function baseRedIssue(io, lanes) {
     return red ? io.fileBaseRed(red, lanes) : null;
   } catch (error) { console.error(`drive: base check skipped: ${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}`); return null; }
 }
+// The planner appends this to the issue it was briefed on for each other issue it judged a distinct outcome, so drive asks once.
 export const distinctMarker = n => `<!-- workflow:distinct ${n} -->`;
 const trimPath = path => path.replace(/^\.\//, '').replace(/\/+$/, '');
 const pathsOverlap = (a, b) => a.some(p => b.some(q => { const x = trimPath(p); const y = trimPath(q); return x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`); }));
@@ -276,7 +285,7 @@ export function decideIssue(facts, lanes) {
   // A date-gated issue waits in the CLI: no agent starts for it before its not-before time.
   if (facts.notBefore && (!pr || pr.state !== 'OPEN') && (facts.now ?? Date.now()) < Date.parse(facts.notBefore)) return { wait: { until: 'date', at: facts.notBefore, issue: issue.number }, reason: `#${issue.number} may start only after ${facts.notBefore}` };
   if (hb.status === 'replan' && (!pr || pr.state !== 'OPEN')) return agent('planner', 'replan', { reason: hb.note || 'the implementer asked to replan' });
-  const blockedOwner = { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}`, cause: blockCause(hb.note) };
+  const blockedOwner = { owner: `#${issue.number}: ${hb.note || 'the implementer is blocked'}`, cause: blockCause(hb.note, hb.cause) };
   // A dependency wait is the CLI's, never an owner step: with no future not-before time it blocks without the owner.
   if (hb.status === 'blocked' && pr?.state !== 'OPEN' && /\bdependency wait\b/i.test(hb.note || '')) return { blocked: { issue: issue.number, reason: `the hand-back called itself a dependency wait, yet #${issue.number} has no future not-before time; add <!-- workflow:not-before ISO --> or <!-- workflow:wait-days N --> to the issue` } };
   if (hb.status === 'blocked' && pr?.state !== 'OPEN') return blockedOwner;
@@ -519,8 +528,9 @@ check: pass | fail
 note: <one line: what changed, or why replan or blocked>
 body: <optional absolute path to a Markdown evidence file>
 usage: <optional, when the host reports it: in=N out=N cache=N cost=USD model=M effort=E host=H plugin=V>
+cause: <optional, with status blocked: a short stable id of the cause, kept when you reword the note>
 \`\`\`
-${f.architecture ? `\n## Project architecture\n\n${f.architecture}\n` : ''}
+${f.architecture ? `\n## Project architecture\n\n${f.architecture}\n` : ''}${f.nits ? `\n${f.nits}` : ''}
 ## Issue
 
 ${f.issue.body || '(no body)'}
@@ -619,7 +629,7 @@ function epicOutcomeBrief(f) {
 Plugin: workflow ${pluginVersion() ?? 'unknown'} (the CLI's own version; the skills you load must match it).
 
 Task: post the epic outcome comment for ${f.issue.url} (review skill, references/epic-outcome.md). ${f.step.reason}.
-Read the epic, its linked children (\`gh api repos/${f.repo}/issues/${f.issue.number}/sub_issues\`) and the PRs merged into ${f.base} that closed them. Judge each criterion against the merged code and cite those PRs; mark one \`unmet\` or \`unverifiable\` when the evidence does not show it, with a concrete \`nextAction\`. When the outcome claims parity or reuse, first run the whole-area adversarial review (review skill, references/area-audit.md) over the areas the merged PRs touched, file each finding with \`issue create\`, and mark that criterion \`unmet\` with a \`nextAction\` naming the follow-up until they are fixed. Post the comment with \`GH_TOKEN=$(gh auth token --user <identities.reviewer>) gh api repos/${f.repo}/issues/${f.issue.number}/comments -F body=@<file>\` (the CLI's \`issue comment\` posts as the implementer), never printing the token. Never edit, commit or push, never start an agent and never print a token.
+Read the epic, its linked children (\`gh api repos/${f.repo}/issues/${f.issue.number}/sub_issues\`) and the PRs merged into ${f.base} that closed them. Judge each criterion against the merged code and cite those PRs; mark one \`unmet\` or \`unverifiable\` when the evidence does not show it, with a concrete \`nextAction\`. When the outcome claims parity or reuse, first run the whole-area adversarial review (review skill, references/area-audit.md) over the areas the merged PRs touched, file the findings as one follow-up with \`issue create\`, and mark that criterion \`unmet\` with a \`nextAction\` naming the follow-up until they are fixed. Post the comment with \`GH_TOKEN=$(gh auth token --user <identities.reviewer>) gh api repos/${f.repo}/issues/${f.issue.number}/comments -F body=@<file>\` (the CLI's \`issue comment\` posts as the implementer), never printing the token. Never edit, commit or push, never start an agent and never print a token.
 
 ## Hand-back, at most 5 lines
 
@@ -1090,6 +1100,10 @@ export function githubIo(lanes, gh = args => jsonCommand('gh', args)) {
       const posted = gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${epic.number}/comments?per_page=100`]).flat().some(comment => String(comment.body || '').startsWith(epicMetricsMarker));
       if (!posted) run('gh', ['issue', 'comment', String(epic.number), '--repo', repo, '--body', body]);
     },
+    // The unswept Reviewer Nits of these merged PRs: the data `nits` lists, limited to them.
+    nitsOf: numbers => nitsLedger(numbers.map(number => gh(['pr', 'view', String(number), '--repo', repo, '--json', 'number,url,title,mergedAt,labels'])), number => gh(['api', '--hostname', 'github.com', '--paginate', '--slurp', `repos/${repo}/pulls/${number}/comments`]).flat(), lanes.reviewer),
+    carriedNits: n => nitsCarriedNumbers(gh(['api', '--paginate', '--slurp', `repos/${repo}/issues/${n}/comments?per_page=100`]).flat()),
+    recordCarriedNits: (n, numbers) => run('gh', ['issue', 'comment', String(n), '--repo', repo, '--body', nitsCarriedComment(numbers)]),
     markNitsSwept: numbers => { for (const number of numbers) run('gh', ['pr', 'edit', String(number), '--repo', repo, '--add-label', nitsSwept]); },
     closeEpic: epic => run('gh', ['issue', 'close', String(epic.number), '--repo', repo, '--reason', 'completed']),
     removeTree: tree => {
@@ -1187,7 +1201,8 @@ function instruction(io, facts, step, lanes) {
   }
   const { model, effort, host, session } = assignment;
   const packet = step.agent === 'reviewer' && pr ? join(io.scratch(tree), 'review-packet.md') : null;
-  const context = { issue, pr, tree, step, risk, model, effort, round, handBack: facts.handBack, packet, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], architecture: step.agent === 'implementer' ? architectureNote({ root: tree?.path, files: changedFiles(facts) }) : '', prAssessment: facts.prAssessment, floor: riskLabel(issue.labels || []) };
+  const nits = step.agent === 'implementer' && (issue.body || '').includes(refinementMarker) ? carryNits(io, issue, lanes) : '';
+  const context = { issue, pr, tree, step, risk, model, effort, round, handBack: facts.handBack, packet, base: lanes.base, repo: lanes.repo, diffPaths: facts.diffPaths || [], architecture: step.agent === 'implementer' ? architectureNote({ root: tree?.path, files: changedFiles(facts) }) : '', prAssessment: facts.prAssessment, nits, floor: riskLabel(issue.labels || []) };
   if (packet) writePacket(io, packet, { issue, pr, tree, round, lanes });
   // Drive issues the session id: the brief names it, and the agent's transcript (which holds the brief it read) is found by it.
   // It is derived from the state the brief describes, so rerunning drive on an unchanged state repeats the same brief and session.
@@ -1207,6 +1222,20 @@ function instruction(io, facts, step, lanes) {
   if (step.agent === 'reviewer' && !pr) out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), '--epic', String(issue.number), ...reviewerCommand(model, brief, `epic-${issue.number}-${step.mode === 'design-gate' ? 'design' : 'outcome'}`, host, lanes.delivery?.executables?.[host] || host, effort)];
   else if (step.agent === 'reviewer') out.command = ['node', fileURLToPath(new URL('../review-session.mjs', import.meta.url)), String(pr.number), pr.headRefOid, ...reviewerCommand(model, brief, `review-${pr.number}-r${step.round}`, host, lanes.delivery?.executables?.[host] || host, effort)];
   return out;
+}
+// The Nits the refinement brief carries: the PRs recorded on the first build are reused, so a PR merged later is never carried or swept.
+function carryNits(io, issue, lanes) {
+  try {
+    const epic = io.parentEpic?.(issue.number) ?? null;
+    if (!epic || !io.nitsOf) return '';
+    let carried = io.carriedNits?.(issue.number) ?? null;
+    if (carried) return nitsSection(io.nitsOf(carried));
+    const children = io.subIssues(epic).filter(child => child.number !== issue.number);
+    const ledger = io.nitsOf([...new Set((io.epicMergedPrs?.(children, lanes.base) || []).map(pr => pr.number))]);
+    carried = ledger.prs.map(pr => pr.number);
+    io.recordCarriedNits?.(issue.number, carried);
+    return nitsSection(ledger);
+  } catch (error) { return `## Epic Nits\nUnread (${String(error.message).replace(/\s+/g, ' ').slice(0, 200)}); drive records none as carried, so it marks none swept.\n`; }
 }
 // The packet is an aid: when it cannot be built the Reviewer is told to gather the context itself.
 function writePacket(io, path, { issue, pr, tree, round, lanes }) {
@@ -1231,7 +1260,9 @@ export function driveIssue(io, n, lanes, handBack = {}) {
   return result;
 }
 // The cause of a blocked hand-back, whatever its wording: the failing test names or files it quotes, else its note without digits.
-export function blockCause(note = '') {
+// A hand-back's own `cause:` field names it outright, so rewording the note never changes it.
+export function blockCause(note = '', cause = '') {
+  if (String(cause).trim()) return String(cause).toLowerCase().replace(/\s+/g, ' ').trim();
   const named = [...String(note).matchAll(/`([^`]+)`|'([^']+)'|"([^"]+)"|([\w./-]+\.test\.\w+)/g)].map(m => (m[1] || m[2] || m[3] || m[4]).trim().toLowerCase());
   return named.length ? [...new Set(named)].sort().join('|') : String(note).toLowerCase().replace(/[\d\s]+/g, ' ').trim();
 }
@@ -1258,7 +1289,7 @@ function driveIssueSteps(io, n, lanes, handBack, state) {
     // A role that hands back the same blocking cause twice is not run again: the issue blocks and drive moves on.
     if (i === 0 && handBack.status === 'blocked' && facts.tree && io.read && io.write) {
       const causeFile = join(io.scratch(facts.tree), `drive-${n}-cause`);
-      const cause = blockCause(handBack.note);
+      const cause = blockCause(handBack.note, handBack.cause);
       if (io.read(causeFile) === cause) { recordOnOpenPr(facts); return { blocked: { issue: n, reason: `${handBack.agent || 'the implementer'} handed back the same blocking cause twice: ${String(handBack.note || cause).replace(/\s+/g, ' ').slice(0, 200)}` } }; }
       io.write(causeFile, cause);
     }
@@ -1495,8 +1526,12 @@ export function driveEpic(io, epic, lanes) {
         let prs = [];
         try { prs = io.epicMergedPrs?.(second.children, lanes.base) || []; } catch (error) { console.error(`drive: epic PRs unread: ${error.message}`); }
         try { io.recordEpicMetrics?.(second.current, epicMetricsComment(epic.number, prs)); } catch (error) { console.error(`drive: epic metrics skipped: ${error.message}`); }
-        // The refinement PR fixed the epic's own Nits; drive marks those PRs swept so no improver files a separate sweep for them.
-        try { if (prs.length) io.markNitsSwept?.([...new Set(prs.map(pr => pr.number))]); } catch (error) { console.error(`drive: epic Nit sweep skipped: ${error.message}`); }
+        // The refinement brief carried those PRs' Nits and the refinement PR fixed them; drive marks only those PRs swept so no improver files a separate sweep for them.
+        try {
+          const carried = new Set(second.children.filter(child => (child.body || '').includes(refinementMarker)).flatMap(child => io.carriedNits?.(child.number) || []));
+          const swept = [...new Set(prs.map(pr => pr.number))].filter(number => carried.has(number));
+          if (swept.length) io.markNitsSwept?.(swept);
+        } catch (error) { console.error(`drive: epic Nit sweep skipped: ${error.message}`); }
         io.closeEpic(second.current);
         return { done: { epic: epic.number } };
       }
